@@ -15,7 +15,8 @@
     "clean": "rm -rf dist server.js",
     "health": "node healthcheck.js",
     "lint": "tsc --noEmit",
-    "test": "tsc --noEmit"
+    "test": "tsc --noEmit",
+    "postinstall": "node scripts/postinstall.js"
   },
   "dependencies": {
     "@google/genai": "^2.4.0",
