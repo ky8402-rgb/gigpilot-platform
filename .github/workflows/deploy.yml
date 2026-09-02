@@ -84,3 +84,42 @@ jobs:
             echo "❌ Failed to trigger Render deploy hook. HTTP Status: $HTTP_STATUS"
             exit 1
           fi
+
+  # --------------------------------------------------------------------------
+  # 3. Automated Backend Deployment (AWS App Runner)
+  # --------------------------------------------------------------------------
+  deploy-aws-backend:
+    name: Trigger AWS App Runner Deployment
+    needs: test-and-build
+    if: (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master') && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check AWS Credentials & Service ARN
+        id: check-aws
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_APP_RUNNER_SERVICE_ARN: ${{ secrets.AWS_APP_RUNNER_SERVICE_ARN }}
+        run: |
+          if [ -n "$AWS_ACCESS_KEY_ID" ] && [ -n "$AWS_APP_RUNNER_SERVICE_ARN" ]; then
+            echo "configured=true" >> $GITHUB_OUTPUT
+          else
+            echo "configured=false" >> $GITHUB_OUTPUT
+            echo "ℹ️  AWS App Runner service ARN or credentials not set in GitHub secrets."
+            echo "👉 If your AWS App Runner service has Automatic Deploy enabled with apprunner.yaml, AWS auto-deploys on every git push directly."
+          fi
+
+      - name: Configure AWS Credentials
+        if: steps.check-aws.outputs.configured == 'true'
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_REGION || 'us-east-1' }}
+
+      - name: Start AWS App Runner Deployment
+        if: steps.check-aws.outputs.configured == 'true'
+        run: |
+          echo "🚀 Triggering deployment on AWS App Runner..."
+          aws apprunner start-deployment --service-arn "${{ secrets.AWS_APP_RUNNER_SERVICE_ARN }}"
+          echo "✅ AWS App Runner deployment initiated successfully!"
+

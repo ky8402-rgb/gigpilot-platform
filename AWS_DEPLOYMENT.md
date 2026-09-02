@@ -70,43 +70,48 @@ Regardless of the method chosen, prepare these environment variables:
 
 ---
 
-## Option 1: AWS App Runner (Recommended & Fastest)
+## Automated Backend Deployment on AWS App Runner (with `apprunner.yaml`)
 
-AWS App Runner connects directly to your GitHub repository or Docker container, manages traffic, scales automatically, and provisions free SSL certificates.
+AWS App Runner provides 100% automated backend deployment on every `git push`. The repository now includes the native `apprunner.yaml` configuration file.
 
-### Step 1: Open AWS App Runner Console
-1. Navigate to **[AWS App Runner Console](https://console.aws.amazon.com/apprunner)**.
-2. Click **Create service**.
+### Step 1: Create the Backend Service
+1. Navigate to the **[AWS App Runner Console](https://console.aws.amazon.com/apprunner)**.
+2. Click **Create an App Runner service**.
 
-### Step 2: Source Code Provider
+### Step 2: Connect Repository & Enable Auto-Deploy
 1. Under **Repository type**, select **Source code repository**.
-2. Click **Add new** to connect your GitHub account.
-3. Select repository: **`ky8402-rgb/gigpilot-platform`**.
-4. Set branch: **`main`**.
-5. Under **Deployment trigger**, select **Automatic** (deploy on every `git push`).
+2. Connect your GitHub account and select repository: **`ky8402-rgb/gigpilot-platform`**.
+3. Branch: **`main`**.
+4. Under **Deployment trigger**, select **Automatic** (this automatically triggers a new deployment on every Git push).
 
-### Step 3: Configure Build
-- **Runtime**: `Node.js 20` (or select `Dockerfile` if using container build)
-- **Build command**: `npm run build`
-- **Start command**: `npm start`
-- **Port**: `3000`
+### Step 3: Configure using `apprunner.yaml`
+1. Under **Configuration file**, select **Use a configuration file**.
+   - App Runner will automatically read `apprunner.yaml` from your repository root!
+   - It automatically runs:
+     ```bash
+     npm ci || npm install
+     npm run build
+     node dist/server.cjs
+     ```
+   - Port: `3000`
 
-*(Or choose **Using a Dockerfile** — the included `Dockerfile` will automatically handle build and runtime).*
+### Step 4: Add Environment Variables
+Add your production variables in the App Runner console:
+- `NODE_ENV`: `production`
+- `DATABASE_URL`: `postgresql://kundanvision_postgres_user:V0n9FJhuJNh8DrbnHkUzLqQpnMRpaA5L@dpg-da8q9tm7bikc73d0ckbg-a.ohio-postgres.render.com/kundanvision_postgres`
+- `PAYPAL_CLIENT_ID`: `BAAv8rRenc5jlfD6eH_8pvgcU250jXTZCnyPKdBby13EAYRKhCempoPQ3Hj41GEfe2qBMu1P8ZslnbdkIc`
+- `PAYPAL_CLIENT_SECRET`: `EH8CcxBIVPvFhoAKbL-HN8l_jSdOYzlGA2oahgGs1wPV7bogYK_TE4hIOjPtzOVj-mOUUXVy8uMIt6-N`
+- `PAYPAL_MODE`: `live`
+- `GEMINI_API_KEY`: *(Your Google Gemini API Key)*
+- `AUTO_HEAL_ENABLED`: `true`
+- `ML_ENABLED`: `true`
 
-### Step 4: Configure Service & Environment Variables
-1. **Service name**: `gigpilot-platform`
-2. **Virtual CPU & Memory**: `1 vCPU, 2 GB` (sufficient for ML ops & express server)
-3. Under **Environment variables**, add all keys listed in the table above.
-4. Under **Health check**:
-   - **Protocol**: `HTTP`
-   - **Path**: `/api/health/ping`
-   - **Interval**: `10 seconds`
-   - **Timeout**: `5 seconds`
-   - **Healthy threshold**: `1`
-   - **Unhealthy threshold**: `3`
+### Step 5: Configure Health Check
+- Protocol: `HTTP`
+- Path: `/api/health/ping`
+- Interval: `10s`, Timeout: `5s`, Healthy threshold: `1`
 
-### Step 5: Review & Deploy
-Click **Create & deploy**. Within 3–4 minutes, AWS App Runner will provide your application's public HTTPS URL (e.g., `https://xyz.us-east-1.awsapprunner.com`).
+Click **Create & deploy**. Every future `git push origin main` will build and deploy the backend automatically!
 
 ---
 
