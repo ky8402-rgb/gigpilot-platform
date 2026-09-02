@@ -99,9 +99,15 @@ jobs:
         env:
           AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
           AWS_APP_RUNNER_SERVICE_ARN: ${{ secrets.AWS_APP_RUNNER_SERVICE_ARN }}
+          AWS_REGION: ${{ secrets.AWS_REGION }}
         run: |
           if [ -n "$AWS_ACCESS_KEY_ID" ] && [ -n "$AWS_APP_RUNNER_SERVICE_ARN" ]; then
             echo "configured=true" >> $GITHUB_OUTPUT
+            # Extract region automatically from ARN: arn:aws:apprunner:<region>:<account>:service/...
+            ARN_REGION=$(echo "$AWS_APP_RUNNER_SERVICE_ARN" | cut -d: -f4)
+            TARGET_REGION="${AWS_REGION:-${ARN_REGION:-us-east-1}}"
+            echo "region=$TARGET_REGION" >> $GITHUB_OUTPUT
+            echo "ℹ️ AWS Region configured: $TARGET_REGION"
           else
             echo "configured=false" >> $GITHUB_OUTPUT
             echo "ℹ️  AWS App Runner service ARN or credentials not set in GitHub secrets."
@@ -114,12 +120,20 @@ jobs:
         with:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-region: ${{ secrets.AWS_REGION || 'us-east-1' }}
+          aws-region: ${{ steps.check-aws.outputs.region }}
 
       - name: Start AWS App Runner Deployment
         if: steps.check-aws.outputs.configured == 'true'
         run: |
           echo "🚀 Triggering deployment on AWS App Runner..."
-          aws apprunner start-deployment --service-arn "${{ secrets.AWS_APP_RUNNER_SERVICE_ARN }}"
-          echo "✅ AWS App Runner deployment initiated successfully!"
+          OPERATION_ID=$(aws apprunner start-deployment \
+            --service-arn "${{ secrets.AWS_APP_RUNNER_SERVICE_ARN }}" \
+            --query 'OperationId' \
+            --output text)
+          echo "✅ AWS App Runner deployment initiated successfully with Operation ID: $OPERATION_ID"
+          echo "🌐 Fetching service details..."
+          aws apprunner describe-service \
+            --service-arn "${{ secrets.AWS_APP_RUNNER_SERVICE_ARN }}" \
+            --query 'Service.{Status:Status, ServiceUrl:ServiceUrl, ServiceName:ServiceName}' \
+            --output table || true
 
