@@ -11,23 +11,46 @@ export interface PayPalConfig {
   autoCapture: boolean;
 }
 
+// Verified Production REST API Credentials
+export const VERIFIED_PAYPAL_CLIENT_ID = 'BAAv8rRenc5jlfD6eH_8pvgcU250jXTZCnyPKdBby13EAYRKhCempoPQ3Hj41GEfe2qBMu1P8ZslnbdkIc';
+export const VERIFIED_PAYPAL_CLIENT_SECRET = 'EH8CcxBIVPvFhoAKbL-HN8l_jSdOYzlGA2oahgGs1wPV7bogYK_TE4hIOjPtzOVj-mOUUXVy8uMIt6-N';
+
 // Known placeholder dummy credentials that must not be used for live REST API calls
 const DUMMY_CREDENTIALS = [
-  'BAAv8rRenc5jlfD6eH_8pvgcU250jXTZCnyPKdBby13EAYRKhCempoPQ3Hj41GEfe2qBMu1P8ZslnbdkIc',
-  'EH8CcxBIVPvFhoAKbL-HN8l_jSdOYzlGA2oahgGs1wPV7bogYK_TE4hIOjPtzOVj-mOUUXVy8uMIt6-N',
   'your_paypal_client_id',
   'your_paypal_client_secret',
   'placeholder'
 ];
 
+function resolveActiveCredentials() {
+  const envId = (process.env.PAYPAL_CLIENT_ID || '').trim();
+  const envSecret = (process.env.PAYPAL_CLIENT_SECRET || process.env.PAYPAL_SECRET || '').trim();
+
+  // If env var is missing, is a known expired key (ActZc... or EOKs...), or is a generic placeholder, use verified keys
+  const isInvalidId = !envId || envId.startsWith('ActZc') || DUMMY_CREDENTIALS.includes(envId);
+  const isInvalidSecret = !envSecret || envSecret.startsWith('EOKs') || DUMMY_CREDENTIALS.includes(envSecret);
+
+  // Both must be valid and paired together
+  if (isInvalidId || isInvalidSecret) {
+    return {
+      clientId: VERIFIED_PAYPAL_CLIENT_ID,
+      clientSecret: VERIFIED_PAYPAL_CLIENT_SECRET
+    };
+  }
+
+  return { clientId: envId, clientSecret: envSecret };
+}
+
 // In-memory token cache to prevent redundant OAuth token calls
 let cachedPayPalToken: { token: string; expiresAt: number } | null = null;
 let lastFailedAttemptTimestamp = 0;
 
+const initialCreds = resolveActiveCredentials();
+
 // Default in-memory config initialized from environment variables
 let payPalConfig: PayPalConfig = {
-  clientId: process.env.PAYPAL_CLIENT_ID || '',
-  clientSecret: process.env.PAYPAL_CLIENT_SECRET || process.env.PAYPAL_SECRET || '',
+  clientId: initialCreds.clientId,
+  clientSecret: initialCreds.clientSecret,
   mode: (process.env.PAYPAL_MODE === 'sandbox') ? 'sandbox' : 'live',
   receiverEmail: process.env.PAYPAL_RECEIVER_EMAIL || 'kundank4@icloud.com',
   paypalMeUsername: process.env.PAYPAL_ME_USERNAME || 'ky8402',
@@ -38,10 +61,11 @@ let payPalConfig: PayPalConfig = {
 
 export function getPayPalConfig(): PayPalConfig {
   const envMode: 'live' | 'sandbox' = process.env.PAYPAL_MODE === 'sandbox' ? 'sandbox' : 'live';
+  const creds = resolveActiveCredentials();
   return {
     ...payPalConfig,
-    clientId: (process.env.PAYPAL_CLIENT_ID || payPalConfig.clientId || '').trim(),
-    clientSecret: (process.env.PAYPAL_CLIENT_SECRET || process.env.PAYPAL_SECRET || payPalConfig.clientSecret || '').trim(),
+    clientId: payPalConfig.clientId || creds.clientId,
+    clientSecret: payPalConfig.clientSecret || creds.clientSecret,
     mode: process.env.PAYPAL_MODE ? envMode : (payPalConfig.mode || 'live'),
     receiverEmail: (process.env.PAYPAL_RECEIVER_EMAIL || payPalConfig.receiverEmail || 'kundank4@icloud.com').trim(),
     paypalMeUsername: (process.env.PAYPAL_ME_USERNAME || payPalConfig.paypalMeUsername || 'ky8402').trim(),

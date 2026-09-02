@@ -48,6 +48,7 @@ import { clearBidsCache, apiCacheMiddleware, getCacheStats } from "./server/redi
 import { selfHealer, supportSystem, metricsRegistry, predictiveHealer } from "./server/selfHealing.js";
 import { diagnosticEngine, advancedResolutionEngine } from "./server/diagnosticEngine.js";
 import { snapshotService, MAX_SUCCESSFUL_BACKUPS } from "./server/snapshotService.js";
+import { getPayPalConfig } from "./server/paypal.js";
 import {
   proposalGenerationQueue,
   reportProcessingQueue,
@@ -396,11 +397,12 @@ app.get("/api/health", async (req, res) => {
     // Additional telemetry metadata for backward-compatibility with UI modules
     const geminiKey = process.env.GEMINI_API_KEY || '';
     const hasGemini = Boolean(geminiKey && geminiKey.trim().length > 0);
-    const payPalEmail = process.env.PAYPAL_RECEIVER_EMAIL || 'kundank4@icloud.com';
-    const payPalMe = process.env.PAYPAL_ME_USERNAME || 'ky8402';
-    const payPalClientId = process.env.PAYPAL_CLIENT_ID || '';
-    const payPalSecret = process.env.PAYPAL_CLIENT_SECRET || '';
-    const payPalMode = process.env.PAYPAL_MODE || 'live';
+    const payPalCfg = getPayPalConfig();
+    const payPalEmail = payPalCfg.receiverEmail;
+    const payPalMe = payPalCfg.paypalMeUsername;
+    const payPalClientId = payPalCfg.clientId;
+    const payPalSecret = payPalCfg.clientSecret;
+    const payPalMode = payPalCfg.mode;
     const hasPayPalCredentials = Boolean(payPalClientId && payPalSecret);
     const freelancerToken = process.env.FREELANCER_ACCESS_TOKEN || '';
     const hasFreelancer = Boolean(freelancerToken && freelancerToken.trim().length > 0);

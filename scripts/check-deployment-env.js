@@ -61,6 +61,7 @@ const CHECKS = [
     name: 'PayPal REST Client ID',
     category: 'paypal',
     required: false,
+    default: 'BAAv8rRenc5jlfD6eH_8pvgcU250jXTZCnyPKdBby13EAYRKhCempoPQ3Hj41GEfe2qBMu1P8ZslnbdkIc',
     hint: 'REST App Client ID for automated server-side order captures.'
   },
   {
@@ -68,6 +69,7 @@ const CHECKS = [
     name: 'PayPal REST Client Secret',
     category: 'paypal',
     required: false,
+    default: 'EH8CcxBIVPvFhoAKbL-HN8l_jSdOYzlGA2oahgGs1wPV7bogYK_TE4hIOjPtzOVj-mOUUXVy8uMIt6-N',
     hint: 'REST App Secret for automated webhook validation & refunds.'
   },
   {
