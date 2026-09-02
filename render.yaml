@@ -1,19 +1,20 @@
 services:
-  # Web Service running the Express API and Vite React frontend
+  # Web Service running the Express API, self-healing loop, ML worker, and Vite React frontend
   - type: web
-    name: gigpilot-freelance-os
+    name: gigpilot-platform
     env: node
-    plan: starter
+    plan: free
     region: ohio
     buildCommand: npm run build
-    startCommand: npm run start
+    startCommand: npm start
+    healthCheckPath: /api/health/ping
     envVars:
       - key: NODE_ENV
         value: production
       - key: PORT
         value: "3000"
-      - key: WEB_CONCURRENCY
-        value: "4"
+      - key: BASE_URL
+        value: https://gigpilot-platform.onrender.com
       - key: DATABASE_URL
         sync: false
       - key: REDIS_URL
@@ -24,29 +25,17 @@ services:
         sync: false
       - key: PAYPAL_CLIENT_SECRET
         sync: false
+      - key: PAYPAL_RECEIVER_EMAIL
+        value: kundank4@icloud.com
+      - key: PAYPAL_ME_USERNAME
+        value: ky8402
       - key: PAYPAL_MODE
         value: live
       - key: FREELANCER_ACCESS_TOKEN
         sync: false
       - key: JWT_SECRET
-        sync: false
-
-  # Dedicated Background Worker for Hourly Sync, Auto-Bidding & AI Drafts
-  - type: worker
-    name: gigpilot-background-worker
-    env: node
-    plan: starter
-    region: ohio
-    buildCommand: npm run build
-    startCommand: node dist/worker.cjs
-    envVars:
-      - key: NODE_ENV
-        value: production
-      - key: DATABASE_URL
-        sync: false
-      - key: REDIS_URL
-        sync: false
-      - key: GEMINI_API_KEY
-        sync: false
-      - key: FREELANCER_ACCESS_TOKEN
-        sync: false
+        generateValue: true
+      - key: AUTO_HEAL_ENABLED
+        value: "true"
+      - key: ML_ENABLED
+        value: "true"

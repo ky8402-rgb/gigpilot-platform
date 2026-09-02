@@ -382,6 +382,11 @@ app.post("/api/webhooks/gig", express.json(), (req, res) => {
   }
 });
 
+// Lightweight Liveness / Ping Endpoint for Render & External Monitors
+app.get("/api/health/ping", (req, res) => {
+  res.status(200).json({ status: "ok", uptime: Math.floor(process.uptime()), timestamp: new Date().toISOString() });
+});
+
 // Unified System Health Check Endpoint (GET /api/health)
 app.get("/api/health", async (req, res) => {
   const startTime = Date.now();
