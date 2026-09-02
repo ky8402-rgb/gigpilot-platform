@@ -1,0 +1,7 @@
+node_modules
+.git
+.env*
+!scripts/check-deployment-env.js
+dist
+data/snapshots
+.DS_Store
