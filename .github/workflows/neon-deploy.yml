@@ -1,0 +1,50 @@
+name: Push Database Schema to Neon
+
+on:
+  push:
+    branches:
+      - main
+      - master
+    paths:
+      - 'prisma/**'
+      - '.github/workflows/neon-deploy.yml'
+  workflow_dispatch:
+
+concurrency:
+  group: neon-migration-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  migrate-to-neon:
+    name: Sync Schema & Migrate to Neon PostgreSQL
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+
+      - name: Install Dependencies
+        run: npm ci || npm install --legacy-peer-deps
+
+      - name: Verify DATABASE_URL secret
+        run: |
+          if [ -z "${{ secrets.DATABASE_URL }}" ]; then
+            echo "::error::DATABASE_URL secret is missing in GitHub Repository Settings. Please add DATABASE_URL in Settings -> Secrets and variables -> Actions."
+            exit 1
+          fi
+
+      - name: Push Prisma Schema to Neon Database
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: |
+          echo "Syncing schema to Neon PostgreSQL..."
+          npx prisma db push --accept-data-loss --skip-generate
+          npx prisma generate
+          echo "Successfully pushed database schema to Neon!"

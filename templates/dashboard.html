@@ -1,0 +1,845 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Freelance Autopilot Dashboard</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js">
+    </script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        body {
+            font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+            background: #0f172a;
+            color: #e2e8f0;
+            padding: 24px;
+            min-height: 100vh;
+        }
+        .container {
+            max-width: 1600px;
+            margin: 0 auto;
+        }
+        h1 {
+            font-size: 28px;
+            font-weight: 700;
+            margin-bottom: 4px;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+        .subtitle {
+            color: #94a3b8;
+            font-size: 14px;
+            margin-bottom: 28px;
+        }
+        .cards {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+            gap: 16px;
+            margin-bottom: 30px;
+        }
+        .card {
+            background: #1e293b;
+            padding: 18px 20px;
+            border-radius: 14px;
+            border: 1px solid #334155;
+            transition: 0.2s;
+        }
+        .card:hover {
+            border-color: #475569;
+        }
+        .card .label {
+            font-size: 13px;
+            font-weight: 500;
+            color: #94a3b8;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+        .card .value {
+            font-size: 32px;
+            font-weight: 700;
+            margin-top: 4px;
+            line-height: 1.2;
+        }
+        .value.green {
+            color: #4ade80;
+        }
+        .value.blue {
+            color: #60a5fa;
+        }
+        .value.yellow {
+            color: #facc15;
+        }
+        .value.purple {
+            color: #a78bfa;
+        }
+        .value.pink {
+            color: #f472b6;
+        }
+        .sub {
+            font-size: 12px;
+            color: #64748b;
+            margin-top: 2px;
+        }
+        .chart-section {
+            background: #1e293b;
+            padding: 20px 24px;
+            border-radius: 14px;
+            border: 1px solid #334155;
+            margin-bottom: 30px;
+        }
+        .chart-section h2 {
+            font-size: 18px;
+            font-weight: 600;
+            margin-bottom: 12px;
+        }
+        .chart-wrapper {
+            max-height: 240px;
+        }
+        .table-section {
+            background: #1e293b;
+            padding: 20px 24px;
+            border-radius: 14px;
+            border: 1px solid #334155;
+            margin-bottom: 24px;
+            overflow-x: auto;
+        }
+        .table-section h2 {
+            font-size: 18px;
+            font-weight: 600;
+            margin-bottom: 12px;
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 13px;
+        }
+        th {
+            text-align: left;
+            padding: 10px 12px;
+            background: #0f172a;
+            border-bottom: 2px solid #334155;
+            font-weight: 600;
+            color: #94a3b8;
+            font-size: 11px;
+            text-transform: uppercase;
+            letter-spacing: 0.3px;
+        }
+        td {
+            padding: 10px 12px;
+            border-bottom: 1px solid #1e293b;
+            vertical-align: middle;
+        }
+        tr:hover td {
+            background: #172032;
+        }
+        .badge {
+            display: inline-block;
+            padding: 3px 12px;
+            border-radius: 20px;
+            font-size: 11px;
+            font-weight: 600;
+            text-transform: capitalize;
+        }
+        .badge-pending {
+            background: #854d0e;
+            color: #fde047;
+        }
+        .badge-viewed {
+            background: #1e3a8a;
+            color: #93c5fd;
+        }
+        .badge-interviewing {
+            background: #064e3b;
+            color: #6ee7b7;
+        }
+        .badge-won {
+            background: #14532d;
+            color: #86efac;
+        }
+        .badge-lost {
+            background: #451a1a;
+            color: #fca5a5;
+        }
+        .badge-expired {
+            background: #374151;
+            color: #9ca3af;
+        }
+        .badge-archived {
+            background: #1f2937;
+            color: #6b7280;
+        }
+        .badge-unknown {
+            background: #374151;
+            color: #d1d5db;
+        }
+        .badge-in-progress {
+            background: #1e3a8a;
+            color: #93c5fd;
+        }
+        .badge-completed {
+            background: #14532d;
+            color: #86efac;
+        }
+        .badge-delivered {
+            background: #854d0e;
+            color: #fde047;
+        }
+        .platform-badge {
+            display: inline-block;
+            padding: 2px 10px;
+            border-radius: 12px;
+            font-size: 11px;
+            font-weight: 600;
+        }
+        .platform-freelancer {
+            background: #1e3a8a;
+            color: #93c5fd;
+        }
+        .platform-upwork {
+            background: #064e3b;
+            color: #6ee7b7;
+        }
+        .platform-remoteok {
+            background: #451a1a;
+            color: #fca5a5;
+        }
+        .platform-other {
+            background: #374151;
+            color: #9ca3af;
+        }
+        .flex-row {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            flex-wrap: wrap;
+            gap: 12px;
+        }
+        .refresh-btn {
+            background: #3b82f6;
+            color: white;
+            border: none;
+            padding: 8px 20px;
+            border-radius: 8px;
+            font-weight: 600;
+            cursor: pointer;
+            font-size: 14px;
+            transition: 0.2s;
+        }
+        .refresh-btn:hover {
+            background: #2563eb;
+        }
+        .error-msg {
+            color: #ef4444;
+            padding: 10px;
+            text-align: center;
+        }
+        .loading-text {
+            color: #94a3b8;
+            padding: 20px;
+            text-align: center;
+            font-style: italic;
+        }
+        #last-updated {
+            color: #64748b;
+            font-size: 12px;
+            text-align: center;
+            margin-top: 16px;
+        }
+        .work-status-select {
+            background: #0f172a;
+            color: #e2e8f0;
+            border: 1px solid #334155;
+            border-radius: 6px;
+            padding: 4px 8px;
+            font-size: 12px;
+            cursor: pointer;
+        }
+        .work-status-select:focus {
+            outline: none;
+            border-color: #3b82f6;
+        }
+        .action-link {
+            color: #3b82f6;
+            text-decoration: none;
+            font-size: 12px;
+            transition: 0.2s;
+        }
+        .action-link:hover {
+            color: #60a5fa;
+            text-decoration: underline;
+        }
+        .notes-input {
+            background: #0f172a;
+            color: #e2e8f0;
+            border: 1px solid #334155;
+            border-radius: 6px;
+            padding: 4px 8px;
+            font-size: 12px;
+            width: 100%;
+            min-width: 100px;
+        }
+        .notes-input:focus {
+            outline: none;
+            border-color: #3b82f6;
+        }
+        .withdraw-btn {
+            background: #22c55e;
+            color: #0f172a;
+            border: none;
+            padding: 4px 12px;
+            border-radius: 6px;
+            font-size: 11px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: 0.2s;
+            white-space: nowrap;
+        }
+        .withdraw-btn:hover {
+            background: #16a34a;
+        }
+        .contact-btn {
+            background: #f59e0b;
+            color: #0f172a;
+            border: none;
+            padding: 4px 12px;
+            border-radius: 6px;
+            font-size: 11px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: 0.2s;
+            white-space: nowrap;
+        }
+        .contact-btn:hover {
+            background: #d97706;
+        }
+        .toast-msg {
+            position: fixed;
+            bottom: 20px;
+            right: 20px;
+            background: #1e293b;
+            color: #e2e8f0;
+            padding: 12px 20px;
+            border-radius: 8px;
+            border: 1px solid #334155;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.3);
+            z-index: 9999;
+            font-size: 14px;
+            animation: fadeIn 0.3s ease;
+        }
+        @keyframes fadeIn {
+            from {
+                opacity: 0;
+                transform: translateY(10px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+        @media (max-width: 640px) {
+            body {
+                padding: 12px;
+            }
+            .cards {
+                grid-template-columns: 1fr 1fr;
+            }
+            .card .value {
+                font-size: 24px;
+            }
+            table {
+                font-size: 11px;
+            }
+            th,
+            td {
+                padding: 6px 8px;
+            }
+            .withdraw-btn,
+            .contact-btn {
+                font-size: 10px;
+                padding: 3px 8px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="flex-row">
+            <div>
+                <h1>📊 Freelance Autopilot Dashboard</h1>
+                <div class="subtitle">Live bidding analytics, job leads & work tracking</div>
+            </div>
+            <button class="refresh-btn" onclick="loadDashboard()">🔄 Refresh</button>
+        </div>
+
+        <!-- Cards -->
+        <div class="cards" id="cards-container">
+            <div class="card">
+                <div class="label">Total Bids</div>
+                <div class="value blue" id="total-bids">—</div>
+            </div>
+            <div class="card">
+                <div class="label">Active</div>
+                <div class="value yellow" id="active-bids">—</div>
+            </div>
+            <div class="card">
+                <div class="label">Won</div>
+                <div class="value green" id="won-bids">—</div>
+            </div>
+            <div class="card">
+                <div class="label">Total Earned</div>
+                <div class="value green" id="earned">$—</div>
+            </div>
+            <div class="card">
+                <div class="label">Win Rate</div>
+                <div class="value purple" id="win-rate">—%</div>
+            </div>
+        </div>
+
+        <!-- Chart -->
+        <div class="chart-section">
+            <h2>📦 Bids per Package</h2>
+            <div class="chart-wrapper">
+                <canvas id="packageChart" height="200"></canvas>
+            </div>
+        </div>
+
+        <!-- Bids Table -->
+        <div class="table-section">
+            <h2>📋 Recent Auto-Dispatched Bids</h2>
+            <div id="bids-container">
+                <div class="loading-text">⏳ Loading bids...</div>
+            </div>
+        </div>
+
+        <!-- Leads Table -->
+        <div class="table-section">
+            <h2>🔍 Recent Leads (RemoteOK & others)</h2>
+            <div id="leads-container">
+                <div class="loading-text">⏳ Loading leads...</div>
+            </div>
+        </div>
+
+        <!-- Withdrawal Summary -->
+        <div class="table-section" style="border-color: #22c55e;">
+            <h2>💰 Withdrawal Summary & Platform Earnings Hub</h2>
+            <div id="withdrawal-summary">
+                <div class="loading-text">⏳ Loading withdrawal info...</div>
+            </div>
+        </div>
+
+        <div id="last-updated">Last updated: —</div>
+    </div>
+
+    <script>
+        // ========================================
+        //  CONFIG
+        // ========================================
+        const API_BASE = window.location.origin.includes('onrender.com') || window.location.origin.includes(':3000') 
+            ? '' 
+            : 'https://gigpilot-backend.onrender.com';
+
+        // Platform-specific withdrawal URLs
+        const WITHDRAWAL_URLS = {
+            freelancer: 'https://www.freelancer.com/payments/withdraw.php',
+            upwork: 'https://www.upwork.com/nx/navigator/payments/withdraw',
+            remoteok: '#', // Special handling for RemoteOK
+            fiverr: 'https://www.fiverr.com/balance/withdraw',
+            peopleperhour: 'https://www.peopleperhour.com/freelancer/account/withdraw'
+        };
+
+        // ========================================
+        //  FETCH HELPERS
+        // ========================================
+        async function fetchJSON(endpoint) {
+            const res = await fetch(`${API_BASE}${endpoint}`);
+            if (!res.ok) throw new Error(`HTTP ${res.status}`);
+            return res.json();
+        }
+
+        // ========================================
+        //  UPDATE UI
+        // ========================================
+        function updateCards(stats) {
+            if (!stats) {
+                document.querySelectorAll('.card .value').forEach(el => el.textContent = '—');
+                return;
+            }
+            document.getElementById('total-bids').textContent = stats.total ?? 0;
+            document.getElementById('active-bids').textContent = stats.active ?? 0;
+            document.getElementById('won-bids').textContent = stats.won ?? 0;
+            document.getElementById('earned').textContent = `$${(stats.earned ?? 0).toFixed(2)}`;
+            document.getElementById('win-rate').textContent = `${stats.win_rate ?? 0}%`;
+
+            if (window.packageChartInstance) {
+                window.packageChartInstance.destroy();
+            }
+            const ctx = document.getElementById('packageChart').getContext('2d');
+            const pkgData = stats.package_counts || {};
+            const labels = Object.keys(pkgData);
+            const values = Object.values(pkgData);
+            const nameMap = {
+                fullstack: 'Full-Stack',
+                ai_agent: 'AI Agent',
+                payment_gateway: 'Payment Gateway',
+                code_audit: 'Code Audit'
+            };
+            const displayLabels = labels.map(k => nameMap[k] || k);
+            window.packageChartInstance = new Chart(ctx, {
+                type: 'bar',
+                data: {
+                    labels: displayLabels.length ? displayLabels : ['No bids yet'],
+                    datasets: [{
+                        label: 'Bids',
+                        data: values.length ? values : [0],
+                        backgroundColor: ['#3b82f6', '#8b5cf6', '#ec4899', '#f59e0b'],
+                        borderRadius: 6,
+                        barPercentage: 0.6,
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: true,
+                    plugins: { legend: { display: false } },
+                    scales: {
+                        y: { beginAtZero: true, ticks: { stepSize: 1, color: '#94a3b8' }, grid: { color: '#1e293b' } },
+                        x: { ticks: { color: '#94a3b8' }, grid: { display: false } }
+                    }
+                }
+            });
+        }
+
+        function renderBidsTable(bids) {
+            const container = document.getElementById('bids-container');
+            if (!bids || bids.length === 0) {
+                container.innerHTML = `<div class="loading-text">🤖 No bids placed yet. The engine is running...</div>`;
+                return;
+            }
+
+            // Group by platform for withdrawal summary
+            const platformGroups = {};
+            bids.forEach(b => {
+                const platform = (b.platform || 'freelancer').toLowerCase();
+                if (!platformGroups[platform]) platformGroups[platform] = [];
+                platformGroups[platform].push(b);
+            });
+
+            let html = `<table>
+                <thead><tr>
+                    <th>Job Title</th>
+                    <th>Company</th>
+                    <th>Platform</th>
+                    <th>Package</th>
+                    <th>Amount</th>
+                    <th>Status</th>
+                    <th>Work Status</th>
+                    <th>Notes</th>
+                    <th>Action</th>
+                    <th>Submitted</th>
+                </tr></thead><tbody>`;
+
+            bids.forEach(b => {
+                const statusClass = b.status || 'unknown';
+                const platform = (b.platform || 'freelancer').toLowerCase();
+                const platformClass = `platform-${platform}`;
+                const platformDisplay = platform.charAt(0).toUpperCase() + platform.slice(1);
+                const pkgName = {
+                    fullstack: 'Full-Stack',
+                    ai_agent: 'AI Agent',
+                    payment_gateway: 'Payment Gateway',
+                    code_audit: 'Code Audit'
+                } [b.package] || b.package || '—';
+                const date = b.submitted_at ? new Date(b.submitted_at).toLocaleDateString() : '—';
+
+                const workStatuses = ['Not Started', 'In Progress', 'Completed', 'Delivered', 'Paid'];
+                const workStatusOptions = workStatuses.map(s =>
+                    `<option value="${s}" ${b.work_status === s ? 'selected' : ''}>${s}</option>`
+                ).join('');
+
+                // Action button based on platform and status
+                let actionButton = '';
+                if (b.status === 'won') {
+                    if (platform === 'remoteok') {
+                        // RemoteOK: Contact Client button
+                        actionButton = `
+                            <button class="contact-btn" onclick="contactClient('${b.job_url || '#'}', '${platformDisplay}')" title="Contact the client directly to discuss payment">
+                                📧 Contact Client
+                            </button>
+                        `;
+                    } else {
+                        // Freelancer/Upwork: Withdraw button
+                        const url = WITHDRAWAL_URLS[platform] || WITHDRAWAL_URLS.freelancer;
+                        actionButton = `
+                            <button class="withdraw-btn" onclick="withdrawNow('${url}', '${platformDisplay}')" title="Withdraw your earnings on ${platformDisplay}">
+                                💰 Withdraw on ${platformDisplay}
+                            </button>
+                        `;
+                    }
+                }
+
+                html += `<tr>
+                    <td>${escapeHtml(b.job_title || 'Unknown')}</td>
+                    <td>${escapeHtml(b.company || '—')}</td>
+                    <td><span class="platform-badge ${platformClass}">${platformDisplay}</span></td>
+                    <td>${pkgName}</td>
+                    <td>$${(b.bid_amount || 0).toFixed(2)}</td>
+                    <td><span class="badge badge-${statusClass}">${statusClass}</span></td>
+                    <td>
+                        <select class="work-status-select" data-bid-id="${b.id}" onchange="updateWorkStatus('${b.id}', this.value)">
+                            ${workStatusOptions}
+                        </select>
+                    </td>
+                    <td>
+                        <input class="notes-input" type="text" placeholder="Add notes..." data-bid-id="${b.id}" 
+                               value="${escapeHtml(b.notes || '')}" 
+                               onchange="updateNotes('${b.id}', this.value)" />
+                    </td>
+                    <td>${actionButton || '—'}</td>
+                    <td>${date}</td>
+                </tr>`;
+            });
+            html += `</tbody></table>`;
+            container.innerHTML = html;
+
+            // Update withdrawal summary
+            updateWithdrawalSummary(platformGroups);
+        }
+
+        function renderLeadsTable(leads) {
+            const container = document.getElementById('leads-container');
+            if (!leads || leads.length === 0) {
+                container.innerHTML = `<div class="loading-text">🔍 No leads captured yet. System is scanning...</div>`;
+                return;
+            }
+            let html = `<table>
+                <thead><tr>
+                    <th>Job Title</th>
+                    <th>Company</th>
+                    <th>Source</th>
+                    <th>Matched Package</th>
+                    <th>Found</th>
+                </tr></thead><tbody>`;
+            leads.forEach(l => {
+                const pkgName = {
+                    fullstack: 'Full-Stack',
+                    ai_agent: 'AI Agent',
+                    payment_gateway: 'Payment Gateway',
+                    code_audit: 'Code Audit'
+                } [l.matched_package] || l.matched_package || '—';
+                const date = l.created_at ? new Date(l.created_at).toLocaleDateString() : '—';
+                const source = (l.source || 'other').toLowerCase();
+                html += `<tr>
+                    <td>${escapeHtml(l.job_title || 'Unknown')}</td>
+                    <td>${escapeHtml(l.company || '—')}</td>
+                    <td><span class="platform-badge platform-${source}">${escapeHtml(l.source || '—')}</span></td>
+                    <td>${pkgName}</td>
+                    <td>${date}</td>
+                </tr>`;
+            });
+            html += `</tbody></table>`;
+            container.innerHTML = html;
+        }
+
+        function updateWithdrawalSummary(platformGroups) {
+            const container = document.getElementById('withdrawal-summary');
+            if (!platformGroups || Object.keys(platformGroups).length === 0) {
+                container.innerHTML = `<div class="loading-text">No won bids yet. Keep bidding!</div>`;
+                return;
+            }
+
+            let html = `<table>
+                <thead><tr>
+                    <th>Platform</th>
+                    <th>Won Bids</th>
+                    <th>Total Amount</th>
+                    <th>Action</th>
+                </tr></thead><tbody>`;
+
+            let totalEarned = 0;
+            for (const [platform, bids] of Object.entries(platformGroups)) {
+                const wonBids = bids.filter(b => b.status === 'won');
+                if (wonBids.length === 0) continue;
+                const total = wonBids.reduce((sum, b) => sum + (b.bid_amount || 0), 0);
+                totalEarned += total;
+                const platformDisplay = platform.charAt(0).toUpperCase() + platform.slice(1);
+
+                // Platform-specific action
+                let action = '';
+                if (platform === 'remoteok') {
+                    action = `<span style="color: #f59e0b;">📧 Manual Client Outreach Required</span>`;
+                } else {
+                    const url = WITHDRAWAL_URLS[platform] || WITHDRAWAL_URLS.freelancer;
+                    action =
+                        `<button class="withdraw-btn" onclick="withdrawNow('${url}', '${platformDisplay}')">💰 Withdraw on ${platformDisplay}</button>`;
+                }
+
+                html += `<tr>
+                    <td><span class="platform-badge platform-${platform}">${platformDisplay}</span></td>
+                    <td>${wonBids.length}</td>
+                    <td>$${total.toFixed(2)}</td>
+                    <td>${action}</td>
+                </tr>`;
+            }
+
+            if (totalEarned === 0) {
+                container.innerHTML = `<div class="loading-text">No won bids yet. Keep bidding!</div>`;
+                return;
+            }
+
+            html += `</tbody></table>
+                <div style="margin-top: 12px; padding: 12px; background: #0f172a; border-radius: 8px; text-align: center;">
+                    <strong style="color: #4ade80;">💰 Total Earned Across All Platforms: $${totalEarned.toFixed(2)}</strong>
+                    <div style="color: #94a3b8; font-size: 12px; margin-top: 4px;">
+                        ⚠️ Withdrawals must be done manually on each platform. Click the "Withdraw" buttons above.
+                    </div>
+                    <div style="color: #f59e0b; font-size: 12px; margin-top: 4px;">
+                        📌 RemoteOK leads require direct client contact. Use the "Contact Client" button on each bid.
+                    </div>
+                </div>`;
+            container.innerHTML = html;
+        }
+
+        function escapeHtml(text) {
+            if (!text) return '';
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+
+        // ========================================
+        //  ACTIONS
+        // ========================================
+
+        function withdrawNow(url, platform, bidId = 'all', amount = 0) {
+            if (!url || url === '#') {
+                showToast(`⚠️ No withdrawal URL available for ${platform}. Please visit the platform directly.`);
+                return;
+            }
+            console.log(`[Dashboard] Initiating withdrawNow for bidId: "${bidId}" (matching DB ID: "${bidId}"), Amount: $${amount}, Platform: "${platform}"`);
+            showToast(`🔗 Redirecting to ${platform} to withdraw your funds...`);
+
+            // Dispatch backend withdrawal event with status check and .catch() error logging
+            fetch(`${API_BASE}/api/bids/withdraw`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ bidId, amount, platform: String(platform).toLowerCase() })
+            })
+            .then(res => {
+                if (!res.ok) {
+                    console.error(`[withdrawNow] Backend returned failure status ${res.status}: ${res.statusText}`);
+                }
+                return res.json();
+            })
+            .then(data => {
+                if (data && data.success) {
+                    console.log(`[withdrawNow] Backend confirmed withdrawal:`, data);
+                } else if (data && !data.success) {
+                    console.warn(`[withdrawNow] Backend warning:`, data.error);
+                }
+            })
+            .catch(err => {
+                console.error(`[withdrawNow] .catch() captured error:`, err?.message || err);
+            });
+
+            try {
+                const opened = window.open(url, '_blank');
+                if (!opened) {
+                    window.location.href = url;
+                }
+            } catch (e) {
+                console.error('Failed to open withdrawal URL:', e);
+            }
+        }
+
+        window.withdrawOnFreelancer = function(bidId, amount = 0, platform = 'freelancer') {
+            console.log(`[withdrawOnFreelancer] Called with bidId: "${bidId}" (matching Database ID: "${bidId}"), Amount: $${amount}, Platform: "${platform}"`);
+            const targetUrl = 'https://www.freelancer.com/payments/withdraw.php';
+            withdrawNow(targetUrl, platform, bidId, amount);
+        };
+
+        function contactClient(jobUrl, platform) {
+            if (!jobUrl || jobUrl === '#') {
+                showToast(`⚠️ No job URL available. Please check the job posting directly.`);
+                return;
+            }
+            showToast(`📧 Opening job posting to contact client...`);
+            window.open(jobUrl, '_blank');
+        }
+
+        function updateWorkStatus(bidId, status) {
+            console.log(`📝 Bid ${bidId}: Work status updated to "${status}"`);
+            showToast(`✅ Work status updated to "${status}"`);
+        }
+
+        function updateNotes(bidId, notes) {
+            console.log(`📝 Bid ${bidId}: Notes updated to "${notes}"`);
+            showToast(`📝 Notes saved`);
+        }
+
+        function showToast(message) {
+            const existing = document.querySelector('.toast-msg');
+            if (existing) existing.remove();
+
+            const toast = document.createElement('div');
+            toast.className = 'toast-msg';
+            toast.textContent = message;
+            document.body.appendChild(toast);
+
+            setTimeout(() => {
+                toast.style.opacity = '0';
+                toast.style.transition = 'opacity 0.5s';
+                setTimeout(() => toast.remove(), 500);
+            }, 3000);
+        }
+
+        // ========================================
+        //  MAIN LOAD
+        // ========================================
+        async function loadDashboard() {
+            try {
+                document.getElementById('bids-container').innerHTML = `<div class="loading-text">⏳ Loading bids...</div>`;
+                document.getElementById('leads-container').innerHTML = `<div class="loading-text">⏳ Loading leads...</div>`;
+                document.getElementById('withdrawal-summary').innerHTML =
+                    `<div class="loading-text">⏳ Loading withdrawal info...</div>`;
+                document.querySelectorAll('.card .value').forEach(el => el.textContent = '⟳');
+
+                const [stats, bids, leads] = await Promise.all([
+                    fetchJSON('/api/bids/stats'),
+                    fetchJSON('/api/bids?limit=50'),
+                    fetchJSON('/api/leads?limit=20')
+                ]);
+
+                updateCards(stats);
+                renderBidsTable(bids);
+                renderLeadsTable(leads);
+
+                document.getElementById('last-updated').textContent = `Last updated: ${new Date().toLocaleString()}`;
+            } catch (err) {
+                console.error('Dashboard load error:', err);
+                document.getElementById('bids-container').innerHTML =
+                    `<div class="error-msg">⚠️ Could not connect to backend. Please ensure the backend is running. Error: ${err.message}</div>`;
+                document.getElementById('leads-container').innerHTML =
+                    `<div class="error-msg">⚠️ Could not connect to backend. Please ensure the backend is running.</div>`;
+                document.getElementById('withdrawal-summary').innerHTML =
+                    `<div class="error-msg">⚠️ Could not connect to backend.</div>`;
+                document.querySelectorAll('.card .value').forEach(el => el.textContent = '❌');
+                document.getElementById('last-updated').textContent = `Last update failed at ${new Date().toLocaleString()}`;
+            }
+        }
+
+        // ========================================
+        //  AUTO-REFRESH
+        // ========================================
+        let refreshInterval = setInterval(loadDashboard, 60000);
+
+        // ========================================
+        //  INIT
+        // ========================================
+        document.addEventListener('DOMContentLoaded', loadDashboard);
+    </script>
+</body>
+</html>

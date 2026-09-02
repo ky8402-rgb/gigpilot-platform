@@ -1,0 +1,116 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id                    String        @id @default(cuid())
+  email                 String        @unique
+  passwordHash          String
+  credits               Int           @default(0) // Pay-per-bid or subscription credits
+  subscriptionStatus    String        @default("inactive") // active, expired, trialing
+  createdAt             DateTime      @default(now())
+  proposals             Proposal[]
+  transactions          Transaction[]
+  workOrders            WorkOrder[]
+}
+
+model Transaction {
+  id              String   @id @default(cuid())
+  userId          String?
+  user            User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+  amount          Float    // in USD
+  currency        String   @default("USD")
+  creditsBought   Int      @default(0)
+  paypalOrderId   String?
+  gateway         String   @default("paypal") // Standard PayPal REST Gateway
+  status          String   @default("COMPLETED")
+  description     String?
+  createdAt       DateTime @default(now())
+}
+
+model PayPalOrder {
+  id            String   @id @default(cuid())
+  orderId       String   @unique
+  amount        Float
+  currency      String   @default("USD")
+  payerName     String?
+  payerEmail    String?
+  description   String?
+  status        String   @default("COMPLETED") // CREATED, APPROVED, COMPLETED, VOIDED
+  fee           Float    @default(0.0)
+  net           Float    @default(0.0)
+  paymentSource String   @default("paypal_wallet")
+  captureId     String?
+  workOrderId   String?
+  createdAt     DateTime @default(now())
+}
+
+model WorkOrder {
+  id              String   @id @default(cuid())
+  userId          String?
+  user            User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+  title           String
+  clientName      String
+  clientEmail     String?
+  amount          Float    // in USD
+  currency        String   @default("USD")
+  status          String   @default("IN_PROGRESS") // PENDING, IN_PROGRESS, COMPLETED, CANCELLED
+  platform        String   @default("DIRECT_PAYPAL")
+  paypalOrderId   String?  @unique
+  paypalCaptureId String?
+  description     String?
+  deliverables    String?
+  startDate       DateTime @default(now())
+  dueDate         DateTime?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+}
+
+model Proposal {
+  id                   String   @id @default(cuid())
+  userId               String
+  user                 User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  jobTitle             String
+  platform             String?
+  coverLetter          String
+  bidAmount            Float?
+  estimatedDays        Int?
+  hookSummary          String?
+  matchConfidenceScore Float?
+  status               String   @default("draft") // draft, submitted, accepted, rejected
+  createdAt            DateTime @default(now())
+  updatedAt            DateTime @updatedAt
+}
+
+model Bid {
+  id            String    @id @default(cuid())
+  jobTitle      String?
+  company       String?
+  clientName    String?
+  platform      String    @default("freelancer")
+  package       String?
+  amount        Float?
+  status        String    @default("pending") // pending, viewed, interviewing, won, lost
+  workStatus    String    @default("Not Started") // Not Started, In Progress, Completed, Delivered, Paid
+  notes         String?
+  jobUrl        String?
+  startedAt     DateTime? // Set this when the work status changes to "In Progress"
+  estimatedDays Int?      @default(7) // How many days you estimate the job will take
+  deadline      DateTime? // Fixed or calculated deadline
+  submittedAt   DateTime  @default(now())
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  @@index([workStatus])
+  @@index([createdAt])
+  @@index([deadline])
+  @@index([status])
+}

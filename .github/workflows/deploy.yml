@@ -1,0 +1,86 @@
+name: CI/CD Pipeline - Test, Build & Deploy
+
+on:
+  push:
+    branches:
+      - main
+      - master
+  pull_request:
+    branches:
+      - main
+      - master
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # --------------------------------------------------------------------------
+  # 1. Test, Lint & Compile Validation Job
+  # --------------------------------------------------------------------------
+  test-and-build:
+    name: Lint, Test & Compile
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Source Code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Node.js 20.x
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+
+      - name: Install Project Dependencies
+        run: npm ci || npm install --legacy-peer-deps
+
+      - name: Generate Prisma Client (if present)
+        run: |
+          if [ -f "prisma/schema.prisma" ]; then
+            npx prisma generate
+          fi
+
+      - name: Run Test Suite & Type Checking
+        run: npm test
+
+      - name: Run Production Build
+        run: npm run build
+
+  # --------------------------------------------------------------------------
+  # 2. Automated Production Deployment (Render)
+  # --------------------------------------------------------------------------
+  deploy-production:
+    name: Trigger Render Production Deployment
+    needs: test-and-build
+    if: (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master') && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Trigger Webhook Deploy to Render
+        env:
+          RENDER_DEPLOY_HOOK_URL: ${{ secrets.RENDER_DEPLOY_HOOK_URL }}
+        run: |
+          if [ -z "$RENDER_DEPLOY_HOOK_URL" ]; then
+            echo "ℹ️  [Render Deploy Hook]: RENDER_DEPLOY_HOOK_URL secret not configured in GitHub."
+            echo "👉 If your Render service has auto-deploy enabled on GitHub commits, Render is building automatically."
+            echo "👉 To trigger manual instant webhook deploys, add RENDER_DEPLOY_HOOK_URL to GitHub Repository Secrets."
+            exit 0
+          fi
+
+          echo "🚀 Triggering instant deployment on Render..."
+          RESPONSE=$(curl -s -w "\nHTTP_STATUS:%{http_code}" -X POST "$RENDER_DEPLOY_HOOK_URL")
+          HTTP_STATUS=$(echo "$RESPONSE" | grep "HTTP_STATUS" | cut -d':' -f2)
+          BODY=$(echo "$RESPONSE" | grep -v "HTTP_STATUS")
+
+          echo "Render Response: $BODY"
+
+          if [ "$HTTP_STATUS" -ge 200 ] && [ "$HTTP_STATUS" -lt 300 ]; then
+            echo "✅ Deployment successfully triggered on Render!"
+          else
+            echo "❌ Failed to trigger Render deploy hook. HTTP Status: $HTTP_STATUS"
+            exit 1
+          fi

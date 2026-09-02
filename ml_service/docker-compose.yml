@@ -1,0 +1,27 @@
+version: '3.8'
+
+services:
+  ml-service:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: self-healing-ml-service
+    ports:
+      - "8000:8000"
+    environment:
+      - DATABASE_URL=${DATABASE_URL:-postgresql://postgres:postgres@postgres:5432/postgres}
+      - MLFLOW_TRACKING_URI=/app/mlruns
+      - MODELS_DIR=/app/models
+    volumes:
+      - ml_models_data:/app/models
+      - ml_mlruns_data:/app/mlruns
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+volumes:
+  ml_models_data:
+  ml_mlruns_data:
