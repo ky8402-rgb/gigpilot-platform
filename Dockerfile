@@ -5,7 +5,7 @@ WORKDIR /app
 
 # Install dependencies first for efficient layer caching
 COPY package*.json ./
-RUN npm ci
+RUN npm ci || npm install
 
 # Copy source code and build
 COPY . .
@@ -24,7 +24,7 @@ RUN apk add --no-cache curl
 
 # Copy production dependencies and build artifacts
 COPY package*.json ./
-RUN npm ci --omit=dev && npm cache clean --force
+RUN (npm ci --omit=dev || npm install --omit=dev) && npm cache clean --force
 
 COPY --from=builder /app/dist ./dist
 COPY --from=builder /app/scripts ./scripts
