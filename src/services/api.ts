@@ -1,20 +1,24 @@
 import { FreelanceJob, FreelancerProfile, GeneratedProposal } from '../types';
 
 /**
- * Render Backend Base URL for GigPilot Autonomous Autopilot & Payment Gateway
+ * Render / Production Backend Base URL for GigPilot Autonomous Autopilot & Payment Gateway
  */
-export const BACKEND_BASE_URL = 'https://gigpilot-backend-g4j0.onrender.com';
+export const BACKEND_BASE_URL = 'https://gigpilot-platform.onrender.com';
 
 /**
- * Helper to dynamically resolve API base URL for Render, localhost:3000, or same-origin deployment
+ * Helper to dynamically resolve API base URL for Render, AWS Amplify, localhost:3000, or same-origin deployment
  */
 export function getApiBaseUrl(): string {
   const envUrl = (import.meta as any).env?.VITE_BACKEND_URL || (import.meta as any).env?.VITE_API_BASE_URL || (import.meta as any).env?.VITE_API_URL;
   if (envUrl && typeof envUrl === 'string' && envUrl.trim().length > 0) {
     return envUrl.trim().replace(/\/+$/, '');
   }
-  // If running in browser and on port 3000 or same origin Express+Vite
+  // If running in browser on AWS Amplify, CloudFront CDN, or GitHub Pages, route API calls to live backend
   if (typeof window !== 'undefined' && window.location) {
+    const host = window.location.hostname;
+    if (host.includes('amplifyapp.com') || host.includes('cloudfront.net') || host.includes('github.io')) {
+      return BACKEND_BASE_URL;
+    }
     return window.location.origin;
   }
   return 'http://localhost:3000';

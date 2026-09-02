@@ -6,9 +6,45 @@ Depending on your preference, choose one of the three primary deployment methods
 
 | Method | Best For | Difficulty | Cost |
 |---|---|---|---|
-| **Option 1: AWS App Runner (Recommended)** | Fully managed, serverless containers, auto-deploy from GitHub, automatic SSL | 🟢 Easiest | Free tier / Pay-per-vCPU-sec |
-| **Option 2: AWS EC2 (Virtual Server)** | Full root control, fixed monthly budget, custom background daemons | 🟡 Moderate | Free Tier eligible (t3.micro / t4g.small) |
-| **Option 3: AWS Elastic Beanstalk** | Traditional PaaS with managed load balancers and environment rollbacks | 🟡 Moderate | Free Tier eligible |
+| **Option 1: AWS Amplify Hosting** | Instant Git deployment for frontend, global CloudFront CDN, automatic SSL | 🟢 Easiest | Free Tier eligible |
+| **Option 2: AWS App Runner (Full-Stack)** | Fully managed, serverless containers (Express + ML daemons), auto-deploy | 🟢 Easiest (Full-Stack) | Free tier / Pay-per-vCPU-sec |
+| **Option 3: AWS EC2 (Virtual Server)** | Full root control, fixed monthly budget, custom background daemons | 🟡 Moderate | Free Tier eligible (t3.micro / t4g.small) |
+| **Option 4: AWS Elastic Beanstalk** | Traditional PaaS with managed load balancers and environment rollbacks | 🟡 Moderate | Free Tier eligible |
+
+---
+
+## Deploying on AWS Amplify Hosting (`*.amplifyapp.com`)
+
+If your deployment on AWS Amplify was showing **404 Not Found** on CloudFront, this occurs because:
+1. **Missing `amplify.yml`**: AWS Amplify looks for `build/` (Create-React-App convention), whereas Vite builds artifacts into `dist/`. Without `amplify.yml`, Amplify deployed 0 files, causing CloudFront to return 404.
+2. **SPA URL Rewrites**: In single-page apps (React/Vite), routing requires a 200 rewrite to `/index.html`.
+3. **Healthcheck 404**: AWS Amplify requests `/status.html` for domain verification and health checks.
+
+### How to Fix in AWS Amplify:
+
+#### Step 1: Repository Configuration (Already Configured)
+The repository now includes:
+- `amplify.yml` with `baseDirectory: dist`
+- `public/status.html` (returns HTTP 200 OK for AWS health checks)
+- `public/robots.txt`
+- Dynamic API routing in `src/services/api.ts` directing frontend calls to your backend
+
+#### Step 2: Configure Rewrites and Redirects in AWS Amplify Console
+1. In the **AWS Amplify Console**, select your app (`d2qe2q720fbn3x`).
+2. In the left navigation menu, go to **App settings** &rarr; **Rewrites and redirects**.
+3. Click **Edit** and ensure the SPA rewrite rule is present:
+   - **Source address**: `</^[^.]+$|\.(?!(css|gif|ico|jpg|js|png|txt|svg|woff|woff2|ttf|map|json|html)$)([^.]+$)/>`
+   - **Target address**: `/index.html`
+   - **Type**: `200 (Rewrite)`
+4. (Optional) If you want `/api/*` requests routed directly to your Render backend from Amplify:
+   - Add rule:
+     - **Source address**: `/api/<*>`
+     - **Target address**: `https://gigpilot-platform.onrender.com/api/<*>`
+     - **Type**: `200 (Rewrite)`
+5. Click **Save**.
+
+#### Step 3: Trigger a Re-deploy
+In AWS Amplify, click **Run build** (or push any commit to `main`). AWS Amplify will execute `npm run build`, pick up `dist/`, and serve your app at `https://d2qe2q720fbn3x.amplifyapp.com`.
 
 ---
 
