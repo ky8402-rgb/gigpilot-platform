@@ -19,6 +19,7 @@
     "setup:ec2": "./setup-ec2.sh",
     "verify:prod": "./verify-production.sh",
     "update-godaddy-dns": "tsx scripts/update-godaddy-dns.ts",
+    "update-cloudflare-dns": "tsx scripts/update-cloudflare-dns.ts",
     "push": "./scripts/push-and-deploy.sh",
     "lint": "tsc --noEmit",
     "test": "tsc --noEmit",

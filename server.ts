@@ -39,6 +39,7 @@ import autoDispatchRoutes from "./routes/autoDispatchRoutes.js";
 import amplifyRoutes from "./server/amplifyRoutes.js";
 import devopsActionsRoutes from "./server/devopsActionsRoutes.js";
 import godaddyRoutes from "./server/godaddyRoutes.js";
+import cloudflareRoutes from "./server/cloudflareRoutes.js";
 import "./server/worker.js";
 import { logActivityEvent } from "./server/activityLogger.js";
 import { verifyWebhookSignature } from "./server/webhookSecurity.js";
@@ -357,6 +358,9 @@ app.use("/api/devops", devopsActionsRoutes);
 
 // 14. GoDaddy Automated DNS Auto-Fix & Domain Management
 app.use("/api/godaddy", godaddyRoutes);
+
+// 15. Cloudflare Automated DNS Management & Migration Engine
+app.use("/api/cloudflare", cloudflareRoutes);
 
 // Compatibility aliases for /api/bids, /api/bids/stats, and /api/leads list
 app.use("/api/bids", freelancerBidsRoutes);
