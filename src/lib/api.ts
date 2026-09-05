@@ -9,8 +9,10 @@
 
 import axios, { AxiosInstance, AxiosRequestConfig } from 'axios';
 
-// Default backend URL on Render (can be overridden via VITE_API_URL or VITE_BACKEND_URL)
-export const DEFAULT_API_URL = 'https://gigpilot-backend-g4j0.onrender.com';
+// Default backend URL on EC2 SSL (can be overridden via VITE_API_URL or VITE_BACKEND_URL)
+export const DEFAULT_API_URL =
+  (typeof import.meta !== 'undefined' && ((import.meta as any).env?.VITE_BACKEND_URL || (import.meta as any).env?.VITE_API_URL)) ||
+  'https://13-233-54-120.sslip.io';
 
 export function getBaseApiUrl(): string {
   if (typeof import.meta !== 'undefined' && (import.meta as any).env) {

@@ -799,7 +799,7 @@ export const HealthDashboard: React.FC<HealthDashboardProps> = ({
                 <div className="flex justify-between text-slate-400">
                   <span>Total Escrow Records:</span>
                   <span className="text-slate-200 font-mono">
-                    {txCheck?.totalCount ?? (healthData?.database?.stats?.transactions || 0)}
+                    {txCheck?.totalCount ?? (typeof healthData?.database === 'object' ? healthData?.database?.stats?.transactions : (healthData?.db?.stats?.transactions || 0))}
                   </span>
                 </div>
                 <p className="text-[11px] text-slate-400 italic pt-1 border-t border-slate-800/40 truncate">

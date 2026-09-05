@@ -1,4 +1,4 @@
-import { getPgPool, memoryStore, Transaction, WorkOrder } from './pgDatabase.js';
+import { memoryStore, safeExecutePgQuery, Transaction, WorkOrder } from './pgDatabase.js';
 import { completeWorkOrderAndPayout, checkAndAutoApproveOverdueWorkOrders } from './completionWorker.js';
 import { triggerAISupportIncident, activeSupportTickets } from './supportChat.js';
 import { logActivityEvent } from './activityLogger.js';
@@ -116,19 +116,11 @@ export async function runSelfHealingDiagnostics(): Promise<{
   const retryRes = await processRetryQueue();
 
   // 3. Scan for any un-enqueued failed work orders in DB or memory
-  const pool = getPgPool();
   let failedOrders: WorkOrder[] = [];
-
-  if (pool) {
-    try {
-      const res = await pool.query(`SELECT * FROM work_orders WHERE payment_status = 'failed'`);
-      failedOrders = res.rows;
-    } catch (err: any) {
-      // ignore
-    }
-  }
-
-  if (failedOrders.length === 0) {
+  const res = await safeExecutePgQuery(`SELECT * FROM work_orders WHERE payment_status = 'failed'`);
+  if (res && res.rows.length > 0) {
+    failedOrders = res.rows;
+  } else {
     failedOrders = Array.from(memoryStore.workOrders.values()).filter((w) => w.payment_status === 'failed');
   }
 

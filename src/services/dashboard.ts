@@ -1,7 +1,20 @@
 // ============================================
-// CONFIGURATION - Live Render Backend URL
+// CONFIGURATION - Live Backend URL (EC2 / Amplify / Render)
 // ============================================
-export const API_BASE_URL = 'https://gigpilot-backend.onrender.com';
+const getDashboardApiUrl = (): string => {
+  if (typeof import.meta !== 'undefined' && (import.meta as any).env) {
+    const envUrl =
+      (import.meta as any).env.VITE_BACKEND_URL ||
+      (import.meta as any).env.VITE_API_BASE_URL ||
+      (import.meta as any).env.VITE_API_URL;
+    if (envUrl && typeof envUrl === 'string' && envUrl.trim().length > 0) {
+      return envUrl.trim().replace(/\/+$/, '');
+    }
+  }
+  return 'https://gigpilot-backend.onrender.com';
+};
+
+export const API_BASE_URL = getDashboardApiUrl();
 
 // ============================================
 // FETCH FUNCTIONS

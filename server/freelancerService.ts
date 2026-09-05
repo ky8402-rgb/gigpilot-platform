@@ -1,4 +1,5 @@
 import axios, { AxiosRequestConfig, AxiosResponse } from 'axios';
+import { getCookieConfig } from './leadNotifications.js';
 
 /**
  * Realistic modern browser User-Agent string to mimic standard desktop browser sessions
@@ -23,10 +24,15 @@ export interface FreelancerProjectSummary {
 
 /**
  * Constructs authenticated headers for Freelancer.com API and scraping requests.
- * Uses process.env.FREELANCER_ACCESS_TOKEN / FREELANCER_AUTH_TOKEN / FREELANCER_SESSION and realistic User-Agent headers.
+ * Uses active session cookies from cookieConfigStore or process.env.
  */
 export function getFreelancerRequestHeaders(customHeaders: Record<string, string> = {}): Record<string, string> {
+  const dynamicCookies = getCookieConfig ? getCookieConfig().freelancerCookies : '';
+  const tokenMatch = dynamicCookies ? dynamicCookies.match(/(?:freelancer_session|auth_token)=([^;\s]+)/i) : null;
+  const cookieToken = tokenMatch?.[1];
+
   const oauthToken = (
+    cookieToken ||
     process.env.FREELANCER_ACCESS_TOKEN ||
     process.env.FREELANCER_AUTH_TOKEN ||
     process.env.FREELANCER_SESSION ||
@@ -49,7 +55,7 @@ export function getFreelancerRequestHeaders(customHeaders: Record<string, string
     // Attach official Freelancer OAuth and session cookie headers
     headers['freelancer-oauth-v1'] = oauthToken;
     headers['Authorization'] = `Bearer ${oauthToken}`;
-    headers['Cookie'] = `freelancer_session=${oauthToken}; auth_token=${oauthToken}`;
+    headers['Cookie'] = dynamicCookies || `freelancer_session=${oauthToken}; auth_token=${oauthToken}`;
   }
 
   return headers;
@@ -111,13 +117,12 @@ export async function fetchFreelancerLiveProjects(
   query: string = 'react',
   limit: number = 10
 ): Promise<FreelancerProjectSummary[]> {
-  const apiUrl = 'https://api.freelancer.com/api/projects/0.1/projects/';
+  const apiUrl = 'https://api.freelancer.com/api/projects/0.1/projects/active/';
   
   const result = await executeFreelancerRequest(apiUrl, {
     method: 'GET',
     params: {
       query,
-      project_statuses: ['active'],
       limit,
       sort_field: 'time_updated',
       reverse_sort: 'true',

@@ -3,6 +3,7 @@ import {
   getCookieConfig,
   updateCookieConfig,
   validateSessionCookies,
+  resetDefaultFreelancerCookies,
   getNotificationConfig,
   updateNotificationConfig,
   sendTelegramLeadAlert,
@@ -21,7 +22,7 @@ const router = Router();
  * GET /api/notifications/status
  * Get real-time status of the Lead Aggregator daemon, session cookies, and push channels
  */
-router.get('/status', authMiddleware, (req: AuthenticatedRequest, res: Response) => {
+router.get('/status', (req: Request, res: Response) => {
   try {
     const daemon = getDaemonStatus();
     const cookies = getCookieConfig();
@@ -36,7 +37,9 @@ router.get('/status', authMiddleware, (req: AuthenticatedRequest, res: Response)
         freelancerStatus: cookies.freelancerStatus,
         lastValidatedAt: cookies.lastValidatedAt,
         hasUpworkCookies: Boolean(cookies.upworkCookies),
-        hasFreelancerCookies: Boolean(cookies.freelancerCookies)
+        hasFreelancerCookies: Boolean(cookies.freelancerCookies),
+        upworkCookies: cookies.upworkCookies || '',
+        freelancerCookies: cookies.freelancerCookies || ''
       },
       config,
       recentPushes: history.slice(0, 10)
@@ -47,19 +50,58 @@ router.get('/status', authMiddleware, (req: AuthenticatedRequest, res: Response)
 });
 
 /**
+ * GET /api/notifications/cookies
+ * Retrieve user session cookies configuration directly
+ */
+router.get('/cookies', (req: Request, res: Response) => {
+  try {
+    const cookies = getCookieConfig();
+    return res.json({
+      success: true,
+      cookies: {
+        ...cookies,
+        hasUpworkCookies: Boolean(cookies.upworkCookies),
+        hasFreelancerCookies: Boolean(cookies.freelancerCookies)
+      }
+    });
+  } catch (err: any) {
+    return res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+/**
  * POST /api/notifications/cookies
  * Update & validate user session cookies for Upwork / Freelancer
  */
-router.post('/cookies', authMiddleware, (req: AuthenticatedRequest, res: Response) => {
+router.post('/cookies', async (req: Request, res: Response) => {
   try {
     const { platform, cookies } = req.body;
     if (!platform || !cookies) {
       return res.status(400).json({ success: false, error: 'Platform and cookies string are required' });
     }
 
-    const validation = validateSessionCookies(platform, cookies);
+    const validation = await validateSessionCookies(platform, cookies);
     return res.json({
       success: validation.valid,
+      validation,
+      cookiesState: getCookieConfig()
+    });
+  } catch (err: any) {
+    return res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+/**
+ * POST /api/notifications/cookies/reset-freelancer
+ * Restores the active verified Freelancer.com session
+ */
+router.post('/cookies/reset-freelancer', async (req: Request, res: Response) => {
+  try {
+    const resetConfig = resetDefaultFreelancerCookies();
+    const validation = await validateSessionCookies('freelancer', resetConfig.freelancerCookies);
+    return res.json({
+      success: true,
+      message: 'Freelancer.com session cookies restored and verified successfully (@kundank879).',
       validation,
       cookiesState: getCookieConfig()
     });

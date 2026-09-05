@@ -108,7 +108,9 @@ export async function getPayPalSdkV6Instance(config?: PayPalSdkV6Config): Promis
   return sdkInitPromise;
 }
 
-export const BACKEND_BASE_URL = 'https://gigpilot-backend.onrender.com';
+export const BACKEND_BASE_URL =
+  (typeof import.meta !== 'undefined' && (import.meta as any).env?.VITE_BACKEND_URL) ||
+  'https://13-233-54-120.sslip.io';
 
 /**
  * Helper to dynamically resolve API base URL for Render or same-origin deployment

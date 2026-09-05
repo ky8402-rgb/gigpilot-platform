@@ -22,12 +22,14 @@ import { fetchSystemHealth, SystemHealthStatus } from '../services/api';
 interface SystemHealthConnectivityCardProps {
   onOpenSettings?: () => void;
   onNavigateToSnapshots?: () => void;
+  onOpenBackendModal?: () => void;
   className?: string;
 }
 
 export const SystemHealthConnectivityCard: React.FC<SystemHealthConnectivityCardProps> = ({
   onOpenSettings,
   onNavigateToSnapshots,
+  onOpenBackendModal,
   className = ''
 }) => {
   const [health, setHealth] = useState<SystemHealthStatus | null>(null);
@@ -59,7 +61,15 @@ export const SystemHealthConnectivityCard: React.FC<SystemHealthConnectivityCard
   }, []);
 
   const isHealthy = health?.status === 'healthy' || health?.status === 'operational';
-  const dbConnected = Boolean(health?.database?.connected);
+  const dbConnected = typeof health?.database === 'object' 
+    ? Boolean(health?.database?.connected)
+    : (health?.database === 'ok' || health?.checks?.database?.status === 'healthy' || Boolean(health?.db?.connected));
+  const dbProvider = typeof health?.database === 'object'
+    ? health?.database?.provider
+    : (health?.db?.provider || health?.checks?.database?.provider || 'PostgreSQL (Neon)');
+  const dbLatency = typeof health?.database === 'object'
+    ? health?.database?.latencyMs
+    : (health?.db?.latencyMs || health?.checks?.database?.latencyMs || 2);
 
   return (
     <div 
@@ -101,6 +111,18 @@ export const SystemHealthConnectivityCard: React.FC<SystemHealthConnectivityCard
 
         {/* Action Controls */}
         <div className="flex items-center gap-2">
+          {onOpenBackendModal && (
+            <button
+              id="btn-open-backend-gateway-modal"
+              onClick={onOpenBackendModal}
+              className="flex items-center gap-1.5 rounded-xl border border-emerald-500/40 bg-emerald-950/50 px-3 py-1.5 text-xs font-semibold text-emerald-300 transition-all hover:bg-emerald-900/60 hover:text-white cursor-pointer shadow-sm"
+              title="Configure Backend Connection & App Runner Gateway"
+            >
+              <Server className="h-3.5 w-3.5 text-emerald-400" />
+              <span>Backend Gateway</span>
+            </button>
+          )}
+
           <button
             id="btn-refresh-health"
             onClick={loadHealthData}
@@ -135,11 +157,11 @@ export const SystemHealthConnectivityCard: React.FC<SystemHealthConnectivityCard
           </div>
           <div>
             <div className="text-xs font-bold text-white truncate">
-              {health?.database?.provider || 'PostgreSQL'}
+              {dbProvider}
             </div>
             <div className="text-[11px] text-slate-400 flex items-center justify-between mt-1">
               <span>{dbConnected ? 'Sync Active' : 'In-Memory Proxy'}</span>
-              <span className="text-cyan-400 font-mono">{health?.database?.latencyMs || 2}ms</span>
+              <span className="text-cyan-400 font-mono">{dbLatency}ms</span>
             </div>
           </div>
         </div>
@@ -292,7 +314,7 @@ export const SystemHealthConnectivityCard: React.FC<SystemHealthConnectivityCard
                 <div className="flex items-center justify-between pb-2 border-b border-slate-800/60">
                   <span className="text-slate-400">Storage Backend:</span>
                   <span className="font-semibold text-cyan-300 font-mono">
-                    {health?.database?.type || 'PostgreSQL / In-Memory'}
+                    {typeof health?.database === 'object' ? health?.database?.type : (health?.db?.type || 'PostgreSQL / In-Memory')}
                   </span>
                 </div>
 
@@ -300,13 +322,13 @@ export const SystemHealthConnectivityCard: React.FC<SystemHealthConnectivityCard
                   <div className="rounded-lg bg-slate-900 p-2 border border-slate-800/60">
                     <span className="text-[10px] text-slate-400">Live Work Orders</span>
                     <div className="text-sm font-bold text-white mt-0.5">
-                      {health?.database?.stats?.workOrders ?? 12}
+                      {typeof health?.database === 'object' ? health?.database?.stats?.workOrders : (health?.db?.stats?.workOrders ?? 12)}
                     </div>
                   </div>
                   <div className="rounded-lg bg-slate-900 p-2 border border-slate-800/60">
                     <span className="text-[10px] text-slate-400">PayPal Transactions</span>
                     <div className="text-sm font-bold text-emerald-400 mt-0.5">
-                      {health?.database?.stats?.transactions ?? 28}
+                      {typeof health?.database === 'object' ? health?.database?.stats?.transactions : (health?.db?.stats?.transactions ?? 28)}
                     </div>
                   </div>
                 </div>

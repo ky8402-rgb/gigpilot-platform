@@ -1,27 +1,162 @@
 import { FreelanceJob, FreelancerProfile, GeneratedProposal } from '../types';
 
 /**
- * Render / Production Backend Base URL for GigPilot Autonomous Autopilot & Payment Gateway
+ * Production Backend Base URL for GigPilot Autonomous Autopilot & Payment Gateway
+ * Defaults to new EC2 SSL domain (https://13-233-54-120.sslip.io)
  */
-export const BACKEND_BASE_URL = 'https://gigpilot-platform.onrender.com';
+export const BACKEND_BASE_URL =
+  (typeof import.meta !== 'undefined' && (import.meta as any).env?.VITE_BACKEND_URL) ||
+  'https://13-233-54-120.sslip.io';
 
 /**
- * Helper to dynamically resolve API base URL for Render, AWS Amplify, localhost:3000, or same-origin deployment
+ * Storage key for user-configured custom backend URL (e.g. AWS App Runner, EC2, or custom Render domain)
+ */
+export const CUSTOM_BACKEND_STORAGE_KEY = 'gigpilot_custom_backend_url';
+
+/**
+ * Helper to dynamically resolve API base URL for AWS App Runner, AWS Amplify, Render, EC2, or same-origin deployment
  */
 export function getApiBaseUrl(): string {
+  // 1. Check user-configured override in localStorage (e.g. AWS App Runner URL)
+  if (typeof localStorage !== 'undefined') {
+    try {
+      const customUrl = localStorage.getItem(CUSTOM_BACKEND_STORAGE_KEY);
+      if (customUrl && typeof customUrl === 'string' && customUrl.trim().length > 0) {
+        return customUrl.trim().replace(/\/+$/, '');
+      }
+    } catch (_) {}
+  }
+
+  // 2. Check build-time / runtime environment variables
   const envUrl = (import.meta as any).env?.VITE_BACKEND_URL || (import.meta as any).env?.VITE_API_BASE_URL || (import.meta as any).env?.VITE_API_URL;
   if (envUrl && typeof envUrl === 'string' && envUrl.trim().length > 0) {
     return envUrl.trim().replace(/\/+$/, '');
   }
-  // If running in browser on AWS Amplify, CloudFront CDN, or GitHub Pages, route API calls to live backend
+
+  // 3. If running in browser on AWS Amplify (default or custom domain), CloudFront, Vercel, or GitHub Pages
   if (typeof window !== 'undefined' && window.location) {
     const host = window.location.hostname;
-    if (host.includes('amplifyapp.com') || host.includes('cloudfront.net') || host.includes('github.io')) {
+    // Detect known same-origin fullstack server environments (container dev/preview and direct EC2 host)
+    const isSameOriginBackend =
+      host === 'localhost' ||
+      host === '127.0.0.1' ||
+      host.includes('.run.app') ||
+      host.includes('3-222-149-9.sslip.io') ||
+      host.includes('13-233-54-120.sslip.io');
+
+    if (!isSameOriginBackend || host.includes('amplifyapp.com') || host.includes('cloudfront.net') || host.includes('vercel.app') || host.includes('github.io')) {
       return BACKEND_BASE_URL;
     }
     return window.location.origin;
   }
   return 'http://localhost:3000';
+}
+
+/**
+ * Information about currently active backend target
+ */
+export interface BackendTargetInfo {
+  url: string;
+  type: 'apprunner' | 'render' | 'ec2' | 'same-origin' | 'custom' | 'localhost';
+  isCustom: boolean;
+}
+
+export function getBackendTargetInfo(): BackendTargetInfo {
+  const url = getApiBaseUrl();
+  let isCustom = false;
+  if (typeof localStorage !== 'undefined') {
+    try {
+      isCustom = Boolean(localStorage.getItem(CUSTOM_BACKEND_STORAGE_KEY));
+    } catch (_) {}
+  }
+
+  let type: BackendTargetInfo['type'] = 'custom';
+  if (url.includes('awsapprunner.com')) {
+    type = 'apprunner';
+  } else if (url.includes('onrender.com')) {
+    type = 'render';
+  } else if (url.includes('localhost') || url.includes('127.0.0.1')) {
+    type = 'localhost';
+  } else if (typeof window !== 'undefined' && url === window.location.origin) {
+    type = 'same-origin';
+  } else if (/^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}/.test(url.replace(/^https?:\/\//, ''))) {
+    type = 'ec2';
+  }
+
+  return { url, type, isCustom };
+}
+
+/**
+ * Persist or clear custom backend URL in localStorage
+ */
+export function setCustomBackendUrl(newUrl: string | null): void {
+  if (typeof localStorage !== 'undefined') {
+    try {
+      if (newUrl && newUrl.trim().length > 0) {
+        localStorage.setItem(CUSTOM_BACKEND_STORAGE_KEY, newUrl.trim().replace(/\/+$/, ''));
+      } else {
+        localStorage.removeItem(CUSTOM_BACKEND_STORAGE_KEY);
+      }
+      window.dispatchEvent(new Event('gigpilot_backend_url_changed'));
+    } catch (_) {}
+  }
+}
+
+/**
+ * Live test backend connectivity, measuring roundtrip latency in ms
+ */
+export async function testBackendConnection(targetUrl?: string): Promise<{
+  success: boolean;
+  latencyMs: number;
+  status: string;
+  url: string;
+  data?: any;
+  error?: string;
+}> {
+  const base = targetUrl ? targetUrl.trim().replace(/\/+$/, '') : getApiBaseUrl();
+  const startTime = performance.now();
+  
+  // Try ping endpoint first, fallback to health
+  const endpoints = ['/api/health/ping', '/api/health'];
+  let lastErr = 'Connection failed';
+
+  for (const ep of endpoints) {
+    try {
+      const response = await fetch(`${base}${ep}`, {
+        method: 'GET',
+        headers: { Accept: 'application/json' },
+        credentials: 'include',
+      });
+      const latencyMs = Math.round(performance.now() - startTime);
+
+      if (response.ok) {
+        let data: any = null;
+        try {
+          data = await response.json();
+        } catch (_) {}
+        return {
+          success: true,
+          latencyMs,
+          status: 'connected',
+          url: base,
+          data,
+        };
+      } else {
+        lastErr = `HTTP ${response.status}: ${response.statusText}`;
+      }
+    } catch (err: any) {
+      lastErr = err.message || 'Network error';
+    }
+  }
+
+  const latencyMs = Math.round(performance.now() - startTime);
+  return {
+    success: false,
+    latencyMs,
+    status: 'unreachable',
+    url: base,
+    error: lastErr,
+  };
 }
 
 /**
@@ -1475,6 +1610,8 @@ export interface LeadNotificationStatusResponse {
     lastValidatedAt?: string;
     hasUpworkCookies: boolean;
     hasFreelancerCookies: boolean;
+    upworkCookies?: string;
+    freelancerCookies?: string;
   };
   config: {
     telegramEnabled: boolean;
@@ -1507,26 +1644,39 @@ export interface LeadNotificationStatusResponse {
 }
 
 export async function fetchLeadNotificationStatus(): Promise<LeadNotificationStatusResponse> {
-  const res = await fetch(apiUrl('/api/notifications/status'));
+  const res = await secureFetch(apiUrl('/api/notifications/status'));
   if (!res.ok) throw new Error('Failed to load lead notification status');
   return res.json();
 }
 
+export async function fetchLeadNotificationCookies(): Promise<any> {
+  const res = await secureFetch(apiUrl('/api/notifications/cookies'));
+  if (!res.ok) throw new Error('Failed to load platform session cookies');
+  return res.json();
+}
+
 export async function savePlatformCookies(platform: 'upwork' | 'freelancer', cookies: string): Promise<any> {
-  const res = await fetch(apiUrl('/api/notifications/cookies'), {
+  const res = await secureFetch(apiUrl('/api/notifications/cookies'), {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ platform, cookies }),
   });
   const data = await res.json();
-  if (!res.ok) throw new Error(data.error || 'Failed to save cookies');
+  if (!res.ok) throw new Error(data.error || data.validation?.message || 'Failed to save cookies');
+  return data;
+}
+
+export async function resetFreelancerCookies(): Promise<any> {
+  const res = await secureFetch(apiUrl('/api/notifications/cookies/reset-freelancer'), {
+    method: 'POST',
+  });
+  const data = await res.json();
+  if (!res.ok) throw new Error(data.error || 'Failed to restore Freelancer cookies');
   return data;
 }
 
 export async function saveNotificationConfig(config: any): Promise<any> {
-  const res = await fetch(apiUrl('/api/notifications/config'), {
+  const res = await secureFetch(apiUrl('/api/notifications/config'), {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(config),
   });
   const data = await res.json();
@@ -1535,9 +1685,8 @@ export async function saveNotificationConfig(config: any): Promise<any> {
 }
 
 export async function sendTestTelegramPush(lead?: any): Promise<any> {
-  const res = await fetch(apiUrl('/api/notifications/test-telegram'), {
+  const res = await secureFetch(apiUrl('/api/notifications/test-telegram'), {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(lead || {}),
   });
   const data = await res.json();
@@ -2276,7 +2425,22 @@ export interface SystemHealthStatus {
     };
   };
   autoHealer?: AutoHealerStatus;
-  database?: {
+  database?: string | {
+    status: string;
+    connected: boolean;
+    type: string;
+    provider: string;
+    latencyMs: number;
+    message: string;
+    stats: {
+      users: number;
+      transactions: number;
+      workOrders: number;
+      jobs?: number;
+      paypalOrders?: number;
+    };
+  };
+  db?: {
     status: string;
     connected: boolean;
     type: string;
@@ -2517,6 +2681,217 @@ export async function triggerAutoHealerCycle(): Promise<{ success: boolean; resu
       return { success: false, error: err.message || 'Trigger request failed' };
     }
   }
+}
+
+export interface WatchdogPingResult {
+  ok: boolean;
+  latencyMs: number;
+  status: number;
+  timestamp: string;
+  endpoint: string;
+  error?: string;
+  timedOut?: boolean;
+}
+
+export interface BackendSoftRestartResult {
+  success: boolean;
+  action?: string;
+  message: string;
+  timestamp?: string;
+  uptime?: number;
+  remediation?: any;
+  cycleResult?: any;
+  health?: any;
+  error?: string;
+}
+
+/**
+ * Perform a fast, timeout-bounded health ping to verify backend responsiveness.
+ * Detects network failures, HTTP errors, and request timeouts.
+ */
+export async function checkBackendWatchdogPing(timeoutMs: number = 5000): Promise<WatchdogPingResult> {
+  const base = getApiBaseUrl();
+  const endpoints = ['/api/health/ping', '/api/health'];
+  const startTime = performance.now();
+  let lastError = 'Health ping failed';
+  let wasTimeout = false;
+  let responseStatus = 0;
+  let activeEndpoint = '/api/health/ping';
+
+  for (const ep of endpoints) {
+    activeEndpoint = ep;
+    const controller = new AbortController();
+    const timer = setTimeout(() => {
+      wasTimeout = true;
+      controller.abort();
+    }, timeoutMs);
+
+    try {
+      const targetUrl = `${base}${ep}`;
+      const res = await fetch(targetUrl, {
+        method: 'GET',
+        headers: { Accept: 'application/json' },
+        signal: controller.signal,
+        credentials: 'include',
+      });
+      clearTimeout(timer);
+      const latencyMs = Math.round(performance.now() - startTime);
+      responseStatus = res.status;
+
+      if (res.ok) {
+        return {
+          ok: true,
+          latencyMs,
+          status: res.status,
+          timestamp: new Date().toISOString(),
+          endpoint: targetUrl,
+        };
+      } else {
+        lastError = `HTTP ${res.status}: ${res.statusText}`;
+      }
+    } catch (err: any) {
+      clearTimeout(timer);
+      if (err.name === 'AbortError' || wasTimeout) {
+        wasTimeout = true;
+        lastError = `Connection timed out after ${timeoutMs}ms`;
+        // If timed out on first endpoint, break early
+        break;
+      } else {
+        lastError = err?.message || 'Network unreachable';
+      }
+    }
+  }
+
+  // Fallback check against same-origin if base was an external URL and not timed out
+  if (!wasTimeout && typeof window !== 'undefined' && base !== window.location.origin) {
+    const controller = new AbortController();
+    const timer = setTimeout(() => {
+      wasTimeout = true;
+      controller.abort();
+    }, timeoutMs);
+
+    try {
+      const res = await fetch('/api/health/ping', {
+        method: 'GET',
+        headers: { Accept: 'application/json' },
+        signal: controller.signal,
+      });
+      clearTimeout(timer);
+      if (res.ok) {
+        return {
+          ok: true,
+          latencyMs: Math.round(performance.now() - startTime),
+          status: res.status,
+          timestamp: new Date().toISOString(),
+          endpoint: '/api/health/ping (same-origin fallback)',
+        };
+      }
+    } catch (err: any) {
+      clearTimeout(timer);
+      if (err.name === 'AbortError') wasTimeout = true;
+    }
+  }
+
+  const latencyMs = Math.round(performance.now() - startTime);
+  return {
+    ok: false,
+    latencyMs,
+    status: responseStatus || 0,
+    timestamp: new Date().toISOString(),
+    endpoint: activeEndpoint,
+    error: lastError,
+    timedOut: wasTimeout,
+  };
+}
+
+/**
+ * Triggers an automated soft restart command to the backend.
+ * Reconciles connection pools, flushes caches, re-initializes worker cycles,
+ * and resets health check counters.
+ */
+export async function triggerBackendSoftRestart(options?: {
+  reason?: string;
+  consecutiveFailures?: number;
+  source?: string;
+}): Promise<BackendSoftRestartResult> {
+  const base = getApiBaseUrl();
+  const payload = {
+    source: options?.source || 'frontend_watchdog_effect',
+    reason: options?.reason || 'persistent_timeout_detected',
+    consecutiveFailures: options?.consecutiveFailures || 0,
+    timestamp: new Date().toISOString(),
+  };
+
+  // 1. Try dedicated soft-restart endpoint
+  try {
+    const res = await fetch(`${base}/api/health/soft-restart`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+
+    if (res.ok) {
+      const data = await res.json();
+      return {
+        success: true,
+        action: data.action || 'soft_restart',
+        message: data.message || 'Backend soft restart executed successfully',
+        timestamp: data.timestamp,
+        uptime: data.uptime,
+        remediation: data.remediation,
+        cycleResult: data.cycleResult,
+        health: data.health,
+      };
+    }
+  } catch (err) {
+    console.warn('[Watchdog] Direct soft-restart endpoint fetch failed, trying fallbacks:', err);
+  }
+
+  // 2. Fallback to /api/health/remediate
+  try {
+    const remediateRes = await fetch(`${base}/api/health/remediate`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+
+    if (remediateRes.ok) {
+      const data = await remediateRes.json();
+      return {
+        success: true,
+        action: 'remediate_fallback',
+        message: data.message || 'Self-healing remediation executed successfully',
+        remediation: data.remediationResults,
+        health: data.health,
+      };
+    }
+  } catch (_) {}
+
+  // 3. Same-origin fallback
+  try {
+    const localRes = await fetch('/api/health/soft-restart', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+
+    if (localRes.ok) {
+      const data = await localRes.json();
+      return {
+        success: true,
+        action: 'soft_restart_local',
+        message: data.message || 'Local backend soft restart executed successfully',
+        timestamp: data.timestamp,
+        remediation: data.remediation,
+      };
+    }
+  } catch (_) {}
+
+  return {
+    success: false,
+    message: 'Failed to trigger backend soft restart across all target endpoints',
+    error: 'Backend endpoints unreachable',
+  };
 }
 
 /**
@@ -3282,6 +3657,354 @@ export async function executeGitOp(
     };
   }
 }
+
+export interface GitHubWebhookInfo {
+  webhookUrl: string;
+  isSecretConfigured: boolean;
+  activeSecretSource: string;
+  ec2Host: string;
+  trackedBranches: string[];
+  recentDeploymentsCount: number;
+  lastDeployment?: {
+    id: string;
+    trigger: 'webhook_push' | 'manual';
+    branch: string;
+    commitHash?: string;
+    commitMessage?: string;
+    author?: string;
+    status: 'PENDING' | 'SUCCESS' | 'FAILED';
+    startedAt: string;
+    completedAt?: string;
+    durationMs?: number;
+    logs: string[];
+    error?: string;
+  };
+}
+
+export async function fetchGitHubWebhookInfo(): Promise<{
+  success: boolean;
+  webhook?: GitHubWebhookInfo;
+  repo?: GitHubRepoStatus;
+  error?: string;
+}> {
+  try {
+    const res = await secureFetch('/api/github/webhook-info');
+    return await res.json();
+  } catch (err: any) {
+    return {
+      success: false,
+      error: err.message || 'Failed to fetch webhook info',
+    };
+  }
+}
+
+export async function triggerManualDeploy(branch: string = 'master'): Promise<{
+  success: boolean;
+  deployment?: any;
+  error?: string;
+}> {
+  try {
+    const res = await secureFetch('/api/github/trigger-deploy', {
+      method: 'POST',
+      body: JSON.stringify({ branch }),
+    });
+    return await res.json();
+  } catch (err: any) {
+    return {
+      success: false,
+      error: err.message || 'Failed to trigger deploy',
+    };
+  }
+}
+
+export async function fetchGitHubDeployments(): Promise<{
+  success: boolean;
+  deployments: any[];
+  error?: string;
+}> {
+  try {
+    const res = await secureFetch('/api/github/deployments');
+    return await res.json();
+  } catch (err: any) {
+    return {
+      success: false,
+      deployments: [],
+      error: err.message || 'Failed to fetch deployments',
+    };
+  }
+}
+
+export interface PushAndDeployResponse {
+  success: boolean;
+  git: {
+    success: boolean;
+    commitHash?: string;
+    commitMessage?: string;
+    branch: string;
+    authMethod: 'token' | 'ssh' | 'none';
+    output: string;
+  };
+  amplify: {
+    status: 'TRIGGERED' | 'NOTIFIED_VIA_PUSH' | 'SKIPPED' | 'FAILED';
+    appName: string;
+    appId: string;
+    jobId?: string;
+    message: string;
+    url: string;
+  };
+  ec2: {
+    status: 'DEPLOYED_LOCAL' | 'DEPLOYED_WEBHOOK' | 'SKIPPED' | 'FAILED';
+    host: string;
+    url: string;
+    message: string;
+    deploymentId?: string;
+  };
+  durationMs: number;
+  timestamp: string;
+  logs: string[];
+  error?: string;
+}
+
+export interface GitHubAuthStatusResponse {
+  success: boolean;
+  tokenConfigured: boolean;
+  tokenUser?: {
+    login: string;
+    name?: string;
+    avatarUrl?: string;
+    scopes?: string[];
+  };
+  sshConfigured: boolean;
+  sshKeyType?: string;
+  activeAuthType: 'token' | 'ssh' | 'none';
+  canPush: boolean;
+  repo: GitHubRepoStatus;
+  error?: string;
+}
+
+export async function fetchGitHubAuthStatus(): Promise<GitHubAuthStatusResponse> {
+  try {
+    const res = await secureFetch('/api/github/auth-status');
+    return await res.json();
+  } catch (err: any) {
+    return {
+      success: false,
+      tokenConfigured: false,
+      sshConfigured: false,
+      activeAuthType: 'none',
+      canPush: false,
+      repo: {
+        currentBranch: 'main',
+        remoteOriginUrl: null,
+        isSSHRemote: false,
+        userName: '',
+        userEmail: '',
+        clean: true,
+        uncommittedCount: 0,
+      },
+      error: err.message || 'Failed to load GitHub authentication status',
+    };
+  }
+}
+
+export async function saveGitHubToken(token: string): Promise<{
+  success: boolean;
+  message?: string;
+  user?: any;
+  scopes?: string[];
+  error?: string;
+}> {
+  try {
+    const res = await secureFetch('/api/github/save-token', {
+      method: 'POST',
+      body: JSON.stringify({ token }),
+    });
+    return await res.json();
+  } catch (err: any) {
+    return {
+      success: false,
+      error: err.message || 'Failed to save GitHub token',
+    };
+  }
+}
+
+export async function deleteGitHubToken(): Promise<{
+  success: boolean;
+  message?: string;
+  error?: string;
+}> {
+  try {
+    const res = await secureFetch('/api/github/delete-token', {
+      method: 'DELETE',
+    });
+    return await res.json();
+  } catch (err: any) {
+    return {
+      success: false,
+      error: err.message || 'Failed to delete GitHub token',
+    };
+  }
+}
+
+export async function triggerPushAndDeploy(options: {
+  commitMessage?: string;
+  branch?: string;
+  token?: string;
+  skipAmplify?: boolean;
+  skipEc2?: boolean;
+}): Promise<PushAndDeployResponse> {
+  try {
+    const res = await secureFetch('/api/github/push-and-deploy', {
+      method: 'POST',
+      body: JSON.stringify(options),
+    });
+    return await res.json();
+  } catch (err: any) {
+    return {
+      success: false,
+      git: {
+        success: false,
+        branch: options.branch || 'main',
+        authMethod: 'none',
+        output: err.message || 'Network request failed',
+      },
+      amplify: {
+        status: 'FAILED',
+        appName: 'gigpilot-platform',
+        appId: 'd2qe2q720fbn3x',
+        message: 'Could not contact server',
+        url: 'https://d2qe2q720fbn3x.amplifyapp.com',
+      },
+      ec2: {
+        status: 'FAILED',
+        host: '13.233.54.120',
+        url: 'https://13-233-54-120.sslip.io',
+        message: 'Could not contact server',
+      },
+      durationMs: 0,
+      timestamp: new Date().toISOString(),
+      logs: [`[Error] ${err.message}`],
+      error: err.message,
+    };
+  }
+}
+
+// ---------------------------------------------------------------------------
+// DevOps Actions & GitHub Actions Automated Deployments
+// ---------------------------------------------------------------------------
+
+export interface DevOpsWorkflow {
+  id: string | number;
+  name: string;
+  path: string;
+  state: string;
+  badge_url?: string;
+  html_url?: string;
+}
+
+export interface DevOpsWorkflowRun {
+  id: number | string;
+  name: string;
+  head_branch: string;
+  head_sha: string;
+  status: 'queued' | 'in_progress' | 'completed' | 'waiting';
+  conclusion: 'success' | 'failure' | 'cancelled' | 'skipped' | 'neutral' | null;
+  workflow_id: string | number;
+  html_url: string;
+  created_at: string;
+  updated_at: string;
+  actor: {
+    login: string;
+    avatar_url?: string;
+  };
+  run_number: number;
+  event: string;
+}
+
+export interface DevOpsStatusResponse {
+  success: boolean;
+  repository: {
+    owner: string;
+    repo: string;
+    currentBranch: string;
+  };
+  autoTriggerOnPush: boolean;
+  workflowsCount: number;
+  workflows: DevOpsWorkflow[];
+  recentRuns: DevOpsWorkflowRun[];
+  timestamp: string;
+}
+
+export interface DevOpsDeployResponse {
+  success: boolean;
+  message: string;
+  workflowId: string;
+  branch: string;
+  runId?: string | number;
+  runUrl?: string;
+  dispatchedAt: string;
+  logs: string[];
+}
+
+export async function fetchDevOpsStatus(): Promise<DevOpsStatusResponse> {
+  try {
+    const res = await secureFetch('/api/devops/status');
+    return await res.json();
+  } catch (err: any) {
+    return {
+      success: false,
+      repository: { owner: 'ky8402-rgb', repo: 'gigpilot-platform', currentBranch: 'main' },
+      autoTriggerOnPush: true,
+      workflowsCount: 1,
+      workflows: [
+        {
+          id: 'deploy.yml',
+          name: 'Deploy to AWS Amplify (Frontend) & EC2 (Backend)',
+          path: '.github/workflows/deploy.yml',
+          state: 'active',
+        },
+      ],
+      recentRuns: [],
+      timestamp: new Date().toISOString(),
+    };
+  }
+}
+
+export async function fetchDevOpsRuns(): Promise<DevOpsWorkflowRun[]> {
+  try {
+    const res = await secureFetch('/api/devops/runs?limit=10');
+    const data = await res.json();
+    return data.runs || [];
+  } catch {
+    return [];
+  }
+}
+
+export async function triggerDevOpsDeploy(options: {
+  workflowId?: string;
+  branch?: string;
+  inputs?: Record<string, any>;
+}): Promise<DevOpsDeployResponse> {
+  try {
+    const res = await secureFetch('/api/devops/deploy', {
+      method: 'POST',
+      body: JSON.stringify(options),
+    });
+    return await res.json();
+  } catch (err: any) {
+    return {
+      success: false,
+      message: err.message || 'Failed to dispatch workflow run',
+      workflowId: options.workflowId || 'deploy.yml',
+      branch: options.branch || 'main',
+      dispatchedAt: new Date().toISOString(),
+      logs: [`[Error] ${err.message}`],
+    };
+  }
+}
+
+
+
 
 
 

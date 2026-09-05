@@ -4,7 +4,6 @@ import path from "path";
 import fs from "fs";
 import cron from "node-cron";
 import rateLimit from "express-rate-limit";
-import { createServer as createViteServer } from "vite";
 
 // =========================================================================
 // 1. CRITICAL DATABASE_URL VALIDATION (Prisma & PostgreSQL)
@@ -37,6 +36,8 @@ import authRoutes from "./routes/auth.js";
 import freelancerBidsRoutes from "./routes/freelancerBids.js";
 import neonRoutes from "./routes/neon.js";
 import autoDispatchRoutes from "./routes/autoDispatchRoutes.js";
+import amplifyRoutes from "./server/amplifyRoutes.js";
+import devopsActionsRoutes from "./server/devopsActionsRoutes.js";
 import "./server/worker.js";
 import { logActivityEvent } from "./server/activityLogger.js";
 import { verifyWebhookSignature } from "./server/webhookSecurity.js";
@@ -132,36 +133,67 @@ app.use((req, res, next) => {
 });
 
 // =========================================================================
-// 2. CORS & CROSS-ORIGIN COOKIE CONFIGURATION (Render.com)
+// 2. CORS & CROSS-ORIGIN COOKIE CONFIGURATION (AWS Amplify, EC2, Render, Localhost)
+// Reads allowed origins dynamically from CORS_ALLOWED_ORIGINS environment variable
 // =========================================================================
-const ALLOWED_ORIGINS = [
-  "https://kundanvision369.onrender.com",
-  "https://gigpilot-backend-g4j0.onrender.com",
-  process.env.FRONTEND_URL?.replace(/\/$/, ""),
-  "http://localhost:3000",
-  "http://localhost:5173",
-  "http://127.0.0.1:3000",
-  "http://127.0.0.1:5173",
-].filter(Boolean) as string[];
+const parseAllowedOrigins = (): string[] => {
+  const envOrigins = process.env.CORS_ALLOWED_ORIGINS;
+  if (!envOrigins || envOrigins.trim() === "" || envOrigins.trim() === "*") {
+    return ["*"];
+  }
+  return envOrigins.split(",").map((o) => o.trim()).filter(Boolean);
+};
+
+const isOriginAllowed = (origin: string, allowedOrigins: string[]): boolean => {
+  if (allowedOrigins.includes("*")) return true;
+  if (allowedOrigins.includes(origin)) return true;
+
+  try {
+    const url = new URL(origin);
+    const host = url.hostname;
+
+    // Always permit Amplify subdomains (*.amplifyapp.com), custom production domains (*.gigpilot.com, gigpilot.com), Vercel (*.vercel.app), and local development
+    if (
+      host.endsWith(".amplifyapp.com") ||
+      host === "gigpilot.com" ||
+      host.endsWith(".gigpilot.com") ||
+      host.endsWith(".vercel.app") ||
+      host === "localhost" ||
+      host === "127.0.0.1"
+    ) {
+      return true;
+    }
+
+    // Match wildcard rules in allowedOrigins (e.g. *.gigpilot.com or https://*.amplifyapp.com)
+    for (const rule of allowedOrigins) {
+      if (rule.includes("*")) {
+        const regexPattern = "^" + rule.replace(/[.+?^${}()|[\]\\]/g, "\\$&").replace(/\*/g, ".*") + "$";
+        if (new RegExp(regexPattern).test(origin)) {
+          return true;
+        }
+      }
+    }
+  } catch {
+    // Malformed origin URL
+    return false;
+  }
+
+  return false;
+};
 
 app.use((req, res, next) => {
   const origin = req.headers.origin;
+  const allowedOrigins = parseAllowedOrigins();
 
-  if (
-    origin &&
-    (ALLOWED_ORIGINS.includes(origin) ||
-      origin === "https://kundanvision369.onrender.com" ||
-      origin.endsWith(".onrender.com"))
-  ) {
-    res.header("Access-Control-Allow-Origin", origin);
-    res.header("Access-Control-Allow-Credentials", "true");
-  } else if (!origin) {
-    // Same-origin, direct API, or webhook request
-    res.header("Access-Control-Allow-Origin", "https://kundanvision369.onrender.com");
-    res.header("Access-Control-Allow-Credentials", "true");
+  if (origin) {
+    if (isOriginAllowed(origin, allowedOrigins)) {
+      res.header("Access-Control-Allow-Origin", origin);
+      res.header("Access-Control-Allow-Credentials", "true");
+    } else {
+      console.warn(`[CORS Blocked] Origin "${origin}" is not allowed by CORS_ALLOWED_ORIGINS: ${allowedOrigins.join(", ")}`);
+    }
   } else {
-    res.header("Access-Control-Allow-Origin", "https://kundanvision369.onrender.com");
-    res.header("Access-Control-Allow-Credentials", "true");
+    res.header("Access-Control-Allow-Origin", "*");
   }
 
   res.header("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS, PATCH");
@@ -174,6 +206,7 @@ app.use((req, res, next) => {
   if (req.method === "OPTIONS") {
     return res.status(204).end();
   }
+
   next();
 });
 
@@ -314,6 +347,13 @@ app.use("/api", autoDispatchRoutes);
 // 11. GitHub SSH Key Management & Push/Pull Operations
 app.use("/api/github", githubRoutes);
 
+// 12. AWS Amplify Static Asset & Custom Domain Management (gigpilot-platform / d2qe2q720fbn3x)
+app.use("/api/amplify", amplifyRoutes);
+app.use("/api/deploy", amplifyRoutes);
+
+// 13. GitHub Actions DevOps Workflow Automation & Continuous Deployment
+app.use("/api/devops", devopsActionsRoutes);
+
 // Compatibility aliases for /api/bids, /api/bids/stats, and /api/leads list
 app.use("/api/bids", freelancerBidsRoutes);
 
@@ -421,7 +461,9 @@ app.get("/api/health", async (req, res) => {
       responseTimeMs: Date.now() - startTime,
       environment: process.env.NODE_ENV || 'development',
       version: '3.0.0-devops-unified-health',
-      database: {
+      // Standard specification check: returns "ok" when healthy
+      database: fullCheck.checks.database.status === 'healthy' ? 'ok' : 'degraded',
+      db: {
         status: fullCheck.checks.database.status === 'healthy' ? 'connected' : fullCheck.checks.database.status,
         connected: fullCheck.checks.database.status !== 'critical',
         type: fullCheck.checks.database.provider || 'PostgreSQL (Neon)',
@@ -534,6 +576,81 @@ app.post("/api/health/remediate", async (req, res) => {
     return res.status(500).json({
       success: false,
       error: err.message || 'Failed to execute self-healing remediation',
+    });
+  }
+});
+
+// Automated Backend Soft-Restart Endpoint for Frontend Watchdog & Recovery
+app.post(["/api/health/soft-restart", "/api/system/soft-restart"], async (req, res) => {
+  const triggerSource = req.body?.source || req.query?.source || 'frontend_watchdog';
+  const reason = req.body?.reason || 'persistent_timeout_detected';
+  const consecutiveFailures = Number(req.body?.consecutiveFailures) || 0;
+
+  console.log(`🔄 [Watchdog Soft-Restart] Initiating soft restart triggered by [${triggerSource}]: ${reason} (${consecutiveFailures} consecutive failures)`);
+
+  try {
+    // 1. Re-register and bump cron heartbeat immediately
+    recordCronHeartbeat(`soft_restart_${triggerSource}`);
+
+    // 2. Clear transient redis/in-memory caches to unwedge stale locks
+    try {
+      await clearBidsCache();
+    } catch (_) {}
+
+    // 3. Trigger autonomous remediation to verify database connection, flush failed orders, and check queues
+    const remediationRes = await autoRemediate(`soft_restart_${triggerSource}`);
+
+    // 4. Trigger auto-healer cycle to reset worker states and diagnose anomalies
+    let cycleResult: any = null;
+    try {
+      cycleResult = await autoHealer.runSelfHealingCycle(true);
+    } catch (e: any) {
+      console.warn("⚠️ [Watchdog Soft-Restart] autoHealer cycle notice:", e?.message);
+    }
+
+    // 5. Log soft restart event in audit trail
+    try {
+      logActivityEvent({
+        source: 'System',
+        type: 'SYSTEM_SOFT_RESTART',
+        status: 'warning',
+        method: 'POST',
+        endpoint: '/api/health/soft-restart',
+        statusCode: 200,
+        latencyMs: 15,
+        summary: `Automated soft restart dispatched by frontend watchdog: ${reason}`,
+        details: {
+          source: triggerSource,
+          reason,
+          consecutiveFailures,
+          actionsTaken: remediationRes.actionsTaken,
+          uptime: Math.floor(process.uptime()),
+          timestamp: new Date().toISOString()
+        },
+        tags: ['watchdog', 'health', 'soft-restart']
+      });
+    } catch (_) {}
+
+    return res.json({
+      success: true,
+      action: 'soft_restart',
+      message: 'Backend soft restart executed: connection pools reconciled, worker cycles synchronized, and cache flushed.',
+      timestamp: new Date().toISOString(),
+      uptime: Math.floor(process.uptime()),
+      remediation: {
+        actionsTaken: remediationRes.actionsTaken,
+        resolved: remediationRes.resolved,
+        finalStatus: remediationRes.finalStatus
+      },
+      cycleResult,
+      health: remediationRes.health
+    });
+  } catch (err: any) {
+    console.error("❌ [Watchdog Soft-Restart] Error during soft restart:", err);
+    return res.status(500).json({
+      success: false,
+      error: err?.message || 'Failed to execute backend soft restart',
+      timestamp: new Date().toISOString()
     });
   }
 });
@@ -1547,11 +1664,16 @@ snapshotService.initialize().then(() => {
 // Start Server & Mount Vite Middleware
 async function startServer() {
   if (process.env.NODE_ENV !== "production") {
-    const vite = await createViteServer({
-      server: { middlewareMode: true },
-      appType: "spa",
-    });
-    app.use(vite.middlewares);
+    try {
+      const { createServer: createViteServer } = await import("vite");
+      const vite = await createViteServer({
+        server: { middlewareMode: true },
+        appType: "spa",
+      });
+      app.use(vite.middlewares);
+    } catch (viteErr) {
+      console.warn("⚠️ Vite middleware could not be loaded dynamically (production/bundled mode):", viteErr);
+    }
   } else {
     const distPath = path.join(process.cwd(), 'dist');
 

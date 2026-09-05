@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import {
   fetchLeadNotificationStatus,
   savePlatformCookies,
+  resetFreelancerCookies,
   saveNotificationConfig,
   sendTestTelegramPush,
   sendTestEmailPush,
@@ -54,6 +55,12 @@ export const LeadNotificationsHub: React.FC<LeadNotificationsHubProps> = ({
       const res = await fetchLeadNotificationStatus();
       if (res.success) {
         setData(res);
+        if (res.cookies?.freelancerCookies) {
+          setFreelancerCookieInput(res.cookies.freelancerCookies);
+        }
+        if (res.cookies?.upworkCookies) {
+          setUpworkCookieInput(res.cookies.upworkCookies);
+        }
         setTelegramEnabled(res.config.telegramEnabled);
         setTelegramBotToken(res.config.telegramBotToken || '');
         setTelegramChatId(res.config.telegramChatId || '');
@@ -114,15 +121,38 @@ export const LeadNotificationsHub: React.FC<LeadNotificationsHubProps> = ({
       setIsSavingCookies(true);
       const res = await savePlatformCookies(platform, cookieStr);
       if (res.success) {
-        showToast?.(`${platform.toUpperCase()} session verified and connected to Headless Scraper!`, 'success');
-        if (platform === 'upwork') setUpworkCookieInput('');
-        if (platform === 'freelancer') setFreelancerCookieInput('');
-        loadStatus();
+        showToast?.(res.validation?.message || `${platform.toUpperCase()} session verified and connected to Headless Scraper!`, 'success');
+        if (platform === 'freelancer' && res.cookiesState?.freelancerCookies) {
+          setFreelancerCookieInput(res.cookiesState.freelancerCookies);
+        } else if (platform === 'upwork' && res.cookiesState?.upworkCookies) {
+          setUpworkCookieInput(res.cookiesState.upworkCookies);
+        }
+        await loadStatus();
       } else {
         showToast?.(res.validation?.message || 'Failed to validate cookies', 'error');
       }
     } catch (err: any) {
       showToast?.(err.message || 'Error saving cookies', 'error');
+    } finally {
+      setIsSavingCookies(false);
+    }
+  };
+
+  const handleResetFreelancerCookies = async () => {
+    try {
+      setIsSavingCookies(true);
+      const res = await resetFreelancerCookies();
+      if (res.success) {
+        if (res.cookiesState?.freelancerCookies) {
+          setFreelancerCookieInput(res.cookiesState.freelancerCookies);
+        }
+        showToast?.(res.message || 'Freelancer.com session cookies loaded and verified (@kundank879)!', 'success');
+        await loadStatus();
+      } else {
+        showToast?.(res.error || 'Failed to load Freelancer session cookies', 'error');
+      }
+    } catch (err: any) {
+      showToast?.(err.message || 'Failed to load Freelancer session cookies', 'error');
     } finally {
       setIsSavingCookies(false);
     }
@@ -665,18 +695,31 @@ export const LeadNotificationsHub: React.FC<LeadNotificationsHubProps> = ({
                   <span className="w-3 h-3 rounded-full bg-blue-400"></span>
                   <h3 className="text-sm font-bold text-white">Freelancer.com Session Cookies</h3>
                 </div>
-                <span className={`text-[11px] font-mono font-bold px-2 py-0.5 rounded-full border ${
-                  data?.cookies?.freelancerStatus === 'active'
-                    ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-300'
-                    : 'bg-amber-500/10 border-amber-500/30 text-amber-300'
-                }`}>
-                  {data?.cookies?.freelancerStatus === 'active' ? '● Active Headless Session' : 'Needs Cookies String'}
-                </span>
+                <div className="flex items-center gap-2">
+                  <span className={`text-[11px] font-mono font-bold px-2 py-0.5 rounded-full border ${
+                    data?.cookies?.freelancerStatus === 'active'
+                      ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-300'
+                      : 'bg-amber-500/10 border-amber-500/30 text-amber-300'
+                  }`}>
+                    {data?.cookies?.freelancerStatus === 'active' ? '● Active Session (@kundank879)' : 'Needs Cookies String'}
+                  </span>
+                </div>
               </div>
 
-              <p className="text-xs text-slate-400">
-                Open Freelancer.com &rarr; Press <kbd className="bg-slate-800 px-1 py-0.5 rounded text-[10px]">F12</kbd> &rarr; Application &rarr; Cookies &rarr; Copy <code className="text-indigo-300">freelancer_session</code> or <code className="text-indigo-300">auth_token</code>.
-              </p>
+              <div className="flex items-center justify-between text-xs text-slate-400">
+                <p>
+                  Open Freelancer.com &rarr; Press <kbd className="bg-slate-800 px-1 py-0.5 rounded text-[10px]">F12</kbd> &rarr; Application &rarr; Cookies &rarr; Copy <code className="text-indigo-300">freelancer_session</code> or <code className="text-indigo-300">auth_token</code>.
+                </p>
+                <button
+                  type="button"
+                  onClick={handleResetFreelancerCookies}
+                  disabled={isSavingCookies}
+                  title="Reload active verified credentials (@kundank879)"
+                  className="text-[11px] text-blue-400 hover:text-blue-300 underline underline-offset-2 flex items-center gap-1 cursor-pointer shrink-0 ml-2"
+                >
+                  Load Active Session
+                </button>
+              </div>
 
               <textarea
                 rows={3}
@@ -686,13 +729,25 @@ export const LeadNotificationsHub: React.FC<LeadNotificationsHubProps> = ({
                 className="w-full bg-slate-900/90 border border-slate-700 rounded-xl p-3 text-xs text-white placeholder-slate-500 font-mono focus:outline-none focus:border-blue-500"
               />
 
-              <button
-                onClick={() => handleSaveCookies('freelancer')}
-                disabled={isSavingCookies || !freelancerCookieInput.trim()}
-                className="w-full py-2.5 rounded-xl bg-blue-600 hover:bg-blue-500 text-white text-xs font-bold shadow-md transition-all cursor-pointer disabled:opacity-50"
-              >
-                Verify &amp; Activate Freelancer Scraper
-              </button>
+              <div className="flex gap-2.5">
+                <button
+                  type="button"
+                  onClick={() => handleSaveCookies('freelancer')}
+                  disabled={isSavingCookies || !freelancerCookieInput.trim()}
+                  className="flex-1 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-500 text-white text-xs font-bold shadow-md transition-all cursor-pointer disabled:opacity-50"
+                >
+                  {isSavingCookies ? 'Validating & Connecting...' : 'Verify & Activate Freelancer Scraper'}
+                </button>
+                <button
+                  type="button"
+                  onClick={handleResetFreelancerCookies}
+                  disabled={isSavingCookies}
+                  title="Reload default verified session cookies (@kundank879)"
+                  className="px-4 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-300 hover:text-white text-xs font-medium transition-all cursor-pointer disabled:opacity-50 flex items-center gap-1.5 shrink-0"
+                >
+                  <span>🔄</span> Load Active Session
+                </button>
+              </div>
             </div>
           </div>
         </div>

@@ -1,0 +1,26 @@
+{
+  "id": "snap_2026-09-05T04-14-35_3p7s",
+  "timestamp": "2026-09-05T04:14:35.278Z",
+  "trigger": "DAILY_SCHEDULE",
+  "status": "SUCCESS",
+  "sizeBytes": 539838,
+  "sizeFormatted": "527.19 KB",
+  "checksum": "ec1bb9242968007db22da6d4e120d4173952d58af2d54b1ea2bc6528f8d26d9a",
+  "tables": {
+    "users": 1,
+    "transactions": 0,
+    "paypalOrders": 0,
+    "workOrders": 440,
+    "proposals": 0,
+    "bids": 34
+  },
+  "totalRecords": 475,
+  "durationMs": 4388,
+  "storageLocation": "/app/applet/data/snapshots/data_snap_2026-09-05T04-14-35_3p7s.json",
+  "metadata": {
+    "dbProvider": "Neon Serverless PostgreSQL",
+    "nodeVersion": "v22.23.2",
+    "schemaVersion": "prisma_schema_v5",
+    "retentionSlot": 1
+  }
+}

@@ -1,5 +1,5 @@
 import crypto from 'crypto';
-import { getPgPool, memoryStore, Job, Bid, WorkOrder, User } from './pgDatabase.js';
+import { memoryStore, safeExecutePgQuery, Job, Bid, WorkOrder, User } from './pgDatabase.js';
 import { logActivityEvent } from './activityLogger.js';
 import { createFreelancerProject } from './freelancerApi.js';
 import { enqueueFreelancerJobSync, triggerWorkOrderFreelancerSync } from './freelancerRetryQueue.js';
@@ -29,7 +29,6 @@ export async function autoDispatchJob(jobParams: {
   deadlineHours?: number;
   externalId?: string;
 }): Promise<DispatchResult> {
-  const pool = getPgPool();
   const jobId = crypto.randomUUID();
   const customerId = jobParams.customerId || '44444444-4444-4444-8444-444444444444';
   const budget = Number(jobParams.budget) || 100;
@@ -72,34 +71,28 @@ export async function autoDispatchJob(jobParams: {
   // Find best available worker: available, has paypal_email, lowest workload, highest rating
   let selectedWorker: User | null = null;
 
-  if (pool) {
-    try {
-      // 1. Insert Job with external_id
-      await pool.query(
-        `INSERT INTO jobs (id, title, description, budget, status, customer_id, external_id, created_at)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
-        [job.id, job.title, job.description, job.budget, job.status, job.customer_id, job.external_id, job.created_at]
-      );
+  // 1. Insert Job with external_id
+  await safeExecutePgQuery(
+    `INSERT INTO jobs (id, title, description, budget, status, customer_id, external_id, created_at)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
+    [job.id, job.title, job.description, job.budget, job.status, job.customer_id, job.external_id, job.created_at]
+  );
 
-      // 2. Select best worker
-      const workerRes = await pool.query(
-        `SELECT id, email, paypal_email, rating, current_workload, is_available
-         FROM users
-         WHERE is_available = true AND paypal_email IS NOT NULL
-         ORDER BY current_workload ASC, rating DESC
-         LIMIT 1`
-      );
+  // 2. Select best worker
+  const workerRes = await safeExecutePgQuery(
+    `SELECT id, email, paypal_email, rating, current_workload, is_available
+     FROM users
+     WHERE is_available = true AND paypal_email IS NOT NULL
+     ORDER BY current_workload ASC, rating DESC
+     LIMIT 1`
+  );
 
-      if (workerRes.rows.length > 0) {
-        selectedWorker = {
-          ...workerRes.rows[0],
-          rating: parseFloat(workerRes.rows[0].rating),
-          current_workload: parseInt(workerRes.rows[0].current_workload, 10),
-        };
-      }
-    } catch (err: any) {
-      console.warn('⚠️ [AutoDispatch] PostgreSQL query notice, using memory store fallback:', err.message);
-    }
+  if (workerRes && workerRes.rows.length > 0) {
+    selectedWorker = {
+      ...workerRes.rows[0],
+      rating: parseFloat(workerRes.rows[0].rating),
+      current_workload: parseInt(workerRes.rows[0].current_workload, 10),
+    };
   }
 
   // Fallback to memory store if no DB worker selected
@@ -167,26 +160,20 @@ export async function autoDispatchJob(jobParams: {
   selectedWorker.current_workload += 1;
 
   // Persist to Postgres
-  if (pool) {
-    try {
-      await pool.query(
-        `INSERT INTO bids (id, job_id, worker_id, amount, status, created_at)
-         VALUES ($1, $2, $3, $4, $5, $6)`,
-        [bid.id, bid.job_id, bid.worker_id, bid.amount, bid.status, bid.created_at]
-      );
+  await safeExecutePgQuery(
+    `INSERT INTO bids (id, job_id, worker_id, amount, status, created_at)
+     VALUES ($1, $2, $3, $4, $5, $6)`,
+    [bid.id, bid.job_id, bid.worker_id, bid.amount, bid.status, bid.created_at]
+  );
 
-      await pool.query(
-        `INSERT INTO work_orders (id, job_id, worker_id, bid_id, status, completion_deadline, payment_status)
-         VALUES ($1, $2, $3, $4, $5, $6, $7)`,
-        [workOrder.id, workOrder.job_id, workOrder.worker_id, workOrder.bid_id, workOrder.status, workOrder.completion_deadline, workOrder.payment_status]
-      );
+  await safeExecutePgQuery(
+    `INSERT INTO work_orders (id, job_id, worker_id, bid_id, status, completion_deadline, payment_status)
+     VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+    [workOrder.id, workOrder.job_id, workOrder.worker_id, workOrder.bid_id, workOrder.status, workOrder.completion_deadline, workOrder.payment_status]
+  );
 
-      await pool.query(`UPDATE jobs SET status = 'assigned' WHERE id = $1`, [jobId]);
-      await pool.query(`UPDATE users SET current_workload = current_workload + 1 WHERE id = $1`, [selectedWorker.id]);
-    } catch (err: any) {
-      console.warn('⚠️ [AutoDispatch] Postgres persistence fallback:', err.message);
-    }
-  }
+  await safeExecutePgQuery(`UPDATE jobs SET status = 'assigned' WHERE id = $1`, [jobId]);
+  await safeExecutePgQuery(`UPDATE users SET current_workload = current_workload + 1 WHERE id = $1`, [selectedWorker.id]);
 
   // Persist to memory store
   memoryStore.bids.set(bid.id, bid);

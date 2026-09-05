@@ -1,0 +1,48 @@
+name: Migrate Amplify Frontend Backend URL
+
+on:
+  workflow_dispatch:
+    inputs:
+      new_backend_url:
+        description: 'New Backend URL (e.g., https://13-233-54-120.sslip.io)'
+        required: false
+        default: 'https://13-233-54-120.sslip.io'
+      amplify_app_name:
+        description: 'Amplify App Name (optional, defaults to gigpilot-platform)'
+        required: false
+        default: 'gigpilot-platform'
+      rollback:
+        description: 'Set to true to rollback to previous backend URL'
+        type: boolean
+        required: false
+        default: false
+
+jobs:
+  migrate:
+    name: Update Amplify Environment & Trigger Build
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_REGION || 'us-east-1' }}
+
+      - name: Run Migration Script
+        env:
+          NEW_BACKEND_URL: ${{ github.event.inputs.new_backend_url }}
+          AMPLIFY_APP_NAME: ${{ github.event.inputs.amplify_app_name }}
+          AWS_REGION: ${{ secrets.AWS_REGION || 'us-east-1' }}
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+        run: |
+          chmod +x ./scripts/migrate-amplify-backend.sh
+          if [ "${{ github.event.inputs.rollback }}" = "true" ]; then
+            ./scripts/migrate-amplify-backend.sh --rollback
+          else
+            ./scripts/migrate-amplify-backend.sh "$NEW_BACKEND_URL"
+          fi

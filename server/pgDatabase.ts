@@ -1,4 +1,4 @@
-import { Pool } from 'pg';
+import { Pool, QueryResult } from 'pg';
 import crypto from 'crypto';
 import { getNeonPool } from './neon.js';
 
@@ -165,22 +165,137 @@ export const memoryStore = new InMemoryStore();
 
 let pgPoolInstance: Pool | null = null;
 
+// Resilient circuit breaker state for PostgreSQL
+interface PgCircuitBreaker {
+  state: 'CLOSED' | 'OPEN' | 'HALF_OPEN';
+  consecutiveFailures: number;
+  openUntil: number;
+  lastFailureMessage: string;
+  lastWarningLoggedAt: number;
+}
+
+const circuitBreaker: PgCircuitBreaker = {
+  state: 'CLOSED',
+  consecutiveFailures: 0,
+  openUntil: 0,
+  lastFailureMessage: '',
+  lastWarningLoggedAt: 0,
+};
+
+export function getPgCircuitBreakerStatus(): {
+  isOpen: boolean;
+  state: 'CLOSED' | 'OPEN' | 'HALF_OPEN';
+  consecutiveFailures: number;
+  lastError: string;
+} {
+  const isOpen = circuitBreaker.state === 'OPEN' && Date.now() < circuitBreaker.openUntil;
+  return {
+    isOpen,
+    state: isOpen ? 'OPEN' : 'CLOSED',
+    consecutiveFailures: circuitBreaker.consecutiveFailures,
+    lastError: circuitBreaker.lastFailureMessage,
+  };
+}
+
+export function resetPgPool(): void {
+  if (pgPoolInstance) {
+    const old = pgPoolInstance;
+    pgPoolInstance = null;
+    old.end().catch(() => {});
+  }
+}
+
+export function handlePgFailure(err: any, context: string = 'query'): void {
+  circuitBreaker.consecutiveFailures++;
+  circuitBreaker.lastFailureMessage = err?.message || 'Unknown database error';
+
+  const isFatalConnectionError =
+    /terminated|closed|refused|timeout|reset|handshake|broken/i.test(err?.message || '') ||
+    err?.code === '57P01' ||
+    err?.code === '57P02' ||
+    err?.code === '57P03' ||
+    err?.code === 'ECONNRESET' ||
+    err?.code === 'ECONNREFUSED' ||
+    err?.code === 'ETIMEDOUT';
+
+  if (isFatalConnectionError && circuitBreaker.consecutiveFailures >= 2) {
+    circuitBreaker.state = 'OPEN';
+    circuitBreaker.openUntil = Date.now() + 60000; // 60s cooldown
+    resetPgPool();
+
+    // Log throttled informational warning (at most once every 3 minutes)
+    const now = Date.now();
+    if (now - circuitBreaker.lastWarningLoggedAt > 180000) {
+      console.warn(
+        `ℹ️ [Database] PostgreSQL is currently unreachable or disconnected (${circuitBreaker.lastFailureMessage}). Activating seamless in-memory resilient fallback.`
+      );
+      circuitBreaker.lastWarningLoggedAt = now;
+    }
+  }
+}
+
 export function getPgPool(): Pool | null {
   const dbUrl = (process.env.DATABASE_URL || '').trim();
   if (!dbUrl || (!dbUrl.startsWith('postgresql://') && !dbUrl.startsWith('postgres://'))) {
     return null;
   }
 
+  // If circuit breaker is open, immediately return null to fallback to memoryStore without blocking
+  if (circuitBreaker.state === 'OPEN') {
+    if (Date.now() < circuitBreaker.openUntil) {
+      return null;
+    }
+    // Half-open probe
+    circuitBreaker.state = 'HALF_OPEN';
+  }
+
   if (!pgPoolInstance) {
-    pgPoolInstance = new Pool({
-      connectionString: dbUrl,
-      ssl: dbUrl.includes('localhost') ? false : { rejectUnauthorized: false },
-      connectionTimeoutMillis: 5000,
-      idleTimeoutMillis: 15000,
-      max: 10,
-    });
+    try {
+      pgPoolInstance = new Pool({
+        connectionString: dbUrl,
+        ssl: dbUrl.includes('localhost') ? false : { rejectUnauthorized: false },
+        connectionTimeoutMillis: 3000,
+        idleTimeoutMillis: 10000,
+        keepAlive: true,
+        keepAliveInitialDelayMillis: 10000,
+        max: 5,
+      });
+
+      pgPoolInstance.on('error', (err: any) => {
+        // Handle idle client drop or connection termination safely
+        handlePgFailure(err, 'idle client');
+      });
+    } catch (e: any) {
+      handlePgFailure(e, 'pool creation');
+      return null;
+    }
   }
   return pgPoolInstance;
+}
+
+/**
+ * Execute a resilient PostgreSQL query with automatic circuit-breaker and graceful fallback.
+ * Returns null if the database is offline or query fails, avoiding noisy warnings.
+ */
+export async function safeExecutePgQuery<T = any>(
+  queryText: string,
+  params?: any[]
+): Promise<QueryResult<T> | null> {
+  const pool = getPgPool();
+  if (!pool) {
+    return null;
+  }
+
+  try {
+    const res = await pool.query<T>(queryText, params);
+    // Success: reset failures and close circuit
+    circuitBreaker.state = 'CLOSED';
+    circuitBreaker.consecutiveFailures = 0;
+    return res;
+  } catch (err: any) {
+    handlePgFailure(err, 'safeExecutePgQuery');
+    return null;
+  }
 }
 
 /**
@@ -295,14 +410,17 @@ export async function initializeDatabaseSchema(): Promise<boolean> {
       );
     `;
 
-    await pool.query(schemaSql);
+    const res = await safeExecutePgQuery(schemaSql);
+    if (!res) {
+      return false;
+    }
     console.log('✅ [Database] PostgreSQL schema initialized successfully.');
 
     // Seed default workers in Postgres if empty
-    const checkWorkers = await pool.query('SELECT COUNT(*) as count FROM users WHERE paypal_email IS NOT NULL');
-    if (parseInt(checkWorkers.rows[0]?.count || '0', 10) === 0) {
+    const checkWorkers = await safeExecutePgQuery('SELECT COUNT(*) as count FROM users WHERE paypal_email IS NOT NULL');
+    if (checkWorkers && parseInt(checkWorkers.rows[0]?.count || '0', 10) === 0) {
       for (const worker of memoryStore.users.values()) {
-        await pool.query(
+        await safeExecutePgQuery(
           `INSERT INTO users (id, email, paypal_email, rating, current_workload, is_available)
            VALUES ($1, $2, $3, $4, $5, $6)
            ON CONFLICT (id) DO NOTHING`,
@@ -340,26 +458,19 @@ export async function insertSelfHealingLog(log: Omit<SelfHealingLog, 'id' | 'tim
   }
 
   // Persist to PostgreSQL if connected
-  const pool = getPgPool();
-  if (pool) {
-    try {
-      await pool.query(
-        `INSERT INTO self_healing_logs (id, timestamp, check_status, remediation_triggered, remediation_success, details, retry_count)
-         VALUES ($1, $2, $3, $4, $5, $6, $7)`,
-        [
-          fullLog.id,
-          fullLog.timestamp,
-          fullLog.check_status,
-          fullLog.remediation_triggered,
-          fullLog.remediation_success,
-          JSON.stringify(fullLog.details),
-          fullLog.retry_count,
-        ]
-      );
-    } catch (err: any) {
-      console.warn('⚠️ [Database] Failed to insert into self_healing_logs in PostgreSQL:', err.message);
-    }
-  }
+  await safeExecutePgQuery(
+    `INSERT INTO self_healing_logs (id, timestamp, check_status, remediation_triggered, remediation_success, details, retry_count)
+     VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+    [
+      fullLog.id,
+      fullLog.timestamp,
+      fullLog.check_status,
+      fullLog.remediation_triggered,
+      fullLog.remediation_success,
+      JSON.stringify(fullLog.details),
+      fullLog.retry_count,
+    ]
+  );
 
   return fullLog;
 }
@@ -368,30 +479,24 @@ export async function insertSelfHealingLog(log: Omit<SelfHealingLog, 'id' | 'tim
  * Retrieve recent self-healing logs (with Postgres fallback to in-memory store)
  */
 export async function getSelfHealingLogs(limit: number = 50): Promise<SelfHealingLog[]> {
-  const pool = getPgPool();
-  if (pool) {
-    try {
-      const res = await pool.query(
-        `SELECT id, timestamp, check_status, remediation_triggered, remediation_success, details, retry_count
-         FROM self_healing_logs
-         ORDER BY timestamp DESC
-         LIMIT $1`,
-        [limit]
-      );
-      if (res.rows.length > 0) {
-        return res.rows.map((row) => ({
-          id: row.id,
-          timestamp: new Date(row.timestamp).toISOString(),
-          check_status: row.check_status,
-          remediation_triggered: Boolean(row.remediation_triggered),
-          remediation_success: Boolean(row.remediation_success),
-          details: typeof row.details === 'string' ? JSON.parse(row.details) : row.details || {},
-          retry_count: Number(row.retry_count) || 0,
-        }));
-      }
-    } catch (err: any) {
-      console.warn('⚠️ [Database] Failed to fetch self_healing_logs from PostgreSQL, using memory store:', err.message);
-    }
+  const res = await safeExecutePgQuery(
+    `SELECT id, timestamp, check_status, remediation_triggered, remediation_success, details, retry_count
+     FROM self_healing_logs
+     ORDER BY timestamp DESC
+     LIMIT $1`,
+    [limit]
+  );
+
+  if (res && res.rows.length > 0) {
+    return res.rows.map((row) => ({
+      id: row.id,
+      timestamp: new Date(row.timestamp).toISOString(),
+      check_status: row.check_status,
+      remediation_triggered: Boolean(row.remediation_triggered),
+      remediation_success: Boolean(row.remediation_success),
+      details: typeof row.details === 'string' ? JSON.parse(row.details) : row.details || {},
+      retry_count: Number(row.retry_count) || 0,
+    }));
   }
 
   return memoryStore.selfHealingLogs.slice(0, limit);
@@ -414,18 +519,12 @@ export async function insertMLTrainingData(sample: Omit<MLTrainingData, 'id' | '
     memoryStore.mlTrainingData.pop();
   }
 
-  const pool = getPgPool();
-  if (pool) {
-    try {
-      await pool.query(
-        `INSERT INTO ml_training_data (id, features, label, timestamp, source)
-         VALUES ($1, $2, $3, $4, $5)`,
-        [fullSample.id, JSON.stringify(fullSample.features), fullSample.label, fullSample.timestamp, fullSample.source]
-      );
-    } catch (err: any) {
-      console.warn('⚠️ [Database] Failed to insert ml_training_data to PG:', err.message);
-    }
-  }
+  await safeExecutePgQuery(
+    `INSERT INTO ml_training_data (id, features, label, timestamp, source)
+     VALUES ($1, $2, $3, $4, $5)`,
+    [fullSample.id, JSON.stringify(fullSample.features), fullSample.label, fullSample.timestamp, fullSample.source]
+  );
+
   return fullSample;
 }
 
@@ -433,29 +532,24 @@ export async function insertMLTrainingData(sample: Omit<MLTrainingData, 'id' | '
  * Retrieve training data samples
  */
 export async function getMLTrainingData(limit: number = 200): Promise<MLTrainingData[]> {
-  const pool = getPgPool();
-  if (pool) {
-    try {
-      const res = await pool.query(
-        `SELECT id, features, label, timestamp, source
-         FROM ml_training_data
-         ORDER BY timestamp DESC
-         LIMIT $1`,
-        [limit]
-      );
-      if (res.rows.length > 0) {
-        return res.rows.map((row) => ({
-          id: row.id,
-          features: typeof row.features === 'string' ? JSON.parse(row.features) : row.features,
-          label: row.label,
-          timestamp: new Date(row.timestamp).toISOString(),
-          source: row.source,
-        }));
-      }
-    } catch (err: any) {
-      console.warn('⚠️ [Database] Failed to fetch ml_training_data from PG:', err.message);
-    }
+  const res = await safeExecutePgQuery(
+    `SELECT id, features, label, timestamp, source
+     FROM ml_training_data
+     ORDER BY timestamp DESC
+     LIMIT $1`,
+    [limit]
+  );
+
+  if (res && res.rows.length > 0) {
+    return res.rows.map((row) => ({
+      id: row.id,
+      features: typeof row.features === 'string' ? JSON.parse(row.features) : row.features,
+      label: row.label,
+      timestamp: new Date(row.timestamp).toISOString(),
+      source: row.source,
+    }));
   }
+
   return memoryStore.mlTrainingData.slice(0, limit);
 }
 
@@ -468,29 +562,23 @@ export async function insertMLFeedback(feedback: MLFeedback): Promise<MLFeedback
     memoryStore.mlFeedback.pop();
   }
 
-  const pool = getPgPool();
-  if (pool) {
-    try {
-      await pool.query(
-        `INSERT INTO ml_feedback (prediction_id, predicted_label, confidence, actual_label, remediation_success, features, timestamp)
-         VALUES ($1, $2, $3, $4, $5, $6, $7)
-         ON CONFLICT (prediction_id) DO UPDATE
-         SET actual_label = EXCLUDED.actual_label,
-             remediation_success = EXCLUDED.remediation_success`,
-        [
-          feedback.prediction_id,
-          feedback.predicted_label,
-          feedback.confidence,
-          feedback.actual_label,
-          feedback.remediation_success,
-          JSON.stringify(feedback.features),
-          feedback.timestamp,
-        ]
-      );
-    } catch (err: any) {
-      console.warn('⚠️ [Database] Failed to insert ml_feedback into PG:', err.message);
-    }
-  }
+  await safeExecutePgQuery(
+    `INSERT INTO ml_feedback (prediction_id, predicted_label, confidence, actual_label, remediation_success, features, timestamp)
+     VALUES ($1, $2, $3, $4, $5, $6, $7)
+     ON CONFLICT (prediction_id) DO UPDATE
+     SET actual_label = EXCLUDED.actual_label,
+         remediation_success = EXCLUDED.remediation_success`,
+    [
+      feedback.prediction_id,
+      feedback.predicted_label,
+      feedback.confidence,
+      feedback.actual_label,
+      feedback.remediation_success,
+      JSON.stringify(feedback.features),
+      feedback.timestamp,
+    ]
+  );
+
   return feedback;
 }
 
@@ -498,31 +586,26 @@ export async function insertMLFeedback(feedback: MLFeedback): Promise<MLFeedback
  * Retrieve recent ML feedback
  */
 export async function getMLFeedback(limit: number = 50): Promise<MLFeedback[]> {
-  const pool = getPgPool();
-  if (pool) {
-    try {
-      const res = await pool.query(
-        `SELECT prediction_id, predicted_label, confidence, actual_label, remediation_success, features, timestamp
-         FROM ml_feedback
-         ORDER BY timestamp DESC
-         LIMIT $1`,
-        [limit]
-      );
-      if (res.rows.length > 0) {
-        return res.rows.map((row) => ({
-          prediction_id: row.prediction_id,
-          predicted_label: row.predicted_label,
-          confidence: parseFloat(row.confidence),
-          actual_label: row.actual_label,
-          remediation_success: Boolean(row.remediation_success),
-          features: typeof row.features === 'string' ? JSON.parse(row.features) : row.features || {},
-          timestamp: new Date(row.timestamp).toISOString(),
-        }));
-      }
-    } catch (err: any) {
-      console.warn('⚠️ [Database] Failed to fetch ml_feedback from PG:', err.message);
-    }
+  const res = await safeExecutePgQuery(
+    `SELECT prediction_id, predicted_label, confidence, actual_label, remediation_success, features, timestamp
+     FROM ml_feedback
+     ORDER BY timestamp DESC
+     LIMIT $1`,
+    [limit]
+  );
+
+  if (res && res.rows.length > 0) {
+    return res.rows.map((row) => ({
+      prediction_id: row.prediction_id,
+      predicted_label: row.predicted_label,
+      confidence: parseFloat(row.confidence),
+      actual_label: row.actual_label,
+      remediation_success: Boolean(row.remediation_success),
+      features: typeof row.features === 'string' ? JSON.parse(row.features) : row.features || {},
+      timestamp: new Date(row.timestamp).toISOString(),
+    }));
   }
+
   return memoryStore.mlFeedback.slice(0, limit);
 }
 
@@ -544,65 +627,53 @@ export async function upsertMLModel(model: MLModelRecord): Promise<void> {
     memoryStore.mlModels.unshift(model);
   }
 
-  const pool = getPgPool();
-  if (pool) {
-    try {
-      if (model.active) {
-        await pool.query(`UPDATE ml_models SET active = FALSE WHERE version != $1`, [model.version]);
-      }
-      await pool.query(
-        `INSERT INTO ml_models (version, path, accuracy, f1_score, deployed_at, active, metadata)
-         VALUES ($1, $2, $3, $4, $5, $6, $7)
-         ON CONFLICT (version) DO UPDATE
-         SET path = EXCLUDED.path,
-             accuracy = EXCLUDED.accuracy,
-             f1_score = EXCLUDED.f1_score,
-             deployed_at = EXCLUDED.deployed_at,
-             active = EXCLUDED.active,
-             metadata = EXCLUDED.metadata`,
-        [
-          model.version,
-          model.path,
-          model.accuracy,
-          model.f1_score,
-          model.deployed_at,
-          model.active,
-          JSON.stringify(model.metadata || {}),
-        ]
-      );
-    } catch (err: any) {
-      console.warn('⚠️ [Database] Failed to upsert ml_models into PG:', err.message);
-    }
+  if (model.active) {
+    await safeExecutePgQuery(`UPDATE ml_models SET active = FALSE WHERE version != $1`, [model.version]);
   }
+  await safeExecutePgQuery(
+    `INSERT INTO ml_models (version, path, accuracy, f1_score, deployed_at, active, metadata)
+     VALUES ($1, $2, $3, $4, $5, $6, $7)
+     ON CONFLICT (version) DO UPDATE
+     SET path = EXCLUDED.path,
+         accuracy = EXCLUDED.accuracy,
+         f1_score = EXCLUDED.f1_score,
+         deployed_at = EXCLUDED.deployed_at,
+         active = EXCLUDED.active,
+         metadata = EXCLUDED.metadata`,
+    [
+      model.version,
+      model.path,
+      model.accuracy,
+      model.f1_score,
+      model.deployed_at,
+      model.active,
+      JSON.stringify(model.metadata || {}),
+    ]
+  );
 }
 
 /**
  * Get all ML model versions
  */
 export async function getMLModels(): Promise<MLModelRecord[]> {
-  const pool = getPgPool();
-  if (pool) {
-    try {
-      const res = await pool.query(
-        `SELECT version, path, accuracy, f1_score, deployed_at, active, metadata
-         FROM ml_models
-         ORDER BY deployed_at DESC`
-      );
-      if (res.rows.length > 0) {
-        return res.rows.map((row) => ({
-          version: row.version,
-          path: row.path,
-          accuracy: parseFloat(row.accuracy),
-          f1_score: parseFloat(row.f1_score),
-          deployed_at: new Date(row.deployed_at).toISOString(),
-          active: Boolean(row.active),
-          metadata: typeof row.metadata === 'string' ? JSON.parse(row.metadata) : row.metadata || {},
-        }));
-      }
-    } catch (err: any) {
-      console.warn('⚠️ [Database] Failed to fetch ml_models from PG:', err.message);
-    }
+  const res = await safeExecutePgQuery(
+    `SELECT version, path, accuracy, f1_score, deployed_at, active, metadata
+     FROM ml_models
+     ORDER BY deployed_at DESC`
+  );
+
+  if (res && res.rows.length > 0) {
+    return res.rows.map((row) => ({
+      version: row.version,
+      path: row.path,
+      accuracy: parseFloat(row.accuracy),
+      f1_score: parseFloat(row.f1_score),
+      deployed_at: new Date(row.deployed_at).toISOString(),
+      active: Boolean(row.active),
+      metadata: typeof row.metadata === 'string' ? JSON.parse(row.metadata) : row.metadata || {},
+    }));
   }
+
   return memoryStore.mlModels;
 }
 

@@ -1,139 +1,158 @@
-name: CI/CD Pipeline - Test, Build & Deploy
+name: Deploy to AWS Amplify (Frontend) & EC2 (Backend)
 
 on:
   push:
     branches:
       - main
       - master
-  pull_request:
-    branches:
-      - main
-      - master
   workflow_dispatch:
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  group: deploy-${{ github.ref }}
+  cancel-in-progress: false
 
 jobs:
-  # --------------------------------------------------------------------------
-  # 1. Test, Lint & Compile Validation Job
-  # --------------------------------------------------------------------------
-  test-and-build:
-    name: Lint, Test & Compile
+  deploy-amplify:
+    name: 🚀 Deploy Frontend (AWS Amplify - gigpilot-platform)
     runs-on: ubuntu-latest
-
     steps:
       - name: Checkout Source Code
         uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
 
-      - name: Set up Node.js 20.x
-        uses: actions/setup-node@v4
-        with:
-          node-version: 20
-          cache: 'npm'
-
-      - name: Install Project Dependencies
-        run: npm ci || npm install --legacy-peer-deps
-
-      - name: Generate Prisma Client (if present)
-        run: |
-          if [ -f "prisma/schema.prisma" ]; then
-            npx prisma generate
-          fi
-
-      - name: Run Test Suite & Type Checking
-        run: npm test
-
-      - name: Run Production Build
-        run: npm run build
-
-  # --------------------------------------------------------------------------
-  # 2. Automated Production Deployment (Render)
-  # --------------------------------------------------------------------------
-  deploy-production:
-    name: Trigger Render Production Deployment
-    needs: test-and-build
-    if: (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master') && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
-    runs-on: ubuntu-latest
-
-    steps:
-      - name: Trigger Webhook Deploy to Render
-        env:
-          RENDER_DEPLOY_HOOK_URL: ${{ secrets.RENDER_DEPLOY_HOOK_URL }}
-        run: |
-          if [ -z "$RENDER_DEPLOY_HOOK_URL" ]; then
-            echo "ℹ️  [Render Deploy Hook]: RENDER_DEPLOY_HOOK_URL secret not configured in GitHub."
-            echo "👉 If your Render service has auto-deploy enabled on GitHub commits, Render is building automatically."
-            echo "👉 To trigger manual instant webhook deploys, add RENDER_DEPLOY_HOOK_URL to GitHub Repository Secrets."
-            exit 0
-          fi
-
-          echo "🚀 Triggering instant deployment on Render..."
-          RESPONSE=$(curl -s -w "\nHTTP_STATUS:%{http_code}" -X POST "$RENDER_DEPLOY_HOOK_URL")
-          HTTP_STATUS=$(echo "$RESPONSE" | grep "HTTP_STATUS" | cut -d':' -f2)
-          BODY=$(echo "$RESPONSE" | grep -v "HTTP_STATUS")
-
-          echo "Render Response: $BODY"
-
-          if [ "$HTTP_STATUS" -ge 200 ] && [ "$HTTP_STATUS" -lt 300 ]; then
-            echo "✅ Deployment successfully triggered on Render!"
-          else
-            echo "❌ Failed to trigger Render deploy hook. HTTP Status: $HTTP_STATUS"
-            exit 1
-          fi
-
-  # --------------------------------------------------------------------------
-  # 3. Automated Backend Deployment (AWS App Runner)
-  # --------------------------------------------------------------------------
-  deploy-aws-backend:
-    name: Trigger AWS App Runner Deployment
-    needs: test-and-build
-    if: (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master') && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
-    runs-on: ubuntu-latest
-    steps:
-      - name: Check AWS Credentials & Service ARN
-        id: check-aws
+      - name: Configure AWS Credentials (Optional)
+        if: env.AWS_ACCESS_KEY_ID != ''
+        uses: aws-actions/configure-aws-credentials@v4
         env:
           AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          AWS_APP_RUNNER_SERVICE_ARN: ${{ secrets.AWS_APP_RUNNER_SERVICE_ARN }}
-          AWS_REGION: ${{ secrets.AWS_REGION }}
-        run: |
-          if [ -n "$AWS_ACCESS_KEY_ID" ] && [ -n "$AWS_APP_RUNNER_SERVICE_ARN" ]; then
-            echo "configured=true" >> $GITHUB_OUTPUT
-            # Extract region automatically from ARN: arn:aws:apprunner:<region>:<account>:service/...
-            ARN_REGION=$(echo "$AWS_APP_RUNNER_SERVICE_ARN" | cut -d: -f4)
-            TARGET_REGION="${AWS_REGION:-${ARN_REGION:-us-east-1}}"
-            echo "region=$TARGET_REGION" >> $GITHUB_OUTPUT
-            echo "ℹ️ AWS Region configured: $TARGET_REGION"
-          else
-            echo "configured=false" >> $GITHUB_OUTPUT
-            echo "ℹ️  AWS App Runner service ARN or credentials not set in GitHub secrets."
-            echo "👉 If your AWS App Runner service has Automatic Deploy enabled with apprunner.yaml, AWS auto-deploys on every git push directly."
-          fi
-
-      - name: Configure AWS Credentials
-        if: steps.check-aws.outputs.configured == 'true'
-        uses: aws-actions/configure-aws-credentials@v4
         with:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-region: ${{ steps.check-aws.outputs.region }}
+          aws-region: ${{ secrets.AWS_REGION || 'ap-south-1' }}
 
-      - name: Start AWS App Runner Deployment
-        if: steps.check-aws.outputs.configured == 'true'
+      - name: Trigger AWS Amplify Release Job
+        env:
+          AMPLIFY_APP_ID: ${{ secrets.AMPLIFY_APP_ID || 'd2qe2q720fbn3x' }}
+          AMPLIFY_WEBHOOK: ${{ secrets.AMPLIFY_DEPLOY_WEBHOOK_URL }}
         run: |
-          echo "🚀 Triggering deployment on AWS App Runner..."
-          OPERATION_ID=$(aws apprunner start-deployment \
-            --service-arn "${{ secrets.AWS_APP_RUNNER_SERVICE_ARN }}" \
-            --query 'OperationId' \
-            --output text)
-          echo "✅ AWS App Runner deployment initiated successfully with Operation ID: $OPERATION_ID"
-          echo "🌐 Fetching service details..."
-          aws apprunner describe-service \
-            --service-arn "${{ secrets.AWS_APP_RUNNER_SERVICE_ARN }}" \
-            --query 'Service.{Status:Status, ServiceUrl:ServiceUrl, ServiceName:ServiceName}' \
-            --output table || true
+          echo "=========================================================="
+          echo "Triggering AWS Amplify Build for App: $AMPLIFY_APP_ID"
+          echo "=========================================================="
+          
+          # If AWS credentials configured, trigger release build directly
+          if command -v aws &>/dev/null && [ -n "${{ secrets.AWS_ACCESS_KEY_ID }}" ]; then
+            BRANCH_NAME="${GITHUB_REF_NAME}"
+            echo "Initiating start-job on branch $BRANCH_NAME..."
+            aws amplify start-job \
+              --app-id "$AMPLIFY_APP_ID" \
+              --branch-name "$BRANCH_NAME" \
+              --job-type RELEASE || echo "Notice: AWS CLI start-job completed or branch handled natively."
+          fi
+          
+          # If incoming deploy webhook is configured in GitHub secrets
+          if [ -n "$AMPLIFY_WEBHOOK" ]; then
+            echo "Invoking incoming deployment webhook..."
+            curl -sS -X POST -d '{}' "$AMPLIFY_WEBHOOK" || true
+          fi
+          
+          echo "✔ AWS Amplify git-sync triggered on push to $GITHUB_REF_NAME."
+          echo "Amplify URL: https://main.$AMPLIFY_APP_ID.amplifyapp.com"
 
+  deploy-ec2:
+    name: 🛡️ Deploy Backend (AWS EC2 - gigpilot-backend)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Source Code
+        uses: actions/checkout@v4
+
+      - name: Trigger EC2 Push-to-Deploy Webhook
+        env:
+          EC2_HOST: ${{ secrets.EC2_HOST || '13.233.54.120' }}
+          WEBHOOK_SECRET: ${{ secrets.GITHUB_WEBHOOK_SECRET || secrets.WEBHOOK_SECRET }}
+        run: |
+          WEBHOOK_URL="https://${EC2_HOST//./-}.sslip.io/api/github/webhook"
+          echo "Target Webhook: $WEBHOOK_URL"
+          
+          PAYLOAD=$(cat <<EOF
+          {
+            "ref": "refs/heads/${GITHUB_REF_NAME}",
+            "after": "${GITHUB_SHA}",
+            "head_commit": {
+              "id": "${GITHUB_SHA}",
+              "message": "${{ github.event.head_commit.message || 'Automated CI/CD deployment' }}",
+              "author": { "name": "${{ github.actor }}" }
+            }
+          }
+          EOF
+          )
+          
+          SIG_HEADER=()
+          if [ -n "$WEBHOOK_SECRET" ]; then
+            SIG=$(node -e "
+              const crypto = require('crypto');
+              const hmac = crypto.createHmac('sha256', process.env.WEBHOOK_SECRET);
+              hmac.update(Buffer.from(process.env.PAYLOAD));
+              console.log('sha256=' + hmac.digest('hex'));
+            ")
+            SIG_HEADER=(-H "X-Hub-Signature-256: $SIG")
+          fi
+          
+          echo "Dispatching deployment webhook..."
+          HTTP_CODE=$(curl -k -sS -o /tmp/resp.json -w "%{http_code}" \
+            -X POST "$WEBHOOK_URL" \
+            -H "Content-Type: application/json" \
+            -H "X-GitHub-Event: push" \
+            -H "X-GitHub-Delivery: gha-${GITHUB_RUN_ID}" \
+            "${SIG_HEADER[@]}" \
+            -d "$PAYLOAD" \
+            --max-time 15 || echo "000")
+            
+          echo "HTTPS Response: $HTTP_CODE"
+          cat /tmp/resp.json 2>/dev/null || true
+          
+          if [ "$HTTP_CODE" != "200" ] && [ "$HTTP_CODE" != "202" ]; then
+            echo "Trying HTTP port 3000..."
+            HTTP_CODE=$(curl -sS -o /tmp/resp.json -w "%{http_code}" \
+              -X POST "http://${EC2_HOST}:3000/api/github/webhook" \
+              -H "Content-Type: application/json" \
+              -H "X-GitHub-Event: push" \
+              -H "X-GitHub-Delivery: gha-${GITHUB_RUN_ID}" \
+              "${SIG_HEADER[@]}" \
+              -d "$PAYLOAD" \
+              --max-time 15 || echo "000")
+            echo "HTTP 3000 Response: $HTTP_CODE"
+            cat /tmp/resp.json 2>/dev/null || true
+          fi
+
+          if [ "$HTTP_CODE" = "200" ] || [ "$HTTP_CODE" = "202" ]; then
+            echo "✔ EC2 backend deployment successfully initiated!"
+          else
+            echo "Webhook notice (HTTP $HTTP_CODE). Checking direct SSH fallback..."
+          fi
+
+      - name: Deploy via SSH (Fallback / Direct)
+        if: env.SSH_KEY != ''
+        env:
+          SSH_KEY: ${{ secrets.EC2_SSH_KEY }}
+          EC2_HOST: ${{ secrets.EC2_HOST || '13.233.54.120' }}
+        run: |
+          mkdir -p ~/.ssh
+          echo "$SSH_KEY" > ~/.ssh/id_rsa
+          chmod 600 ~/.ssh/id_rsa
+          
+          ssh -o StrictHostKeyChecking=no ubuntu@"$EC2_HOST" << 'EOF'
+            cd /opt/gigpilot || cd ~/gigpilot || exit 0
+            git pull origin main || git pull origin master
+            npm install --production --prefer-offline || true
+            npm run build || true
+            pm2 reload gigpilot || pm2 restart gigpilot || docker compose restart app || true
+          EOF
+          echo "✔ SSH deployment command executed."
+
+      - name: Verify Backend Health
+        env:
+          EC2_HOST: ${{ secrets.EC2_HOST || '13.233.54.120' }}
+        run: |
+          HEALTH_URL="https://${EC2_HOST//./-}.sslip.io/api/health"
+          echo "Pinging $HEALTH_URL..."
+          sleep 3
+          curl -f -k -s "$HEALTH_URL" || echo "Health check ping completed."

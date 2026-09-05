@@ -6,6 +6,7 @@ coverage/
 *.log
 .env*
 !.env.example
+!.env.production
 .dev.env.json
 .dev.pid
 __pycache__/

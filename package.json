@@ -14,6 +14,11 @@
     "worker:dev": "tsx server/worker.ts",
     "clean": "rm -rf dist server.js",
     "health": "node healthcheck.js",
+    "deploy:all": "./scripts/push-and-deploy.sh",
+    "deploy:master": "./master-deploy.sh",
+    "setup:ec2": "./setup-ec2.sh",
+    "verify:prod": "./verify-production.sh",
+    "push": "./scripts/push-and-deploy.sh",
     "lint": "tsc --noEmit",
     "test": "tsc --noEmit",
     "postinstall": "node scripts/postinstall.js"

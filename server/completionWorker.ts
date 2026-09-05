@@ -1,5 +1,5 @@
 import crypto from 'crypto';
-import { getPgPool, memoryStore, WorkOrder, Transaction, User, Job } from './pgDatabase.js';
+import { memoryStore, safeExecutePgQuery, WorkOrder, Transaction, User, Job } from './pgDatabase.js';
 import { createPayPalPayout } from './paypal.js';
 import { logActivityEvent } from './activityLogger.js';
 import { recordCronHeartbeat } from './healthCheck.js';
@@ -20,7 +20,6 @@ export async function completeWorkOrderAndPayout(
   workOrderId: string,
   triggerReason: 'worker_action' | 'customer_confirmation' | 'deadline_auto_approve' | 'retry_engine'
 ): Promise<CompletionResult> {
-  const pool = getPgPool();
   const now = new Date();
 
   let workOrder: WorkOrder | null = null;
@@ -28,15 +27,9 @@ export async function completeWorkOrderAndPayout(
   let job: Job | null = null;
 
   // Fetch Work Order
-  if (pool) {
-    try {
-      const woRes = await pool.query('SELECT * FROM work_orders WHERE id = $1', [workOrderId]);
-      if (woRes.rows.length > 0) {
-        workOrder = woRes.rows[0];
-      }
-    } catch (err: any) {
-      console.warn('⚠️ [CompletionWorker] Postgres read fallback:', err.message);
-    }
+  const woRes = await safeExecutePgQuery('SELECT * FROM work_orders WHERE id = $1', [workOrderId]);
+  if (woRes && woRes.rows.length > 0) {
+    workOrder = woRes.rows[0];
   }
 
   if (!workOrder) {
@@ -65,19 +58,13 @@ export async function completeWorkOrderAndPayout(
   }
 
   // Fetch Worker details
-  if (pool) {
-    try {
-      const workerRes = await pool.query('SELECT * FROM users WHERE id = $1', [workOrder.worker_id]);
-      if (workerRes.rows.length > 0) {
-        worker = workerRes.rows[0];
-      }
-      const jobRes = await pool.query('SELECT * FROM jobs WHERE id = $1', [workOrder.job_id]);
-      if (jobRes.rows.length > 0) {
-        job = jobRes.rows[0];
-      }
-    } catch (err: any) {
-      console.warn('⚠️ [CompletionWorker] Postgres worker/job lookup notice:', err.message);
-    }
+  const workerRes = await safeExecutePgQuery('SELECT * FROM users WHERE id = $1', [workOrder.worker_id]);
+  if (workerRes && workerRes.rows.length > 0) {
+    worker = workerRes.rows[0];
+  }
+  const jobRes = await safeExecutePgQuery('SELECT * FROM jobs WHERE id = $1', [workOrder.job_id]);
+  if (jobRes && jobRes.rows.length > 0) {
+    job = jobRes.rows[0];
   }
 
   if (!worker) {
@@ -165,37 +152,31 @@ export async function completeWorkOrderAndPayout(
   };
 
   // Persist to Postgres
-  if (pool) {
-    try {
-      await pool.query(
-        `UPDATE work_orders
-         SET status = $1, completed_at = $2, payment_status = $3,
-             customer_confirmed = COALESCE($4, customer_confirmed),
-             worker_marked_complete = COALESCE($5, worker_marked_complete)
-         WHERE id = $6`,
-        [workOrder.status, workOrder.completed_at, workOrder.payment_status, workOrder.customer_confirmed || false, workOrder.worker_marked_complete || false, workOrder.id]
-      );
+  await safeExecutePgQuery(
+    `UPDATE work_orders
+     SET status = $1, completed_at = $2, payment_status = $3,
+         customer_confirmed = COALESCE($4, customer_confirmed),
+         worker_marked_complete = COALESCE($5, worker_marked_complete)
+     WHERE id = $6`,
+    [workOrder.status, workOrder.completed_at, workOrder.payment_status, workOrder.customer_confirmed || false, workOrder.worker_marked_complete || false, workOrder.id]
+  );
 
-      await pool.query(
-        `UPDATE users
-         SET current_workload = GREATEST(0, current_workload - 1)
-         WHERE id = $1`,
-        [worker.id]
-      );
+  await safeExecutePgQuery(
+    `UPDATE users
+     SET current_workload = GREATEST(0, current_workload - 1)
+     WHERE id = $1`,
+    [worker.id]
+  );
 
-      if (job) {
-        await pool.query(`UPDATE jobs SET status = $1 WHERE id = $2`, [job.status, job.id]);
-      }
-
-      await pool.query(
-        `INSERT INTO transactions (id, work_order_id, amount, status, paypal_payout_batch_id, created_at)
-         VALUES ($1, $2, $3, $4, $5, $6)`,
-        [transaction.id, transaction.work_order_id, transaction.amount, transaction.status, transaction.paypal_payout_batch_id, transaction.created_at]
-      );
-    } catch (err: any) {
-      console.warn('⚠️ [CompletionWorker] Postgres update error, updated memory store:', err.message);
-    }
+  if (job) {
+    await safeExecutePgQuery(`UPDATE jobs SET status = $1 WHERE id = $2`, [job.status, job.id]);
   }
+
+  await safeExecutePgQuery(
+    `INSERT INTO transactions (id, work_order_id, amount, status, paypal_payout_batch_id, created_at)
+     VALUES ($1, $2, $3, $4, $5, $6)`,
+    [transaction.id, transaction.work_order_id, transaction.amount, transaction.status, transaction.paypal_payout_batch_id, transaction.created_at]
+  );
 
   // Persist to Memory Store
   memoryStore.workOrders.set(workOrder.id, workOrder);
@@ -233,24 +214,19 @@ export async function checkAndAutoApproveOverdueWorkOrders(): Promise<{
   approvedIds: string[];
 }> {
   recordCronHeartbeat('auto_completion_worker');
-  const pool = getPgPool();
   const now = new Date();
   const approvedIds: string[] = [];
 
   let overdueOrders: WorkOrder[] = [];
 
-  if (pool) {
-    try {
-      const res = await pool.query(
-        `SELECT * FROM work_orders
-         WHERE status IN ('assigned', 'in_progress')
-           AND (completion_deadline <= $1 OR customer_confirmed = TRUE OR worker_marked_complete = TRUE)`,
-        [now.toISOString()]
-      );
-      overdueOrders = res.rows;
-    } catch (err: any) {
-      console.warn('⚠️ [CompletionWorker] Postgres overdue scan fallback:', err.message);
-    }
+  const res = await safeExecutePgQuery(
+    `SELECT * FROM work_orders
+     WHERE status IN ('assigned', 'in_progress')
+       AND (completion_deadline <= $1 OR customer_confirmed = TRUE OR worker_marked_complete = TRUE)`,
+    [now.toISOString()]
+  );
+  if (res && res.rows.length > 0) {
+    overdueOrders = res.rows;
   }
 
   if (overdueOrders.length === 0) {

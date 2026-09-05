@@ -35,6 +35,7 @@ const PayPalConnectModal = lazy(() => import('./components/PayPalConnectModal').
 const PasswordResetModal = lazy(() => import('./components/PasswordResetModal').then(m => ({ default: m.PasswordResetModal })));
 const EmailVerificationModal = lazy(() => import('./components/EmailVerificationModal').then(m => ({ default: m.EmailVerificationModal })));
 const GitHubSettingsModal = lazy(() => import('./components/GitHubSettingsModal').then(m => ({ default: m.GitHubSettingsModal })));
+const BackendConnectionModal = lazy(() => import('./components/BackendConnectionModal').then(m => ({ default: m.BackendConnectionModal })));
 
 // Dynamic helper for celebratory confetti without bloating the main bundle
 const triggerConfetti = (opts: any) => {
@@ -66,6 +67,8 @@ import {
   fetchBackendStats,
   fetchBackendBids,
   fetchBackendLeads,
+  checkBackendWatchdogPing,
+  triggerBackendSoftRestart,
   BACKEND_BASE_URL,
   DatabaseStatus,
   BackendStats,
@@ -179,6 +182,7 @@ export default function App() {
   const [selectedPayPalInvoice, setSelectedPayPalInvoice] = useState<Invoice | null>(null);
   const [isPayPalModalOpen, setIsPayPalModalOpen] = useState<boolean>(false);
   const [isPayPalConnectOpen, setIsPayPalConnectOpen] = useState<boolean>(false);
+  const [isBackendModalOpen, setIsBackendModalOpen] = useState<boolean>(false);
   const [dbStatus, setDbStatus] = useState<DatabaseStatus | null>(null);
 
   // Compliance, Terms of Service, Privacy Policy & Invoicing State
@@ -226,6 +230,14 @@ export default function App() {
   const [backendLeads, setBackendLeads] = useState<BackendLeadItem[]>([]);
   const [backendError, setBackendError] = useState<string | null>(null);
   const [isBackendLoading, setIsBackendLoading] = useState<boolean>(false);
+
+  // Automated Watchdog Health-Check & Recovery State
+  const [watchdogStatus, setWatchdogStatus] = useState<'idle' | 'healthy' | 'degraded' | 'restarting'>('idle');
+  const [watchdogFailures, setWatchdogFailures] = useState<number>(0);
+  const [watchdogLatencyMs, setWatchdogLatencyMs] = useState<number | null>(null);
+  const [watchdogLastCheck, setWatchdogLastCheck] = useState<Date | null>(null);
+  const [watchdogLastRestart, setWatchdogLastRestart] = useState<Date | null>(null);
+  const [isWatchdogRestarting, setIsWatchdogRestarting] = useState<boolean>(false);
 
   // Dedicated 60-second auto-refresh polling effect for backend stats API (https://gigpilot-backend.onrender.com/api/bids/stats)
   useEffect(() => {
@@ -382,6 +394,149 @@ export default function App() {
       setToast(prev => ({ ...prev, show: false }));
     }, 3500);
   };
+
+  // Manual trigger for backend soft restart & reconciliation
+  const handleManualSoftRestart = async () => {
+    setIsWatchdogRestarting(true);
+    setWatchdogStatus('restarting');
+    showToast('🔄 Dispatching backend soft restart & reconciliation...', 'info');
+    try {
+      const res = await triggerBackendSoftRestart({
+        reason: 'manual_user_trigger',
+        consecutiveFailures: watchdogFailures,
+        source: 'manual_app_control'
+      });
+      if (res.success) {
+        showToast('✅ Backend soft restart completed successfully.', 'success');
+        setWatchdogStatus('healthy');
+        setWatchdogFailures(0);
+        setBackendError(null);
+        setWatchdogLastRestart(new Date());
+      } else {
+        showToast(`❌ Soft restart notice: ${res.error || res.message}`, 'error');
+      }
+    } catch (e: any) {
+      showToast(`❌ Failed to execute soft restart: ${e.message}`, 'error');
+    } finally {
+      setIsWatchdogRestarting(false);
+    }
+  };
+
+  // Automated Backend Health-Check Watchdog Effect
+  // Actively verifies backend connectivity, monitors timeout spikes, and triggers a soft restart command
+  // to the backend if persistent timeouts are detected.
+  useEffect(() => {
+    let isMounted = true;
+    let consecutiveFailures = 0;
+    let lastRestartTimestamp = 0;
+
+    const PING_INTERVAL_MS = 18000;      // Check connectivity every 18 seconds
+    const PING_TIMEOUT_LIMIT_MS = 5000;  // 5000ms timeout threshold per health check
+    const MAX_CONSECUTIVE_TIMEOUTS = 3;  // Trigger soft restart after 3 consecutive timeouts/failures
+    const RESTART_COOLDOWN_MS = 60000;   // 60-second cooldown between automated soft restarts
+
+    async function runWatchdogCheck() {
+      if (!isMounted) return;
+
+      try {
+        const ping = await checkBackendWatchdogPing(PING_TIMEOUT_LIMIT_MS);
+        if (!isMounted) return;
+
+        setWatchdogLastCheck(new Date());
+        setWatchdogLatencyMs(ping.latencyMs);
+
+        if (ping.ok) {
+          // Backend is responsive and healthy
+          if (consecutiveFailures > 0) {
+            console.log(`[Backend Watchdog] Connectivity restored after ${consecutiveFailures} timeout(s).`);
+            showToast('✅ Backend connectivity restored and responsive.', 'success');
+          }
+          consecutiveFailures = 0;
+          setWatchdogFailures(0);
+          setWatchdogStatus('healthy');
+          setBackendError(null);
+        } else {
+          // Health check failed or timed out
+          consecutiveFailures++;
+          setWatchdogFailures(consecutiveFailures);
+          const isTimeout = Boolean(ping.timedOut);
+
+          console.warn(
+            `⚠️ [Backend Watchdog] Health-check failure #${consecutiveFailures}/${MAX_CONSECUTIVE_TIMEOUTS}: ` +
+            `${isTimeout ? 'Request timed out' : ping.error || `HTTP ${ping.status}`}`
+          );
+
+          if (consecutiveFailures < MAX_CONSECUTIVE_TIMEOUTS) {
+            setWatchdogStatus('degraded');
+          } else {
+            // Persistent timeouts detected!
+            const now = Date.now();
+            const canTriggerRestart = (now - lastRestartTimestamp) >= RESTART_COOLDOWN_MS;
+
+            if (canTriggerRestart) {
+              lastRestartTimestamp = now;
+              setWatchdogStatus('restarting');
+              setIsWatchdogRestarting(true);
+              setWatchdogLastRestart(new Date());
+
+              console.warn(
+                `🚨 [Backend Watchdog] Persistent timeouts detected (${consecutiveFailures} consecutive failures). ` +
+                `Triggering automated backend soft restart...`
+              );
+              showToast(
+                `⚠️ Persistent backend timeouts detected (${consecutiveFailures}x). Triggering automated soft restart...`,
+                'warning'
+              );
+
+              try {
+                const restartResult = await triggerBackendSoftRestart({
+                  reason: isTimeout ? 'watchdog_persistent_timeout' : 'watchdog_persistent_unreachable',
+                  consecutiveFailures,
+                  source: 'app_watchdog_use_effect'
+                });
+
+                if (!isMounted) return;
+
+                if (restartResult.success) {
+                  console.log('✅ [Backend Watchdog] Soft restart command acknowledged:', restartResult.message);
+                  showToast('🔄 Backend soft restart dispatched. Reconciling services...', 'info');
+                  // Reset failure counter so system has time to recover
+                  consecutiveFailures = 0;
+                  setWatchdogFailures(0);
+                } else {
+                  console.error('❌ [Backend Watchdog] Soft restart failed:', restartResult.error);
+                  showToast('❌ Backend soft restart command could not be delivered. Retrying on next cycle...', 'error');
+                }
+              } catch (restartErr: any) {
+                console.error('❌ [Backend Watchdog] Exception triggering soft restart:', restartErr);
+              } finally {
+                if (isMounted) {
+                  setIsWatchdogRestarting(false);
+                }
+              }
+            } else {
+              const cooldownLeft = Math.ceil((RESTART_COOLDOWN_MS - (now - lastRestartTimestamp)) / 1000);
+              console.log(
+                `[Backend Watchdog] Persistent timeouts detected, waiting for restart cooldown (${cooldownLeft}s remaining).`
+              );
+            }
+          }
+        }
+      } catch (err) {
+        console.warn('[Backend Watchdog] Unexpected check error:', err);
+      }
+    }
+
+    // Initial check after 3.5 seconds to let initial page render complete
+    const initialTimer = setTimeout(runWatchdogCheck, 3500);
+    const intervalTimer = setInterval(runWatchdogCheck, PING_INTERVAL_MS);
+
+    return () => {
+      isMounted = false;
+      clearTimeout(initialTimer);
+      clearInterval(intervalTimer);
+    };
+  }, []);
 
   // Real-Time Webhook Handler: Subscribes to backend triggers and updates local React state
   useEffect(() => {
@@ -1109,6 +1264,18 @@ export default function App() {
           </span>
         </button>
 
+        <button
+          id="sidebar-nav-github-settings"
+          onClick={() => setIsGitHubSettingsOpen(true)}
+          className="flex items-center gap-3.5 px-3.5 py-3 rounded-xl text-sm font-medium transition-all text-[#9aa2bf] hover:bg-[#161b2b] hover:text-[#f0f3fa] cursor-pointer"
+        >
+          <i className="fab fa-github w-5 text-center text-sm text-cyan-400"></i>
+          <span>GitHub SSH &amp; GitOps</span>
+          <span className="ml-auto bg-cyan-500/20 text-cyan-300 border border-cyan-500/30 text-[9px] px-1.5 py-0.5 rounded font-mono font-bold">
+            SSH
+          </span>
+        </button>
+
         {/* Footer */}
         <div className="mt-auto pt-4 border-t border-[#2a3147] text-xs text-[#5d6788] text-center space-y-2">
           <div className="flex items-center justify-center gap-2 font-medium">
@@ -1304,7 +1471,7 @@ export default function App() {
             </div>
 
             {/* Quick Gateways */}
-            <div className="pt-2 border-t border-[#2a3147] space-y-1 mt-auto">
+            <div className="pt-2 border-t border-[#2a3147] space-y-1.5 mt-auto">
               <button
                 onClick={() => {
                   setIsMobileMenuOpen(false);
@@ -1314,6 +1481,23 @@ export default function App() {
               >
                 <i className="fas fa-university text-emerald-400"></i>
                 <span>Bank &amp; PayPal Settlement</span>
+              </button>
+
+              <button
+                id="mobile-btn-github-settings"
+                onClick={() => {
+                  setIsMobileMenuOpen(false);
+                  setIsGitHubSettingsOpen(true);
+                }}
+                className="w-full flex items-center justify-between px-3.5 py-2 rounded-xl text-xs font-medium text-cyan-300 bg-cyan-500/10 border border-cyan-500/20 hover:bg-cyan-500/20 cursor-pointer"
+              >
+                <span className="flex items-center gap-2.5">
+                  <i className="fab fa-github text-cyan-400"></i>
+                  <span>GitHub SSH &amp; GitOps</span>
+                </span>
+                <span className="text-[10px] bg-cyan-500/20 text-cyan-300 border border-cyan-500/30 px-1.5 py-0.5 rounded font-mono">
+                  SSH
+                </span>
               </button>
             </div>
 
@@ -1417,6 +1601,18 @@ export default function App() {
           </div>
 
           <div className="flex flex-wrap items-center gap-2 sm:gap-2.5">
+            {/* Backend Architecture Gateway Trigger */}
+            <button
+              id="topbar-btn-backend-gateway"
+              onClick={() => setIsBackendModalOpen(true)}
+              className="bg-emerald-950/60 hover:bg-emerald-900/60 border border-emerald-500/40 text-emerald-300 hover:text-white px-3 py-2 rounded-full text-xs font-semibold flex items-center gap-2 transition-all cursor-pointer shadow-sm"
+              title="Connect & Monitor AWS App Runner / Render Backend Gateway"
+            >
+              <i className="fas fa-network-wired text-emerald-400"></i>
+              <span>Backend Gateway</span>
+              <span className="h-2 w-2 rounded-full bg-emerald-400 animate-pulse"></span>
+            </button>
+
             {/* Email Verification Trigger */}
             <button
               id="topbar-btn-verify-email"
@@ -1595,6 +1791,38 @@ export default function App() {
               </button>
             </div>
 
+            {/* Watchdog Connectivity Status Pill */}
+            <div
+              className={`hidden md:flex items-center gap-1.5 px-3 py-1 rounded-full border text-[11px] font-mono transition-all ${
+                watchdogStatus === 'healthy'
+                  ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-300'
+                  : watchdogStatus === 'restarting'
+                  ? 'border-amber-500/40 bg-amber-500/20 text-amber-300 animate-pulse'
+                  : watchdogStatus === 'degraded'
+                  ? 'border-rose-500/30 bg-rose-500/10 text-rose-300'
+                  : 'border-slate-800 bg-slate-900/60 text-slate-400'
+              }`}
+              title={`Automated Watchdog: ${watchdogStatus}. Latency: ${watchdogLatencyMs ? `${watchdogLatencyMs}ms` : 'N/A'}. Timeouts: ${watchdogFailures}/3.`}
+            >
+              <span className={`w-1.5 h-1.5 rounded-full ${
+                watchdogStatus === 'healthy'
+                  ? 'bg-emerald-400'
+                  : watchdogStatus === 'restarting'
+                  ? 'bg-amber-400 animate-ping'
+                  : watchdogStatus === 'degraded'
+                  ? 'bg-rose-400'
+                  : 'bg-slate-400'
+              }`} />
+              <span className="font-semibold">Watchdog</span>
+              {watchdogStatus === 'restarting' && <span>(Restarting...)</span>}
+              {watchdogFailures > 0 && watchdogStatus !== 'restarting' && (
+                <span className="text-[10px] text-rose-400">({watchdogFailures}/3)</span>
+              )}
+              {watchdogLatencyMs !== null && watchdogStatus === 'healthy' && (
+                <span className="text-[10px] opacity-75">{watchdogLatencyMs}ms</span>
+              )}
+            </div>
+
             <button
               onClick={runOptimization}
               className="bg-[#4f7cff] hover:bg-[#3d6bf0] text-white px-4 py-2 rounded-full text-xs font-semibold flex items-center gap-2 transition-all hover:shadow-[0_4px_16px_rgba(79,124,255,0.35)]"
@@ -1615,35 +1843,58 @@ export default function App() {
           </div>
         </div>
 
-        {/* Backend Unreachable Warning Banner */}
-        {backendError && (
+        {/* Backend Unreachable & Watchdog Alert Banner */}
+        {(backendError || watchdogFailures >= 2 || watchdogStatus === 'restarting') && (
           <div className="mb-6 rounded-2xl border border-red-500/40 bg-gradient-to-r from-red-950/60 via-red-900/30 to-red-950/60 p-4 shadow-lg flex flex-col sm:flex-row sm:items-center justify-between gap-3">
             <div className="flex items-start sm:items-center gap-3">
               <div className="rounded-xl bg-red-500/20 p-2 text-red-400 border border-red-500/30 shrink-0">
-                <i className="fas fa-exclamation-triangle text-base"></i>
+                <i className={`fas ${watchdogStatus === 'restarting' ? 'fa-sync-alt fa-spin' : 'fa-exclamation-triangle'} text-base`}></i>
               </div>
               <div>
-                <div className="text-xs font-bold text-red-300 flex items-center gap-2">
-                  <span>Backend Connection Notice</span>
+                <div className="text-xs font-bold text-red-300 flex items-center gap-2 flex-wrap">
+                  <span>Backend Watchdog Diagnostic</span>
                   <span className="bg-red-500/20 text-red-400 text-[10px] px-2 py-0.5 rounded-full font-mono font-semibold">
                     {BACKEND_BASE_URL}
                   </span>
+                  {watchdogFailures > 0 && (
+                    <span className="bg-amber-500/20 text-amber-300 text-[10px] px-2 py-0.5 rounded-full font-mono font-semibold">
+                      Timeouts: {watchdogFailures}/3
+                    </span>
+                  )}
+                  {watchdogStatus === 'restarting' && (
+                    <span className="bg-cyan-500/20 text-cyan-300 text-[10px] px-2 py-0.5 rounded-full font-mono font-semibold animate-pulse">
+                      Automated Soft Restart in Progress
+                    </span>
+                  )}
                 </div>
                 <p className="text-[11px] text-slate-300 mt-0.5">
-                  {backendError}
+                  {watchdogStatus === 'restarting'
+                    ? 'Persistent timeout detected by automated watchdog. Dispatching soft restart to backend service...'
+                    : backendError || `Persistent connectivity timeouts detected (${watchdogFailures} consecutive). Automated watchdog will trigger a soft restart if timeouts persist.`}
                 </p>
               </div>
             </div>
-            <button
-              onClick={() => {
-                setBackendError(null);
-                fetchBackendStats().then(s => s && setBackendStats(s)).catch(() => {});
-              }}
-              className="bg-red-600 hover:bg-red-500 text-white font-bold px-4 py-2 rounded-xl text-xs flex items-center justify-center gap-1.5 transition-all shrink-0 cursor-pointer shadow-md"
-            >
-              <i className="fas fa-redo text-xs"></i>
-              <span>Retry Connection</span>
-            </button>
+            <div className="flex items-center gap-2 shrink-0">
+              <button
+                onClick={handleManualSoftRestart}
+                disabled={isWatchdogRestarting}
+                className="bg-amber-600 hover:bg-amber-500 disabled:opacity-50 text-white font-bold px-3 py-2 rounded-xl text-xs flex items-center justify-center gap-1.5 transition-all cursor-pointer shadow-md"
+                title="Trigger backend soft restart immediately"
+              >
+                <i className={`fas fa-bolt text-xs ${isWatchdogRestarting ? 'animate-spin' : ''}`}></i>
+                <span>{isWatchdogRestarting ? 'Restarting...' : 'Soft Restart'}</span>
+              </button>
+              <button
+                onClick={() => {
+                  setBackendError(null);
+                  fetchBackendStats().then(s => s && setBackendStats(s)).catch(() => {});
+                }}
+                className="bg-red-600 hover:bg-red-500 text-white font-bold px-4 py-2 rounded-xl text-xs flex items-center justify-center gap-1.5 transition-all shrink-0 cursor-pointer shadow-md"
+              >
+                <i className="fas fa-redo text-xs"></i>
+                <span>Retry Connection</span>
+              </button>
+            </div>
           </div>
         )}
 
@@ -2585,6 +2836,11 @@ export default function App() {
         {/* ===== TAB 10: UNIFIED DEVOPS SYSTEM HEALTH DASHBOARD ===== */}
         {activeTab === 'health' && (
           <div className="space-y-6">
+            <SystemHealthConnectivityCard 
+              onOpenBackendModal={() => setIsBackendModalOpen(true)}
+              onOpenSettings={() => setIsCredentialsModalOpen(true)}
+              onNavigateToSnapshots={() => setActiveTab('snapshots')}
+            />
             <HealthDashboard onOpenSettings={() => setIsCredentialsModalOpen(true)} />
           </div>
         )}
@@ -2819,6 +3075,23 @@ export default function App() {
             activeOrdersCount: workOrders.length
           }}
           onToast={showToast}
+        />
+      </Suspense>
+
+      {/* ===== BACKEND CONNECTION & ARCHITECTURE GATEWAY MODAL ===== */}
+      <Suspense fallback={null}>
+        <BackendConnectionModal
+          isOpen={isBackendModalOpen}
+          onClose={() => setIsBackendModalOpen(false)}
+        />
+      </Suspense>
+
+      {/* ===== GITHUB SSH & AUTOMATED GITOPS SETTINGS MODAL ===== */}
+      <Suspense fallback={null}>
+        <GitHubSettingsModal
+          isOpen={isGitHubSettingsOpen}
+          onClose={() => setIsGitHubSettingsOpen(false)}
+          showToast={showToast}
         />
       </Suspense>
 
