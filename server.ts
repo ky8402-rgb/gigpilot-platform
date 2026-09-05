@@ -38,6 +38,7 @@ import neonRoutes from "./routes/neon.js";
 import autoDispatchRoutes from "./routes/autoDispatchRoutes.js";
 import amplifyRoutes from "./server/amplifyRoutes.js";
 import devopsActionsRoutes from "./server/devopsActionsRoutes.js";
+import godaddyRoutes from "./server/godaddyRoutes.js";
 import "./server/worker.js";
 import { logActivityEvent } from "./server/activityLogger.js";
 import { verifyWebhookSignature } from "./server/webhookSecurity.js";
@@ -353,6 +354,9 @@ app.use("/api/deploy", amplifyRoutes);
 
 // 13. GitHub Actions DevOps Workflow Automation & Continuous Deployment
 app.use("/api/devops", devopsActionsRoutes);
+
+// 14. GoDaddy Automated DNS Auto-Fix & Domain Management
+app.use("/api/godaddy", godaddyRoutes);
 
 // Compatibility aliases for /api/bids, /api/bids/stats, and /api/leads list
 app.use("/api/bids", freelancerBidsRoutes);
