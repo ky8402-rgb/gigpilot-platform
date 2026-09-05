@@ -53,7 +53,7 @@ let currentDomainStatus = {
     status: 200,
     latencyMs: 38,
     verified: true,
-    url: `https://${DEFAULT_APP_ID}.amplifyapp.com`
+    url: `https://main.${DEFAULT_APP_ID}.amplifyapp.com`
   }
 };
 
@@ -162,7 +162,7 @@ router.post("/domain", async (req: Request, res: Response) => {
         status: 200,
         latencyMs: 35,
         verified: true,
-        url: `https://${appId}.amplifyapp.com`,
+        url: `https://main.${appId}.amplifyapp.com`,
       },
     };
 
