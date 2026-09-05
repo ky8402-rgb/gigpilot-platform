@@ -32,6 +32,17 @@ const CLOUDFLARE_API_BASE = 'https://api.cloudflare.com/client/v4';
  * Returns authorization headers for Cloudflare API v4
  */
 export function getCloudflareHeaders(token?: string) {
+  const apiKey = process.env.CLOUDFLARE_API_KEY;
+  const email = process.env.CLOUDFLARE_EMAIL || 'ky8402@gmail.com';
+
+  if (apiKey) {
+    return {
+      'X-Auth-Key': apiKey,
+      'X-Auth-Email': email,
+      'Content-Type': 'application/json',
+    };
+  }
+
   const apiToken = token || process.env.CLOUDFLARE_API_TOKEN || '';
   return {
     'Authorization': `Bearer ${apiToken}`,
