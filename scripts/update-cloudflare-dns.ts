@@ -12,6 +12,7 @@ import {
   getCloudflareZoneId,
   listCloudflareRecords,
   createCloudflareRecord,
+  updateCloudflareRecord,
   deleteCloudflareRecord,
   executeGigpilotCloudflareMigration
 } from '../server/cloudflareDnsService.js';
@@ -38,9 +39,9 @@ async function main() {
     else if (arg === '--ec2-ip' && args[i + 1]) ec2Ip = args[++i];
     else if (arg === '--view-only' || arg === '-v') viewOnly = true;
     else if (arg === '--action' && args[i + 1]) action = args[++i];
-    else if (arg === '--type' && args[i + 1]) recordType = args[++i];
+    else if ((arg === '--type' || arg === '--record-type') && args[i + 1]) recordType = args[++i];
     else if (arg === '--name' && args[i + 1]) recordName = args[++i];
-    else if (arg === '--content' && args[i + 1]) recordContent = args[++i];
+    else if ((arg === '--content' || arg === '--value') && args[i + 1]) recordContent = args[++i];
     else if (arg === '--ttl' && args[i + 1]) recordTtl = parseInt(args[++i], 10);
     else if (arg === '--record-id' && args[i + 1]) recordId = args[++i];
   }
@@ -114,6 +115,38 @@ async function main() {
       console.log('✔ Record created successfully:', res.record);
     } else {
       console.error(`❌ Error creating record: ${res.error}`);
+      process.exit(1);
+    }
+    process.exit(0);
+  }
+
+  if (action === 'update') {
+    let targetId = recordId;
+    if (!targetId) {
+      const listRes = await listCloudflareRecords(zoneId, token);
+      const match = listRes.records?.find(
+        r => (r.name === recordName || r.name === `${recordName}.${domain}` || (recordName === '@' && r.name === domain)) &&
+             r.type.toUpperCase() === recordType.toUpperCase()
+      );
+      if (match?.id) {
+        targetId = match.id;
+      } else {
+        console.error(`❌ No record found matching ${recordType} ${recordName} to update.`);
+        process.exit(1);
+      }
+    }
+    console.log(`Updating record ${recordType} ${recordName} (ID: ${targetId}) -> ${recordContent}...`);
+    const res = await updateCloudflareRecord(zoneId, targetId, {
+      type: recordType,
+      name: recordName === '@' ? domain : recordName,
+      content: recordContent,
+      ttl: recordTtl,
+      proxied: false,
+    }, token);
+    if (res.success) {
+      console.log('✔ Record updated successfully:', res.record);
+    } else {
+      console.error(`❌ Error updating record: ${res.error}`);
       process.exit(1);
     }
     process.exit(0);

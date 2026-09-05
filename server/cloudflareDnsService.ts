@@ -199,6 +199,50 @@ export async function deleteCloudflareRecord(
 }
 
 /**
+ * Updates an existing DNS record in Cloudflare
+ */
+export async function updateCloudflareRecord(
+  zoneId: string,
+  recordId: string,
+  record: {
+    type: string;
+    name: string;
+    content: string;
+    ttl?: number;
+    proxied?: boolean;
+    comment?: string;
+  },
+  token?: string
+): Promise<{ success: boolean; record?: CloudflareDnsRecord; error?: string }> {
+  try {
+    const url = `${CLOUDFLARE_API_BASE}/zones/${zoneId}/dns_records/${recordId}`;
+    const res = await axios.put<CloudflareApiResponse<CloudflareDnsRecord>>(url, {
+      type: record.type,
+      name: record.name,
+      content: record.content,
+      ttl: record.ttl || 600,
+      proxied: record.proxied ?? false,
+      comment: record.comment || 'Managed via GigPilot automated DNS',
+    }, {
+      headers: getCloudflareHeaders(token),
+      timeout: 10000,
+    });
+
+    if (!res.data.success) {
+      return {
+        success: false,
+        error: res.data.errors?.[0]?.message || 'Failed to update Cloudflare DNS record',
+      };
+    }
+
+    return { success: true, record: res.data.result };
+  } catch (err: any) {
+    const errorMsg = err.response?.data?.errors?.[0]?.message || err.message || 'Error updating Cloudflare record';
+    return { success: false, error: errorMsg };
+  }
+}
+
+/**
  * Executes full migration setup on Cloudflare for gigpilot.com:
  * 1. Resolves Zone ID
  * 2. Fetches existing DNS records
