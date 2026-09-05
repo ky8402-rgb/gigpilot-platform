@@ -3,6 +3,7 @@ import { exec } from "child_process";
 import { promisify } from "util";
 import fs from "fs";
 import path from "path";
+import dns from "dns";
 
 const execAsync = promisify(exec);
 const router = Router();
@@ -106,6 +107,82 @@ router.get("/domain", async (req: Request, res: Response) => {
     });
   } catch (error: any) {
     return res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+/**
+ * GET /api/amplify/dns-check
+ * Performs live DNS lookup on target domain to diagnose 403 / resolution errors
+ */
+router.get("/dns-check", async (req: Request, res: Response) => {
+  const domain = (req.query.domain as string) || "gigpilot.com";
+  try {
+    const results: {
+      domain: string;
+      aRecords: string[];
+      nsRecords: string[];
+      wwwCnameRecords: string[];
+      wwwARecords: string[];
+      detectedIssue: string | null;
+      recommendation: string[];
+      isCloudflare403: boolean;
+      readyForAmplify: boolean;
+    } = {
+      domain,
+      aRecords: [],
+      nsRecords: [],
+      wwwCnameRecords: [],
+      wwwARecords: [],
+      detectedIssue: null,
+      recommendation: [],
+      isCloudflare403: false,
+      readyForAmplify: false,
+    };
+
+    try {
+      results.aRecords = await dns.promises.resolve4(domain);
+    } catch (_) {}
+
+    try {
+      results.nsRecords = await dns.promises.resolveNs(domain);
+    } catch (_) {}
+
+    try {
+      results.wwwCnameRecords = await dns.promises.resolveCname(`www.${domain}`);
+    } catch (_) {}
+
+    try {
+      results.wwwARecords = await dns.promises.resolve4(`www.${domain}`);
+    } catch (_) {}
+
+    // Check for the 1.1.1.1 Cloudflare DNS resolver misconfiguration
+    if (results.aRecords.includes("1.1.1.1") || results.wwwARecords.includes("1.1.1.1")) {
+      results.isCloudflare403 = true;
+      results.detectedIssue =
+        "Misconfigured A Record: The domain is pointing to '1.1.1.1'. 1.1.1.1 is Cloudflare's public recursive DNS resolver, NOT a web hosting server. When Chrome opens https://gigpilot.com, Cloudflare returns '403 Forbidden'.";
+      results.recommendation = [
+        "Log in to your DNS provider (GoDaddy: " + (results.nsRecords.join(", ") || "ns25/ns26.domaincontrol.com") + ")",
+        "Open My Products > Domains > gigpilot.com > DNS Management.",
+        "DELETE the A record pointing '@' to '1.1.1.1'.",
+        "For AWS Amplify Frontend (https://main.d2qe2q720fbn3x.amplifyapp.com):",
+        "  1. In GoDaddy, use Domain Forwarding: Forward 'gigpilot.com' -> 'https://www.gigpilot.com' (301 Permanent, Forward with HTTPS).",
+        "  2. In DNS Records, add CNAME: Name 'www', Value 'd2qe2q720fbn3x.amplifyapp.com' (or the CloudFront target from Amplify Domain Management).",
+        "OR for AWS EC2 Backend directly:",
+        "  1. Add/Edit A record: Name '@', Value '13.233.54.120'.",
+        "  2. In DNS Records, add CNAME: Name 'www', Value '@'."
+      ];
+    } else if (results.aRecords.includes("13.233.54.120")) {
+      results.detectedIssue = null;
+      results.recommendation = ["A record is correctly pointing to AWS EC2 instance 13.233.54.120."];
+    }
+
+    return res.json({
+      success: true,
+      data: results,
+      timestamp: new Date().toISOString(),
+    });
+  } catch (err: any) {
+    return res.status(500).json({ success: false, error: err.message });
   }
 });
 
