@@ -330,7 +330,7 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Configure AWS Credentials (Optional)
-        if: \${{ secrets.AWS_ACCESS_KEY_ID != '' }}
+        if: secrets.AWS_ACCESS_KEY_ID != ''
         uses: aws-actions/configure-aws-credentials@v4
         with:
           aws-access-key-id: \${{ secrets.AWS_ACCESS_KEY_ID }}
@@ -390,7 +390,7 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Deploy via SSH (Direct EC2 Execution)
-        if: \${{ secrets.EC2_SSH_KEY != '' }}
+        if: secrets.EC2_SSH_KEY != ''
         env:
           SSH_KEY: \${{ secrets.EC2_SSH_KEY }}
           EC2_HOST: \${{ secrets.EC2_HOST || '3.222.149.9' }}
@@ -445,22 +445,23 @@ jobs:
         env:
           EC2_HOST: \${{ secrets.EC2_HOST || '3.222.149.9' }}
           WEBHOOK_SECRET: \${{ secrets.GITHUB_WEBHOOK_SECRET || secrets.WEBHOOK_SECRET }}
+          COMMIT_MSG: \${{ github.event.head_commit.message }}
         run: |
           WEBHOOK_URL="https://\${EC2_HOST//./-}.sslip.io/api/github/webhook"
-          echo "Target Webhook: $WEBHOOK_URL"
+          echo "Target Webhook: \$WEBHOOK_URL"
           
-          PAYLOAD=$(cat <<EOF
-          {
-            "ref": "refs/heads/\${GITHUB_REF_NAME}",
-            "after": "\${GITHUB_SHA}",
-            "head_commit": {
-              "id": "\${GITHUB_SHA}",
-              "message": "\${{ github.event.head_commit.message || 'Automated CI/CD deployment' }}",
-              "author": { "name": "\${{ github.actor }}" }
-            }
-          }
-          EOF
-          )
+          PAYLOAD=\$(node -e "
+            const p = {
+              ref: 'refs/heads/' + (process.env.GITHUB_REF_NAME || 'main'),
+              after: process.env.GITHUB_SHA || '',
+              head_commit: {
+                id: process.env.GITHUB_SHA || '',
+                message: process.env.COMMIT_MSG || 'Automated CI/CD deployment',
+                author: { name: process.env.GITHUB_ACTOR || 'github-actions' }
+              }
+            };
+            console.log(JSON.stringify(p));
+          ")
           
           SIG_HEADER=()
           if [ -n "$WEBHOOK_SECRET" ]; then
