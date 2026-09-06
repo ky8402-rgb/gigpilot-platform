@@ -8,9 +8,15 @@ export default defineConfig(() => {
     base: process.env.VITE_BASE_URL || '/',
     plugins: [react(), tailwindcss()],
     resolve: {
-      alias: {
-        '@': path.resolve(__dirname, '.'),
-      },
+      alias: [
+        { find: '@components', replacement: path.resolve(__dirname, 'src/components') },
+        { find: '@services', replacement: path.resolve(__dirname, 'src/services') },
+        { find: '@server', replacement: path.resolve(__dirname, 'server') },
+        { find: /^@\/server\/(.*)/, replacement: path.resolve(__dirname, 'server/$1') },
+        { find: /^@\/src\/(.*)/, replacement: path.resolve(__dirname, 'src/$1') },
+        { find: /^@\/(.*)/, replacement: path.resolve(__dirname, 'src/$1') },
+        { find: '@', replacement: path.resolve(__dirname, 'src') },
+      ],
     },
     build: {
       outDir: 'dist',

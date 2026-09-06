@@ -31,9 +31,9 @@ BOLD='\033[1m'
 NC='\033[0m' # No Color
 
 # Defaults
-BACKEND_URL="https://13-233-54-120.sslip.io"
+BACKEND_URL="${BACKEND_URL:-http://3.222.149.9:3000}"
 FRONTEND_URL="https://main.d2qe2q720fbn3x.amplifyapp.com"
-EC2_HOST="13.233.54.120"
+EC2_HOST="${EC2_HOST:-3.222.149.9}"
 REMOTE_NAME="origin"
 DEFAULT_BRANCH="master"
 COMMIT_MSG=""

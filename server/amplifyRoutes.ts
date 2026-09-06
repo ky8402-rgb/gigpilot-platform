@@ -30,19 +30,19 @@ const DEFAULT_REGION = process.env.AWS_REGION || "us-east-1";
 let currentDomainStatus = {
   appId: DEFAULT_APP_ID,
   appName: DEFAULT_APP_NAME,
-  domainName: "gigpilot.com",
+  domainName: "ky7079.co",
   status: "AVAILABLE",
-  certificateVerificationDNSRecord: "_acm-validation.gigpilot.com. CNAME _6b8e3a2190f84a8b.acm-validations.aws.",
+  certificateVerificationDNSRecord: "_acm-validation.ky7079.co. CNAME _6b8e3a2190f84a8b.acm-validations.aws.",
   subdomains: [
     {
-      subdomainName: "gigpilot.com",
+      subdomainName: "ky7079.co",
       branchName: "main",
       target: `${DEFAULT_APP_ID}.amplifyapp.com`,
       dnsRecord: "ALIAS / ANAME -> d2qe2q720fbn3x.amplifyapp.com",
       status: "ACTIVE"
     },
     {
-      subdomainName: "www.gigpilot.com",
+      subdomainName: "www.ky7079.co",
       branchName: "main",
       target: `${DEFAULT_APP_ID}.amplifyapp.com`,
       dnsRecord: "CNAME -> d2qe2q720fbn3x.amplifyapp.com",
@@ -115,7 +115,7 @@ router.get("/domain", async (req: Request, res: Response) => {
  * Performs live DNS lookup on target domain to diagnose 403 / resolution errors
  */
 router.get("/dns-check", async (req: Request, res: Response) => {
-  const domain = (req.query.domain as string) || "gigpilot.com";
+  const domain = (req.query.domain as string) || "ky7079.co";
   try {
     const results: {
       domain: string;
@@ -168,12 +168,12 @@ router.get("/dns-check", async (req: Request, res: Response) => {
         "  1. In GoDaddy, use Domain Forwarding: Forward 'gigpilot.com' -> 'https://www.gigpilot.com' (301 Permanent, Forward with HTTPS).",
         "  2. In DNS Records, add CNAME: Name 'www', Value 'd2qe2q720fbn3x.amplifyapp.com' (or the CloudFront target from Amplify Domain Management).",
         "OR for AWS EC2 Backend directly:",
-        "  1. Add/Edit A record: Name '@', Value '13.233.54.120'.",
+        "  1. Add/Edit A record: Name '@', Value '3.222.149.9'.",
         "  2. In DNS Records, add CNAME: Name 'www', Value '@'."
       ];
-    } else if (results.aRecords.includes("13.233.54.120")) {
+    } else if (results.aRecords.includes("3.222.149.9") || results.aRecords.includes("13.233.54.120")) {
       results.detectedIssue = null;
-      results.recommendation = ["A record is correctly pointing to AWS EC2 instance 13.233.54.120."];
+      results.recommendation = ["A record is correctly pointing to AWS EC2 instance 3.222.149.9."];
     }
 
     return res.json({
@@ -194,7 +194,7 @@ router.post("/domain", async (req: Request, res: Response) => {
   try {
     const {
       appId = DEFAULT_APP_ID,
-      domainName = "gigpilot.com",
+      domainName = "ky7079.co",
       subDomainSettings = [
         { prefix: "", branchName: "main" },
         { prefix: "www", branchName: "main" },
@@ -284,7 +284,7 @@ router.post("/domain", async (req: Request, res: Response) => {
 router.post("/static-assets", async (req: Request, res: Response) => {
   try {
     const {
-      domainName = "gigpilot.com",
+      domainName = "ky7079.co",
       appId = DEFAULT_APP_ID,
       branchName = "main",
       updateDns = true,

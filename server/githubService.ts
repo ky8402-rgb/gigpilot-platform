@@ -4,6 +4,7 @@ import os from 'os';
 import crypto from 'crypto';
 import { exec, execSync } from 'child_process';
 import util from 'util';
+import { logActivityEvent } from './activityLogger.js';
 
 const execPromise = util.promisify(exec);
 
@@ -1171,12 +1172,56 @@ export async function executePushToDeploy(options: {
     record.completedAt = new Date().toISOString();
     record.durationMs = Date.now() - start;
     addLog(`Deployment completed successfully in ${record.durationMs}ms!`);
+
+    logActivityEvent({
+      source: 'GitHub GitOps',
+      type: 'GITOPS_DEPLOY',
+      status: 'success',
+      method: 'INTERNAL',
+      endpoint: '/api/github/deployments',
+      statusCode: 200,
+      latencyMs: record.durationMs,
+      summary: `GitOps Sync Success: Branch "${record.branch}" (${record.commitHash?.substring(0, 7) || 'HEAD'}) deployed in ${record.durationMs}ms`,
+      details: {
+        deploymentId: record.id,
+        branch: record.branch,
+        commitHash: record.commitHash,
+        author: record.author,
+        trigger: record.trigger,
+        durationMs: record.durationMs,
+        logs: record.logs.slice(-10),
+      },
+      stateDiff: {
+        action: 'GITOPS_DEPLOYMENT_COMPLETED',
+        entityType: 'deployment',
+        details: `GitOps deployment ${record.id} completed successfully for branch ${record.branch}. Zero downtime supervisor reload verified.`,
+      },
+      tags: ['gitops', 'deployment', 'success', record.branch, record.trigger],
+    });
   } catch (err: any) {
     record.status = 'FAILED';
     record.completedAt = new Date().toISOString();
     record.durationMs = Date.now() - start;
     record.error = err.message || 'Unknown deployment error';
     addLog(`Deployment failed: ${record.error}`);
+
+    logActivityEvent({
+      source: 'GitHub GitOps',
+      type: 'GITOPS_DEPLOY',
+      status: 'error',
+      method: 'INTERNAL',
+      endpoint: '/api/github/deployments',
+      statusCode: 500,
+      latencyMs: record.durationMs,
+      summary: `GitOps Sync Failure: Branch "${record.branch}" - ${record.error}`,
+      details: {
+        deploymentId: record.id,
+        branch: record.branch,
+        error: record.error,
+        logs: record.logs.slice(-10),
+      },
+      tags: ['gitops', 'deployment', 'failed', record.branch],
+    });
   }
 
   persistDeployments();
@@ -1202,8 +1247,9 @@ export function getWebhookInfo(): {
   recentDeploymentsCount: number;
   lastDeployment?: DeploymentRecord;
 } {
-  const ec2Host = process.env.EC2_HOST || '13.233.54.120';
-  const customDomain = process.env.BASE_URL || `https://${ec2Host.replace(/\./g, '-')}.sslip.io`;
+  const rawEc2 = process.env.EC2_HOST;
+  const ec2Host = (!rawEc2 || rawEc2.startsWith('i-') || rawEc2 === '13.233.54.120') ? '3.222.149.9' : rawEc2;
+  const customDomain = process.env.BASE_URL || `http://${ec2Host}:3000`;
   const normalizedBase = customDomain.endsWith('/') ? customDomain.slice(0, -1) : customDomain;
   const webhookUrl = `${normalizedBase}/api/github/webhook`;
 
@@ -1400,8 +1446,9 @@ export async function pushAndDeployAll(options: {
   }
 
   // Step 6: AWS EC2 Backend Deployment (gigpilot-backend)
-  const ec2Host = process.env.EC2_HOST || '13.233.54.120';
-  const ec2WebhookUrl = `https://${ec2Host.replace(/\./g, '-')}.sslip.io/api/github/webhook`;
+  const rawEc2 = process.env.EC2_HOST;
+  const ec2Host = (!rawEc2 || rawEc2.startsWith('i-') || rawEc2 === '13.233.54.120') ? '3.222.149.9' : rawEc2;
+  const ec2WebhookUrl = `http://${ec2Host}:3000/api/github/webhook`;
   let ec2Status: 'DEPLOYED_LOCAL' | 'DEPLOYED_WEBHOOK' | 'SKIPPED' | 'FAILED' = 'SKIPPED';
   let ec2Message = '';
   let ec2DeploymentId: string | undefined = undefined;

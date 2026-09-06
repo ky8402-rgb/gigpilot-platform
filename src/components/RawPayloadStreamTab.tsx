@@ -55,7 +55,7 @@ export const RawPayloadStreamTab: React.FC<RawPayloadStreamTabProps> = ({ onNavi
   const [isStreaming, setIsStreaming] = useState<boolean>(true);
   const [autoScroll, setAutoScroll] = useState<boolean>(true);
   const [loading, setLoading] = useState<boolean>(false);
-  const [streamFilter, setStreamFilter] = useState<'ALL' | 'JOBS' | 'REMOTEOK' | 'UPWORK' | 'FREELANCER' | 'PAYMENTS'>('ALL');
+  const [streamFilter, setStreamFilter] = useState<'ALL' | 'GITOPS' | 'JOBS' | 'REMOTEOK' | 'UPWORK' | 'FREELANCER' | 'PAYMENTS'>('ALL');
   const [searchQuery, setSearchQuery] = useState<string>('');
 
   // Active sub-view in inspector: 'request' | 'response' | 'envelope' | 'security'
@@ -128,7 +128,16 @@ export const RawPayloadStreamTab: React.FC<RawPayloadStreamTabProps> = ({ onNavi
   // Filtered stream items
   const filteredLogs = useMemo(() => {
     return streamLogs.filter(log => {
-      if (streamFilter === 'JOBS') {
+      if (streamFilter === 'GITOPS') {
+        const isGitOps =
+          log.source === 'GitHub GitOps' ||
+          log.source === 'GitHub' ||
+          log.type === 'GITOPS_SYNC' ||
+          log.type === 'GITOPS_DEPLOY' ||
+          log.type === 'GITOPS_PING' ||
+          (log.tags && log.tags.includes('gitops'));
+        if (!isGitOps) return false;
+      } else if (streamFilter === 'JOBS') {
         const isJob =
           log.source === 'RemoteOK' ||
           log.source === 'Arbeitnow' ||
@@ -440,6 +449,7 @@ export const RawPayloadStreamTab: React.FC<RawPayloadStreamTabProps> = ({ onNavi
             <div className="flex items-center gap-1 overflow-x-auto pb-1 text-[11px]">
               {[
                 { id: 'ALL', label: 'All Events' },
+                { id: 'GITOPS', label: 'GitHub GitOps' },
                 { id: 'JOBS', label: 'Job Feeds' },
                 { id: 'REMOTEOK', label: 'RemoteOK' },
                 { id: 'UPWORK', label: 'Upwork' },

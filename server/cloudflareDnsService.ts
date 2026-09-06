@@ -265,7 +265,9 @@ export async function executeGigpilotCloudflareMigration(options: {
   error?: string;
 }> {
   const domain = options.domain || 'gigpilot.com';
-  const ec2Ip = options.ec2Ip || process.env.EC2_HOST || '13.233.54.120';
+  const rawEc2 = process.env.EC2_HOST;
+  const defaultEc2 = (!rawEc2 || rawEc2.startsWith('i-') || rawEc2 === '13.233.54.120') ? '3.222.149.9' : rawEc2;
+  const ec2Ip = options.ec2Ip || defaultEc2;
   const token = options.token || process.env.CLOUDFLARE_API_TOKEN;
 
   if (!token) {

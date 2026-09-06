@@ -35,6 +35,7 @@ const PayPalConnectModal = lazy(() => import('./components/PayPalConnectModal').
 const PasswordResetModal = lazy(() => import('./components/PasswordResetModal').then(m => ({ default: m.PasswordResetModal })));
 const EmailVerificationModal = lazy(() => import('./components/EmailVerificationModal').then(m => ({ default: m.EmailVerificationModal })));
 const GitHubSettingsModal = lazy(() => import('./components/GitHubSettingsModal').then(m => ({ default: m.GitHubSettingsModal })));
+const AutoDeployPipelineTool = lazy(() => import('./components/AutoDeployPipelineTool').then(m => ({ default: m.AutoDeployPipelineTool })));
 const BackendConnectionModal = lazy(() => import('./components/BackendConnectionModal').then(m => ({ default: m.BackendConnectionModal })));
 
 // Dynamic helper for celebratory confetti without bloating the main bundle
@@ -69,6 +70,7 @@ import {
   fetchBackendLeads,
   checkBackendWatchdogPing,
   triggerBackendSoftRestart,
+  getApiBaseUrl,
   BACKEND_BASE_URL,
   DatabaseStatus,
   BackendStats,
@@ -203,6 +205,7 @@ export default function App() {
   const [txCounter, setTxCounter] = useState<number>(100);
   const [isCredentialsModalOpen, setIsCredentialsModalOpen] = useState<boolean>(false);
   const [isGitHubSettingsOpen, setIsGitHubSettingsOpen] = useState<boolean>(false);
+  const [isAutoDeployModalOpen, setIsAutoDeployModalOpen] = useState<boolean>(false);
   const [isScanningPlatforms, setIsScanningPlatforms] = useState<boolean>(false);
   const [isSyncingRemoteOK, setIsSyncingRemoteOK] = useState<boolean>(false);
   const [editingOrderId, setEditingOrderId] = useState<number | string | null>(null);
@@ -299,7 +302,7 @@ export default function App() {
         }
       } catch (err: any) {
         console.warn('Backend connection notice:', err);
-        setBackendError(`Unable to reach backend service at ${BACKEND_BASE_URL}. Live metrics and bids may fallback to cached states.`);
+        setBackendError(`Unable to reach backend service (${getApiBaseUrl() || 'local server'}). Live metrics and bids may fallback to cached states.`);
       } finally {
         setIsBackendLoading(false);
       }
@@ -1276,6 +1279,18 @@ export default function App() {
           </span>
         </button>
 
+        <button
+          id="sidebar-nav-auto-deploy"
+          onClick={() => setIsAutoDeployModalOpen(true)}
+          className="flex items-center gap-3.5 px-3.5 py-3 rounded-xl text-sm font-medium transition-all text-cyan-300 bg-cyan-950/20 border border-cyan-500/30 hover:bg-cyan-950/40 hover:text-cyan-200 cursor-pointer"
+        >
+          <i className="fas fa-rocket w-5 text-center text-sm text-cyan-400"></i>
+          <span>Auto-Deploy Tool</span>
+          <span className="ml-auto bg-cyan-500/20 text-cyan-300 border border-cyan-500/30 text-[9px] px-1.5 py-0.5 rounded font-mono font-bold">
+            EC2+Amplify
+          </span>
+        </button>
+
         {/* Footer */}
         <div className="mt-auto pt-4 border-t border-[#2a3147] text-xs text-[#5d6788] text-center space-y-2">
           <div className="flex items-center justify-center gap-2 font-medium">
@@ -1717,6 +1732,19 @@ export default function App() {
             >
               <i className="fas fa-sliders-h text-[11px] text-cyan-400"></i>
               <span>Credentials &amp; Backup</span>
+            </button>
+
+            <button
+              id="topbar-btn-auto-deploy"
+              onClick={() => setIsAutoDeployModalOpen(true)}
+              className="bg-gradient-to-r from-cyan-600/30 to-blue-600/30 hover:from-cyan-600/50 hover:to-blue-600/50 border border-cyan-500/50 text-cyan-200 hover:text-white px-3 py-2 rounded-full text-xs font-semibold flex items-center gap-2 transition-all shadow-sm cursor-pointer"
+              title="Automated GitHub Actions deployment to EC2 & AWS Amplify on push to main"
+            >
+              <i className="fas fa-rocket text-[11px] text-cyan-400"></i>
+              <span>Auto-Deploy</span>
+              <span className="bg-cyan-500/20 text-cyan-300 text-[9px] px-1.5 py-0.2 rounded-full border border-cyan-500/30 font-mono">
+                EC2+Amplify
+              </span>
             </button>
 
             <button
@@ -2876,9 +2904,19 @@ export default function App() {
           isOpen={isGitHubSettingsOpen}
           onClose={() => setIsGitHubSettingsOpen(false)}
           showToast={showToast}
+          onOpenAutoDeploy={() => setIsAutoDeployModalOpen(true)}
           onRemoteConfigured={(url) => {
             showToast(`GitHub Remote set to: ${url}`, 'success');
           }}
+        />
+      </Suspense>
+
+      {/* ===== AUTO-DEPLOY PIPELINE TOOL (EC2 & AWS AMPLIFY) ===== */}
+      <Suspense fallback={null}>
+        <AutoDeployPipelineTool
+          isOpen={isAutoDeployModalOpen}
+          onClose={() => setIsAutoDeployModalOpen(false)}
+          showToast={showToast}
         />
       </Suspense>
 
@@ -3083,15 +3121,6 @@ export default function App() {
         <BackendConnectionModal
           isOpen={isBackendModalOpen}
           onClose={() => setIsBackendModalOpen(false)}
-        />
-      </Suspense>
-
-      {/* ===== GITHUB SSH & AUTOMATED GITOPS SETTINGS MODAL ===== */}
-      <Suspense fallback={null}>
-        <GitHubSettingsModal
-          isOpen={isGitHubSettingsOpen}
-          onClose={() => setIsGitHubSettingsOpen(false)}
-          showToast={showToast}
         />
       </Suspense>
 

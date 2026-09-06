@@ -260,7 +260,7 @@ echo -e "${BOLD}Your AWS Amplify Custom Domain Configuration:${NC}"
 echo -e "  • Root URL:            ${CYAN}https://${CUSTOM_DOMAIN}${NC}"
 echo -e "  • WWW URL:             ${CYAN}https://www.${CUSTOM_DOMAIN}${NC}"
 echo -e "  • Amplify Branch:      ${CYAN}${BRANCH_NAME}${NC}"
-echo -e "  • Backend API Target:  ${CYAN}https://13-233-54-120.sslip.io${NC}\n"
+echo -e "  • Backend API Target:  ${CYAN}https://3-222-149-9.sslip.io${NC}\n"
 
 echo -e "${BOLD}📋 Required DNS Records at your Domain Registrar (GoDaddy, Cloudflare, Namecheap, Route 53):${NC}"
 echo -e "------------------------------------------------------------------------------"

@@ -68,13 +68,15 @@ export interface GitHubSettingsModalProps {
   onClose: () => void;
   showToast?: (msg: string, type?: 'success' | 'info' | 'warning' | 'error') => void;
   onRemoteConfigured?: (remoteUrl: string) => void;
+  onOpenAutoDeploy?: () => void;
 }
 
 export const GitHubSettingsModal: React.FC<GitHubSettingsModalProps> = ({
   isOpen,
   onClose,
   showToast = () => {},
-  onRemoteConfigured
+  onRemoteConfigured,
+  onOpenAutoDeploy
 }) => {
   // Navigation Tabs
   const [activeTab, setActiveTab] = useState<'deploy' | 'keys' | 'test' | 'remote' | 'gitops' | 'webhook'>('deploy');
@@ -188,7 +190,7 @@ export const GitHubSettingsModal: React.FC<GitHubSettingsModalProps> = ({
   };
 
   const handleCopyWebhookUrl = () => {
-    const url = webhookInfo?.webhookUrl || 'https://13-233-54-120.sslip.io/api/github/webhook';
+    const url = webhookInfo?.webhookUrl || 'https://3-222-149-9.sslip.io/api/github/webhook';
     navigator.clipboard.writeText(url);
     setHasCopiedWebhook(true);
     showToast('Webhook URL copied to clipboard!', 'success');
@@ -522,6 +524,21 @@ export const GitHubSettingsModal: React.FC<GitHubSettingsModalProps> = ({
           </div>
 
           <div className="flex items-center space-x-2.5">
+            {onOpenAutoDeploy && (
+              <button
+                id="btn-modal-open-autodeploy"
+                onClick={() => {
+                  onClose();
+                  onOpenAutoDeploy();
+                }}
+                className="hidden sm:flex items-center space-x-1.5 px-3 py-1.5 rounded-xl border border-cyan-500/40 bg-cyan-950/40 hover:bg-cyan-900/50 text-cyan-300 font-bold text-xs shadow-sm transition-all"
+                title="Open dedicated Auto-Deploy Pipeline Tool for EC2 & Amplify"
+              >
+                <Rocket className="h-3.5 w-3.5 text-cyan-400" />
+                <span>Auto-Deploy Tool</span>
+              </button>
+            )}
+
             <button
               id="btn-header-deploy"
               onClick={handleTriggerDevOpsDeploy}
@@ -744,10 +761,10 @@ export const GitHubSettingsModal: React.FC<GitHubSettingsModalProps> = ({
                       </span>
                     </div>
                     <div className="text-[11px] text-slate-400 font-mono truncate">
-                      Host: 13.233.54.120 (sslip.io)
+                      Host: 3.222.149.9 (i-02f24350d31f5aa51)
                     </div>
                     <a
-                      href="https://13-233-54-120.sslip.io/api/health"
+                      href="http://3.222.149.9:3000/api/health"
                       target="_blank"
                       rel="noreferrer"
                       className="text-[10px] text-emerald-400 hover:text-emerald-300 flex items-center gap-1 mt-1"
@@ -1929,7 +1946,7 @@ export const GitHubSettingsModal: React.FC<GitHubSettingsModalProps> = ({
 
                 <div className="flex items-center space-x-2">
                   <div className="flex-1 px-3.5 py-2.5 rounded-xl border border-slate-700/80 bg-slate-950 font-mono text-xs text-emerald-300 select-all overflow-x-auto whitespace-nowrap">
-                    {webhookInfo?.webhookUrl || 'https://13-233-54-120.sslip.io/api/github/webhook'}
+                    {webhookInfo?.webhookUrl || 'https://3-222-149-9.sslip.io/api/github/webhook'}
                   </div>
                   <button
                     id="btn-copy-webhook-url"

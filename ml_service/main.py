@@ -5,14 +5,28 @@ version rollback, shadow deployment evaluation, and Prometheus telemetry.
 """
 
 import os
+import sys
 import logging
 from typing import Dict, Any, Optional, List
+
+# Ensure current module directory and project root are present in sys.path
+_current_dir = os.path.dirname(os.path.abspath(__file__))
+if _current_dir not in sys.path:
+    sys.path.insert(0, _current_dir)
+_parent_dir = os.path.dirname(_current_dir)
+if _parent_dir not in sys.path:
+    sys.path.append(_parent_dir)
+
 from fastapi import FastAPI, HTTPException, BackgroundTasks, Response
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 
-from model_manager import ModelManager
-from data_pipeline import FEATURE_COLUMNS, ISSUE_CLASSES
+try:
+    from model_manager import ModelManager
+    from data_pipeline import FEATURE_COLUMNS, ISSUE_CLASSES
+except ImportError:
+    from ml_service.model_manager import ModelManager
+    from ml_service.data_pipeline import FEATURE_COLUMNS, ISSUE_CLASSES
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(name)s: %(message)s")
 logger = logging.getLogger("ml_fastapi_service")

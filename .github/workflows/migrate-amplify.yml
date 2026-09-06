@@ -4,15 +4,20 @@ on:
   workflow_dispatch:
     inputs:
       new_backend_url:
-        description: 'New Backend URL (e.g., https://13-233-54-120.sslip.io)'
+        description: 'New Backend URL (e.g., https://3-222-149-9.sslip.io)'
         required: false
-        default: 'https://13-233-54-120.sslip.io'
+        default: 'https://3-222-149-9.sslip.io'
       amplify_app_name:
         description: 'Amplify App Name (optional, defaults to gigpilot-platform)'
         required: false
         default: 'gigpilot-platform'
       rollback:
         description: 'Set to true to rollback to previous backend URL'
+        type: boolean
+        required: false
+        default: false
+      force:
+        description: 'Force update Amplify env even if target backend pre-check is offline'
         type: boolean
         required: false
         default: false
@@ -37,12 +42,16 @@ jobs:
         env:
           NEW_BACKEND_URL: ${{ github.event.inputs.new_backend_url }}
           AMPLIFY_APP_NAME: ${{ github.event.inputs.amplify_app_name }}
+          AMPLIFY_APP_ID: ${{ secrets.AMPLIFY_APP_ID || 'd2qe2q720fbn3x' }}
+          FORCE_MIGRATE: ${{ github.event.inputs.force }}
           AWS_REGION: ${{ secrets.AWS_REGION || 'us-east-1' }}
           SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
         run: |
           chmod +x ./scripts/migrate-amplify-backend.sh
           if [ "${{ github.event.inputs.rollback }}" = "true" ]; then
             ./scripts/migrate-amplify-backend.sh --rollback
+          elif [ "${{ github.event.inputs.force }}" = "true" ]; then
+            ./scripts/migrate-amplify-backend.sh "$NEW_BACKEND_URL" --force
           else
             ./scripts/migrate-amplify-backend.sh "$NEW_BACKEND_URL"
           fi

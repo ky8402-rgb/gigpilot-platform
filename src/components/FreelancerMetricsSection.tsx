@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import Chart from 'chart.js/auto';
-import { BACKEND_BASE_URL, apiUrl } from '../services/api';
+import { BACKEND_BASE_URL, apiUrl, fetchFreelancerStats } from '../services/api';
 
 export interface FreelancerBid {
   id: string;
@@ -64,6 +64,9 @@ export const FreelancerMetricsSection: React.FC<FreelancerMetricsSectionProps> =
   const [stats, setStats] = useState<FreelancerStats | null>(null);
   const [bids, setBids] = useState<FreelancerBid[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
+  const [error, setError] = useState<string | null>(null);
+  const [retryCount, setRetryCount] = useState<number>(0);
+  const [isRetrying, setIsRetrying] = useState<boolean>(false);
   const [filterPackage, setFilterPackage] = useState<string>('all');
   const [selectedBid, setSelectedBid] = useState<FreelancerBid | null>(null);
 
@@ -86,50 +89,33 @@ export const FreelancerMetricsSection: React.FC<FreelancerMetricsSectionProps> =
   const packageBarChartRef = useRef<HTMLCanvasElement | null>(null);
   const packageBarChartInstance = useRef<Chart | null>(null);
 
-  const BACKEND_BASE = BACKEND_BASE_URL;
-
-  const fetchBidsData = async () => {
+  const fetchBidsData = async (isManualRetry = false) => {
     try {
       setLoading(true);
-      // Try direct backend onrender service first
-      try {
-        const [statsRes, bidsRes] = await Promise.all([
-          fetch(`${BACKEND_BASE}/api/bids/stats`),
-          fetch(`${BACKEND_BASE}/api/bids?limit=50`)
-        ]);
-        if (statsRes.ok) {
-          const statsJson = await statsRes.json();
-          const bidsJson = bidsRes.ok ? await bidsRes.json() : [];
-          setStats({
-            totalBids: statsJson.total ?? statsJson.total_bids ?? 0,
-            activeBids: statsJson.active ?? statsJson.active_bids ?? 0,
-            wonBids: statsJson.won ?? statsJson.won_bids ?? 0,
-            lostBids: Math.max(0, (statsJson.total ?? statsJson.total_bids ?? 0) - (statsJson.won ?? statsJson.won_bids ?? 0) - (statsJson.active ?? statsJson.active_bids ?? 0)),
-            totalEarned: statsJson.earned ?? statsJson.total_earned ?? 0,
-            winRate: statsJson.win_rate ?? 0,
-            packageStats: statsJson.package_counts ? Object.fromEntries(
-              Object.entries(statsJson.package_counts).map(([k, v]) => [k, { total: Number(v), won: 0, active: 0, amount: 0 }])
-            ) : {}
-          });
-          setBids(Array.isArray(bidsJson) ? bidsJson : (bidsJson.bids || []));
-          return;
-        }
-      } catch (e) {
-        console.log('Direct Render backend query notice, checking local proxy:', e);
+      if (isManualRetry) {
+        setIsRetrying(true);
+        setRetryCount((prev) => prev + 1);
       }
 
-      const res = await fetch(apiUrl('/api/freelancer/stats'));
-      if (res.ok) {
-        const data = await res.json();
-        if (data.success) {
-          setStats(data.stats);
-          setBids(data.bids || []);
+      // Use robust fetchFreelancerStats with exponential backoff & parsing normalization
+      const response = await fetchFreelancerStats(3);
+      if (response.success && response.stats) {
+        setStats(response.stats as any);
+        setBids((response.bids || []) as any);
+        if (response.source === 'fallback' && response.error) {
+          setError(response.error);
+        } else {
+          setError(null);
         }
+      } else {
+        setError(response.error || 'Failed to parse Freelancer telemetry');
       }
-    } catch (err) {
+    } catch (err: any) {
       console.warn('Failed to load freelancer metrics:', err);
+      setError(err?.message || 'Failed to connect to Freelancer telemetry service');
     } finally {
       setLoading(false);
+      setIsRetrying(false);
     }
   };
 
@@ -367,9 +353,11 @@ export const FreelancerMetricsSection: React.FC<FreelancerMetricsSectionProps> =
           <div>
             <div className="flex items-center gap-2 flex-wrap">
               <span className="text-[11px] font-bold uppercase tracking-wider text-blue-400 font-mono">SQLite bids.db</span>
-              <span className="bg-emerald-500/20 text-emerald-300 text-[10px] px-2 py-0.5 rounded-full font-mono font-bold flex items-center gap-1">
-                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
-                LIVE FREELANCER ENGINE
+              <span className={`text-[10px] px-2 py-0.5 rounded-full font-mono font-bold flex items-center gap-1 ${
+                loading ? 'bg-amber-500/20 text-amber-300' : error ? 'bg-rose-500/20 text-rose-300' : 'bg-emerald-500/20 text-emerald-300'
+              }`}>
+                <span className={`w-1.5 h-1.5 rounded-full ${loading ? 'bg-amber-400 animate-spin' : error ? 'bg-rose-400' : 'bg-emerald-400 animate-pulse'}`}></span>
+                {loading ? 'SYNCING ENGINE...' : error ? 'TELEMETRY CACHED' : 'LIVE FREELANCER ENGINE'}
               </span>
               <span className="bg-indigo-500/10 text-indigo-300 text-[10px] px-2 py-0.5 rounded-full font-mono border border-indigo-500/20">
                 THRESHOLD: {settings.similarityThreshold}%
@@ -410,12 +398,12 @@ export const FreelancerMetricsSection: React.FC<FreelancerMetricsSectionProps> =
           </button>
 
           <button
-            onClick={fetchBidsData}
+            onClick={() => fetchBidsData(true)}
             disabled={loading}
-            className="bg-[#1a2236] hover:bg-[#25304c] text-blue-300 border border-blue-500/30 px-3 py-1.5 rounded-xl text-xs font-semibold flex items-center gap-1.5 transition-all shadow-sm"
+            className="bg-[#1a2236] hover:bg-[#25304c] text-blue-300 border border-blue-500/30 px-3 py-1.5 rounded-xl text-xs font-semibold flex items-center gap-1.5 transition-all shadow-sm disabled:opacity-50"
           >
             <i className={`fas fa-sync-alt text-xs ${loading ? 'animate-spin' : ''}`}></i>
-            <span>Refresh</span>
+            <span>{loading ? 'Refreshing...' : 'Refresh'}</span>
           </button>
 
           <a
@@ -770,6 +758,46 @@ export const FreelancerMetricsSection: React.FC<FreelancerMetricsSectionProps> =
               </div>
             </div>
           </form>
+        </div>
+      )}
+
+      {/* Telemetry Status / Error Alert Banner with dedicated Retry mechanism */}
+      {error && (
+        <div className="bg-amber-500/10 border border-amber-500/30 rounded-xl p-3.5 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs text-amber-200 animate-in fade-in duration-200">
+          <div className="flex items-center gap-2.5">
+            <i className="fas fa-exclamation-triangle text-amber-400 text-sm shrink-0"></i>
+            <div>
+              <span className="font-bold text-amber-300">Freelancer Scraper Notice:</span>{' '}
+              <span className="text-slate-300">{error}</span>
+              {retryCount > 0 && (
+                <span className="text-amber-400/80 text-[11px] ml-1.5 font-mono">
+                  (Attempt #{retryCount})
+                </span>
+              )}
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={() => fetchBidsData(true)}
+            disabled={loading || isRetrying}
+            className="px-3.5 py-1.5 rounded-lg bg-amber-500/20 hover:bg-amber-500/30 text-amber-200 border border-amber-500/40 text-xs font-semibold flex items-center gap-1.5 transition-all self-start sm:self-auto cursor-pointer disabled:opacity-50"
+          >
+            <i className={`fas fa-sync-alt text-[10px] ${loading || isRetrying ? 'animate-spin' : ''}`}></i>
+            <span>{isRetrying ? 'Retrying...' : 'Retry Connection'}</span>
+          </button>
+        </div>
+      )}
+
+      {/* Loading Skeleton */}
+      {loading && !stats && (
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3.5 animate-pulse">
+          {[1, 2, 3, 4].map((i) => (
+            <div key={i} className="bg-[#0f1422] rounded-xl p-4 border border-slate-800 space-y-3">
+              <div className="h-3 bg-slate-800 rounded w-1/2"></div>
+              <div className="h-7 bg-slate-800 rounded w-3/4"></div>
+              <div className="h-2.5 bg-slate-800 rounded w-1/3"></div>
+            </div>
+          ))}
         </div>
       )}
 

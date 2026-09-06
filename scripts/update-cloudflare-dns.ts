@@ -5,7 +5,7 @@
  * Usage:
  *   npx tsx scripts/update-cloudflare-dns.ts --token <CLOUDFLARE_API_TOKEN>
  *   npx tsx scripts/update-cloudflare-dns.ts --view-only
- *   npx tsx scripts/update-cloudflare-dns.ts --action create --type A --name @ --content 13.233.54.120 --ttl 600
+ *   npx tsx scripts/update-cloudflare-dns.ts --action create --type A --name @ --content 3.222.149.9 --ttl 600
  */
 
 import {
@@ -22,7 +22,7 @@ async function main() {
   let domain = 'gigpilot.com';
   let token = process.env.CLOUDFLARE_API_TOKEN || '';
   let zoneId = process.env.CLOUDFLARE_ZONE_ID || '';
-  let ec2Ip = '13.233.54.120';
+  let ec2Ip = '3.222.149.9';
   let viewOnly = false;
   let action = 'migrate'; // 'migrate' | 'list' | 'create' | 'delete'
   let recordType = 'A';

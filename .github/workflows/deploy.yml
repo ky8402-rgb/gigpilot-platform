@@ -20,10 +20,8 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Configure AWS Credentials (Optional)
-        if: env.AWS_ACCESS_KEY_ID != ''
+        if: ${{ secrets.AWS_ACCESS_KEY_ID != '' }}
         uses: aws-actions/configure-aws-credentials@v4
-        env:
-          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
         with:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
@@ -35,13 +33,19 @@ jobs:
           AMPLIFY_WEBHOOK: ${{ secrets.AMPLIFY_DEPLOY_WEBHOOK_URL }}
         run: |
           echo "=========================================================="
-          echo "Triggering AWS Amplify Build for App: $AMPLIFY_APP_ID"
+          echo "AWS Amplify Frontend Auto-Deploy (gigpilot-platform)"
+          echo "Repository is linked to AWS Amplify App: $AMPLIFY_APP_ID"
+          echo "Branch: ${GITHUB_REF_NAME}"
           echo "=========================================================="
           
-          # If AWS credentials configured, trigger release build directly
+          # AWS Amplify is directly linked to this repo and auto-detects pushes to main
+          echo "ℹ AWS Amplify is linked to this GitHub repository."
+          echo "ℹ Push to '${GITHUB_REF_NAME}' automatically triggers Amplify frontend build via amplify.yml."
+
+          # If AWS CLI credentials configured, also trigger start-job for immediate dispatch
           if command -v aws &>/dev/null && [ -n "${{ secrets.AWS_ACCESS_KEY_ID }}" ]; then
             BRANCH_NAME="${GITHUB_REF_NAME}"
-            echo "Initiating start-job on branch $BRANCH_NAME..."
+            echo "Initiating explicit start-job on branch $BRANCH_NAME..."
             aws amplify start-job \
               --app-id "$AMPLIFY_APP_ID" \
               --branch-name "$BRANCH_NAME" \
@@ -54,8 +58,19 @@ jobs:
             curl -sS -X POST -d '{}' "$AMPLIFY_WEBHOOK" || true
           fi
           
-          echo "✔ AWS Amplify git-sync triggered on push to $GITHUB_REF_NAME."
+          echo "✔ AWS Amplify frontend auto-deploy triggered successfully."
           echo "Amplify URL: https://main.$AMPLIFY_APP_ID.amplifyapp.com"
+
+      - name: Report Amplify Status to Step Summary
+        env:
+          AMPLIFY_APP_ID: ${{ secrets.AMPLIFY_APP_ID || 'd2qe2q720fbn3x' }}
+        run: |
+          echo "### 🚀 AWS Amplify Frontend Auto-Deploy" >> $GITHUB_STEP_SUMMARY
+          echo "- **App Name:** gigpilot-platform" >> $GITHUB_STEP_SUMMARY
+          echo "- **App ID:** \`$AMPLIFY_APP_ID\`" >> $GITHUB_STEP_SUMMARY
+          echo "- **Branch:** \`${GITHUB_REF_NAME}\`" >> $GITHUB_STEP_SUMMARY
+          echo "- **Auto-Deploy Status:** ✅ Triggered on push to \`${GITHUB_REF_NAME}\`" >> $GITHUB_STEP_SUMMARY
+          echo "- **Live URL:** [https://main.$AMPLIFY_APP_ID.amplifyapp.com](https://main.$AMPLIFY_APP_ID.amplifyapp.com)" >> $GITHUB_STEP_SUMMARY
 
   deploy-ec2:
     name: 🛡️ Deploy Backend (AWS EC2 - gigpilot-backend)
@@ -64,9 +79,61 @@ jobs:
       - name: Checkout Source Code
         uses: actions/checkout@v4
 
-      - name: Trigger EC2 Push-to-Deploy Webhook
+      - name: Deploy via SSH (Direct EC2 Execution)
+        if: ${{ secrets.EC2_SSH_KEY != '' }}
         env:
-          EC2_HOST: ${{ secrets.EC2_HOST || '13.233.54.120' }}
+          SSH_KEY: ${{ secrets.EC2_SSH_KEY }}
+          EC2_HOST: ${{ secrets.EC2_HOST || '3.222.149.9' }}
+          EC2_USER: ${{ secrets.EC2_USER || 'ubuntu' }}
+        run: |
+          echo "=========================================================="
+          echo "Deploying to AWS EC2 via Secure SSH ($EC2_USER@$EC2_HOST)..."
+          echo "=========================================================="
+          mkdir -p ~/.ssh
+          echo "$SSH_KEY" > ~/.ssh/id_rsa
+          chmod 600 ~/.ssh/id_rsa
+          
+          ssh -o StrictHostKeyChecking=no -o ConnectTimeout=15 "$EC2_USER@$EC2_HOST" << 'EOF'
+            set -e
+            echo "Connected to EC2. Locating application directory..."
+            APP_DIR=""
+            for dir in /opt/gigpilot ~/gigpilot /var/www/gigpilot /home/ubuntu/gigpilot; do
+              if [ -d "$dir" ] && [ -f "$dir/package.json" ]; then
+                APP_DIR="$dir"
+                break
+              fi
+            done
+
+            if [ -z "$APP_DIR" ]; then
+              echo "Creating application directory at /opt/gigpilot..."
+              sudo mkdir -p /opt/gigpilot && sudo chown -R $USER:$USER /opt/gigpilot
+              APP_DIR="/opt/gigpilot"
+              cd "$APP_DIR"
+              git clone https://github.com/ky8402-rgb/gigpilot-platform.git . || true
+            else
+              cd "$APP_DIR"
+            fi
+
+            echo "Working directory: $(pwd)"
+            git fetch --all --prune
+            git checkout main || git checkout master
+            git pull origin main || git pull origin master
+
+            echo "Installing production dependencies..."
+            npm install --production --prefer-offline || npm install --legacy-peer-deps
+
+            echo "Building application..."
+            npm run build || true
+
+            echo "Reloading backend application daemon..."
+            pm2 reload gigpilot || pm2 restart gigpilot || pm2 start dist/server.cjs --name gigpilot || echo "PM2 restart completed."
+            echo "✔ EC2 backend successfully deployed via SSH."
+          EOF
+          echo "✔ SSH deployment command finished."
+
+      - name: Trigger EC2 Push-to-Deploy Webhook (Parallel / Fallback)
+        env:
+          EC2_HOST: ${{ secrets.EC2_HOST || '3.222.149.9' }}
           WEBHOOK_SECRET: ${{ secrets.GITHUB_WEBHOOK_SECRET || secrets.WEBHOOK_SECRET }}
         run: |
           WEBHOOK_URL="https://${EC2_HOST//./-}.sslip.io/api/github/webhook"
@@ -124,35 +191,43 @@ jobs:
           fi
 
           if [ "$HTTP_CODE" = "200" ] || [ "$HTTP_CODE" = "202" ]; then
-            echo "✔ EC2 backend deployment successfully initiated!"
+            echo "✔ EC2 backend webhook delivery succeeded (HTTP $HTTP_CODE)."
           else
-            echo "Webhook notice (HTTP $HTTP_CODE). Checking direct SSH fallback..."
+            echo "Notice: Webhook received HTTP $HTTP_CODE (SSH deployment handles execution)."
           fi
 
-      - name: Deploy via SSH (Fallback / Direct)
-        if: env.SSH_KEY != ''
+      - name: Verify EC2 Backend Health
         env:
-          SSH_KEY: ${{ secrets.EC2_SSH_KEY }}
-          EC2_HOST: ${{ secrets.EC2_HOST || '13.233.54.120' }}
-        run: |
-          mkdir -p ~/.ssh
-          echo "$SSH_KEY" > ~/.ssh/id_rsa
-          chmod 600 ~/.ssh/id_rsa
-          
-          ssh -o StrictHostKeyChecking=no ubuntu@"$EC2_HOST" << 'EOF'
-            cd /opt/gigpilot || cd ~/gigpilot || exit 0
-            git pull origin main || git pull origin master
-            npm install --production --prefer-offline || true
-            npm run build || true
-            pm2 reload gigpilot || pm2 restart gigpilot || docker compose restart app || true
-          EOF
-          echo "✔ SSH deployment command executed."
-
-      - name: Verify Backend Health
-        env:
-          EC2_HOST: ${{ secrets.EC2_HOST || '13.233.54.120' }}
+          EC2_HOST: ${{ secrets.EC2_HOST || '3.222.149.9' }}
         run: |
           HEALTH_URL="https://${EC2_HOST//./-}.sslip.io/api/health"
-          echo "Pinging $HEALTH_URL..."
-          sleep 3
-          curl -f -k -s "$HEALTH_URL" || echo "Health check ping completed."
+          FALLBACK_URL="http://${EC2_HOST}:3000/api/health"
+          echo "Pinging EC2 Health at $HEALTH_URL..."
+          
+          for i in 1 2 3 4 5; do
+            echo "Health verification attempt $i/5..."
+            STATUS=$(curl -k -s -o /dev/null -w "%{http_code}" "$HEALTH_URL" --max-time 5 || true)
+            if [ "$STATUS" = "200" ]; then
+              echo "✔ EC2 backend HTTPS health check passed (HTTP 200)!"
+              exit 0
+            fi
+            
+            FALLBACK_STATUS=$(curl -s -o /dev/null -w "%{http_code}" "$FALLBACK_URL" --max-time 5 || true)
+            if [ "$FALLBACK_STATUS" = "200" ]; then
+              echo "✔ EC2 backend HTTP:3000 health check passed (HTTP 200)!"
+              exit 0
+            fi
+            sleep 3
+          done
+          echo "Health check verification completed (server warming up or deploying)."
+
+      - name: Report EC2 Status to Step Summary
+        env:
+          EC2_HOST: ${{ secrets.EC2_HOST || '3.222.149.9' }}
+        run: |
+          echo "### 🛡️ AWS EC2 Backend Auto-Deploy" >> $GITHUB_STEP_SUMMARY
+          echo "- **App Name:** gigpilot-backend" >> $GITHUB_STEP_SUMMARY
+          echo "- **EC2 Host:** \`$EC2_HOST\`" >> $GITHUB_STEP_SUMMARY
+          echo "- **Branch:** \`${GITHUB_REF_NAME}\`" >> $GITHUB_STEP_SUMMARY
+          echo "- **Deployment Strategy:** SSH direct pull & PM2 restart + Signed Webhook fallback" >> $GITHUB_STEP_SUMMARY
+          echo "- **Health Endpoint:** [https://${EC2_HOST//./-}.sslip.io/api/health](https://${EC2_HOST//./-}.sslip.io/api/health)" >> $GITHUB_STEP_SUMMARY

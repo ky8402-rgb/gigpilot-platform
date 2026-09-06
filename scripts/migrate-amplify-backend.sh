@@ -25,10 +25,12 @@ NC='\033[0m' # No Color
 
 # Default Configuration & Environment Overrides
 AMPLIFY_APP_NAME="${AMPLIFY_APP_NAME:-gigpilot-platform}"
+AMPLIFY_APP_ID="${AMPLIFY_APP_ID:-d2qe2q720fbn3x}"
 NEW_BACKEND_URL="${NEW_BACKEND_URL:-}"
 ENV_VAR_NAME="${ENV_VAR_NAME:-VITE_BACKEND_URL}"
 AWS_REGION="${AWS_REGION:-${AWS_DEFAULT_REGION:-us-east-1}}"
 BRANCH_NAME="${BRANCH_NAME:-}"
+FORCE_MIGRATE="${FORCE_MIGRATE:-false}"
 SLACK_WEBHOOK_URL="${SLACK_WEBHOOK_URL:-}"
 DISCORD_WEBHOOK_URL="${DISCORD_WEBHOOK_URL:-}"
 BACKUP_STATE_FILE=".amplify_backend_migration_backup.json"
@@ -110,8 +112,22 @@ verify_prerequisites() {
 discover_amplify_app() {
   log_info "Discovering Amplify app '${AMPLIFY_APP_NAME}' in region '${AWS_REGION}'..."
 
-  APP_ID=$(aws amplify list-apps --region "$AWS_REGION" \
-    --query "apps[?name=='${AMPLIFY_APP_NAME}'].appId" --output text 2>/dev/null || echo "")
+  # 1. First check if explicit or default AMPLIFY_APP_ID is accessible
+  if [ -n "${AMPLIFY_APP_ID:-}" ]; then
+    APP_CHECK=$(aws amplify get-app --app-id "$AMPLIFY_APP_ID" --region "$AWS_REGION" 2>&1 || true)
+    if echo "$APP_CHECK" | grep -q '"appId"'; then
+      APP_ID="$AMPLIFY_APP_ID"
+      FOUND_NAME=$(echo "$APP_CHECK" | grep -o '"name": "[^"]*' | head -1 | cut -d'"' -f4 || echo "$AMPLIFY_APP_NAME")
+      log_success "Verified Amplify App by ID: ${BOLD}${FOUND_NAME}${NC} (ID: ${APP_ID})"
+      AMPLIFY_APP_NAME="$FOUND_NAME"
+    fi
+  fi
+
+  # 2. If not found by ID, query by name
+  if [ -z "${APP_ID:-}" ]; then
+    APP_ID=$(aws amplify list-apps --region "$AWS_REGION" \
+      --query "apps[?name=='${AMPLIFY_APP_NAME}'].appId" --output text 2>/dev/null || echo "")
+  fi
 
   if [ -z "$APP_ID" ] || [ "$APP_ID" == "None" ]; then
     log_warn "App '${AMPLIFY_APP_NAME}' not found by exact name match. Checking available apps..."
@@ -130,7 +146,7 @@ discover_amplify_app() {
       log_info "Automatically selected single active Amplify app: ${BOLD}${FOUND_NAME}${NC} (ID: ${APP_ID})"
       AMPLIFY_APP_NAME="$FOUND_NAME"
     else
-      log_error "Multiple Amplify apps found. Please set AMPLIFY_APP_NAME to one of:"
+      log_error "Multiple Amplify apps found. Please set AMPLIFY_APP_NAME or AMPLIFY_APP_ID to one of:"
       echo "$APPS_LIST"
       exit 1
     fi
@@ -202,9 +218,16 @@ verify_target_backend() {
     if [ "$PING_CODE" == "200" ]; then
       log_success "New backend health ping passed! (${PING_URL} -> HTTP 200)"
     else
-      log_error "New backend is unreachable or unhealthy! HTTP Status: ${HTTP_CODE} on ${HEALTH_URL}"
-      echo -e "${YELLOW}Aborting migration to prevent routing frontend to an offline backend.${NC}"
-      exit 1
+      log_warn "New backend is unreachable or unhealthy! HTTP Status: ${HTTP_CODE} on ${HEALTH_URL}"
+      if [ "$FORCE_MIGRATE" == "true" ]; then
+        log_warn "FORCE_MIGRATE=true: Bypassing connectivity pre-check and proceeding with migration..."
+      else
+        log_error "Aborting migration to prevent routing frontend to an offline backend."
+        log_info "Tips to resolve: 1) Verify your EC2 backend is running on ${NEW_BACKEND_URL}"
+        log_info "                 2) Check security group allows inbound HTTPS (port 443)"
+        log_info "                 3) Or rerun with FORCE_MIGRATE=true or --force if provisioning"
+        exit 1
+      fi
     fi
   fi
 }
@@ -422,19 +445,35 @@ main() {
     manual_rollback_mode
   fi
 
+  for arg in "$@"; do
+    if [ "$arg" == "--force" ] || [ "$arg" == "-f" ]; then
+      FORCE_MIGRATE="true"
+    fi
+  done
+
   echo -e "\n${BOLD}${CYAN}===================================================================${NC}"
   echo -e "${BOLD}${CYAN}  GIGPILOT AWS AMPLIFY BACKEND MIGRATION AUTOMATION               ${NC}"
   echo -e "${BOLD}${CYAN}===================================================================${NC}\n"
 
   # Validate NEW_BACKEND_URL parameter
   if [ -z "$NEW_BACKEND_URL" ]; then
+    for arg in "$@"; do
+      if [[ "$arg" =~ ^https?:// ]]; then
+        NEW_BACKEND_URL="$arg"
+        break
+      fi
+    done
+  fi
+
+  if [ -z "$NEW_BACKEND_URL" ]; then
     if [ -n "${1:-}" ] && [[ "${1:-}" =~ ^https?:// ]]; then
       NEW_BACKEND_URL="$1"
     else
       echo -e "${RED}[ERROR] NEW_BACKEND_URL is required.${NC}"
       echo "Usage:"
-      echo "  NEW_BACKEND_URL=\"https://13-233-54-120.sslip.io\" ./scripts/migrate-amplify-backend.sh"
-      echo "  or: ./scripts/migrate-amplify-backend.sh https://13-233-54-120.sslip.io"
+      echo "  NEW_BACKEND_URL=\"https://3-222-149-9.sslip.io\" ./scripts/migrate-amplify-backend.sh"
+      echo "  or: ./scripts/migrate-amplify-backend.sh https://3-222-149-9.sslip.io"
+      echo "  or: ./scripts/migrate-amplify-backend.sh https://3-222-149-9.sslip.io --force"
       echo "  or: ./scripts/migrate-amplify-backend.sh --rollback"
       exit 1
     fi

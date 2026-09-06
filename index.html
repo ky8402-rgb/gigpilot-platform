@@ -38,11 +38,14 @@
     <script type="module" src="/src/main.tsx"></script>
     <script>
       (function() {
-        const BACKEND_BASE = 'https://gigpilot-backend.onrender.com';
-        const apiUrl = `${BACKEND_BASE}/api/bids?limit=10`;
+        const apiUrl = '/api/bids?limit=10';
         fetch(apiUrl)
-          .then(res => res.json())
+          .then(res => {
+            if (!res.ok) return null;
+            return res.json();
+          })
           .then(data => {
+            if (!data) return;
             const ticker = document.getElementById('job-ticker');
             const bidsList = Array.isArray(data) ? data : (data.bids || []);
             if (ticker && bidsList.length > 0) {
@@ -54,7 +57,7 @@
               });
             }
           })
-          .catch(err => console.log('Job ticker loaded or deferred:', err));
+          .catch(() => {});
       })();
     </script>
   </body>

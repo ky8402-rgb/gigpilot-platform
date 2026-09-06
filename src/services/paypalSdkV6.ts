@@ -109,18 +109,38 @@ export async function getPayPalSdkV6Instance(config?: PayPalSdkV6Config): Promis
 }
 
 export const BACKEND_BASE_URL =
+  (typeof window !== 'undefined' && window.location?.origin) ||
   (typeof import.meta !== 'undefined' && (import.meta as any).env?.VITE_BACKEND_URL) ||
-  'https://13-233-54-120.sslip.io';
+  '';
 
 /**
- * Helper to dynamically resolve API base URL for Render or same-origin deployment
+ * Helper to dynamically resolve API base URL for same-origin or external deployment
  */
 export function getApiBaseUrl(): string {
+  if (typeof window !== 'undefined' && window.location) {
+    const host = window.location.hostname;
+    const isDetachedStaticHost =
+      host.includes('amplifyapp.com') ||
+      host.includes('cloudfront.net') ||
+      host.includes('vercel.app') ||
+      host.includes('github.io') ||
+      host.includes('netlify.app') ||
+      host.includes('pages.dev');
+
+    if (!isDetachedStaticHost) {
+      return window.location.origin;
+    }
+  }
+
   const envUrl = (import.meta as any).env?.VITE_BACKEND_URL || (import.meta as any).env?.VITE_API_BASE_URL || (import.meta as any).env?.VITE_API_URL;
-  if (envUrl && typeof envUrl === 'string' && envUrl.trim().length > 0) {
+  if (envUrl && typeof envUrl === 'string' && envUrl.trim().length > 0 && !envUrl.includes('ky7079.co')) {
     return envUrl.trim().replace(/\/+$/, '');
   }
-  return BACKEND_BASE_URL;
+
+  if (typeof window !== 'undefined' && window.location && window.location.origin) {
+    return window.location.origin;
+  }
+  return '';
 }
 
 /**

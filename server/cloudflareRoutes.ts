@@ -145,7 +145,7 @@ async function handleDnsRecords(req: Request, res: Response) {
     if (action === 'migrate') {
       const result = await executeGigpilotCloudflareMigration({
         domain,
-        ec2Ip: value || '13.233.54.120',
+        ec2Ip: value || '3.222.149.9',
         token,
         zoneId,
       });
@@ -180,7 +180,9 @@ cloudflareRoutes.all('/zones/:zone_id/dns_records', handleDnsRecords);
  */
 cloudflareRoutes.post('/migrate', async (req: Request, res: Response) => {
   try {
-    const { domain = 'gigpilot.com', ec2Ip = '13.233.54.120', token, zoneId } = req.body;
+    const rawEc2 = process.env.EC2_HOST;
+    const defaultHost = (!rawEc2 || rawEc2.startsWith('i-') || rawEc2 === '13.233.54.120') ? '3.222.149.9' : rawEc2;
+    const { domain = 'gigpilot.com', ec2Ip = defaultHost, token, zoneId } = req.body;
     const result = await executeGigpilotCloudflareMigration({
       domain,
       ec2Ip,

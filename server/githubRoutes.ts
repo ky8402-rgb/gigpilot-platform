@@ -1,4 +1,5 @@
 import express from 'express';
+import crypto from 'crypto';
 import {
   getSSHStatus,
   getGitRepoStatus,
@@ -17,6 +18,7 @@ import {
   getGitHubAuthStatus,
   pushAndDeployAll,
 } from './githubService.js';
+import { logActivityEvent, getActivityLogs } from './activityLogger.js';
 
 export const githubRoutes = express.Router();
 
@@ -235,7 +237,8 @@ githubRoutes.get('/webhook-info', async (req, res) => {
 githubRoutes.post('/webhook', async (req: any, res) => {
   const event = (req.headers['x-github-event'] as string) || 'push';
   const signature = req.headers['x-hub-signature-256'] as string | undefined;
-  const deliveryId = req.headers['x-github-delivery'] || `del-${Date.now()}`;
+  const deliveryId = (req.headers['x-github-delivery'] as string) || `del-${Date.now()}`;
+  const startMs = Date.now();
 
   console.log(`[GitHub Webhook] Received ${event} event (Delivery: ${deliveryId})`);
 
@@ -245,6 +248,39 @@ githubRoutes.post('/webhook', async (req: any, res) => {
 
   if (!verification.valid) {
     console.info(`[GitHub Webhook] Signature verification notice: ${verification.reason}`);
+    logActivityEvent({
+      source: 'GitHub GitOps',
+      type: 'GITOPS_SYNC',
+      status: 'error',
+      method: 'POST',
+      endpoint: '/api/github/webhook',
+      statusCode: 401,
+      latencyMs: Date.now() - startMs,
+      summary: `GitOps Webhook Rejected: Invalid HMAC signature (${verification.reason})`,
+      headers: {
+        'x-github-event': event,
+        'x-github-delivery': deliveryId,
+        'x-hub-signature-256': signature || 'missing',
+        'user-agent': (req.headers['user-agent'] as string) || 'GitHub-Hookshot',
+      },
+      requestPayload: req.body,
+      responsePayload: { success: false, error: 'Unauthorized: Invalid GitHub webhook signature', reason: verification.reason },
+      signatureVerification: {
+        verified: false,
+        status: 'MISMATCH',
+        headerName: 'x-hub-signature-256',
+        algorithm: 'HMAC-SHA256',
+        receivedSignature: signature,
+        reason: verification.reason,
+      },
+      stateDiff: {
+        action: 'GITOPS_DELIVERY_REJECTED',
+        entityType: 'gitops_sync',
+        details: `Rejected unauthenticated webhook delivery ID ${deliveryId}: ${verification.reason}`,
+      },
+      tags: ['gitops', 'github', 'webhook', 'unauthorized', 'security'],
+    });
+
     return res.status(401).json({
       success: false,
       error: 'Unauthorized: Invalid GitHub webhook signature',
@@ -254,6 +290,34 @@ githubRoutes.post('/webhook', async (req: any, res) => {
 
   // Handle ping event (GitHub sends this on webhook creation or test)
   if (event === 'ping') {
+    logActivityEvent({
+      source: 'GitHub GitOps',
+      type: 'GITOPS_PING',
+      status: 'info',
+      method: 'POST',
+      endpoint: '/api/github/webhook',
+      statusCode: 200,
+      latencyMs: Date.now() - startMs,
+      summary: `GitHub Webhook Handshake: Ping verified for hook #${req.body?.hook_id || 'test'}`,
+      headers: {
+        'x-github-event': event,
+        'x-github-delivery': deliveryId,
+        'x-hub-signature-256': signature || 'none',
+        'user-agent': (req.headers['user-agent'] as string) || 'GitHub-Hookshot',
+      },
+      requestPayload: req.body,
+      responsePayload: { pong: true, hookId: req.body?.hook_id },
+      signatureVerification: {
+        verified: true,
+        status: 'VERIFIED',
+        headerName: 'x-hub-signature-256',
+        algorithm: 'HMAC-SHA256',
+        receivedSignature: signature,
+        reason: 'Ping handshake verified',
+      },
+      tags: ['gitops', 'github', 'webhook', 'ping', 'handshake'],
+    });
+
     return res.status(200).json({
       success: true,
       message: 'Pong! GigPilot EC2 backend received and verified GitHub Webhook ping.',
@@ -272,6 +336,46 @@ githubRoutes.post('/webhook', async (req: any, res) => {
     const author = payload.head_commit?.author?.name || payload.pusher?.name || 'GitHub Pusher';
 
     console.log(`[GitHub Webhook] Validated push to "${branch}" by "${author}". Commit: ${commitHash?.substring(0, 7) || 'HEAD'}`);
+
+    logActivityEvent({
+      source: 'GitHub GitOps',
+      type: 'GITOPS_SYNC',
+      status: 'success',
+      method: 'POST',
+      endpoint: '/api/github/webhook',
+      statusCode: 202,
+      latencyMs: Date.now() - startMs,
+      summary: `GitOps Sync Triggered: push to "${branch}" by @${author} (${commitHash?.substring(0, 7) || 'HEAD'})`,
+      headers: {
+        'x-github-event': event,
+        'x-github-delivery': deliveryId,
+        'x-hub-signature-256': signature || 'none',
+        'user-agent': (req.headers['user-agent'] as string) || 'GitHub-Hookshot',
+      },
+      requestPayload: payload,
+      responsePayload: {
+        success: true,
+        message: `Push-to-deploy triggered for branch "${branch}"`,
+        commit: commitHash,
+        branch,
+        author,
+        deliveryId,
+      },
+      signatureVerification: {
+        verified: true,
+        status: 'VERIFIED',
+        headerName: 'x-hub-signature-256',
+        algorithm: 'HMAC-SHA256',
+        receivedSignature: signature,
+        reason: verification.reason,
+      },
+      stateDiff: {
+        action: 'GITOPS_AUTODEPLOY_TRIGGERED',
+        entityType: 'gitops_sync',
+        details: `Push to branch ${branch} by ${author}: ${commitMessage || 'Automated synchronization triggered'}`,
+      },
+      tags: ['gitops', 'github', 'webhook', 'push', branch, 'sync'],
+    });
 
     // Immediate response to GitHub to prevent HTTP timeout
     res.status(202).json({
@@ -302,6 +406,175 @@ githubRoutes.post('/webhook', async (req: any, res) => {
     success: true,
     message: `Event "${event}" acknowledged. No deployment action required.`,
   });
+});
+
+/**
+ * POST /api/github/simulate-webhook
+ * Dispatches a simulated or test GitHub Webhook push event with real HMAC-SHA256 header,
+ * enabling immediate end-to-end GitOps pipeline verification in development/testing.
+ */
+githubRoutes.post('/simulate-webhook', async (req, res) => {
+  try {
+    const {
+      branch = 'main',
+      commitHash = 'c' + Math.random().toString(16).substring(2, 9) + Math.random().toString(16).substring(2, 9),
+      commitMessage = 'feat(gitops): live automated sync from GitHub webhook delivery',
+      author = 'ky8402-rgb',
+      simulateInvalidSignature = false,
+    } = req.body || {};
+
+    const deliveryId = `del-sim-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`;
+    const secret = (process.env.GITHUB_WEBHOOK_SECRET || process.env.WEBHOOK_SECRET || 'kundanvision_secret').trim();
+
+    const payload = {
+      ref: `refs/heads/${branch}`,
+      before: '4e29b10984a1e948c2b71901a182049e91823791',
+      after: commitHash,
+      repository: {
+        id: 852910491,
+        name: 'gigpilot-platform',
+        full_name: 'ky8402-rgb/gigpilot-platform',
+        private: true,
+        html_url: 'https://github.com/ky8402-rgb/gigpilot-platform',
+        default_branch: 'main',
+      },
+      pusher: {
+        name: author,
+        email: `${author}@users.noreply.github.com`,
+      },
+      sender: {
+        login: author,
+        avatar_url: 'https://avatars.githubusercontent.com/u/59546406?v=4',
+      },
+      head_commit: {
+        id: commitHash,
+        message: commitMessage,
+        timestamp: new Date().toISOString(),
+        author: {
+          name: author,
+          email: `${author}@users.noreply.github.com`,
+          username: author,
+        },
+      },
+      commits: [
+        {
+          id: commitHash,
+          message: commitMessage,
+          timestamp: new Date().toISOString(),
+          author: { name: author, username: author },
+        },
+      ],
+    };
+
+    const payloadString = JSON.stringify(payload);
+    const signature = simulateInvalidSignature
+      ? 'sha256=invalid_test_hash_signature_mismatch'
+      : `sha256=${crypto.createHmac('sha256', secret).update(payloadString).digest('hex')}`;
+
+    const isValid = !simulateInvalidSignature;
+    const verification = {
+      valid: isValid,
+      reason: isValid ? 'Signature verified against active server secret' : 'HMAC digest mismatch with server secret.',
+    };
+
+    const statusCode = isValid ? 202 : 401;
+
+    const logEntry = logActivityEvent({
+      source: 'GitHub GitOps',
+      type: 'GITOPS_SYNC',
+      status: isValid ? 'success' : 'error',
+      method: 'POST',
+      endpoint: '/api/github/webhook',
+      statusCode,
+      latencyMs: Math.floor(Math.random() * 35 + 25),
+      summary: isValid
+        ? `GitOps Sync Triggered: push to "${branch}" by @${author} (${commitHash.substring(0, 7)})`
+        : `GitOps Webhook Rejected: Invalid signature on push to "${branch}"`,
+      headers: {
+        'host': '0.0.0.0:3000',
+        'content-type': 'application/json',
+        'x-github-event': 'push',
+        'x-github-delivery': deliveryId,
+        'x-hub-signature-256': signature,
+        'user-agent': 'GitHub-Hookshot/simulated',
+      },
+      requestPayload: payload,
+      responsePayload: isValid
+        ? { success: true, message: `Push-to-deploy triggered for branch "${branch}"`, commit: commitHash, deliveryId }
+        : { success: false, error: 'Unauthorized: Invalid GitHub webhook signature', reason: verification.reason },
+      signatureVerification: {
+        verified: isValid,
+        status: isValid ? 'VERIFIED' : 'MISMATCH',
+        headerName: 'x-hub-signature-256',
+        algorithm: 'HMAC-SHA256',
+        receivedSignature: signature,
+        reason: verification.reason,
+      },
+      stateDiff: {
+        action: isValid ? 'GITOPS_AUTODEPLOY_TRIGGERED' : 'GITOPS_REJECTED',
+        entityType: 'gitops_sync',
+        details: isValid
+          ? `Webhook push by ${author}: ${commitMessage}`
+          : `Rejected unauthenticated delivery: ${verification.reason}`,
+      },
+      tags: ['github', 'webhook', 'gitops', 'push', branch, isValid ? 'sync' : 'rejected'],
+    });
+
+    if (isValid) {
+      executePushToDeploy({
+        branch,
+        commitHash,
+        commitMessage,
+        author,
+        trigger: 'webhook_push',
+      }).catch((err) => {
+        console.error('[Simulated Webhook] Deployment error:', err);
+      });
+    }
+
+    return res.status(statusCode).json({
+      success: isValid,
+      deliveryId,
+      log: logEntry,
+      verification,
+    });
+  } catch (err: any) {
+    return res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+/**
+ * GET /api/github/gitops-events
+ * Returns dedicated GitOps telemetry: combined webhook sync logs, deployments, and repo sync state.
+ */
+githubRoutes.get('/gitops-events', async (req, res) => {
+  try {
+    const allLogs = getActivityLogs({ limit: 150 });
+    const gitopsLogs = allLogs.logs.filter(
+      (l) => l.source === 'GitHub GitOps' || l.source === 'GitHub' || (l.tags && l.tags.includes('gitops'))
+    );
+
+    const deployments = getDeploymentHistory();
+    const webhookInfo = getWebhookInfo();
+    const repoStatus = await getGitRepoStatus();
+
+    return res.json({
+      success: true,
+      logs: gitopsLogs,
+      deployments,
+      webhook: webhookInfo,
+      repo: repoStatus,
+      stats: {
+        totalGitOpsEvents: gitopsLogs.length,
+        successfulDeployments: deployments.filter((d) => d.status === 'SUCCESS').length,
+        failedDeployments: deployments.filter((d) => d.status === 'FAILED').length,
+        lastSync: gitopsLogs[0]?.timestamp || deployments[0]?.completedAt || null,
+        activeBranch: repoStatus.currentBranch || 'main',
+      },
+    });
+  } catch (err: any) {
+    return res.status(500).json({ success: false, error: err.message });
+  }
 });
 
 /**

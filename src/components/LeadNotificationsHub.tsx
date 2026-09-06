@@ -3,6 +3,7 @@ import {
   fetchLeadNotificationStatus,
   savePlatformCookies,
   resetFreelancerCookies,
+  verifyAndActivateFreelancerScraper,
   saveNotificationConfig,
   sendTestTelegramPush,
   sendTestEmailPush,
@@ -112,24 +113,35 @@ export const LeadNotificationsHub: React.FC<LeadNotificationsHubProps> = ({
 
   const handleSaveCookies = async (platform: 'upwork' | 'freelancer') => {
     const cookieStr = platform === 'upwork' ? upworkCookieInput : freelancerCookieInput;
-    if (!cookieStr.trim()) {
-      showToast?.(`Please enter valid ${platform} session cookies`, 'error');
+    if (platform === 'upwork' && !cookieStr.trim()) {
+      showToast?.('Please enter valid Upwork session cookies', 'error');
       return;
     }
 
     try {
       setIsSavingCookies(true);
-      const res = await savePlatformCookies(platform, cookieStr);
-      if (res.success) {
-        showToast?.(res.validation?.message || `${platform.toUpperCase()} session verified and connected to Headless Scraper!`, 'success');
-        if (platform === 'freelancer' && res.cookiesState?.freelancerCookies) {
-          setFreelancerCookieInput(res.cookiesState.freelancerCookies);
-        } else if (platform === 'upwork' && res.cookiesState?.upworkCookies) {
-          setUpworkCookieInput(res.cookiesState.upworkCookies);
+      if (platform === 'freelancer') {
+        const res = await verifyAndActivateFreelancerScraper(cookieStr);
+        if (res.success) {
+          showToast?.(res.message || 'Freelancer.com session verified and connected to Headless Scraper!', 'success');
+          if (res.cookiesState?.freelancerCookies) {
+            setFreelancerCookieInput(res.cookiesState.freelancerCookies);
+          }
+          await loadStatus();
+        } else {
+          showToast?.(res.message || 'Failed to validate Freelancer scraper session', 'error');
         }
-        await loadStatus();
       } else {
-        showToast?.(res.validation?.message || 'Failed to validate cookies', 'error');
+        const res = await savePlatformCookies(platform, cookieStr);
+        if (res.success) {
+          showToast?.(res.validation?.message || `${platform.toUpperCase()} session verified and connected to Headless Scraper!`, 'success');
+          if (res.cookiesState?.upworkCookies) {
+            setUpworkCookieInput(res.cookiesState.upworkCookies);
+          }
+          await loadStatus();
+        } else {
+          showToast?.(res.validation?.message || 'Failed to validate cookies', 'error');
+        }
       }
     } catch (err: any) {
       showToast?.(err.message || 'Error saving cookies', 'error');
@@ -733,10 +745,20 @@ export const LeadNotificationsHub: React.FC<LeadNotificationsHubProps> = ({
                 <button
                   type="button"
                   onClick={() => handleSaveCookies('freelancer')}
-                  disabled={isSavingCookies || !freelancerCookieInput.trim()}
-                  className="flex-1 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-500 text-white text-xs font-bold shadow-md transition-all cursor-pointer disabled:opacity-50"
+                  disabled={isSavingCookies}
+                  className="flex-1 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-500 text-white text-xs font-bold shadow-md transition-all cursor-pointer disabled:opacity-50 flex items-center justify-center gap-2"
                 >
-                  {isSavingCookies ? 'Validating & Connecting...' : 'Verify & Activate Freelancer Scraper'}
+                  {isSavingCookies ? (
+                    <>
+                      <i className="fas fa-spinner fa-spin"></i>
+                      <span>Validating &amp; Connecting...</span>
+                    </>
+                  ) : (
+                    <>
+                      <i className="fas fa-plug"></i>
+                      <span>Verify &amp; Activate Freelancer Scraper</span>
+                    </>
+                  )}
                 </button>
                 <button
                   type="button"

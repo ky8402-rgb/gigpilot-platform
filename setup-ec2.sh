@@ -2,13 +2,13 @@
 # ==============================================================================
 # GigPilot Platform - Fresh EC2 Production Provisioning & Setup Script
 #
-# Target OS: Ubuntu 20.04 / 22.04 / 24.04 LTS (AWS EC2 - 13.233.54.120)
+# Target OS: Ubuntu 20.04 / 22.04 / 24.04 LTS (AWS EC2 - 3.222.149.9)
 # Repo:      https://github.com/ky8402-rgb/gigpilot-platform.git
 # Directory: /home/ubuntu/gigpilot
 # Backend:   Node.js + Express (PM2: gigpilot)
 # ML:        Python ML Microservice (Docker: self-healing-ml-service on port 8000)
 # Database:  Neon Serverless PostgreSQL (Connection Pooler)
-# SSL:       sslip.io via Nginx Reverse Proxy (13-233-54-120.sslip.io)
+# SSL:       sslip.io via Nginx Reverse Proxy (3-222-149-9.sslip.io)
 # ==============================================================================
 
 set -uo pipefail
@@ -26,7 +26,7 @@ NC='\033[0m'
 APP_USER="ubuntu"
 APP_DIR="/home/ubuntu/gigpilot"
 REPO_URL="https://github.com/ky8402-rgb/gigpilot-platform.git"
-TARGET_BRANCH="master"
+TARGET_BRANCH="main"
 DOMAIN="3-222-149-9.sslip.io"
 PUBLIC_IP="3.222.149.9"
 FRONTEND_URL="https://main.d2qe2q720fbn3x.amplifyapp.com"

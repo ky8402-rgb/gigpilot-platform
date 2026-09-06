@@ -165,8 +165,12 @@ export async function autoFixGoDaddyDns(options: {
 }): Promise<AutoFixDnsResult> {
   const domain = options.domain || 'gigpilot.com';
   const target = options.target || 'ec2';
-  const ec2Ip = options.ec2Ip || process.env.EC2_HOST || '13.233.54.120';
-  const amplifyHost = options.amplifyHost || `${process.env.AMPLIFY_APP_ID || 'd2qe2q720fbn3x'}.amplifyapp.com`;
+  const rawEc2 = process.env.EC2_HOST;
+  const defaultEc2 = (!rawEc2 || rawEc2.startsWith('i-') || rawEc2 === '13.233.54.120') ? '3.222.149.9' : rawEc2;
+  const ec2Ip = options.ec2Ip || defaultEc2;
+  const rawAmplify = process.env.AMPLIFY_APP_ID;
+  const defaultAmplify = (!rawAmplify || rawAmplify.startsWith('AKIA')) ? 'd2qe2q720fbn3x' : rawAmplify;
+  const amplifyHost = options.amplifyHost || `${defaultAmplify}.amplifyapp.com`;
 
   // 1. Fetch current records first to inspect the state and preserve backup
   const fetchRes = await fetchGoDaddyRecords(domain, options.apiKey, options.apiSecret);

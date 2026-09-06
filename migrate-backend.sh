@@ -4,10 +4,10 @@
 #
 # Usage:
 #   ./migrate-backend.sh \
-#     --new-url "https://13-233-54-120.sslip.io" \
+#     --new-url "https://3-222-149-9.sslip.io" \
 #     --amplify-app "gigpilot-platform" \
 #     --env-var "VITE_BACKEND_URL" \
-#     --ec2-host "13.233.54.120" \
+#     --ec2-host "3.222.149.9" \
 #     --ec2-user "ubuntu"
 #
 # Rollback:
@@ -30,10 +30,10 @@ NC='\033[0m' # No Color
 # ------------------------------------------------------------------------------
 # Defaults & Arguments
 # ------------------------------------------------------------------------------
-NEW_BACKEND_URL="https://13-233-54-120.sslip.io"
+NEW_BACKEND_URL="${NEW_BACKEND_URL:-https://3-222-149-9.sslip.io}"
 AMPLIFY_APP_NAME="gigpilot-platform"
 ENV_VAR_NAME="VITE_BACKEND_URL"
-EC2_HOST="13.233.54.120"
+EC2_HOST="${EC2_HOST:-3.222.149.9}"
 EC2_USER="ubuntu"
 EC2_KEY_FILE=""
 AMPLIFY_DOMAIN="https://main.d2qe2q720fbn3x.amplifyapp.com"
@@ -123,10 +123,10 @@ while [[ $# -gt 0 ]]; do
     --help|-h)
       echo "Usage: $0 [options]"
       echo "Options:"
-      echo "  --new-url URL        Target EC2 SSL Backend URL (default: https://13-233-54-120.sslip.io)"
+      echo "  --new-url URL        Target EC2 SSL Backend URL (default: https://3-222-149-9.sslip.io)"
       echo "  --amplify-app NAME   Amplify App Name (default: gigpilot-platform)"
       echo "  --env-var NAME       Frontend API env variable (default: VITE_BACKEND_URL)"
-      echo "  --ec2-host HOST      EC2 Public IP / Hostname (default: 13.233.54.120)"
+      echo "  --ec2-host HOST      EC2 Public IP / Hostname (default: 3.222.149.9)"
       echo "  --ec2-user USER      EC2 SSH user (default: ubuntu)"
       echo "  --key-file PATH      Path to SSH private key (.pem)"
       echo "  --amplify-domain URL Amplify Frontend URL"

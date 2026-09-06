@@ -37,7 +37,7 @@ Usage:
   npx tsx scripts/update-godaddy-dns.ts [options]
 
 Options:
-  --target <ec2|amplify>   Choose target: 'ec2' (default: 13.233.54.120) or 'amplify' (d2qe2q720fbn3x.amplifyapp.com)
+  --target <ec2|amplify>   Choose target: 'ec2' (default: 3.222.149.9) or 'amplify' (d2qe2q720fbn3x.amplifyapp.com)
   --key <apiKey>           GoDaddy API Key (or set GODADDY_API_KEY env var)
   --secret <apiSecret>     GoDaddy API Secret (or set GODADDY_API_SECRET env var)
   --domain <domain>        Target domain (default: gigpilot.com)

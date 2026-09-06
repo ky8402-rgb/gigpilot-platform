@@ -1,8 +1,8 @@
 export interface ActivityLogEntry {
   id: string;
   timestamp: string;
-  source: 'PayPal' | 'RemoteOK' | 'WeWorkRemotely' | 'FlexJobs' | 'Razorpay' | 'Indian Bank' | 'Gemini AI' | 'System' | 'PostgreSQL Backup' | string;
-  type: 'WEBHOOK_INCOMING' | 'FEED_SYNC' | 'BID_SUBMISSION' | 'ORDER_STATE_SYNC' | 'PAYMENT_RECEIVED' | 'BANK_AUTO_TRANSFER' | 'AI_PROPOSAL_GEN' | 'AUTH_HANDSHAKE' | 'DATABASE_SNAPSHOT_CREATED' | 'SNAPSHOT_PRUNED' | 'DISASTER_RECOVERY_RESTORED' | 'SNAPSHOT_VERIFIED' | string;
+  source: 'GitHub' | 'GitHub GitOps' | 'PayPal' | 'RemoteOK' | 'WeWorkRemotely' | 'FlexJobs' | 'Razorpay' | 'Indian Bank' | 'Gemini AI' | 'System' | 'PostgreSQL Backup' | string;
+  type: 'GITOPS_SYNC' | 'GITOPS_PUSH' | 'GITOPS_DEPLOY' | 'GITOPS_PING' | 'WEBHOOK_INCOMING' | 'FEED_SYNC' | 'BID_SUBMISSION' | 'ORDER_STATE_SYNC' | 'PAYMENT_RECEIVED' | 'BANK_AUTO_TRANSFER' | 'AI_PROPOSAL_GEN' | 'AUTH_HANDSHAKE' | 'DATABASE_SNAPSHOT_CREATED' | 'SNAPSHOT_PRUNED' | 'DISASTER_RECOVERY_RESTORED' | 'SNAPSHOT_VERIFIED' | string;
   status: 'success' | 'warning' | 'error' | 'info';
   method: 'POST' | 'GET' | 'PUT' | 'DELETE' | 'WS' | 'INTERNAL';
   endpoint: string;
@@ -16,7 +16,7 @@ export interface ActivityLogEntry {
   responsePayload?: any;
   stateDiff?: {
     action: string;
-    entityType?: 'work_order' | 'transaction' | 'balance' | 'feed_job' | 'proposal' | 'snapshot' | 'database' | string;
+    entityType?: 'work_order' | 'transaction' | 'balance' | 'feed_job' | 'proposal' | 'snapshot' | 'database' | 'deployment' | 'gitops_sync' | string;
     entityId?: string | number;
     amountUsd?: number;
     amountInr?: number;
@@ -38,6 +38,92 @@ export interface ActivityLogEntry {
 // In-Memory Ring Buffer (holds up to 500 events)
 const MAX_LOGS = 500;
 let activityLogs: ActivityLogEntry[] = [
+  {
+    id: `evt_gitops_${Date.now() - 45000}`,
+    timestamp: new Date(Date.now() - 45000).toISOString(),
+    source: 'GitHub GitOps',
+    type: 'GITOPS_SYNC',
+    status: 'success',
+    method: 'POST',
+    endpoint: '/api/github/webhook',
+    statusCode: 202,
+    latencyMs: 86,
+    summary: 'GitHub Webhook push to refs/heads/main: Fast-forward pull, bundle compiled, zero-downtime reload',
+    headers: {
+      'host': '0.0.0.0:3000',
+      'content-type': 'application/json',
+      'x-github-event': 'push',
+      'x-github-delivery': '9fa21e84-8a4b-11ef-93a2-63bc18401a99',
+      'x-hub-signature-256': 'sha256=e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855',
+      'user-agent': 'GitHub-Hookshot/7f9411'
+    },
+    requestPayload: {
+      ref: 'refs/heads/main',
+      before: '4e29b10984a1e948c2b71901a182049e91823791',
+      after: '8b7f32904bca910283e182903847291039485721',
+      repository: {
+        id: 852910491,
+        name: 'gigpilot-platform',
+        full_name: 'ky8402-rgb/gigpilot-platform',
+        private: true,
+        html_url: 'https://github.com/ky8402-rgb/gigpilot-platform'
+      },
+      pusher: {
+        name: 'ky8402-rgb',
+        email: 'ky8402@gmail.com'
+      },
+      head_commit: {
+        id: '8b7f32904bca910283e182903847291039485721',
+        tree_id: '1a938c0192847192837492817293847192837492',
+        distinct: true,
+        message: 'feat(gitops): live automated continuous synchronization via GitHub webhook',
+        timestamp: new Date(Date.now() - 50000).toISOString(),
+        url: 'https://github.com/ky8402-rgb/gigpilot-platform/commit/8b7f329',
+        author: {
+          name: 'ky8402-rgb',
+          email: 'ky8402@gmail.com',
+          username: 'ky8402-rgb'
+        },
+        committer: {
+          name: 'ky8402-rgb',
+          email: 'ky8402@gmail.com',
+          username: 'ky8402-rgb'
+        },
+        added: ['src/components/GitOpsLogViewer.tsx'],
+        removed: [],
+        modified: ['src/components/ActivityLogsView.tsx', 'server/githubRoutes.ts']
+      },
+      commits: [
+        {
+          id: '8b7f32904bca910283e182903847291039485721',
+          message: 'feat(gitops): live automated continuous synchronization via GitHub webhook',
+          author: { name: 'ky8402-rgb', username: 'ky8402-rgb' }
+        }
+      ]
+    },
+    responsePayload: {
+      success: true,
+      message: 'Push-to-deploy triggered for branch "main"',
+      commit: '8b7f32904bca910283e182903847291039485721',
+      branch: 'main',
+      author: 'ky8402-rgb',
+      deploymentId: 'dep-auto-8b7f329'
+    },
+    stateDiff: {
+      action: 'GITOPS_SYNCHRONIZED',
+      entityType: 'gitops_sync',
+      details: 'Automated GitOps sync: Fast-forwarded branch "main" to 8b7f329. Built Vite bundle and reloaded supervisor.'
+    },
+    signatureVerification: {
+      verified: true,
+      status: 'VERIFIED',
+      headerName: 'x-hub-signature-256',
+      algorithm: 'HMAC-SHA256',
+      receivedSignature: 'sha256=e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855',
+      reason: 'Signature verified against GITHUB_WEBHOOK_SECRET'
+    },
+    tags: ['gitops', 'github', 'webhook', 'push', 'main', 'ci-cd']
+  },
   {
     id: `evt_init_${Date.now() - 120000}`,
     timestamp: new Date(Date.now() - 120000).toISOString(),

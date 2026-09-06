@@ -5,6 +5,7 @@ shadow-deployment comparison, rollback, and Prometheus metrics tracking.
 """
 
 import os
+import sys
 import json
 import time
 import logging
@@ -17,13 +18,30 @@ from sklearn.ensemble import RandomForestClassifier
 from sklearn.model_selection import StratifiedKFold, cross_validate
 from sklearn.metrics import accuracy_score, f1_score
 
-from data_pipeline import (
-    FEATURE_COLUMNS,
-    ISSUE_CLASSES,
-    REMEDIATION_MAP,
-    load_training_data_from_db,
-    extract_features_from_dict,
-)
+# Ensure module path is resolved properly in all environments
+_current_dir = os.path.dirname(os.path.abspath(__file__))
+if _current_dir not in sys.path:
+    sys.path.insert(0, _current_dir)
+_parent_dir = os.path.dirname(_current_dir)
+if _parent_dir not in sys.path:
+    sys.path.append(_parent_dir)
+
+try:
+    from data_pipeline import (
+        FEATURE_COLUMNS,
+        ISSUE_CLASSES,
+        REMEDIATION_MAP,
+        load_training_data_from_db,
+        extract_features_from_dict,
+    )
+except ImportError:
+    from ml_service.data_pipeline import (
+        FEATURE_COLUMNS,
+        ISSUE_CLASSES,
+        REMEDIATION_MAP,
+        load_training_data_from_db,
+        extract_features_from_dict,
+    )
 
 logger = logging.getLogger("ml_model_manager")
 MODELS_DIR = os.getenv("MODELS_DIR", os.path.join(os.path.dirname(__file__), "models"))

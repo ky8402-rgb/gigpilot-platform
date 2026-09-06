@@ -17,7 +17,7 @@ frontend:
 
 customRules:
   - source: '/api/<*>'
-    target: 'https://13-233-54-120.sslip.io/api/<*>'
+    target: 'https://3-222-149-9.sslip.io/api/<*>'
     status: '200'
   - source: '</^[^.]+$|\.(?!(css|gif|ico|jpg|js|png|txt|svg|woff|woff2|ttf|map|json|html)$)([^.]+$)/>'
     target: '/index.html'

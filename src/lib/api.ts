@@ -9,22 +9,42 @@
 
 import axios, { AxiosInstance, AxiosRequestConfig } from 'axios';
 
-// Default backend URL on EC2 SSL (can be overridden via VITE_API_URL or VITE_BACKEND_URL)
+// Default backend URL (dynamically resolves to same-origin or configured env URL)
 export const DEFAULT_API_URL =
+  (typeof window !== 'undefined' && window.location?.origin) ||
   (typeof import.meta !== 'undefined' && ((import.meta as any).env?.VITE_BACKEND_URL || (import.meta as any).env?.VITE_API_URL)) ||
-  'https://13-233-54-120.sslip.io';
+  '';
 
 export function getBaseApiUrl(): string {
+  if (typeof window !== 'undefined' && window.location) {
+    const host = window.location.hostname;
+    const isDetachedStaticHost =
+      host.includes('amplifyapp.com') ||
+      host.includes('cloudfront.net') ||
+      host.includes('vercel.app') ||
+      host.includes('github.io') ||
+      host.includes('netlify.app') ||
+      host.includes('pages.dev');
+
+    if (!isDetachedStaticHost) {
+      return window.location.origin;
+    }
+  }
+
   if (typeof import.meta !== 'undefined' && (import.meta as any).env) {
     const customUrl =
       (import.meta as any).env.VITE_API_URL ||
       (import.meta as any).env.VITE_BACKEND_URL ||
       (import.meta as any).env.VITE_API_BASE_URL;
-    if (customUrl && typeof customUrl === 'string' && customUrl.trim().length > 0) {
+    if (customUrl && typeof customUrl === 'string' && customUrl.trim().length > 0 && !customUrl.includes('ky7079.co')) {
       return customUrl.trim().replace(/\/+$/, '');
     }
   }
-  return DEFAULT_API_URL;
+
+  if (typeof window !== 'undefined' && window.location && window.location.origin) {
+    return window.location.origin;
+  }
+  return '';
 }
 
 /**

@@ -38,6 +38,7 @@ import neonRoutes from "./routes/neon.js";
 import autoDispatchRoutes from "./routes/autoDispatchRoutes.js";
 import amplifyRoutes from "./server/amplifyRoutes.js";
 import devopsActionsRoutes from "./server/devopsActionsRoutes.js";
+import autoDeployRoutes from "./server/autoDeployRoutes.js";
 import godaddyRoutes from "./server/godaddyRoutes.js";
 import cloudflareRoutes from "./server/cloudflareRoutes.js";
 import "./server/worker.js";
@@ -84,7 +85,7 @@ import { autoRemediate } from "./server/remediation.js";
 import { mlClient } from "./server/mlClient.js";
 import { startMLWorker } from "./server/mlWorker.js";
 import { registerMLPredictor } from "./server/healthCheck.js";
-import { getMLModels, getMLFeedback } from "./server/pgDatabase.js";
+import { getMLModels, getMLFeedback, ensureBaselineMLModels, activateMLModelVersion } from "./server/pgDatabase.js";
 
 // Register ML predictor with health check engine
 registerMLPredictor(async (health) => {
@@ -355,6 +356,7 @@ app.use("/api/deploy", amplifyRoutes);
 
 // 13. GitHub Actions DevOps Workflow Automation & Continuous Deployment
 app.use("/api/devops", devopsActionsRoutes);
+app.use("/api/auto-deploy", autoDeployRoutes);
 
 // 14. GoDaddy Automated DNS Auto-Fix & Domain Management
 app.use("/api/godaddy", godaddyRoutes);
@@ -787,13 +789,45 @@ app.post("/api/ml/rollback", async (req, res) => {
 
 app.get("/api/ml/models", async (req, res) => {
   try {
-    const models = await getMLModels();
+    let models = await getMLModels();
+    if (!models || models.length === 0) {
+      models = await ensureBaselineMLModels(true);
+    }
+    const activeModel = models.find((m) => m.active);
+    const activeVersion = activeModel?.version || mlClient.getStatus().active_model_version || 'v1.34.0';
     return res.json({
       success: true,
-      activeVersion: mlClient.getStatus().active_model_version,
+      activeVersion,
       count: models.length,
       models,
     });
+  } catch (err: any) {
+    return res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+app.post("/api/ml/models/seed", async (req, res) => {
+  try {
+    const models = await ensureBaselineMLModels(true);
+    return res.json({
+      success: true,
+      message: 'ML Model Registry seeded with certified production checkpoints.',
+      count: models.length,
+      models,
+    });
+  } catch (err: any) {
+    return res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+app.post("/api/ml/models/activate", async (req, res) => {
+  try {
+    const { version } = req.body || {};
+    if (!version) {
+      return res.status(400).json({ success: false, error: 'Version parameter is required' });
+    }
+    const result = await activateMLModelVersion(version);
+    return res.json(result);
   } catch (err: any) {
     return res.status(500).json({ success: false, error: err.message });
   }

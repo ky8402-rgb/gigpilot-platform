@@ -3,7 +3,7 @@
 # GigPilot Final Production Launch Verification Suite (verify-production.sh)
 #
 # Production Diagnostics for:
-#   1. EC2 Backend Health & SSL (https://13-233-54-120.sslip.io/api/health -> 200 & database: "ok")
+#   1. EC2 Backend Health & SSL (https://3-222-149-9.sslip.io/api/health -> 200 & database: "ok")
 #   2. Amplify Frontend Availability (https://main.d2qe2q720fbn3x.amplifyapp.com -> 200/304)
 #   3. CORS Preflight & Headers (OPTIONS Handshake with Access-Control-Allow-Origin)
 #   4. Neon PostgreSQL Database Connectivity (Direct SELECT 1 & Health Telemetry)
