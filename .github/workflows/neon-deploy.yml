@@ -39,13 +39,17 @@ jobs:
         run: npm ci || npm install --legacy-peer-deps
 
       - name: Verify DATABASE_URL secret
+        id: check_db
         run: |
           if [ -z "${{ secrets.DATABASE_URL }}" ]; then
-            echo "::error::DATABASE_URL secret is missing in GitHub Repository Settings. Please add DATABASE_URL in Settings -> Secrets and variables -> Actions."
-            exit 1
+            echo "has_db=false" >> $GITHUB_OUTPUT
+            echo "::warning::DATABASE_URL secret is not configured in GitHub Secrets. Prisma migration skipped."
+          else
+            echo "has_db=true" >> $GITHUB_OUTPUT
           fi
 
       - name: Push Prisma Schema to Neon Database
+        if: steps.check_db.outputs.has_db == 'true'
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
         run: |
