@@ -330,7 +330,9 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Configure AWS Credentials (Optional)
-        if: secrets.AWS_ACCESS_KEY_ID != ''
+        env:
+          AWS_ACCESS_KEY_ID: \${{ secrets.AWS_ACCESS_KEY_ID }}
+        if: env.AWS_ACCESS_KEY_ID != ''
         uses: aws-actions/configure-aws-credentials@v4
         with:
           aws-access-key-id: \${{ secrets.AWS_ACCESS_KEY_ID }}
@@ -390,11 +392,11 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Deploy via SSH (Direct EC2 Execution)
-        if: secrets.EC2_SSH_KEY != ''
         env:
           SSH_KEY: \${{ secrets.EC2_SSH_KEY }}
           EC2_HOST: \${{ secrets.EC2_HOST || '3.222.149.9' }}
           EC2_USER: \${{ secrets.EC2_USER || 'ubuntu' }}
+        if: env.SSH_KEY != ''
         run: |
           echo "=========================================================="
           echo "Deploying to AWS EC2 via Secure SSH ($EC2_USER@$EC2_HOST)..."
