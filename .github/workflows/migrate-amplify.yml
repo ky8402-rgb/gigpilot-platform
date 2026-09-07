@@ -31,11 +31,26 @@ jobs:
       - name: Checkout Repository
         uses: actions/checkout@v4
 
+      - name: Check AWS Secrets Availability
+        id: check_creds
+        env:
+          KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID || secrets.ID }}
+        run: |
+          if [ -n "$KEY_ID" ]; then
+            echo "has_creds=true" >> $GITHUB_OUTPUT
+            echo "AWS Credentials detected in repository secrets."
+          else
+            echo "has_creds=false" >> $GITHUB_OUTPUT
+            echo "AWS IAM Credentials not detected in secrets; will proceed with Git-driven Amplify migration."
+          fi
+
       - name: Configure AWS Credentials
+        if: steps.check_creds.outputs.has_creds == 'true'
         uses: aws-actions/configure-aws-credentials@v4
+        continue-on-error: true
         with:
-          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID || secrets.ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY || secrets.AWS }}
           aws-region: ${{ secrets.AWS_REGION || 'us-east-1' }}
 
       - name: Run Migration Script

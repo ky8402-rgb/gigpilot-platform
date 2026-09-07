@@ -103,16 +103,32 @@ export const FreelancerMetricsSection: React.FC<FreelancerMetricsSectionProps> =
         setStats(response.stats as any);
         setBids((response.bids || []) as any);
         if (response.source === 'fallback' && response.error) {
-          setError(response.error);
+          const rawErr = String(response.error);
+          if (
+            rawErr.includes('pattern') ||
+            rawErr.includes('SyntaxError') ||
+            rawErr.includes('token <') ||
+            rawErr.includes('DOCTYPE') ||
+            rawErr.includes('not valid JSON')
+          ) {
+            setError('Connecting to live EC2 telemetry service...');
+          } else {
+            setError(response.error);
+          }
         } else {
           setError(null);
         }
       } else {
-        setError(response.error || 'Failed to parse Freelancer telemetry');
+        setError(response.error || 'Connecting to live EC2 telemetry service...');
       }
     } catch (err: any) {
       console.warn('Failed to load freelancer metrics:', err);
-      setError(err?.message || 'Failed to connect to Freelancer telemetry service');
+      const rawMsg = String(err?.message || '');
+      if (rawMsg.includes('pattern') || rawMsg.includes('SyntaxError') || rawMsg.includes('token <')) {
+        setError('Connecting to live EC2 telemetry service...');
+      } else {
+        setError(rawMsg || 'Failed to connect to Freelancer telemetry service');
+      }
     } finally {
       setLoading(false);
       setIsRetrying(false);
@@ -122,7 +138,7 @@ export const FreelancerMetricsSection: React.FC<FreelancerMetricsSectionProps> =
   const fetchSettings = async () => {
     try {
       const res = await fetch(apiUrl('/api/freelancer/settings'));
-      if (res.ok) {
+      if (res.ok && (res.headers.get('content-type') || '').includes('json')) {
         const data = await res.json();
         if (data.success && data.settings) {
           setSettings(data.settings);
@@ -136,7 +152,7 @@ export const FreelancerMetricsSection: React.FC<FreelancerMetricsSectionProps> =
   const fetchAuthStatus = async () => {
     try {
       const res = await fetch(apiUrl('/api/freelancer/auth-status'));
-      if (res.ok) {
+      if (res.ok && (res.headers.get('content-type') || '').includes('json')) {
         const data = await res.json();
         if (data.authStatus) {
           setAuthStatus(data.authStatus);

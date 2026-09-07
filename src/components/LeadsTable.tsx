@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { BackendLeadItem, BACKEND_BASE_URL } from '../services/api';
+import { BackendLeadItem, BACKEND_BASE_URL, DEFAULT_PRODUCTION_BACKEND_URL } from '../services/api';
 import { formatPackageName } from './PackageChart';
 
 interface LeadsTableProps {
@@ -19,13 +19,23 @@ export const LeadsTable: React.FC<LeadsTableProps> = ({ onSelectLead, externalRe
     setLoading(true);
     setError(null);
     try {
-      let response = await fetch(`${BACKEND_BASE_URL}/api/leads?limit=20`);
-      if (!response.ok && response.status === 404) {
-        response = await fetch(`/api/leads?limit=20`);
+      const primaryUrl = `${BACKEND_BASE_URL || DEFAULT_PRODUCTION_BACKEND_URL}/api/leads?limit=20`;
+      let response = await fetch(primaryUrl);
+      
+      const isJson = response.headers.get('content-type')?.includes('application/json');
+      if ((!response.ok || !isJson) && !primaryUrl.includes('sslip.io')) {
+        response = await fetch(`${DEFAULT_PRODUCTION_BACKEND_URL}/api/leads?limit=20`);
       }
+
       if (!response.ok) {
         throw new Error(`HTTP error ${response.status}: Failed to fetch leads`);
       }
+
+      const contentType = response.headers.get('content-type') || '';
+      if (!contentType.includes('application/json')) {
+        throw new Error('Backend synchronizing with AWS EC2 (https://3-222-149-9.sslip.io)');
+      }
+
       const data = await response.json();
       const rawList = Array.isArray(data) ? data : (data.leads || []);
       setLeads(rawList);
@@ -33,21 +43,17 @@ export const LeadsTable: React.FC<LeadsTableProps> = ({ onSelectLead, externalRe
       setSecondsUntilRefresh(60);
     } catch (err: any) {
       console.warn('[LeadsTable] Backend fetch failed:', err);
-      try {
-        const localRes = await fetch(`/api/leads?limit=20`);
-        if (localRes.ok) {
-          const localData = await localRes.json();
-          const list = Array.isArray(localData) ? localData : (localData.leads || []);
-          if (list.length > 0) {
-            setLeads(list);
-            setLastUpdated(new Date());
-            setSecondsUntilRefresh(60);
-            setLoading(false);
-            return;
-          }
-        }
-      } catch {}
-      setError(err?.message || 'Failed to load leads from backend. Service may be starting up.');
+      let errMsg = err?.message || 'Failed to load leads from backend';
+      if (
+        errMsg.includes('pattern') ||
+        errMsg.includes('SyntaxError') ||
+        errMsg.includes('DOCTYPE') ||
+        errMsg.includes('token <') ||
+        errMsg.includes('not valid JSON')
+      ) {
+        errMsg = 'Synchronizing leads with live AWS EC2 backend...';
+      }
+      setError(errMsg);
     } finally {
       setLoading(false);
     }

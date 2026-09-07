@@ -9,11 +9,19 @@
 
 import axios, { AxiosInstance, AxiosRequestConfig } from 'axios';
 
-// Default backend URL (dynamically resolves to same-origin or configured env URL)
+// Default production backend URL on AWS EC2
+export const DEFAULT_PRODUCTION_BACKEND_URL = 'https://3-222-149-9.sslip.io';
+
+// Default backend URL (dynamically resolves to same-origin in container, or live EC2 on Amplify)
 export const DEFAULT_API_URL =
-  (typeof window !== 'undefined' && window.location?.origin) ||
+  (typeof window !== 'undefined' && (
+    window.location.hostname.includes('amplifyapp.com') ||
+    window.location.hostname.includes('cloudfront.net') ||
+    window.location.hostname.includes('vercel.app') ||
+    window.location.hostname.includes('pages.dev')
+  ) ? DEFAULT_PRODUCTION_BACKEND_URL : (typeof window !== 'undefined' && window.location?.origin)) ||
   (typeof import.meta !== 'undefined' && ((import.meta as any).env?.VITE_BACKEND_URL || (import.meta as any).env?.VITE_API_URL)) ||
-  '';
+  DEFAULT_PRODUCTION_BACKEND_URL;
 
 export function getBaseApiUrl(): string {
   if (typeof window !== 'undefined' && window.location) {
@@ -26,9 +34,10 @@ export function getBaseApiUrl(): string {
       host.includes('netlify.app') ||
       host.includes('pages.dev');
 
-    if (!isDetachedStaticHost) {
-      return window.location.origin;
+    if (isDetachedStaticHost) {
+      return DEFAULT_PRODUCTION_BACKEND_URL;
     }
+    return window.location.origin;
   }
 
   if (typeof import.meta !== 'undefined' && (import.meta as any).env) {
@@ -41,10 +50,7 @@ export function getBaseApiUrl(): string {
     }
   }
 
-  if (typeof window !== 'undefined' && window.location && window.location.origin) {
-    return window.location.origin;
-  }
-  return '';
+  return DEFAULT_PRODUCTION_BACKEND_URL;
 }
 
 /**

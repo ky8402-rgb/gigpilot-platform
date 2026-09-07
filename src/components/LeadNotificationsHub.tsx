@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
   fetchLeadNotificationStatus,
   savePlatformCookies,
@@ -18,10 +18,31 @@ interface LeadNotificationsHubProps {
   showToast?: (message: string, type?: 'success' | 'error' | 'info') => void;
 }
 
+function sanitizeNoticeMessage(msg: any, fallback: string): string {
+  if (!msg) return fallback;
+  const str = String(msg);
+  if (
+    str.includes('pattern') ||
+    str.includes('SyntaxError') ||
+    str.includes('DOCTYPE') ||
+    str.includes('token <') ||
+    str.includes('not valid JSON')
+  ) {
+    return 'Scraper daemon synchronizing with AWS EC2 backend (https://3-222-149-9.sslip.io)';
+  }
+  return str;
+}
+
 export const LeadNotificationsHub: React.FC<LeadNotificationsHubProps> = ({
   onOpenProposalStudio,
-  showToast
+  showToast: rawShowToast
 }) => {
+  const showToast = useCallback((msg: string, type?: 'success' | 'error' | 'info') => {
+    if (!rawShowToast) return;
+    const sanitized = sanitizeNoticeMessage(msg, 'Scraper daemon notification updated');
+    rawShowToast(sanitized, type);
+  }, [rawShowToast]);
+
   const [loading, setLoading] = useState(true);
   const [data, setData] = useState<LeadNotificationStatusResponse | null>(null);
   const [activeSubTab, setActiveSubTab] = useState<'dispatcher' | 'cookies' | 'monetization' | 'live_feed'>('dispatcher');

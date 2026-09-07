@@ -7,11 +7,11 @@ const getDashboardApiUrl = (): string => {
       (import.meta as any).env.VITE_BACKEND_URL ||
       (import.meta as any).env.VITE_API_BASE_URL ||
       (import.meta as any).env.VITE_API_URL;
-    if (envUrl && typeof envUrl === 'string' && envUrl.trim().length > 0) {
+    if (envUrl && typeof envUrl === 'string' && envUrl.trim().length > 0 && !envUrl.includes('ky7079.co')) {
       return envUrl.trim().replace(/\/+$/, '');
     }
   }
-  return 'https://gigpilot-backend.onrender.com';
+  return 'https://3-222-149-9.sslip.io';
 };
 
 export const API_BASE_URL = getDashboardApiUrl();
@@ -25,12 +25,16 @@ export async function fetchStats() {
     try {
         const response = await fetch(`${API_BASE_URL}/api/bids/stats`);
         if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
+        const contentType = (response.headers.get('content-type') || '').toLowerCase();
+        if (!contentType.includes('application/json')) {
+            throw new Error('Unexpected response format. Expected JSON.');
+        }
         const data = await response.json();
         updateStatsUI(data);
         return data;
-    } catch (error) {
+    } catch (error: any) {
         console.error('Error fetching stats:', error);
-        showError('stats', 'Failed to load statistics. Backend may be starting up.');
+        showError('stats', 'Connecting to live EC2 backend service...');
         return null;
     }
 }
@@ -40,12 +44,16 @@ export async function fetchBids(limit = 50) {
     try {
         const response = await fetch(`${API_BASE_URL}/api/bids?limit=${limit}`);
         if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
+        const contentType = (response.headers.get('content-type') || '').toLowerCase();
+        if (!contentType.includes('application/json')) {
+            throw new Error('Unexpected response format. Expected JSON.');
+        }
         const data = await response.json();
         updateBidsTable(data);
         return data;
-    } catch (error) {
+    } catch (error: any) {
         console.error('Error fetching bids:', error);
-        showError('bids', 'Failed to load bids. Backend may be starting up.');
+        showError('bids', 'Connecting to live EC2 backend service...');
         return [];
     }
 }

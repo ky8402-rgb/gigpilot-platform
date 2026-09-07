@@ -108,10 +108,18 @@ export async function getPayPalSdkV6Instance(config?: PayPalSdkV6Config): Promis
   return sdkInitPromise;
 }
 
+// Default live AWS EC2 backend
+export const DEFAULT_PRODUCTION_BACKEND_URL = 'https://3-222-149-9.sslip.io';
+
 export const BACKEND_BASE_URL =
-  (typeof window !== 'undefined' && window.location?.origin) ||
+  (typeof window !== 'undefined' && (
+    window.location.hostname.includes('amplifyapp.com') ||
+    window.location.hostname.includes('cloudfront.net') ||
+    window.location.hostname.includes('vercel.app') ||
+    window.location.hostname.includes('pages.dev')
+  ) ? DEFAULT_PRODUCTION_BACKEND_URL : (typeof window !== 'undefined' && window.location?.origin)) ||
   (typeof import.meta !== 'undefined' && (import.meta as any).env?.VITE_BACKEND_URL) ||
-  '';
+  DEFAULT_PRODUCTION_BACKEND_URL;
 
 /**
  * Helper to dynamically resolve API base URL for same-origin or external deployment
@@ -127,9 +135,10 @@ export function getApiBaseUrl(): string {
       host.includes('netlify.app') ||
       host.includes('pages.dev');
 
-    if (!isDetachedStaticHost) {
-      return window.location.origin;
+    if (isDetachedStaticHost) {
+      return DEFAULT_PRODUCTION_BACKEND_URL;
     }
+    return window.location.origin;
   }
 
   const envUrl = (import.meta as any).env?.VITE_BACKEND_URL || (import.meta as any).env?.VITE_API_BASE_URL || (import.meta as any).env?.VITE_API_URL;
@@ -137,10 +146,7 @@ export function getApiBaseUrl(): string {
     return envUrl.trim().replace(/\/+$/, '');
   }
 
-  if (typeof window !== 'undefined' && window.location && window.location.origin) {
-    return window.location.origin;
-  }
-  return '';
+  return DEFAULT_PRODUCTION_BACKEND_URL;
 }
 
 /**
