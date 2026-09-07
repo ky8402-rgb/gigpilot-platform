@@ -40,11 +40,13 @@ export function getApiBaseUrl(): string {
     } catch (_) {}
   }
 
-  // 2. Check build-time or runtime environment variables
+  // 2. Check build-time or runtime environment variables (supporting REACT_APP_API_URL, VITE_BACKEND_URL, VITE_API_BASE_URL)
   const envUrl =
+    (typeof import.meta !== 'undefined' && (import.meta as any).env?.REACT_APP_API_URL) ||
     (typeof import.meta !== 'undefined' && (import.meta as any).env?.VITE_BACKEND_URL) ||
     (typeof import.meta !== 'undefined' && (import.meta as any).env?.VITE_API_BASE_URL) ||
-    (typeof import.meta !== 'undefined' && (import.meta as any).env?.VITE_API_URL);
+    (typeof import.meta !== 'undefined' && (import.meta as any).env?.VITE_API_URL) ||
+    (typeof process !== 'undefined' && (process.env?.REACT_APP_API_URL || process.env?.API_BASE_URL || process.env?.VITE_BACKEND_URL));
   if (
     envUrl &&
     typeof envUrl === 'string' &&
@@ -66,7 +68,7 @@ export function getApiBaseUrl(): string {
     return window.location.origin;
   }
 
-  // 4. Fallback for SSR or non-browser contexts
+  // 4. Fallback for SSR or non-browser contexts (Canonical default: https://3-222-149-9.sslip.io)
   return DEFAULT_PRODUCTION_BACKEND_URL;
 }
 
@@ -77,7 +79,9 @@ export function getApiBaseUrl(): string {
 export const BACKEND_BASE_URL =
   (typeof window !== 'undefined' && isDetachedStaticHost(window.location?.hostname))
     ? DEFAULT_PRODUCTION_BACKEND_URL
-    : ((typeof import.meta !== 'undefined' && (import.meta as any).env?.VITE_BACKEND_URL) ||
+    : ((typeof import.meta !== 'undefined' && (import.meta as any).env?.REACT_APP_API_URL) ||
+       (typeof import.meta !== 'undefined' && (import.meta as any).env?.VITE_BACKEND_URL) ||
+       (typeof import.meta !== 'undefined' && (import.meta as any).env?.VITE_API_BASE_URL) ||
        (typeof window !== 'undefined' && window.location?.origin) ||
        DEFAULT_PRODUCTION_BACKEND_URL);
 

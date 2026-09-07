@@ -11,6 +11,13 @@ concurrency:
   group: deploy-${{ github.ref }}
   cancel-in-progress: false
 
+env:
+  API_BASE_URL: https://3-222-149-9.sslip.io
+  REACT_APP_API_URL: https://3-222-149-9.sslip.io
+  VITE_BACKEND_URL: https://3-222-149-9.sslip.io
+  VITE_API_BASE_URL: https://3-222-149-9.sslip.io
+  VITE_API_URL: https://3-222-149-9.sslip.io
+
 jobs:
   deploy-amplify:
     name: 🚀 Deploy Frontend (AWS Amplify - gigpilot-platform)
@@ -71,6 +78,7 @@ jobs:
           echo "- **App Name:** gigpilot-platform" >> $GITHUB_STEP_SUMMARY
           echo "- **App ID:** \`$AMPLIFY_APP_ID\`" >> $GITHUB_STEP_SUMMARY
           echo "- **Branch:** \`${GITHUB_REF_NAME}\`" >> $GITHUB_STEP_SUMMARY
+          echo "- **Canonical API Base URL:** [https://3-222-149-9.sslip.io](https://3-222-149-9.sslip.io)" >> $GITHUB_STEP_SUMMARY
           echo "- **Auto-Deploy Status:** ✅ Triggered on push to \`${GITHUB_REF_NAME}\`" >> $GITHUB_STEP_SUMMARY
           echo "- **Live URL:** [https://main.$AMPLIFY_APP_ID.amplifyapp.com](https://main.$AMPLIFY_APP_ID.amplifyapp.com)" >> $GITHUB_STEP_SUMMARY
 

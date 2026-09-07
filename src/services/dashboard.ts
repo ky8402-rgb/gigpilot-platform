@@ -1,9 +1,13 @@
 // ============================================
 // CONFIGURATION - Live Backend URL (EC2 / Amplify / Render)
+// Canonical Default: https://3-222-149-9.sslip.io
 // ============================================
+export const CANONICAL_BACKEND_URL = 'https://3-222-149-9.sslip.io';
+
 const getDashboardApiUrl = (): string => {
   if (typeof import.meta !== 'undefined' && (import.meta as any).env) {
     const envUrl =
+      (import.meta as any).env.REACT_APP_API_URL ||
       (import.meta as any).env.VITE_BACKEND_URL ||
       (import.meta as any).env.VITE_API_BASE_URL ||
       (import.meta as any).env.VITE_API_URL;
@@ -11,7 +15,16 @@ const getDashboardApiUrl = (): string => {
       return envUrl.trim().replace(/\/+$/, '');
     }
   }
-  return 'https://3-222-149-9.sslip.io';
+  if (typeof process !== 'undefined' && process.env) {
+    const procUrl =
+      process.env.REACT_APP_API_URL ||
+      process.env.API_BASE_URL ||
+      process.env.VITE_BACKEND_URL;
+    if (procUrl && typeof procUrl === 'string' && procUrl.trim().length > 0) {
+      return procUrl.trim().replace(/\/+$/, '');
+    }
+  }
+  return CANONICAL_BACKEND_URL;
 };
 
 export const API_BASE_URL = getDashboardApiUrl();

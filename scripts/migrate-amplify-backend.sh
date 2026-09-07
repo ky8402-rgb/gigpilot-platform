@@ -275,7 +275,13 @@ update_amplify_env_variable() {
     NEW_VARS_JSON=$(node -e '
       try {
         const vars = JSON.parse(process.argv[1] || "{}");
-        vars[process.argv[2]] = process.argv[3];
+        const target = process.argv[3];
+        vars[process.argv[2]] = target;
+        vars["REACT_APP_API_URL"] = target;
+        vars["API_BASE_URL"] = target;
+        vars["VITE_BACKEND_URL"] = target;
+        vars["VITE_API_BASE_URL"] = target;
+        vars["VITE_API_URL"] = target;
         console.log(JSON.stringify(vars));
       } catch (e) {
         console.log("{}");
@@ -288,11 +294,17 @@ try:
     data = json.loads(sys.argv[1]) if sys.argv[1] else {}
 except:
     data = {}
-data[sys.argv[2]] = sys.argv[3]
+target = sys.argv[3]
+data[sys.argv[2]] = target
+data["REACT_APP_API_URL"] = target
+data["API_BASE_URL"] = target
+data["VITE_BACKEND_URL"] = target
+data["VITE_API_BASE_URL"] = target
+data["VITE_API_URL"] = target
 print(json.dumps(data))
 ' "$EXISTING_VARS" "$ENV_VAR_NAME" "$target_url")
   else
-    NEW_VARS_JSON="{\"$ENV_VAR_NAME\": \"$target_url\"}"
+    NEW_VARS_JSON="{\"$ENV_VAR_NAME\": \"$target_url\", \"REACT_APP_API_URL\": \"$target_url\", \"API_BASE_URL\": \"$target_url\"}"
   fi
 
   UPDATE_OUTPUT=$(aws amplify update-app \

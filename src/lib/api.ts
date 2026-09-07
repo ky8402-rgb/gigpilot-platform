@@ -20,7 +20,17 @@ export const DEFAULT_API_URL =
     window.location.hostname.includes('vercel.app') ||
     window.location.hostname.includes('pages.dev')
   ) ? DEFAULT_PRODUCTION_BACKEND_URL : (typeof window !== 'undefined' && window.location?.origin)) ||
-  (typeof import.meta !== 'undefined' && ((import.meta as any).env?.VITE_BACKEND_URL || (import.meta as any).env?.VITE_API_URL)) ||
+  (typeof import.meta !== 'undefined' && (
+    (import.meta as any).env?.REACT_APP_API_URL ||
+    (import.meta as any).env?.VITE_BACKEND_URL ||
+    (import.meta as any).env?.VITE_API_BASE_URL ||
+    (import.meta as any).env?.VITE_API_URL
+  )) ||
+  (typeof process !== 'undefined' && (
+    process.env?.REACT_APP_API_URL ||
+    process.env?.API_BASE_URL ||
+    process.env?.VITE_BACKEND_URL
+  )) ||
   DEFAULT_PRODUCTION_BACKEND_URL;
 
 export function getBaseApiUrl(): string {
@@ -40,14 +50,21 @@ export function getBaseApiUrl(): string {
     return window.location.origin;
   }
 
-  if (typeof import.meta !== 'undefined' && (import.meta as any).env) {
-    const customUrl =
-      (import.meta as any).env.VITE_API_URL ||
-      (import.meta as any).env.VITE_BACKEND_URL ||
-      (import.meta as any).env.VITE_API_BASE_URL;
-    if (customUrl && typeof customUrl === 'string' && customUrl.trim().length > 0 && !customUrl.includes('ky7079.co')) {
-      return customUrl.trim().replace(/\/+$/, '');
-    }
+  const customUrl =
+    (typeof import.meta !== 'undefined' && (
+      (import.meta as any).env?.REACT_APP_API_URL ||
+      (import.meta as any).env?.VITE_BACKEND_URL ||
+      (import.meta as any).env?.VITE_API_BASE_URL ||
+      (import.meta as any).env?.VITE_API_URL
+    )) ||
+    (typeof process !== 'undefined' && (
+      process.env?.REACT_APP_API_URL ||
+      process.env?.API_BASE_URL ||
+      process.env?.VITE_BACKEND_URL
+    ));
+
+  if (customUrl && typeof customUrl === 'string' && customUrl.trim().length > 0 && !customUrl.includes('ky7079.co')) {
+    return customUrl.trim().replace(/\/+$/, '');
   }
 
   return DEFAULT_PRODUCTION_BACKEND_URL;

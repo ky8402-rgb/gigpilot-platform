@@ -3,7 +3,9 @@ frontend:
   phases:
     preBuild:
       commands:
-        - echo "VITE_BACKEND_URL=https://3-222-149-9.sslip.io" > .env.production
+        - echo "REACT_APP_API_URL=https://3-222-149-9.sslip.io" > .env.production
+        - echo "API_BASE_URL=https://3-222-149-9.sslip.io" >> .env.production
+        - echo "VITE_BACKEND_URL=https://3-222-149-9.sslip.io" >> .env.production
         - echo "VITE_API_URL=https://3-222-149-9.sslip.io" >> .env.production
         - echo "VITE_API_BASE_URL=https://3-222-149-9.sslip.io" >> .env.production
         - npm ci || npm install --legacy-peer-deps

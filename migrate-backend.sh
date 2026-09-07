@@ -321,7 +321,7 @@ discover_and_update_amplify() {
   fi
 
   if [ -z "$PREV_URL" ]; then
-    PREV_URL="https://gigpilot-platform.onrender.com"
+    PREV_URL="https://3-222-149-9.sslip.io"
   fi
 
   log_info "Previous backend target was: ${BOLD}${PREV_URL}${NC}"

@@ -118,7 +118,7 @@ export const BACKEND_BASE_URL =
     window.location.hostname.includes('vercel.app') ||
     window.location.hostname.includes('pages.dev')
   ) ? DEFAULT_PRODUCTION_BACKEND_URL : (typeof window !== 'undefined' && window.location?.origin)) ||
-  (typeof import.meta !== 'undefined' && (import.meta as any).env?.VITE_BACKEND_URL) ||
+  (typeof import.meta !== 'undefined' && ((import.meta as any).env?.REACT_APP_API_URL || (import.meta as any).env?.VITE_BACKEND_URL || (import.meta as any).env?.VITE_API_BASE_URL)) ||
   DEFAULT_PRODUCTION_BACKEND_URL;
 
 /**
@@ -141,7 +141,19 @@ export function getApiBaseUrl(): string {
     return window.location.origin;
   }
 
-  const envUrl = (import.meta as any).env?.VITE_BACKEND_URL || (import.meta as any).env?.VITE_API_BASE_URL || (import.meta as any).env?.VITE_API_URL;
+  const envUrl =
+    (typeof import.meta !== 'undefined' && (
+      (import.meta as any).env?.REACT_APP_API_URL ||
+      (import.meta as any).env?.VITE_BACKEND_URL ||
+      (import.meta as any).env?.VITE_API_BASE_URL ||
+      (import.meta as any).env?.VITE_API_URL
+    )) ||
+    (typeof process !== 'undefined' && (
+      process.env?.REACT_APP_API_URL ||
+      process.env?.API_BASE_URL ||
+      process.env?.VITE_BACKEND_URL
+    ));
+
   if (envUrl && typeof envUrl === 'string' && envUrl.trim().length > 0 && !envUrl.includes('ky7079.co')) {
     return envUrl.trim().replace(/\/+$/, '');
   }

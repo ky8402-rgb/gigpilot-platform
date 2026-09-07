@@ -22,6 +22,13 @@ on:
         required: false
         default: false
 
+env:
+  API_BASE_URL: https://3-222-149-9.sslip.io
+  REACT_APP_API_URL: https://3-222-149-9.sslip.io
+  VITE_BACKEND_URL: https://3-222-149-9.sslip.io
+  VITE_API_BASE_URL: https://3-222-149-9.sslip.io
+  VITE_API_URL: https://3-222-149-9.sslip.io
+
 jobs:
   migrate:
     name: Update Amplify Environment & Trigger Build
