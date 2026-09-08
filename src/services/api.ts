@@ -40,7 +40,8 @@ export function getApiBaseUrl(): string {
           customUrl.includes('onrender.com') ||
           customUrl.includes('render.com') ||
           customUrl.includes('ky7079.co') ||
-          customUrl.includes('13-233-54-120')
+          customUrl.includes('13-233-54-120') ||
+          (typeof window !== 'undefined' && window.location?.protocol === 'https:' && customUrl.startsWith('http://'))
         ) {
           localStorage.removeItem(CUSTOM_BACKEND_STORAGE_KEY);
         } else {
@@ -64,7 +65,8 @@ export function getApiBaseUrl(): string {
     !envUrl.includes('onrender.com') &&
     !envUrl.includes('render.com') &&
     !envUrl.includes('ky7079.co') &&
-    !envUrl.includes('13-233-54-120')
+    !envUrl.includes('13-233-54-120') &&
+    !(typeof window !== 'undefined' && window.location?.protocol === 'https:' && envUrl.startsWith('http://'))
   ) {
     return envUrl.trim().replace(/\/+$/, '');
   }
@@ -918,12 +920,108 @@ export async function capturePayPalPayment(params: {
   }
 }
 
-export async function fetchPayPalTransactions(): Promise<{ success: boolean; transactions: PayPalTransactionItem[] }> {
+export async function fetchPayPalTransactions(): Promise<{ success: boolean; transactions: PayPalTransactionItem[]; liveCount?: number; dbCount?: number }> {
   try {
     const res = await fetch(apiUrl('/api/paypal/transactions'));
     return await res.json();
   } catch (e: any) {
     return { success: false, transactions: [] };
+  }
+}
+
+export interface PayPalLiveBalanceResult {
+  success: boolean;
+  accountId: string;
+  merchantName: string;
+  email: string;
+  paypalMeUsername: string;
+  availableBalance: number;
+  totalBalance: number;
+  withheldBalance: number;
+  currency: string;
+  asOfTime: string;
+  isLiveRest: boolean;
+  autoSweepStatus: string;
+  linkedBank: string;
+}
+
+export async function fetchPayPalLiveBalance(): Promise<PayPalLiveBalanceResult> {
+  try {
+    const res = await fetch(apiUrl('/api/paypal/balance'));
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    return await res.json();
+  } catch (e: any) {
+    return {
+      success: false,
+      accountId: '98UNBJBN67H6W',
+      merchantName: 'Kundan Kumar',
+      email: 'kundank4@icloud.com',
+      paypalMeUsername: 'ky8402',
+      availableBalance: 0.00,
+      totalBalance: 0.00,
+      withheldBalance: 0.00,
+      currency: 'USD',
+      asOfTime: new Date().toISOString(),
+      isLiveRest: false,
+      autoSweepStatus: 'Active - Daily RBI Automated Settlement to Linked Indian Bank',
+      linkedBank: 'Federal Bank (••••8763 / IFSC: FDRL0001447)'
+    };
+  }
+}
+
+export async function fetchPayPalLiveReportingTransactions(days: number = 30): Promise<{
+  success: boolean;
+  totalItems: number;
+  transactions: any[];
+  isLiveRest: boolean;
+}> {
+  try {
+    const res = await fetch(apiUrl(`/api/paypal/live-transactions?days=${days}`));
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    return await res.json();
+  } catch (e: any) {
+    return { success: false, totalItems: 0, transactions: [], isLiveRest: false };
+  }
+}
+
+export async function createPayPalLiveInvoice(payload: {
+  amount: number;
+  currency?: string;
+  clientName: string;
+  clientEmail: string;
+  title: string;
+  description?: string;
+  note?: string;
+}): Promise<{
+  success: boolean;
+  invoiceId: string;
+  invoiceNumber: string;
+  payerViewUrl: string;
+  status: string;
+  amount: number;
+  currency: string;
+  isLiveRest: boolean;
+  error?: string;
+}> {
+  try {
+    const res = await fetch(apiUrl('/api/paypal/create-invoice'), {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    });
+    return await res.json();
+  } catch (e: any) {
+    return {
+      success: false,
+      invoiceId: '',
+      invoiceNumber: '',
+      payerViewUrl: `https://paypal.me/ky8402/${payload.amount}${payload.currency || 'USD'}`,
+      status: 'FAILED',
+      amount: payload.amount,
+      currency: payload.currency || 'USD',
+      isLiveRest: false,
+      error: e.message
+    };
   }
 }
 

@@ -69,7 +69,8 @@ export function getBaseApiUrl(): string {
     customUrl.trim().length > 0 &&
     !customUrl.includes('ky7079.co') &&
     !customUrl.includes('onrender.com') &&
-    !customUrl.includes('render.com')
+    !customUrl.includes('render.com') &&
+    !(typeof window !== 'undefined' && window.location?.protocol === 'https:' && customUrl.startsWith('http://'))
   ) {
     return customUrl.trim().replace(/\/+$/, '');
   }

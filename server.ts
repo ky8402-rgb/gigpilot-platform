@@ -156,9 +156,11 @@ const isOriginAllowed = (origin: string, allowedOrigins: string[]): boolean => {
     const url = new URL(origin);
     const host = url.hostname;
 
-    // Always permit Amplify subdomains (*.amplifyapp.com), custom production domains (*.gigpilot.com, gigpilot.com), Vercel (*.vercel.app), and local development
+    // Always permit Amplify subdomains (*.amplifyapp.com), wildcard IP domains (*.sslip.io, *.nip.io), custom domains, Vercel, and local development
     if (
       host.endsWith(".amplifyapp.com") ||
+      host.endsWith(".sslip.io") ||
+      host.endsWith(".nip.io") ||
       host === "gigpilot.com" ||
       host.endsWith(".gigpilot.com") ||
       host.endsWith(".vercel.app") ||
@@ -206,6 +208,7 @@ app.use((req, res, next) => {
     "Origin, X-Requested-With, Content-Type, Accept, Authorization, Cookie, Set-Cookie, paypal-transmission-sig, x-webhook-signature, x-paypal-webhook-id, x-user-email, x-user-id"
   );
   res.header("Access-Control-Expose-Headers", "X-Response-Time, Set-Cookie");
+  res.header("Access-Control-Max-Age", "86400"); // 24-hour preflight cache for high performance and lag-free requests
 
   if (req.method === "OPTIONS") {
     return res.status(204).end();

@@ -29,9 +29,12 @@ BOLD='\033[1m'
 NC='\033[0m'
 
 # Default Targets
-BACKEND_URL="${VITE_BACKEND_URL:-https://3-222-149-9.sslip.io}"
+BACKEND_URL="${BACKEND_URL:-${VITE_API_BASE_URL:-${VITE_BACKEND_URL:-https://3-222-149-9.sslip.io}}}"
+if [[ "$BACKEND_URL" == *"13-233-54-120"* || "$BACKEND_URL" == *"ky7079.co"* || "$BACKEND_URL" == *"onrender"* ]]; then
+  BACKEND_URL="https://3-222-149-9.sslip.io"
+fi
 FRONTEND_URL="${FRONTEND_URL:-https://main.d2qe2q720fbn3x.amplifyapp.com}"
-EC2_HOST="${EC2_HOST:-3.222.149.9}"
+EC2_HOST="3.222.149.9"
 EC2_USER="${EC2_USER:-ubuntu}"
 EC2_KEY_FILE="${EC2_KEY_FILE:-}"
 APP_DIR="${APP_DIR:-/home/ubuntu/gigpilot}"

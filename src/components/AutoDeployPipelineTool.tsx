@@ -380,9 +380,9 @@ export const AutoDeployPipelineTool: React.FC<AutoDeployPipelineToolProps> = ({
                       </p>
                     </div>
                     <div className="mt-3 pt-2 border-t border-slate-800/80 flex items-center justify-between">
-                      <span className="text-[10px] text-slate-400 font-mono">3.222.149.9:3000</span>
+                      <span className="text-[10px] text-slate-400 font-mono">3-222-149-9.sslip.io</span>
                       <a
-                        href={status?.targets.ec2.healthUrl || 'http://3.222.149.9:3000/api/health'}
+                        href={status?.targets.ec2.healthUrl || 'https://3-222-149-9.sslip.io/api/health'}
                         target="_blank"
                         rel="noreferrer"
                         className="text-[10px] text-emerald-400 hover:text-emerald-300 flex items-center gap-1"
@@ -445,12 +445,12 @@ export const AutoDeployPipelineTool: React.FC<AutoDeployPipelineToolProps> = ({
                     <div className="flex items-center justify-between pt-1 border-t border-slate-800">
                       <span className="text-slate-400">Backend Endpoint:</span>
                       <a
-                        href={status?.targets.ec2.liveUrl || 'http://3.222.149.9:3000'}
+                        href={status?.targets.ec2.liveUrl || 'https://3-222-149-9.sslip.io'}
                         target="_blank"
                         rel="noreferrer"
                         className="text-cyan-400 hover:text-cyan-300 font-mono text-[11px] flex items-center gap-1"
                       >
-                        <span>3.222.149.9:3000</span>
+                        <span>https://3-222-149-9.sslip.io</span>
                         <ExternalLink className="h-3 w-3" />
                       </a>
                     </div>
@@ -682,7 +682,7 @@ export const AutoDeployPipelineTool: React.FC<AutoDeployPipelineToolProps> = ({
                     Connects to the EC2 server (3.222.149.9 · i-02f24350d31f5aa51) via secure SSH and/or webhook, checks out latest <code className="text-white font-mono">main</code>, installs production packages, builds code, reloads PM2, and conducts live health verification.
                   </p>
                   <div className="pt-2 font-mono text-[10px] text-slate-400">
-                    Target: http://3.222.149.9:3000/api/health
+                    Target: https://3-222-149-9.sslip.io/api/health
                   </div>
                 </div>
               </div>

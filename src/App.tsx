@@ -2,6 +2,10 @@ import React, { useState, useEffect, useRef, useCallback, Suspense, lazy } from 
 import type { RemoteOKJobItem } from './components/RemoteOKJobsBoard';
 import { SEOHead } from './components/SEOHead';
 import { FreelanceJob, GeneratedProposal, ActiveContract, defaultProfile, defaultRules, defaultActiveContracts } from './types';
+import { AppSidebar } from './components/dashboard/AppSidebar';
+import { AppTopbar } from './components/dashboard/AppTopbar';
+import { AppMobileNav } from './components/dashboard/AppMobileNav';
+import { DashboardMetricsCards } from './components/dashboard/DashboardMetricsCards';
 
 // Core Dashboard & View Components (Direct imports for immediate reliability and zero-flicker rendering)
 import { WorkOrdersView } from './components/views/WorkOrdersView';
@@ -48,13 +52,7 @@ const triggerConfetti = (opts: any) => {
   }).catch(() => {});
 };
 
-// Sleek, high-performance loading fallback for lazy-loaded sections
-const LazyFallback: React.FC<{ label?: string }> = ({ label = 'Loading section...' }) => (
-  <div className="w-full bg-[#111726]/60 border border-[#1e293b] rounded-2xl p-6 flex flex-col items-center justify-center min-h-[140px] animate-pulse">
-    <div className="w-6 h-6 rounded-full border-2 border-[#4f7cff]/20 border-t-[#4f7cff] animate-spin mb-2"></div>
-    <span className="text-[11px] text-slate-400 font-mono">{label}</span>
-  </div>
-);
+import { LazyFallback } from './components/common/LazyFallback';
 import {
   fetchBackendWorkOrders,
   completeBackendWorkOrder,
@@ -77,8 +75,12 @@ import {
   BackendBidItem,
   BackendLeadItem,
   gigWebhookDispatcher,
-  HighPriorityGigEvent
+  HighPriorityGigEvent,
+  fetchPayPalLiveBalance,
+  fetchPayPalTransactions,
+  PayPalLiveBalanceResult
 } from './services/api';
+import { PayPalSettlementModal } from './components/PayPalSettlementModal';
 
 // Primary Payment Gateways Configuration
 const PRIMARY_PAYPAL_EMAIL = 'kundank4@icloud.com';
@@ -183,6 +185,8 @@ export default function App() {
   // PayPal Interface State
   const [selectedPayPalInvoice, setSelectedPayPalInvoice] = useState<Invoice | null>(null);
   const [isPayPalModalOpen, setIsPayPalModalOpen] = useState<boolean>(false);
+  const [isPayPalSettlementModalOpen, setIsPayPalSettlementModalOpen] = useState<boolean>(false);
+  const [livePayPalBalance, setLivePayPalBalance] = useState<PayPalLiveBalanceResult | null>(null);
   const [isPayPalConnectOpen, setIsPayPalConnectOpen] = useState<boolean>(false);
   const [isBackendModalOpen, setIsBackendModalOpen] = useState<boolean>(false);
   const [dbStatus, setDbStatus] = useState<DatabaseStatus | null>(null);
@@ -364,6 +368,38 @@ export default function App() {
           }
         } catch {
           // ignore
+        }
+
+        // Fetch Live PayPal Balance & Ledger
+        try {
+          const [balRes, txRes] = await Promise.allSettled([
+            fetchPayPalLiveBalance(),
+            fetchPayPalTransactions()
+          ]);
+
+          if (balRes.status === 'fulfilled' && balRes.value) {
+            setLivePayPalBalance(balRes.value);
+          }
+
+          if (txRes.status === 'fulfilled' && txRes.value?.transactions) {
+            const mappedTx: Transaction[] = txRes.value.transactions.slice(0, 20).map((t: any) => ({
+              id: t.id || `tx_${Math.random().toString(36).slice(2, 6)}`,
+              name: t.isLiveRest
+                ? `PayPal Cleared: ${t.payerName || 'Client'} (${t.description || 'Service'})`
+                : (t.description || `Milestone: ${t.payerName || 'Client'}`),
+              date: t.date ? new Date(t.date).toLocaleDateString() : 'Today',
+              amount: t.amount,
+              type: t.type || 'credit',
+              method: t.isLiveRest ? 'PayPal' : 'Direct',
+              referenceId: t.orderId || t.id,
+              isLiveRest: t.isLiveRest
+            }));
+            if (mappedTx.length > 0) {
+              setTransactions(mappedTx);
+            }
+          }
+        } catch (ppErr) {
+          console.warn('Initial PayPal sync error:', ppErr);
         }
       } catch (err) {
         console.warn('Orders sync error:', err);
@@ -786,37 +822,12 @@ export default function App() {
   };
 
   // Payout / Withdraw to PayPal
-  const withdrawToPayPal = async (amount: number, targetPayPal?: string) => {
-    if (amount <= 0 || isNaN(amount)) {
-      showToast('Please enter a positive amount.', 'warning');
-      return;
-    }
-    if (amount > walletBalance) {
-      showToast(`Insufficient balance ($${fmt(walletBalance)} USD available).`, 'warning');
-      return;
-    }
-
-    const recipient = targetPayPal || PRIMARY_PAYPAL_EMAIL;
-    showToast(`⏳ Initiating instant PayPal transfer of $${fmt(amount)} USD to ${recipient}...`, 'info');
-
-    setWalletBalance(prev => Math.max(0, prev - amount));
-    const newTx: Transaction = {
-      id: makeUniqueId('tx_pp'),
-      name: `💸 PayPal Payout → ${recipient}`,
-      date: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) + ' Today',
-      amount: -amount,
-      type: 'debit',
-      method: 'PayPal',
-      referenceId: `PP-TX-${Date.now().toString().slice(-8)}`
-    };
-    setTransactions(prev => [newTx, ...prev]);
-
-    showToast(`✅ $${fmt(amount)} USD transferred to PayPal (${recipient})!`, 'success');
-    triggerConfetti({
-      particleCount: 80,
-      spread: 70,
-      origin: { y: 0.6 }
-    });
+  const withdrawToPayPal = async (amount?: number, targetPayPal?: string) => {
+    setIsPayPalSettlementModalOpen(true);
+    showToast(
+      'Opening PayPal Settlement Center: Real revenue is credited via client invoices or PayPal.Me and auto-swept to Federal Bank.',
+      'info'
+    );
   };
 
   // PayPal & Gateway Payment Received Handler
@@ -860,7 +871,7 @@ export default function App() {
       return;
     }
     setIsAutoCollecting(true);
-    showToast(`🔄 Auto-collecting $${fmt(todayEarnings)} USD to PayPal balance...`, 'info');
+    showToast(`🔄 Logging milestone earnings of $${fmt(todayEarnings)} USD for settlement...`, 'info');
 
     const collected = todayEarnings;
     const bonus = parseFloat((collected * 0.03).toFixed(2)); // 3% volume bonus
@@ -870,7 +881,7 @@ export default function App() {
 
     const newTx: Transaction = {
       id: makeUniqueId('tx_collect'),
-      name: `💳 PayPal Auto-Collect → ${PRIMARY_PAYPAL_EMAIL}`,
+      name: `Milestone Ready for Client Invoicing (${PRIMARY_PAYPAL_EMAIL})`,
       date: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) + ' Today',
       amount: collected,
       type: 'credit',
@@ -878,7 +889,7 @@ export default function App() {
     };
     setTransactions(prev => [newTx, ...prev]);
 
-    showToast(`💰 Settled $${fmt(collected)} USD + volume bonus $${fmt(bonus)} USD to PayPal!`, 'success');
+    showToast(`💰 Logged $${fmt(collected)} USD! Open PayPal Settlement Hub to generate official invoice or payment link.`, 'success');
 
     triggerConfetti({
       particleCount: 90,
@@ -1057,819 +1068,109 @@ export default function App() {
   const currentMeta = getTabMeta();
 
   return (
-    <div className="flex min-h-screen bg-[#0b0d15] text-[#f0f3fa] font-sans antialiased overflow-hidden select-none">
+    <div className="flex min-h-screen bg-[#090d14] text-slate-100 font-sans antialiased overflow-hidden select-none">
       <SEOHead
         activeSection={currentMeta.section}
         description={currentMeta.description}
       />
       
       {/* ===== DESKTOP SIDEBAR ===== */}
-      <aside className="hidden lg:flex w-[230px] min-w-[230px] bg-[#11141f] border-r border-[#2a3147] p-5 flex-col gap-2 h-screen sticky top-0 overflow-y-auto z-20">
-        
-        {/* Logo */}
-        <div className="flex items-center gap-3 px-2 pb-5 border-b border-[#2a3147] mb-3">
-          <i className="fas fa-robot text-2xl text-[#4f7cff] drop-shadow-[0_0_12px_rgba(79,124,255,0.4)]"></i>
-          <div>
-            <span className="font-bold text-base tracking-tight bg-gradient-to-r from-white via-slate-100 to-[#4f7cff] bg-clip-text text-transparent block font-mono">
-              kundanvision369
-            </span>
-            <small className="text-[11px] text-[#5d6788] block font-normal tracking-wide">
-              Freelance Autopilot
-            </small>
-          </div>
-        </div>
+      <AppSidebar
+        activeTab={activeTab}
+        setActiveTab={setActiveTab}
+        userEmail={userEmail}
+        isEmailVerified={isEmailVerified}
+        activeOrdersCount={workOrders.filter(o => o.status !== 'completed').length}
+        onOpenEmailVerification={() => setIsEmailVerificationOpen(true)}
+        onOpenPasswordReset={() => setIsPasswordResetOpen(true)}
+        onOpenPayPalConnect={() => setIsPayPalConnectOpen(true)}
+        onOpenGitHubSettings={() => setIsGitHubSettingsOpen(true)}
+        onOpenAutoDeploy={() => setIsAutoDeployModalOpen(true)}
+        onOpenCredentialsModal={() => setIsCredentialsModalOpen(true)}
+        onOpenLegal={(tab) => {
+          setLegalTab(tab);
+          setIsLegalModalOpen(true);
+        }}
+      />
 
-        {/* Security & Verification Mini-Card */}
-        <div className="rounded-xl border border-[#2a3147] bg-[#0d101a] p-2.5 mb-1 space-y-1.5">
-          <div className="flex items-center justify-between text-[11px]">
-            <span className="text-slate-300 font-mono truncate max-w-[120px]">{userEmail.split('@')[0]}</span>
-            <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded-full ${
-              isEmailVerified 
-                ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30' 
-                : 'bg-amber-500/20 text-amber-300 border border-amber-500/30'
-            }`}>
-              {isEmailVerified ? 'VERIFIED' : 'UNVERIFIED'}
-            </span>
-          </div>
-          <div className="grid grid-cols-2 gap-1 text-[10px]">
-            <button
-              onClick={() => setIsEmailVerificationOpen(true)}
-              className="rounded bg-[#161b2b] hover:bg-[#1e2438] py-1 text-sky-300 border border-sky-500/20 text-center transition-colors cursor-pointer"
-            >
-              Verify
-            </button>
-            <button
-              onClick={() => setIsPasswordResetOpen(true)}
-              className="rounded bg-[#161b2b] hover:bg-[#1e2438] py-1 text-indigo-300 border border-indigo-500/20 text-center transition-colors cursor-pointer"
-            >
-              Password
-            </button>
-          </div>
-        </div>
-
-        {/* Navigation items */}
-        <button
-          onClick={() => setActiveTab('dashboard')}
-          className={`flex items-center gap-3.5 px-3.5 py-3 rounded-xl text-sm font-medium transition-all ${
-            activeTab === 'dashboard'
-              ? 'bg-[#4f7cff] text-white shadow-[0_4px_20px_rgba(79,124,255,0.35)]'
-              : 'text-[#9aa2bf] hover:bg-[#161b2b] hover:text-[#f0f3fa]'
-          }`}
-        >
-          <i className="fas fa-th-large w-5 text-center text-sm"></i>
-          <span>Dashboard</span>
-        </button>
-
-        <button
-          id="sidebar-nav-lead-scoring"
-          onClick={() => setActiveTab('leads')}
-          className={`flex items-center gap-3.5 px-3.5 py-3 rounded-xl text-sm font-medium transition-all ${
-            activeTab === 'leads'
-              ? 'bg-gradient-to-r from-indigo-600 via-blue-600 to-purple-600 text-white shadow-[0_4px_20px_rgba(99,102,241,0.4)]'
-              : 'text-[#9aa2bf] hover:bg-[#161b2b] hover:text-[#f0f3fa]'
-          }`}
-        >
-          <i className="fas fa-bullseye w-5 text-center text-sm text-indigo-400"></i>
-          <span>Lead Scoring</span>
-          <span className="ml-auto bg-indigo-500/20 text-indigo-300 border border-indigo-500/30 text-[9px] px-1.5 py-0.5 rounded font-mono font-bold">
-            500 AI
-          </span>
-        </button>
-
-        <button
-          id="sidebar-nav-lead-notifications"
-          onClick={() => setActiveTab('notifications')}
-          className={`flex items-center gap-3.5 px-3.5 py-3 rounded-xl text-sm font-medium transition-all ${
-            activeTab === 'notifications'
-              ? 'bg-gradient-to-r from-sky-600 via-indigo-600 to-purple-600 text-white shadow-[0_4px_20px_rgba(14,165,233,0.4)]'
-              : 'text-[#9aa2bf] hover:bg-[#161b2b] hover:text-[#f0f3fa]'
-          }`}
-        >
-          <i className="fab fa-telegram-plane w-5 text-center text-sm text-sky-400"></i>
-          <span>Lead Alerts</span>
-          <span className="ml-auto bg-sky-500/20 text-sky-300 border border-sky-500/30 text-[9px] px-1.5 py-0.5 rounded font-mono font-bold animate-pulse">
-            SPEED
-          </span>
-        </button>
-
-        <button
-          id="sidebar-nav-real-income"
-          onClick={() => setActiveTab('income')}
-          className={`flex items-center gap-3.5 px-3.5 py-3 rounded-xl text-sm font-medium transition-all ${
-            activeTab === 'income'
-              ? 'bg-gradient-to-r from-emerald-600 to-teal-600 text-white shadow-[0_4px_20px_rgba(16,185,129,0.4)]'
-              : 'text-[#9aa2bf] hover:bg-[#161b2b] hover:text-[#f0f3fa]'
-          }`}
-        >
-          <i className="fas fa-hand-holding-usd w-5 text-center text-sm text-emerald-400"></i>
-          <span>Real Income Hub</span>
-          <span className="ml-auto bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 text-[9px] px-1.5 py-0.5 rounded font-mono font-bold">
-            EARN
-          </span>
-        </button>
-
-        <button
-          onClick={() => setActiveTab('remoteok')}
-          className={`flex items-center gap-3.5 px-3.5 py-3 rounded-xl text-sm font-medium transition-all ${
-            activeTab === 'remoteok'
-              ? 'bg-gradient-to-r from-purple-600 to-indigo-600 text-white shadow-[0_4px_20px_rgba(168,85,247,0.4)]'
-              : 'text-[#9aa2bf] hover:bg-[#161b2b] hover:text-[#f0f3fa]'
-          }`}
-        >
-          <i className="fas fa-globe w-5 text-center text-sm text-[#ff4742]"></i>
-          <span>Remote OK Feed</span>
-          <span className="ml-auto bg-[#ff4742]/20 text-[#ff4742] border border-[#ff4742]/30 text-[9px] px-1.5 py-0.5 rounded font-mono font-bold">
-            NO-AUTH
-          </span>
-        </button>
-
-        <button
-          onClick={() => setActiveTab('orders')}
-          className={`flex items-center gap-3.5 px-3.5 py-3 rounded-xl text-sm font-medium transition-all ${
-            activeTab === 'orders'
-              ? 'bg-[#4f7cff] text-white shadow-[0_4px_20px_rgba(79,124,255,0.35)]'
-              : 'text-[#9aa2bf] hover:bg-[#161b2b] hover:text-[#f0f3fa]'
-          }`}
-        >
-          <i className="fas fa-clipboard-list w-5 text-center text-sm"></i>
-          <span>Work Orders</span>
-          {activeOrdersCount > 0 && (
-            <span className="ml-auto bg-[#e74c3c] text-white text-[10px] px-2 py-0.5 rounded-full font-bold">
-              {activeOrdersCount}
-            </span>
-          )}
-        </button>
-
-        <button
-          onClick={() => setActiveTab('invoicing')}
-          className={`flex items-center gap-3.5 px-3.5 py-3 rounded-xl text-sm font-medium transition-all ${
-            activeTab === 'invoicing'
-              ? 'bg-[#4f7cff] text-white shadow-[0_4px_20px_rgba(79,124,255,0.35)]'
-              : 'text-[#9aa2bf] hover:bg-[#161b2b] hover:text-[#f0f3fa]'
-          }`}
-        >
-          <i className="fas fa-file-invoice-dollar w-5 text-center text-sm"></i>
-          <span>Invoicing</span>
-        </button>
-
-        <button
-          onClick={() => setActiveTab('paypal')}
-          className={`flex items-center gap-3.5 px-3.5 py-3 rounded-xl text-sm font-medium transition-all ${
-            activeTab === 'paypal'
-              ? 'bg-gradient-to-r from-[#003087] to-[#0070ba] text-white shadow-[0_4px_20px_rgba(0,112,186,0.4)]'
-              : 'text-[#9aa2bf] hover:bg-[#161b2b] hover:text-[#f0f3fa]'
-          }`}
-        >
-          <i className="fab fa-paypal w-5 text-center text-sm text-[#00cfe8]"></i>
-          <span>PayPal REST API</span>
-          <span className="ml-auto bg-[#00cfe8]/20 text-[#00cfe8] border border-[#00cfe8]/30 text-[9px] px-1.5 py-0.5 rounded font-mono font-bold">
-            v2 LIVE
-          </span>
-        </button>
-
-        <button
-          id="sidebar-nav-paypal-connect"
-          onClick={() => setIsPayPalConnectOpen(true)}
-          className="flex items-center gap-3.5 px-3.5 py-3 rounded-xl text-sm font-medium transition-all text-[#9aa2bf] hover:bg-[#161b2b] hover:text-[#f0f3fa]"
-        >
-          <i className="fas fa-university w-5 text-center text-sm text-emerald-400"></i>
-          <span>Bank &amp; PayPal Settlement</span>
-          <span className="ml-auto bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 text-[9px] px-1.5 py-0.5 rounded font-mono font-bold">
-            DIRECT
-          </span>
-        </button>
-
-        <button
-          onClick={() => setActiveTab('analytics')}
-          className={`flex items-center gap-3.5 px-3.5 py-3 rounded-xl text-sm font-medium transition-all ${
-            activeTab === 'analytics'
-              ? 'bg-[#4f7cff] text-white shadow-[0_4px_20px_rgba(79,124,255,0.35)]'
-              : 'text-[#9aa2bf] hover:bg-[#161b2b] hover:text-[#f0f3fa]'
-          }`}
-        >
-          <i className="fas fa-chart-line w-5 text-center text-sm"></i>
-          <span>Analytics</span>
-        </button>
-
-        <button
-          id="sidebar-nav-activity-logs"
-          onClick={() => setActiveTab('logs')}
-          className={`flex items-center gap-3.5 px-3.5 py-3 rounded-xl text-sm font-medium transition-all ${
-            activeTab === 'logs'
-              ? 'bg-gradient-to-r from-indigo-600 to-violet-600 text-white shadow-[0_4px_20px_rgba(99,102,241,0.4)]'
-              : 'text-[#9aa2bf] hover:bg-[#161b2b] hover:text-[#f0f3fa]'
-          }`}
-        >
-          <i className="fas fa-terminal w-5 text-center text-sm text-indigo-400"></i>
-          <span>Activity Logs</span>
-          <span className="ml-auto bg-indigo-500/20 text-indigo-300 border border-indigo-500/30 text-[9px] px-1.5 py-0.5 rounded font-mono font-bold">
-            DEBUG
-          </span>
-        </button>
-
-        <button
-          id="sidebar-nav-github-settings"
-          onClick={() => setIsGitHubSettingsOpen(true)}
-          className="flex items-center gap-3.5 px-3.5 py-3 rounded-xl text-sm font-medium transition-all text-[#9aa2bf] hover:bg-[#161b2b] hover:text-[#f0f3fa] cursor-pointer"
-        >
-          <i className="fab fa-github w-5 text-center text-sm text-cyan-400"></i>
-          <span>GitHub SSH &amp; GitOps</span>
-          <span className="ml-auto bg-cyan-500/20 text-cyan-300 border border-cyan-500/30 text-[9px] px-1.5 py-0.5 rounded font-mono font-bold">
-            SSH
-          </span>
-        </button>
-
-        <button
-          id="sidebar-nav-auto-deploy"
-          onClick={() => setIsAutoDeployModalOpen(true)}
-          className="flex items-center gap-3.5 px-3.5 py-3 rounded-xl text-sm font-medium transition-all text-cyan-300 bg-cyan-950/20 border border-cyan-500/30 hover:bg-cyan-950/40 hover:text-cyan-200 cursor-pointer"
-        >
-          <i className="fas fa-rocket w-5 text-center text-sm text-cyan-400"></i>
-          <span>Auto-Deploy Tool</span>
-          <span className="ml-auto bg-cyan-500/20 text-cyan-300 border border-cyan-500/30 text-[9px] px-1.5 py-0.5 rounded font-mono font-bold">
-            EC2+Amplify
-          </span>
-        </button>
-
-        {/* Footer */}
-        <div className="mt-auto pt-4 border-t border-[#2a3147] text-xs text-[#5d6788] text-center space-y-2">
-          <div className="flex items-center justify-center gap-2 font-medium">
-            <span className="w-2 h-2 rounded-full bg-[#2ecc71] animate-pulse"></span>
-            <span>Gemini Paid Tier Active · 50x ROI</span>
-          </div>
-
-          <div className="flex items-center justify-center gap-2 text-[10px] text-slate-400">
-            <button
-              onClick={() => {
-                setLegalTab('terms');
-                setIsLegalModalOpen(true);
-              }}
-              className="hover:text-indigo-300 underline transition-colors cursor-pointer"
-            >
-              Terms of Service
-            </button>
-            <span>•</span>
-            <button
-              onClick={() => {
-                setLegalTab('privacy');
-                setIsLegalModalOpen(true);
-              }}
-              className="hover:text-indigo-300 underline transition-colors cursor-pointer"
-            >
-              Privacy
-            </button>
-            <span>•</span>
-            <button
-              onClick={() => {
-                setLegalTab('gst');
-                setIsLegalModalOpen(true);
-              }}
-              className="hover:text-emerald-300 underline transition-colors cursor-pointer"
-            >
-              GST (18%)
-            </button>
-          </div>
-        </div>
-
-      </aside>
-
-      {/* ===== MOBILE TOP HEADER ===== */}
-      <div className="lg:hidden fixed top-0 left-0 right-0 z-30 flex items-center justify-between border-b border-[#2a3147] bg-[#11141f]/95 px-4 py-3 backdrop-blur-md">
-        <div className="flex items-center gap-3">
-          <button
-            onClick={() => setIsMobileMenuOpen(true)}
-            className="p-2 text-slate-300 hover:text-white rounded-xl bg-[#161b2b] border border-[#2a3147] cursor-pointer"
-            aria-label="Open Navigation Menu"
-          >
-            <i className="fas fa-bars text-sm"></i>
-          </button>
-          <div className="flex items-center gap-2">
-            <i className="fas fa-robot text-lg text-[#4f7cff]"></i>
-            <div>
-              <span className="font-bold text-sm tracking-tight font-mono text-white block leading-tight">kundanvision369</span>
-              <span className="text-[9px] text-[#5d6788] block">Freelance Autopilot</span>
-            </div>
-          </div>
-        </div>
-
-        <div className="flex items-center gap-2">
-          <div className="bg-[#161b2b] px-2.5 py-1 rounded-full border border-[#2a3147] flex items-center gap-1.5 text-xs font-semibold">
-            <i className="fas fa-dollar-sign text-[#2ecc71] text-[10px]"></i>
-            <span className="font-mono">${fmt(walletBalance)}</span>
-          </div>
-
-          <button
-            onClick={() => setIsEmailVerificationOpen(true)}
-            className={`p-1.5 rounded-full text-xs font-semibold flex items-center cursor-pointer ${
-              isEmailVerified
-                ? 'bg-emerald-500/15 text-emerald-400 border border-emerald-500/30'
-                : 'bg-amber-500/15 text-amber-300 border border-amber-500/30 animate-pulse'
-            }`}
-            title={isEmailVerified ? 'Email Verified' : 'Verify Email'}
-          >
-            <i className={`fas ${isEmailVerified ? 'fa-shield-alt' : 'fa-envelope'} text-xs`}></i>
-          </button>
-
-          <button
-            onClick={() => setIsPasswordResetOpen(true)}
-            className="p-1.5 text-slate-400 hover:text-white rounded-full bg-[#161b2b] border border-[#2a3147] cursor-pointer"
-            title="Password & Security Settings"
-          >
-            <i className="fas fa-key text-xs"></i>
-          </button>
-        </div>
-      </div>
-
-      {/* ===== MOBILE NAVIGATION DRAWER ===== */}
-      {isMobileMenuOpen && (
-        <div className="fixed inset-0 z-50 lg:hidden flex">
-          {/* Backdrop */}
-          <div
-            className="fixed inset-0 bg-black/80 backdrop-blur-sm transition-opacity"
-            onClick={() => setIsMobileMenuOpen(false)}
-          />
-
-          {/* Drawer Content */}
-          <div className="relative w-4/5 max-w-xs bg-[#11141f] border-r border-[#2a3147] p-5 flex flex-col gap-2 h-full overflow-y-auto z-10 shadow-2xl">
-            <div className="flex items-center justify-between pb-4 border-b border-[#2a3147] mb-2">
-              <div className="flex items-center gap-2.5">
-                <i className="fas fa-robot text-xl text-[#4f7cff]"></i>
-                <div>
-                  <span className="font-bold text-sm text-white font-mono block">kundanvision369</span>
-                  <span className="text-[10px] text-[#5d6788] block">Freelance Autopilot</span>
-                </div>
-              </div>
-              <button
-                onClick={() => setIsMobileMenuOpen(false)}
-                className="p-1.5 text-slate-400 hover:text-white rounded-lg bg-[#161b2b] cursor-pointer"
-              >
-                <i className="fas fa-times text-sm"></i>
-              </button>
-            </div>
-
-            {/* Account Status Card */}
-            <div className="rounded-xl border border-[#2a3147] bg-[#0d101a] p-3 mb-2 space-y-2">
-              <div className="flex items-center justify-between">
-                <span className="text-xs font-semibold text-slate-200 truncate max-w-[140px]">{userEmail}</span>
-                <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded-full ${
-                  isEmailVerified ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30' : 'bg-amber-500/20 text-amber-300 border border-amber-500/30'
-                }`}>
-                  {isEmailVerified ? 'VERIFIED' : 'UNVERIFIED'}
-                </span>
-              </div>
-              <div className="grid grid-cols-2 gap-1.5 pt-1 text-[11px]">
-                <button
-                  onClick={() => {
-                    setIsMobileMenuOpen(false);
-                    setIsEmailVerificationOpen(true);
-                  }}
-                  className="rounded-lg bg-[#161b2b] p-1.5 text-center text-sky-300 hover:bg-[#1f263d] border border-sky-500/20 flex items-center justify-center gap-1 cursor-pointer"
-                >
-                  <i className="fas fa-envelope-open-text text-[10px]"></i>
-                  <span>Verify</span>
-                </button>
-                <button
-                  onClick={() => {
-                    setIsMobileMenuOpen(false);
-                    setIsPasswordResetOpen(true);
-                  }}
-                  className="rounded-lg bg-[#161b2b] p-1.5 text-center text-indigo-300 hover:bg-[#1f263d] border border-indigo-500/20 flex items-center justify-center gap-1 cursor-pointer"
-                >
-                  <i className="fas fa-key text-[10px]"></i>
-                  <span>Password</span>
-                </button>
-              </div>
-            </div>
-
-            {/* Nav items */}
-            <div className="space-y-1 overflow-y-auto">
-              {([
-                { tab: 'dashboard' as const, label: 'Dashboard', icon: 'fa-th-large', color: '', badge: undefined, badgeColor: undefined, count: undefined },
-                { tab: 'leads' as const, label: 'Lead Scoring', icon: 'fa-bullseye', color: '', badge: '500 AI', badgeColor: 'bg-indigo-500/20 text-indigo-300', count: undefined },
-                { tab: 'notifications' as const, label: 'Lead Alerts', icon: 'fab fa-telegram-plane', color: '', badge: 'SPEED', badgeColor: 'bg-sky-500/20 text-sky-300', count: undefined },
-                { tab: 'income' as const, label: 'Real Income Hub', icon: 'fa-hand-holding-usd', color: '', badge: 'EARN', badgeColor: 'bg-emerald-500/20 text-emerald-300', count: undefined },
-                { tab: 'remoteok' as const, label: 'Remote OK Feed', icon: 'fa-globe', color: '', badge: 'NO-AUTH', badgeColor: 'bg-[#ff4742]/20 text-[#ff4742]', count: undefined },
-                { tab: 'orders' as const, label: 'Work Orders', icon: 'fa-clipboard-list', color: '', count: activeOrdersCount, badge: undefined, badgeColor: undefined },
-                { tab: 'invoicing' as const, label: 'Invoicing', icon: 'fa-file-invoice-dollar', color: '', badge: undefined, badgeColor: undefined, count: undefined },
-                { tab: 'paypal' as const, label: 'PayPal REST API', icon: 'fab fa-paypal', color: '', badge: 'v2 LIVE', badgeColor: 'bg-[#00cfe8]/20 text-[#00cfe8]', count: undefined },
-                { tab: 'analytics' as const, label: 'Analytics', icon: 'fa-chart-line', color: '', badge: undefined, badgeColor: undefined, count: undefined },
-                { tab: 'health' as const, label: 'System Health', icon: 'fa-heartbeat', color: '', badge: 'DEVOPS', badgeColor: 'bg-emerald-500/20 text-emerald-300', count: undefined },
-                { tab: 'logs' as const, label: 'Activity Logs', icon: 'fa-terminal', color: '', badge: 'DEBUG', badgeColor: 'bg-indigo-500/20 text-indigo-300', count: undefined },
-                { tab: 'snapshots' as const, label: 'DB Snapshots & Recovery', icon: 'fa-database', color: '', badge: '3 MAX', badgeColor: 'bg-cyan-500/20 text-cyan-300', count: undefined }
-              ]).map((item) => (
-                <button
-                  key={item.tab}
-                  onClick={() => {
-                    setActiveTab(item.tab);
-                    setIsMobileMenuOpen(false);
-                  }}
-                  className={`w-full flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-xs font-medium transition-all cursor-pointer ${
-                    activeTab === item.tab
-                      ? 'bg-[#4f7cff] text-white shadow-md'
-                      : 'text-[#9aa2bf] hover:bg-[#161b2b] hover:text-[#f0f3fa]'
-                  }`}
-                >
-                  <i className={`fas ${item.icon} w-4 text-center`}></i>
-                  <span>{item.label}</span>
-                  {item.badge && (
-                    <span className={`ml-auto ${item.badgeColor} text-[9px] px-1.5 py-0.5 rounded font-mono font-bold`}>
-                      {item.badge}
-                    </span>
-                  )}
-                  {item.count !== undefined && item.count > 0 && (
-                    <span className="ml-auto bg-[#e74c3c] text-white text-[9px] px-1.5 py-0.5 rounded-full font-bold">
-                      {item.count}
-                    </span>
-                  )}
-                </button>
-              ))}
-            </div>
-
-            {/* Quick Gateways */}
-            <div className="pt-2 border-t border-[#2a3147] space-y-1.5 mt-auto">
-              <button
-                onClick={() => {
-                  setIsMobileMenuOpen(false);
-                  setIsPayPalConnectOpen(true);
-                }}
-                className="w-full flex items-center gap-3 px-3.5 py-2 rounded-xl text-xs font-medium text-emerald-300 bg-emerald-500/10 border border-emerald-500/20 hover:bg-emerald-500/20 cursor-pointer"
-              >
-                <i className="fas fa-university text-emerald-400"></i>
-                <span>Bank &amp; PayPal Settlement</span>
-              </button>
-
-              <button
-                id="mobile-btn-github-settings"
-                onClick={() => {
-                  setIsMobileMenuOpen(false);
-                  setIsGitHubSettingsOpen(true);
-                }}
-                className="w-full flex items-center justify-between px-3.5 py-2 rounded-xl text-xs font-medium text-cyan-300 bg-cyan-500/10 border border-cyan-500/20 hover:bg-cyan-500/20 cursor-pointer"
-              >
-                <span className="flex items-center gap-2.5">
-                  <i className="fab fa-github text-cyan-400"></i>
-                  <span>GitHub SSH &amp; GitOps</span>
-                </span>
-                <span className="text-[10px] bg-cyan-500/20 text-cyan-300 border border-cyan-500/30 px-1.5 py-0.5 rounded font-mono">
-                  SSH
-                </span>
-              </button>
-            </div>
-
-            {/* Footer Links */}
-            <div className="pt-3 border-t border-[#2a3147] text-[10px] text-slate-500 flex justify-around">
-              <button onClick={() => { setIsMobileMenuOpen(false); setLegalTab('terms'); setIsLegalModalOpen(true); }} className="hover:text-slate-300">ToS</button>
-              <span>•</span>
-              <button onClick={() => { setIsMobileMenuOpen(false); setLegalTab('privacy'); setIsLegalModalOpen(true); }} className="hover:text-slate-300">Privacy</button>
-              <span>•</span>
-              <button onClick={() => { setIsMobileMenuOpen(false); setLegalTab('gst'); setIsLegalModalOpen(true); }} className="hover:text-slate-300">GST (18%)</button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* ===== MOBILE BOTTOM NAVIGATION BAR ===== */}
-      <nav className="lg:hidden fixed bottom-0 left-0 right-0 z-30 bg-[#11141f]/95 backdrop-blur-lg border-t border-[#2a3147] px-2 py-1.5 flex items-center justify-around shadow-2xl">
-        <button
-          onClick={() => setActiveTab('dashboard')}
-          className={`flex flex-col items-center gap-0.5 py-1 px-2 rounded-lg text-[10px] font-medium transition-all ${
-            activeTab === 'dashboard' ? 'text-[#4f7cff]' : 'text-slate-400 hover:text-slate-200'
-          }`}
-        >
-          <i className="fas fa-th-large text-sm"></i>
-          <span>Home</span>
-        </button>
-
-        <button
-          onClick={() => setActiveTab('leads')}
-          className={`flex flex-col items-center gap-0.5 py-1 px-2 rounded-lg text-[10px] font-medium transition-all ${
-            activeTab === 'leads' ? 'text-indigo-400' : 'text-slate-400 hover:text-slate-200'
-          }`}
-        >
-          <i className="fas fa-bullseye text-sm"></i>
-          <span>Leads</span>
-        </button>
-
-        <button
-          onClick={() => setActiveTab('income')}
-          className={`flex flex-col items-center gap-0.5 py-1 px-2 rounded-lg text-[10px] font-medium transition-all ${
-            activeTab === 'income' ? 'text-emerald-400' : 'text-slate-400 hover:text-slate-200'
-          }`}
-        >
-          <i className="fas fa-hand-holding-usd text-sm"></i>
-          <span>Income</span>
-        </button>
-
-        <button
-          onClick={() => setActiveTab('remoteok')}
-          className={`flex flex-col items-center gap-0.5 py-1 px-2 rounded-lg text-[10px] font-medium transition-all ${
-            activeTab === 'remoteok' ? 'text-purple-400' : 'text-slate-400 hover:text-slate-200'
-          }`}
-        >
-          <i className="fas fa-globe text-sm"></i>
-          <span>RemoteOK</span>
-        </button>
-
-        <button
-          onClick={() => setActiveTab('orders')}
-          className={`flex flex-col items-center gap-0.5 py-1 px-2 rounded-lg text-[10px] font-medium relative transition-all ${
-            activeTab === 'orders' ? 'text-[#4f7cff]' : 'text-slate-400 hover:text-slate-200'
-          }`}
-        >
-          <i className="fas fa-clipboard-list text-sm"></i>
-          <span>Orders</span>
-          {activeOrdersCount > 0 && (
-            <span className="absolute top-0 right-1 w-2 h-2 rounded-full bg-[#e74c3c]"></span>
-          )}
-        </button>
-
-        <button
-          onClick={() => setIsMobileMenuOpen(true)}
-          className="flex flex-col items-center gap-0.5 py-1 px-2 rounded-lg text-[10px] font-medium text-slate-400 hover:text-slate-200"
-        >
-          <i className="fas fa-bars text-sm"></i>
-          <span>More</span>
-        </button>
-      </nav>
+      {/* ===== MOBILE NAVIGATION ===== */}
+      <AppMobileNav
+        activeTab={activeTab}
+        setActiveTab={setActiveTab}
+        isMobileMenuOpen={isMobileMenuOpen}
+        setIsMobileMenuOpen={setIsMobileMenuOpen}
+        walletBalance={walletBalance}
+        userEmail={userEmail}
+        isEmailVerified={isEmailVerified}
+        activeOrdersCount={workOrders.filter(o => o.status !== 'completed').length}
+        onOpenEmailVerification={() => setIsEmailVerificationOpen(true)}
+        onOpenPasswordReset={() => setIsPasswordResetOpen(true)}
+        onOpenPayPalConnect={() => setIsPayPalConnectOpen(true)}
+        onOpenPayPalSettlement={() => setIsPayPalSettlementModalOpen(true)}
+        onOpenGitHubSettings={() => setIsGitHubSettingsOpen(true)}
+        onOpenAutoDeploy={() => setIsAutoDeployModalOpen(true)}
+        onOpenCredentialsModal={() => setIsCredentialsModalOpen(true)}
+        onOpenLegal={(tab) => {
+          setLegalTab(tab);
+          setIsLegalModalOpen(true);
+        }}
+        fmt={fmt}
+      />
 
       {/* ===== MAIN CONTENT ===== */}
-      <main className="flex-1 overflow-y-auto h-screen p-4 sm:p-6 lg:p-8 pt-16 lg:pt-8 pb-24 lg:pb-8 bg-[#0b0d15]">
+      <main className="flex-1 overflow-y-auto h-screen p-4 sm:p-6 lg:p-8 pt-16 lg:pt-8 pb-24 lg:pb-8 bg-[#090d14]">
         
-        {/* Topbar */}
-        <div className="flex flex-wrap items-center justify-between pb-5 border-b border-[#2a3147] mb-7 gap-4">
-          <div>
-            <h1 className="text-xl sm:text-2xl font-bold tracking-tight flex items-baseline gap-2 flex-wrap">
-              {activeTab === 'dashboard' && <>Dashboard <span className="text-xs sm:text-sm font-normal text-[#9aa2bf]">Real-time overview</span></>}
-              {activeTab === 'notifications' && <>Lead Notifications &amp; Speed Radar <span className="text-xs sm:text-sm font-normal text-[#9aa2bf]">Headless Scraper (Playwright) &amp; Instant Telegram/Email Push</span></>}
-              {activeTab === 'leads' && <>Real Lead Scoring &amp; Paywalls <span className="text-xs sm:text-sm font-normal text-[#9aa2bf]">500 Gemini Scored Jobs &amp; Tier Access</span></>}
-              {activeTab === 'income' && <>Real Income &amp; Client Checkout Hub <span className="text-xs sm:text-sm font-normal text-[#9aa2bf]">Monetize freelance skills with PayPal &amp; UPI</span></>}
-              {activeTab === 'remoteok' && <>Remote OK Feed <span className="text-xs sm:text-sm font-normal text-[#9aa2bf]">Public unauthenticated live jobs</span></>}
-              {activeTab === 'orders' && <>Work Orders <span className="text-xs sm:text-sm font-normal text-[#9aa2bf]">Manage all automated tasks</span></>}
-              {activeTab === 'invoicing' && <>Invoicing <span className="text-xs sm:text-sm font-normal text-[#9aa2bf]">Auto-generated client invoices &amp; payments</span></>}
-              {activeTab === 'paypal' && <>PayPal Terminal <span className="text-xs sm:text-sm font-normal text-[#9aa2bf]">Global payment links, virtual terminal &amp; QR checkout</span></>}
-              {activeTab === 'bank' && <>Indian Bank Portal <span className="text-xs sm:text-sm font-normal text-[#9aa2bf]">IMPS / NEFT, UPI dynamic QR &amp; instant INR settlements</span></>}
-              {activeTab === 'analytics' && <>Analytics <span className="text-xs sm:text-sm font-normal text-[#9aa2bf]">Autonomous performance insights</span></>}
-              {activeTab === 'logs' && <>Activity Logs &amp; Webhook Debugger <span className="text-xs sm:text-sm font-normal text-[#9aa2bf]">Raw incoming payload telemetry &amp; live app-state sync</span></>}
-              {activeTab === 'snapshots' && <>Database Snapshots &amp; Disaster Recovery <span className="text-xs sm:text-sm font-normal text-[#9aa2bf]">Automated Daily Snapshots, SHA-256 Checksums &amp; 3-Backup Retention</span></>}
-              {activeTab === 'health' && <>System Health &amp; DevOps Telemetry <span className="text-xs sm:text-sm font-normal text-[#9aa2bf]">Unified Health Diagnostics, Bull Queues &amp; Self-Healing</span></>}
-            </h1>
-          </div>
-
-          <div className="flex flex-wrap items-center gap-2 sm:gap-2.5">
-            {/* Backend Architecture Gateway Trigger */}
-            <button
-              id="topbar-btn-backend-gateway"
-              onClick={() => setIsBackendModalOpen(true)}
-              className="bg-emerald-950/60 hover:bg-emerald-900/60 border border-emerald-500/40 text-emerald-300 hover:text-white px-3 py-2 rounded-full text-xs font-semibold flex items-center gap-2 transition-all cursor-pointer shadow-sm"
-              title="Connect & Monitor AWS EC2 / App Runner Backend Gateway"
-            >
-              <i className="fas fa-network-wired text-emerald-400"></i>
-              <span>Backend Gateway</span>
-              <span className="h-2 w-2 rounded-full bg-emerald-400 animate-pulse"></span>
-            </button>
-
-            {/* Email Verification Trigger */}
-            <button
-              id="topbar-btn-verify-email"
-              onClick={() => setIsEmailVerificationOpen(true)}
-              className={`px-3 py-2 rounded-full text-xs font-semibold flex items-center gap-1.5 transition-all cursor-pointer shadow-sm ${
-                isEmailVerified
-                  ? 'bg-emerald-950/60 border border-emerald-500/40 text-emerald-300 hover:bg-emerald-900/50'
-                  : 'bg-amber-950/60 border border-amber-500/40 text-amber-300 hover:bg-amber-900/50 animate-pulse'
-              }`}
-              title="Email Verification & Identity Status"
-            >
-              <i className={`fas ${isEmailVerified ? 'fa-shield-alt text-emerald-400' : 'fa-envelope text-amber-400'}`}></i>
-              <span>{isEmailVerified ? 'Email Verified' : 'Verify Email'}</span>
-            </button>
-
-            {/* Password Reset & Security Trigger */}
-            <button
-              id="topbar-btn-password-reset"
-              onClick={() => setIsPasswordResetOpen(true)}
-              className="bg-[#1a2236] hover:bg-[#232c45] border border-indigo-500/40 text-indigo-300 hover:text-white px-3 py-2 rounded-full text-xs font-semibold flex items-center gap-1.5 transition-all cursor-pointer shadow-sm"
-              title="Reset or change your account password"
-            >
-              <i className="fas fa-key text-indigo-400"></i>
-              <span>Password &amp; Security</span>
-            </button>
-
-            {/* PayPal Gateway Direct Settlement Trigger */}
-            <button
-              id="topbar-btn-paypal-settlement"
-              onClick={() => setIsPayPalConnectOpen(true)}
-              className="bg-gradient-to-r from-[#003087] via-[#0070ba] to-cyan-600 hover:opacity-95 text-white px-3 py-2 rounded-full text-xs font-semibold flex items-center gap-2 transition-all shadow-[0_2px_12px_rgba(0,112,186,0.35)] cursor-pointer"
-              title="Configure PayPal REST Gateway & Bank Settlements"
-            >
-              <i className="fab fa-paypal text-cyan-300"></i>
-              <span>PayPal &amp; Bank Portal</span>
-            </button>
-
-            {/* Legal Compliance & ToS Trigger */}
-            <button
-              id="topbar-btn-legal-compliance"
-              onClick={() => {
-                setLegalTab('terms');
-                setIsLegalModalOpen(true);
-              }}
-              className="bg-[#1a2236] hover:bg-[#232c45] border border-indigo-500/40 text-indigo-300 hover:text-white px-3 py-2 rounded-full text-xs font-semibold flex items-center gap-2 transition-all cursor-pointer"
-              title="View Terms of Service, Privacy Policy & GST Tax Rules"
-            >
-              <i className="fas fa-shield-alt text-emerald-400"></i>
-              <span>ToS &amp; Privacy</span>
-            </button>
-
-            <button
-              onClick={() => setActiveTab('notifications')}
-              className={`px-3 py-2 rounded-full text-xs font-semibold flex items-center gap-2 transition-all shadow-sm ${
-                activeTab === 'notifications'
-                  ? 'bg-sky-600 text-white shadow-[0_2px_12px_rgba(14,165,233,0.4)]'
-                  : 'bg-[#1a2236] hover:bg-[#232c45] border border-sky-500/40 text-sky-300 hover:text-white'
-              }`}
-              title="Configure Telegram push notifications & session cookies"
-            >
-              <i className="fab fa-telegram-plane text-[11px] text-sky-400"></i>
-              <span>Lead Alerts</span>
-            </button>
-
-            <button
-              onClick={() => setActiveTab('logs')}
-              className={`px-3 py-2 rounded-full text-xs font-semibold flex items-center gap-2 transition-all shadow-sm ${
-                activeTab === 'logs'
-                  ? 'bg-indigo-600 text-white shadow-[0_2px_12px_rgba(99,102,241,0.4)]'
-                  : 'bg-[#1a2236] hover:bg-[#232c45] border border-indigo-500/40 text-indigo-300 hover:text-white'
-              }`}
-              title="Inspect raw incoming webhooks and live API events"
-            >
-              <i className="fas fa-terminal text-[11px] text-indigo-400"></i>
-              <span>Activity Logs</span>
-            </button>
-
-            <button
-              onClick={() => setActiveTab('paypal')}
-              className="bg-gradient-to-r from-[#003087] to-[#0070ba] hover:opacity-90 text-white px-3 py-2 rounded-full text-xs font-semibold flex items-center gap-2 transition-all shadow-[0_2px_12px_rgba(0,112,186,0.35)]"
-              title="Open PayPal Payment Portal (USD)"
-            >
-              <i className="fab fa-paypal text-[#00cfe8]"></i>
-              <span>PayPal ($)</span>
-            </button>
-
-            <button
-              onClick={() => setActiveTab('remoteok')}
-              className="bg-gradient-to-r from-[#1e1730] to-[#2a1b40] hover:from-[#281e42] hover:to-[#382255] border border-purple-500/40 text-purple-300 px-3 py-2 rounded-full text-xs font-semibold flex items-center gap-2 transition-all shadow-sm"
-              title="Browse live Remote OK Stream (No API Key Required)"
-            >
-              <span className="w-2 h-2 rounded-full bg-[#ff4742] animate-pulse"></span>
-              <i className="fas fa-globe text-[11px] text-purple-400"></i>
-              <span>Remote OK</span>
-            </button>
-
-            <button
-              id="topbar-btn-settings-backup"
-              onClick={() => setIsCredentialsModalOpen(true)}
-              className="bg-[#1a2236] hover:bg-[#232c45] border border-[#2a3147] hover:border-emerald-500/50 text-[#9aa2bf] hover:text-white px-3 py-2 rounded-full text-xs font-semibold flex items-center gap-2 transition-all shadow-sm cursor-pointer"
-              title="View Platform Credentials, Webhook Architecture & Download JSON State Backup"
-            >
-              <i className="fas fa-sliders-h text-[11px] text-cyan-400"></i>
-              <span>Credentials &amp; Backup</span>
-            </button>
-
-            <button
-              id="topbar-btn-auto-deploy"
-              onClick={() => setIsAutoDeployModalOpen(true)}
-              className="bg-gradient-to-r from-cyan-600/30 to-blue-600/30 hover:from-cyan-600/50 hover:to-blue-600/50 border border-cyan-500/50 text-cyan-200 hover:text-white px-3 py-2 rounded-full text-xs font-semibold flex items-center gap-2 transition-all shadow-sm cursor-pointer"
-              title="Automated GitHub Actions deployment to EC2 & AWS Amplify on push to main"
-            >
-              <i className="fas fa-rocket text-[11px] text-cyan-400"></i>
-              <span>Auto-Deploy</span>
-              <span className="bg-cyan-500/20 text-cyan-300 text-[9px] px-1.5 py-0.2 rounded-full border border-cyan-500/30 font-mono">
-                EC2+Amplify
-              </span>
-            </button>
-
-            <button
-              id="topbar-btn-github-settings"
-              onClick={() => setIsGitHubSettingsOpen(true)}
-              className="bg-[#1a2236] hover:bg-[#232c45] border border-[#2a3147] hover:border-cyan-500/50 text-[#9aa2bf] hover:text-white px-3 py-2 rounded-full text-xs font-semibold flex items-center gap-2 transition-all shadow-sm cursor-pointer"
-              title="Configure GitHub SSH Keys, Remote Origin & Push/Pull Operations"
-            >
-              <i className="fab fa-github text-[12px] text-white"></i>
-              <span>GitHub SSH</span>
-            </button>
-
-            <button
-              onClick={syncRemoteOKJobs}
-              disabled={isSyncingRemoteOK}
-              className="bg-[#1e1730] hover:bg-[#281e42] border border-purple-500/40 text-purple-300 px-3 py-2 rounded-full text-xs font-semibold flex items-center gap-2 transition-all shadow-sm"
-              title="Fetch live jobs directly from RemoteOK API (/api/remoteok/jobs)"
-            >
-              <i className={`fas fa-sync-alt text-[11px] ${isSyncingRemoteOK ? 'animate-spin text-purple-300' : 'text-purple-400'}`}></i>
-              <span>{isSyncingRemoteOK ? 'Syncing...' : 'Sync Feed'}</span>
-            </button>
-
-            <div className="bg-[#161b2b] px-3.5 py-2 rounded-full border border-[#2a3147] flex items-center gap-2 text-sm font-semibold">
-              <i className="fas fa-dollar-sign text-[#2ecc71]"></i>
-              <span className="font-mono">${fmt(walletBalance)}</span>
-              <span className="text-[#9aa2bf] font-normal text-xs">USD</span>
-              <span className="text-slate-600 text-xs">|</span>
-              <span className="text-emerald-400 font-mono text-xs">₹{Math.round(walletBalance * USD_TO_INR_RATE).toLocaleString('en-IN')}</span>
-            </div>
-
-            <a
-              href={PRIMARY_PAYPAL_ME_URL}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="font-mono text-xs bg-[#11141f] hover:bg-[#1a2035] px-3 py-1.5 rounded-full border border-[#2a3147] hover:border-[#00cfe8]/50 text-[#00cfe8] flex items-center gap-1.5 transition-all"
-              title="Click to open PayPal.Me receiving portal (https://paypal.me/ky8402)"
-            >
-              <i className="fab fa-paypal text-[11px]"></i>
-              <span>paypal.me/{PRIMARY_PAYPAL_ME}</span>
-            </a>
-
-            <button
-              onClick={() => setActiveTab('bank')}
-              className="font-mono text-xs bg-[#11141f] hover:bg-[#1a2035] px-3 py-1.5 rounded-full border border-emerald-500/40 hover:border-emerald-400 text-emerald-400 flex items-center gap-1.5 transition-all"
-              title="Click to open Indian Bank & UPI portal"
-            >
-              <i className="fas fa-qrcode text-[11px]"></i>
-              <span>UPI: {PRIMARY_UPI_ID}</span>
-            </button>
-
-            {/* Auto-Pilot Toggle */}
-            <div className="flex items-center gap-2 bg-[#11141f] px-3 py-1.5 rounded-full border border-[#2a3147]">
-              <span className="text-xs text-[#9aa2bf] flex items-center gap-1.5">
-                <i className="fas fa-robot text-[#4f7cff]"></i> Auto-Pilot
-              </span>
-              <span className={`text-[10px] font-bold font-mono px-2 py-0.5 rounded-full ${
-                autopilot
-                  ? 'bg-emerald-500/20 text-[#2ecc71] border border-emerald-500/30'
-                  : 'bg-red-500/20 text-[#e74c3c] border border-red-500/30'
-              }`}>
-                {autopilot ? 'ON' : 'OFF'}
-              </span>
-              <button
-                onClick={toggleAutopilot}
-                className={`px-2.5 py-0.5 rounded-full text-xs font-semibold transition-all ${
-                  autopilot
-                    ? 'bg-[#e74c3c] hover:bg-[#c0392b] text-white shadow-[0_2px_8px_rgba(231,76,60,0.3)]'
-                    : 'bg-[#161b2b] hover:bg-[#1e2438] text-white border border-[#2a3147] hover:border-[#4f7cff]'
-                }`}
-              >
-                {autopilot ? 'Turn OFF' : 'Turn ON'}
-              </button>
-            </div>
-
-            {/* Watchdog Connectivity Status Pill */}
-            <div
-              className={`hidden md:flex items-center gap-1.5 px-3 py-1 rounded-full border text-[11px] font-mono transition-all ${
-                watchdogStatus === 'healthy'
-                  ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-300'
-                  : watchdogStatus === 'restarting'
-                  ? 'border-amber-500/40 bg-amber-500/20 text-amber-300 animate-pulse'
-                  : watchdogStatus === 'degraded'
-                  ? 'border-rose-500/30 bg-rose-500/10 text-rose-300'
-                  : 'border-slate-800 bg-slate-900/60 text-slate-400'
-              }`}
-              title={`Automated Watchdog: ${watchdogStatus}. Latency: ${watchdogLatencyMs ? `${watchdogLatencyMs}ms` : 'N/A'}. Timeouts: ${watchdogFailures}/3.`}
-            >
-              <span className={`w-1.5 h-1.5 rounded-full ${
-                watchdogStatus === 'healthy'
-                  ? 'bg-emerald-400'
-                  : watchdogStatus === 'restarting'
-                  ? 'bg-amber-400 animate-ping'
-                  : watchdogStatus === 'degraded'
-                  ? 'bg-rose-400'
-                  : 'bg-slate-400'
-              }`} />
-              <span className="font-semibold">Watchdog</span>
-              {watchdogStatus === 'restarting' && <span>(Restarting...)</span>}
-              {watchdogFailures > 0 && watchdogStatus !== 'restarting' && (
-                <span className="text-[10px] text-rose-400">({watchdogFailures}/3)</span>
-              )}
-              {watchdogLatencyMs !== null && watchdogStatus === 'healthy' && (
-                <span className="text-[10px] opacity-75">{watchdogLatencyMs}ms</span>
-              )}
-            </div>
-
-            <button
-              onClick={runOptimization}
-              className="bg-[#4f7cff] hover:bg-[#3d6bf0] text-white px-4 py-2 rounded-full text-xs font-semibold flex items-center gap-2 transition-all hover:shadow-[0_4px_16px_rgba(79,124,255,0.35)]"
-            >
-              <i className="fas fa-bolt"></i>
-              <span>Optimize</span>
-            </button>
-
-            <button
-              onClick={() => {
-                showToast('🔄 Dashboard metrics refreshed', 'info');
-              }}
-              className="bg-[#161b2b] hover:bg-[#1e2438] text-[#f0f3fa] p-2 rounded-full border border-[#2a3147] hover:border-[#4f7cff] transition-all"
-              title="Refresh"
-            >
-              <i className="fas fa-sync-alt text-xs"></i>
-            </button>
-          </div>
-        </div>
+        {/* Modern Executive Topbar */}
+        <AppTopbar
+          activeTab={activeTab}
+          walletBalance={walletBalance}
+          usdToInrRate={USD_TO_INR_RATE}
+          autopilot={autopilot}
+          onToggleAutopilot={() => {
+            const nextState = !autopilot;
+            setAutopilot(nextState);
+            showToast(`Autopilot ${nextState ? 'engaged' : 'paused'}`, nextState ? 'success' : 'info');
+          }}
+          watchdogStatus={watchdogStatus}
+          watchdogFailures={watchdogFailures}
+          watchdogLatencyMs={watchdogLatencyMs}
+          isBackendLoading={isBackendLoading}
+          onSyncTelemetry={async () => {
+            setIsBackendLoading(true);
+            try {
+              const [statsData, bidsData, leadsData] = await Promise.all([
+                fetchBackendStats(),
+                fetchBackendBids(50),
+                fetchBackendLeads(50)
+              ]);
+              if (statsData) setBackendStats(statsData);
+              if (bidsData) setBackendBids(bidsData);
+              if (leadsData) setBackendLeads(leadsData);
+              showToast('Synced latest backend telemetry', 'success');
+            } catch (err: any) {
+              showToast(`Sync notice: ${err.message}`, 'error');
+            } finally {
+              setIsBackendLoading(false);
+            }
+          }}
+          onOpenPayPalSettlement={() => setIsPayPalSettlementModalOpen(true)}
+          onOpenBackendModal={() => setIsBackendModalOpen(true)}
+          onOpenCredentialsModal={() => setIsCredentialsModalOpen(true)}
+          onOpenGitHubSettings={() => setIsGitHubSettingsOpen(true)}
+          onOpenAutoDeploy={() => setIsAutoDeployModalOpen(true)}
+          onOpenEmailVerification={() => setIsEmailVerificationOpen(true)}
+          onOpenPasswordReset={() => setIsPasswordResetOpen(true)}
+          onOpenPayPalConnect={() => setIsPayPalConnectOpen(true)}
+          onOpenLegal={(tab) => {
+            setLegalTab(tab);
+            setIsLegalModalOpen(true);
+          }}
+          isEmailVerified={isEmailVerified}
+          paypalMeUrl={PRIMARY_PAYPAL_ME_URL}
+          paypalMeHandle={PRIMARY_PAYPAL_ME}
+          upiId={PRIMARY_UPI_ID}
+          fmt={fmt}
+        />
 
         {/* Backend Unreachable & Watchdog Alert Banner */}
         {(backendError || watchdogFailures >= 2 || watchdogStatus === 'restarting') && (
@@ -2014,85 +1315,15 @@ export default function App() {
               className="mb-2"
             />
 
-            {/* Stats Grid - Populated from https://3-222-149-9.sslip.io/api/bids/stats */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
-              
-              {/* Stat 1: Total Placed Bids */}
-              <div id="stat-card-total-bids" className="bg-[#161b2b] rounded-2xl p-5 border border-[#2a3147] hover:border-[#4f7cff] transition-all hover:-translate-y-0.5 shadow-lg">
-                <div className="w-9 h-9 rounded-full bg-[rgba(79,124,255,0.2)] text-[#4f7cff] flex items-center justify-center text-sm mb-2">
-                  <i className="fas fa-paper-plane"></i>
-                </div>
-                <div className="text-xs uppercase tracking-wider text-[#5d6788] font-semibold">Total Dispatched</div>
-                <div id="total-bids" className="text-2xl font-bold font-mono mt-1.5 tracking-tight text-white">
-                  {backendStats?.total ?? 0}
-                </div>
-                <div className="text-xs text-[#9aa2bf] mt-1 flex items-center gap-1.5">
-                  <span className="text-[#4f7cff] flex items-center font-medium"><i className="fas fa-robot mr-1 text-[10px]"></i> Auto-Bid</span>
-                  <span>Freelancer.com</span>
-                </div>
-              </div>
-
-              {/* Stat 2: Active / In-Review Bids */}
-              <div id="stat-card-active-bids" className="bg-[#161b2b] rounded-2xl p-5 border border-[#2a3147] hover:border-[#f39c12] transition-all hover:-translate-y-0.5 shadow-lg">
-                <div className="w-9 h-9 rounded-full bg-[rgba(243,156,18,0.2)] text-[#f39c12] flex items-center justify-center text-sm mb-2">
-                  <i className="fas fa-clock"></i>
-                </div>
-                <div className="text-xs uppercase tracking-wider text-[#5d6788] font-semibold">Active In-Review</div>
-                <div id="active-bids" className="text-2xl font-bold font-mono mt-1.5 tracking-tight text-white">
-                  {backendStats?.active ?? 0}
-                </div>
-                <div className="text-xs text-[#9aa2bf] mt-1 flex items-center gap-1.5">
-                  <span className="text-[#f39c12] flex items-center font-medium"><i className="fas fa-hourglass-half mr-1 text-[10px]"></i> Live</span>
-                  <span>proposals pending</span>
-                </div>
-              </div>
-
-              {/* Stat 3: Won Contracts */}
-              <div id="stat-card-won-bids" className="bg-[#161b2b] rounded-2xl p-5 border border-[#2a3147] hover:border-[#2ecc71] transition-all hover:-translate-y-0.5 shadow-lg">
-                <div className="w-9 h-9 rounded-full bg-[rgba(46,204,113,0.2)] text-[#2ecc71] flex items-center justify-center text-sm mb-2">
-                  <i className="fas fa-trophy"></i>
-                </div>
-                <div className="text-xs uppercase tracking-wider text-[#5d6788] font-semibold">Won Contracts</div>
-                <div id="won-bids" className="text-2xl font-bold font-mono mt-1.5 tracking-tight text-white">
-                  {backendStats?.won ?? 0}
-                </div>
-                <div className="text-xs text-[#9aa2bf] mt-1 flex items-center gap-1.5">
-                  <span className="text-[#2ecc71] flex items-center font-medium"><i className="fas fa-arrow-up mr-1 text-[10px]"></i> +{backendStats?.won ?? 0}</span>
-                  <span>verified awards</span>
-                </div>
-              </div>
-
-              {/* Stat 4: Total Earned USD */}
-              <div id="stat-card-earned" className="bg-[#161b2b] rounded-2xl p-5 border border-[#2a3147] hover:border-[#2ecc71] transition-all hover:-translate-y-0.5 shadow-lg">
-                <div className="w-9 h-9 rounded-full bg-[rgba(46,204,113,0.2)] text-[#2ecc71] flex items-center justify-center text-sm mb-2">
-                  <i className="fas fa-dollar-sign"></i>
-                </div>
-                <div className="text-xs uppercase tracking-wider text-[#5d6788] font-semibold">Revenue Earned</div>
-                <div id="earned" className="text-2xl font-bold font-mono mt-1.5 tracking-tight text-white">
-                  ${fmt(backendStats?.earned ?? todayEarnings)} <span className="text-xs font-normal text-[#9aa2bf]">USD</span>
-                </div>
-                <div className="text-xs text-[#9aa2bf] mt-1 flex items-center gap-1.5">
-                  <span className="text-[#2ecc71] flex items-center font-medium"><i className="fas fa-check-double mr-1 text-[10px]"></i> Net Payout</span>
-                  <span>Settled via PayPal</span>
-                </div>
-              </div>
-
-              {/* Stat 5: Win Conversion Rate */}
-              <div id="stat-card-win-rate" className="bg-[#161b2b] rounded-2xl p-5 border border-[#2a3147] hover:border-[#a855f7] transition-all hover:-translate-y-0.5 shadow-lg">
-                <div className="w-9 h-9 rounded-full bg-[rgba(168,85,247,0.2)] text-[#a855f7] flex items-center justify-center text-sm mb-2">
-                  <i className="fas fa-percentage"></i>
-                </div>
-                <div className="text-xs uppercase tracking-wider text-[#5d6788] font-semibold">Win Conversion</div>
-                <div id="win-rate" className="text-2xl font-bold font-mono mt-1.5 tracking-tight text-white">
-                  {backendStats?.win_rate ?? 0}%
-                </div>
-                <div className="text-xs text-[#9aa2bf] mt-1 flex items-center gap-1.5">
-                  <span className="text-[#a855f7] flex items-center font-medium"><i className="fas fa-chart-line mr-1 text-[10px]"></i> Real Rate</span>
-                  <span>Telemetry benchmark</span>
-                </div>
-              </div>
-
-            </div>
+            {/* Executive KPI Metrics Grid */}
+            <DashboardMetricsCards
+              totalBids={backendStats?.total ?? 0}
+              activeBids={backendStats?.active ?? 0}
+              wonBids={backendStats?.won ?? 0}
+              earnedAmount={backendStats?.earned ?? todayEarnings}
+              winRate={backendStats?.win_rate ?? 0}
+              fmt={fmt}
+            />
 
             {/* Chart.js Package Distribution Telemetry Bar Chart */}
             <div id="package-distribution-section" className="bg-[#111726] rounded-2xl border border-[#1e293b] p-5 shadow-xl">
@@ -2495,11 +1726,12 @@ export default function App() {
                       </div>
 
                       <button
-                        onClick={() => withdrawToPayPal(parseFloat(payoutAmount))}
+                        onClick={() => setIsPayPalSettlementModalOpen(true)}
                         className="bg-gradient-to-r from-[#003087] to-[#0070ba] hover:opacity-90 text-white px-4 py-2 rounded-full text-xs font-bold transition-all flex items-center gap-1.5 shrink-0 shadow-sm"
+                        title="Open PayPal Live Settlement & Invoicing Center"
                       >
                         <i className="fab fa-paypal text-[11px] text-[#00cfe8]"></i>
-                        <span>Withdraw PayPal</span>
+                        <span>PayPal Settlement Hub</span>
                       </button>
                     </div>
                   </div>
@@ -2576,7 +1808,16 @@ export default function App() {
                   <i className="fas fa-receipt text-[#4f7cff]"></i>
                   Recent Transactions &amp; Payouts
                 </h3>
-                <span className="text-xs text-[#5d6788]">Real-time escrow &amp; PayPal logs</span>
+                <div className="flex items-center gap-3">
+                  <span className="text-xs text-[#5d6788] hidden sm:inline">Live reporting ledger</span>
+                  <button
+                    onClick={() => setIsPayPalSettlementModalOpen(true)}
+                    className="text-[11px] text-[#00cfe8] hover:underline flex items-center gap-1 font-mono"
+                  >
+                    <i className="fas fa-external-link-alt text-[9px]"></i>
+                    <span>Settlement Center</span>
+                  </button>
+                </div>
               </div>
 
               <div className="space-y-2 max-h-[260px] overflow-y-auto">
@@ -2951,6 +2192,15 @@ export default function App() {
           </div>
         </div>
       )}
+
+      {/* ===== PAYPAL REVENUE & SETTLEMENT CENTER MODAL ===== */}
+      <PayPalSettlementModal
+        isOpen={isPayPalSettlementModalOpen}
+        onClose={() => setIsPayPalSettlementModalOpen(false)}
+        walletBalance={walletBalance}
+        todayEarnings={todayEarnings}
+        showToast={showToast}
+      />
 
       {/* ===== AI PROPOSAL STUDIO MODAL (GEMINI 3.7 FLASH) ===== */}
       <Suspense fallback={null}>

@@ -764,7 +764,7 @@ export const GitHubSettingsModal: React.FC<GitHubSettingsModalProps> = ({
                       Host: 3.222.149.9 (i-02f24350d31f5aa51)
                     </div>
                     <a
-                      href="http://3.222.149.9:3000/api/health"
+                      href="https://3-222-149-9.sslip.io/api/health"
                       target="_blank"
                       rel="noreferrer"
                       className="text-[10px] text-emerald-400 hover:text-emerald-300 flex items-center gap-1 mt-1"

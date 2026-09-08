@@ -85,7 +85,7 @@ export async function getPayPalSdkV6Instance(config?: PayPalSdkV6Config): Promis
       });
     }
 
-    const clientId = config?.clientId || 'ActZcBABekzSaq6kvVL_s3ITIvcc0RsjabBGCmNCJZE0LanSUtxLwOBQjWz8y2_dNhsISLSXOYaz4Ls3';
+    const clientId = config?.clientId || 'BAAv8rRenc5jlfD6eH_8pvgcU250jXTZCnyPKdBby13EAYRKhCempoPQ3Hj41GEfe2qBMu1P8ZslnbdkIc';
 
     try {
       if (window.paypal && typeof window.paypal.createInstance === 'function') {

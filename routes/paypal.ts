@@ -6,7 +6,10 @@ import {
   capturePayPalOrder,
   createPayPalPayout,
   isPayPalConfigured,
-  getPayPalAccessToken
+  getPayPalAccessToken,
+  getPayPalLiveBalance,
+  getPayPalLiveTransactions,
+  createLivePayPalInvoice
 } from '../server/paypal.js';
 import { logActivityEvent } from '../server/activityLogger.js';
 import { prisma, initializeWorkOrderFromPayPal } from '../server/db.js';
@@ -109,6 +112,75 @@ router.get('/status', async (req, res) => {
       }
     });
   } catch (err: any) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+/**
+ * GET /api/paypal/balance
+ * Check Real-Time PayPal Account Balance, Account ID, and Indian Bank Settlement status
+ */
+router.get('/balance', async (req, res) => {
+  try {
+    const bal = await getPayPalLiveBalance();
+    res.json(bal);
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+/**
+ * GET /api/paypal/live-transactions
+ * Fetch real transaction ledger from PayPal Reporting API
+ */
+router.get('/live-transactions', async (req, res) => {
+  try {
+    const days = parseInt(String(req.query.days || '30'), 10);
+    const tx = await getPayPalLiveTransactions(isNaN(days) ? 30 : days);
+    res.json(tx);
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: err.message, transactions: [] });
+  }
+});
+
+/**
+ * POST /api/paypal/create-invoice
+ * Generate an official PayPal Invoicing v2 invoice with shareable payer-view link
+ */
+router.post('/create-invoice', async (req, res) => {
+  try {
+    const { amount, currency, clientName, clientEmail, title, description, note } = req.body;
+    const numericAmount = Number(amount);
+
+    if (isNaN(numericAmount) || numericAmount <= 0) {
+      return res.status(400).json({ success: false, error: 'Valid positive amount is required' });
+    }
+
+    const invoice = await createLivePayPalInvoice({
+      amount: numericAmount,
+      currency: currency || 'USD',
+      clientName: clientName || 'Client',
+      clientEmail: clientEmail || 'client@example.com',
+      title: title || 'Engineering Deliverable Milestone',
+      description,
+      note
+    });
+
+    logActivityEvent({
+      source: 'PayPal',
+      type: 'PAYMENT_RECEIVED',
+      status: 'info',
+      method: 'POST',
+      endpoint: '/api/paypal/create-invoice',
+      statusCode: 200,
+      summary: `Created official PayPal Invoice #${invoice.invoiceNumber} for $${numericAmount.toFixed(2)} USD`,
+      responsePayload: invoice,
+      tags: ['paypal', 'invoicing', 'invoice_created']
+    });
+
+    res.json(invoice);
+  } catch (err: any) {
+    console.error('PayPal create-invoice error:', err);
     res.status(500).json({ success: false, error: err.message });
   }
 });
@@ -240,16 +312,34 @@ router.post('/orders/:orderId/capture', handleCaptureOrder);
 
 /**
  * GET /api/paypal/transactions
- * Fetch recent PayPal transactions and completed work orders
+ * Fetch recent PayPal transactions from PayPal Reporting API combined with local work orders
  */
 router.get('/transactions', async (req, res) => {
   try {
+    // 1. Fetch real ledger from PayPal Live Reporting API
+    const liveReport = await getPayPalLiveTransactions(30).catch(() => ({ transactions: [] }));
+    const liveTxList = (liveReport?.transactions || []).map((t: any) => ({
+      id: t.id,
+      orderId: t.paypalTransactionId || t.id,
+      amount: t.amount,
+      currency: t.currency || 'USD',
+      status: 'completed',
+      payerName: t.payerName,
+      payerEmail: t.payerEmail,
+      date: t.date,
+      description: t.description,
+      paymentSource: 'paypal_live_rest',
+      isLiveRest: true,
+      type: t.type
+    }));
+
+    // 2. Fetch local database records
     const workOrders = await prisma.workOrder.findMany({
       orderBy: { createdAt: 'desc' },
       take: 50
     }).catch(() => []);
 
-    const transactions = workOrders.map((wo: any) => ({
+    const dbTransactions = workOrders.map((wo: any) => ({
       id: wo.id,
       orderId: wo.paypalOrderId || `ORD-${wo.id}`,
       amount: wo.totalAmount || 0,
@@ -259,12 +349,21 @@ router.get('/transactions', async (req, res) => {
       payerEmail: wo.clientEmail || 'client@example.com',
       date: wo.createdAt ? new Date(wo.createdAt).toISOString() : new Date().toISOString(),
       description: wo.title || 'Freelance Milestone',
-      paymentSource: 'paypal_wallet'
+      paymentSource: 'local_work_order',
+      isLiveRest: false,
+      type: 'credit'
     }));
+
+    // Combine and sort by date descending
+    const combined = [...liveTxList, ...dbTransactions].sort((a, b) => {
+      return new Date(b.date).getTime() - new Date(a.date).getTime();
+    });
 
     res.json({
       success: true,
-      transactions
+      transactions: combined,
+      liveCount: liveTxList.length,
+      dbCount: dbTransactions.length
     });
   } catch (err: any) {
     res.status(500).json({ success: false, error: err.message, transactions: [] });
