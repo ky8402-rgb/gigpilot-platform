@@ -19,31 +19,66 @@ export const LeadsTable: React.FC<LeadsTableProps> = ({ onSelectLead, externalRe
     setLoading(true);
     setError(null);
     try {
-      const primaryUrl = `${BACKEND_BASE_URL || DEFAULT_PRODUCTION_BACKEND_URL}/api/leads?limit=20`;
-      let response: Response;
-      try {
-        response = await fetch(primaryUrl);
-      } catch (_netErr) {
-        response = await fetch(`${DEFAULT_PRODUCTION_BACKEND_URL}/api/leads?limit=20`);
-      }
-      
-      const isJson = response.headers.get('content-type')?.includes('application/json');
-      if (!response.ok || !isJson) {
-        response = await fetch(`${DEFAULT_PRODUCTION_BACKEND_URL}/api/leads?limit=20`);
-      }
+      const primaryBase = BACKEND_BASE_URL || DEFAULT_PRODUCTION_BACKEND_URL;
+      const [leadsRes, flRes] = await Promise.allSettled([
+        (async () => {
+          const endpoints = [
+            `${primaryBase}/api/leads?limit=20`,
+            `${DEFAULT_PRODUCTION_BACKEND_URL}/api/leads?limit=20`,
+            `/api/leads?limit=20`
+          ];
+          for (const ep of endpoints) {
+            try {
+              const res = await fetch(ep);
+              if (res.ok && (res.headers.get('content-type') || '').includes('json')) {
+                const data = await res.json();
+                const list = Array.isArray(data) ? data : (data.leads || []);
+                if (list.length > 0) return list;
+              }
+            } catch (_) {}
+          }
+          return [];
+        })(),
+        (async () => {
+          const endpoints = [
+            `${primaryBase}/api/freelancer/live-feed?limit=10`,
+            `${DEFAULT_PRODUCTION_BACKEND_URL}/api/freelancer/live-feed?limit=10`,
+            `/api/freelancer/live-feed?limit=10`
+          ];
+          for (const ep of endpoints) {
+            try {
+              const res = await fetch(ep);
+              if (res.ok && (res.headers.get('content-type') || '').includes('json')) {
+                const data = await res.json();
+                const projects = Array.isArray(data.projects) ? data.projects : [];
+                if (projects.length > 0) {
+                  return projects.map((p: any) => ({
+                    id: `fl_${p.id}`,
+                    job_title: p.title,
+                    title: p.title,
+                    company: 'Verified Freelancer Client',
+                    source: 'Freelancer',
+                    matched_package: 'fullstack',
+                    package: 'fullstack',
+                    similarity_score: 0.95,
+                    url: p.url || (p.seo_url ? `https://www.freelancer.com/projects/${p.seo_url}` : `https://www.freelancer.com/projects/${p.id}`),
+                    job_url: p.url || (p.seo_url ? `https://www.freelancer.com/projects/${p.seo_url}` : `https://www.freelancer.com/projects/${p.id}`),
+                    description: p.description || 'Live Freelancer.com project opportunity.',
+                    created_at: p.timeSubmitted || new Date().toISOString(),
+                    found_at: p.timeSubmitted || new Date().toISOString(),
+                  }));
+                }
+              }
+            } catch (_) {}
+          }
+          return [];
+        })()
+      ]);
 
-      if (!response.ok) {
-        throw new Error(`HTTP error ${response.status}: Failed to fetch leads`);
-      }
-
-      const contentType = response.headers.get('content-type') || '';
-      if (!contentType.includes('application/json')) {
-        throw new Error('Backend synchronizing with AWS EC2 (https://3-222-149-9.sslip.io)');
-      }
-
-      const data = await response.json();
-      const rawList = Array.isArray(data) ? data : (data.leads || []);
-      setLeads(rawList);
+      const mainLeads: BackendLeadItem[] = leadsRes.status === 'fulfilled' ? leadsRes.value : [];
+      const flLeads: BackendLeadItem[] = flRes.status === 'fulfilled' ? flRes.value : [];
+      const mergedList = [...flLeads, ...mainLeads];
+      setLeads(mergedList);
       setLastUpdated(new Date());
       setSecondsUntilRefresh(60);
     } catch (err: any) {

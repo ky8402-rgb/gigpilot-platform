@@ -368,8 +368,8 @@ app.use("/api/godaddy", godaddyRoutes);
 // 15. Cloudflare Automated DNS Management & Migration Engine
 app.use("/api/cloudflare", cloudflareRoutes);
 
-// Compatibility aliases for /api/bids, /api/bids/stats, and /api/leads list
-app.use("/api/bids", freelancerBidsRoutes);
+// Compatibility aliases for /api/bids, /api/Bid (Prisma model case), /api/Bids, and /api/leads list
+app.use(["/api/bids", "/api/Bid", "/api/Bids"], freelancerBidsRoutes);
 
 // Public /api/leads listing endpoint for dashboard leads table with 60s Redis/memory caching
 app.get("/api/leads", apiCacheMiddleware(60), async (req, res) => {

@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
-import { BackendBidItem, BACKEND_BASE_URL, DEFAULT_PRODUCTION_BACKEND_URL, withdrawOnFreelancer, updateBidStatus, generateAIProposalBackend } from '../services/api';
+import { BackendBidItem, BACKEND_BASE_URL, DEFAULT_PRODUCTION_BACKEND_URL, withdrawOnFreelancer, updateBidStatus, generateAIProposalBackend, normalizeBidItem } from '../services/api';
 import { formatPackageName } from './PackageChart';
 
 // Conditional logic handler for withdraw destination target URL and styling
@@ -256,19 +256,19 @@ const BidRowItem = React.memo<BidRowItemProps>(({
   onGenerateAIPitch,
 }) => {
   const bidId = String(bid.id || `bid-${index}`);
-  const title = bid.job_title || 'Freelance Proposal';
-  const company = bid.company || bid.client_name || 'Verified Client';
+  const title = bid.jobTitle || bid.job_title || bid.title || 'Freelance Proposal';
+  const company = bid.clientName || bid.company || bid.client_name || 'Verified Client';
   const pkg = formatPackageName(bid.package);
-  const amount = Number(bid.bid_amount || 0);
+  const amount = Number(bid.amount ?? bid.bidAmount ?? bid.bid_amount ?? 0);
   const isWon = ['won', 'awarded', 'accepted'].includes((bid.status || '').toLowerCase());
 
   const currentWorkStatus = savedTrack.work_status || (isWon ? 'In Progress' : 'Not Started');
   const currentNotes = savedTrack.notes || '';
-  const jobUrl = bid.job_url || (bid.id ? `https://freelancer.com/projects/${bid.id}` : '#');
+  const jobUrl = bid.jobUrl || bid.job_url || (bid.id ? `https://freelancer.com/projects/${bid.id}` : '#');
 
   let currentDeadline = savedTrack.deadline ?? (bid.deadline || (bid as any).deadline);
   if (!currentDeadline && currentWorkStatus === 'In Progress') {
-    const startStr = savedTrack.startedAt || savedTrack.started_at || bid.startedAt || (bid as any).started_at || bid.submitted_at;
+    const startStr = savedTrack.startedAt || savedTrack.started_at || bid.startedAt || (bid as any).started_at || bid.submittedAt || bid.submitted_at || bid.createdAt || (bid as any).created_at;
     const startMs = startStr ? new Date(startStr).getTime() : Date.now();
     const days = savedTrack.estimatedDays ?? (bid.estimatedDays || (bid as any).estimated_days || 7);
     currentDeadline = new Date(startMs + days * 24 * 60 * 60 * 1000).toISOString();
@@ -494,51 +494,37 @@ export const BidsTable: React.FC<BidsTableProps> = ({
     setLoading(true);
     setError(null);
     try {
-      let response = await fetch(`${BACKEND_BASE_URL}/api/bids?limit=100`);
-      if (!response.ok && response.status === 404) {
-        response = await fetch(`/api/bids?limit=100`);
+      const candidateEndpoints = [
+        `${BACKEND_BASE_URL}/api/Bid?limit=100`,
+        `${BACKEND_BASE_URL}/api/bids?limit=100`,
+        `${DEFAULT_PRODUCTION_BACKEND_URL}/api/Bid?limit=100`,
+        `${DEFAULT_PRODUCTION_BACKEND_URL}/api/bids?limit=100`,
+        `/api/Bid?limit=100`,
+        `/api/bids?limit=100`,
+        `/api/freelancer/bids?limit=100`
+      ];
+
+      for (const ep of candidateEndpoints) {
+        try {
+          const response = await fetch(ep);
+          if (!response.ok) continue;
+          const contentType = response.headers.get('content-type') || '';
+          if (!contentType.includes('application/json')) continue;
+          const data = await response.json();
+          const rawList: any[] = Array.isArray(data) ? data : (data.bids || []);
+          if (rawList.length > 0) {
+            const normalizedList: BackendBidItem[] = rawList.map((b) => normalizeBidItem(b));
+            setBids(normalizedList);
+            setLastUpdated(new Date());
+            if (onBidsLoadedRef.current) onBidsLoadedRef.current(normalizedList);
+            setLoading(false);
+            return;
+          }
+        } catch (_) {}
       }
-      if (!response.ok) {
-        throw new Error(`HTTP ${response.status}: Failed to fetch bids from ${BACKEND_BASE_URL}`);
-      }
-      const data = await response.json();
-      const rawList: BackendBidItem[] = Array.isArray(data) ? data : (data.bids || []);
-      setBids(rawList);
-      setLastUpdated(new Date());
-      if (onBidsLoadedRef.current) onBidsLoadedRef.current(rawList);
+      setBids([]);
     } catch (err: any) {
-      console.warn('[BidsTable] Backend fetch failed, trying fallback:', err);
-      // Resilient fallback to canonical AWS EC2 backend if primary endpoint fails (or if static host)
-      try {
-        const fallbackRes = await fetch(`${DEFAULT_PRODUCTION_BACKEND_URL}/api/bids?limit=100`);
-        if (fallbackRes.ok) {
-          const fbData = await fallbackRes.json();
-          const list: BackendBidItem[] = Array.isArray(fbData) ? fbData : (fbData.bids || []);
-          if (list.length > 0) {
-            setBids(list);
-            setLastUpdated(new Date());
-            if (onBidsLoadedRef.current) onBidsLoadedRef.current(list);
-            setLoading(false);
-            return;
-          }
-        }
-      } catch (fbErr) {
-        console.warn('[BidsTable] Fallback fetch failed:', fbErr);
-      }
-      try {
-        const localRes = await fetch(`/api/freelancer/bids?limit=100`);
-        if (localRes.ok) {
-          const localData = await localRes.json();
-          const list: BackendBidItem[] = Array.isArray(localData) ? localData : (localData.bids || []);
-          if (list.length > 0) {
-            setBids(list);
-            setLastUpdated(new Date());
-            if (onBidsLoadedRef.current) onBidsLoadedRef.current(list);
-            setLoading(false);
-            return;
-          }
-        }
-      } catch {}
+      console.warn('[BidsTable] Backend fetch notice:', err);
       setError(err?.message || 'Failed to load bids. Backend may be starting up.');
     } finally {
       setLoading(false);

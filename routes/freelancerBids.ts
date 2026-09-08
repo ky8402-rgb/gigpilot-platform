@@ -8,6 +8,7 @@ import {
   getFreelancerRequestHeaders
 } from '../server/freelancerService';
 import { prisma } from '../server/db';
+import { safeExecutePgQuery } from '../server/pgDatabase';
 import { getCache, setCache, clearBidsCache } from '../server/redisCache';
 
 const router = express.Router();
@@ -49,16 +50,26 @@ function saveBidTracking(data: Record<string, BidTrackingData>) {
 interface BidRecord {
   id: string;
   job_title: string;
+  jobTitle?: string;
+  title?: string;
   company: string;
   platform: string;
   package: string;
   bid_amount: number;
+  bidAmount?: number;
+  amount?: number;
   cover_letter: string;
   status: string;
   client_name: string;
+  clientName?: string;
   job_url: string;
+  jobUrl?: string;
   submitted_at: string;
+  submittedAt?: string;
+  created_at?: string;
+  createdAt?: string;
   updated_at: string;
+  updatedAt?: string;
   workStatus?: string;
   work_status?: string;
   startedAt?: string | null;
@@ -218,30 +229,107 @@ async function readBidsFromDb(): Promise<BidRecord[]> {
       });
 
       if (Array.isArray(prismaBids) && prismaBids.length > 0) {
-        const mapped: BidRecord[] = prismaBids.map((b: any) => ({
-          id: b.id,
-          job_title: b.jobTitle || 'Freelance Project',
-          company: b.company || b.clientName || 'Client Org',
-          client_name: b.clientName || b.company || 'Client',
-          platform: b.platform || 'Freelancer',
-          package: b.package || 'Full-Stack Engineering',
-          bid_amount: Number(b.amount) || 499,
-          status: b.status || 'pending',
-          cover_letter: b.notes || 'High-performance engineering deliverable.',
-          job_url: b.jobUrl || (b.id ? `https://freelancer.com/projects/${b.id}` : '#'),
-          submitted_at: b.submittedAt ? new Date(b.submittedAt).toISOString() : new Date().toISOString(),
-          updated_at: b.updatedAt ? new Date(b.updatedAt).toISOString() : new Date().toISOString(),
-          workStatus: b.workStatus || 'Not Started',
-          startedAt: b.startedAt ? new Date(b.startedAt).toISOString() : null,
-          estimatedDays: b.estimatedDays || 7,
-          deadline: b.deadline ? new Date(b.deadline).toISOString() : null,
-          notes: b.notes || '',
-        }));
+        const mapped: BidRecord[] = prismaBids.map((b: any) => {
+          const createdIso = b.createdAt ? new Date(b.createdAt).toISOString() : (b.submittedAt ? new Date(b.submittedAt).toISOString() : new Date().toISOString());
+          const submittedIso = b.submittedAt ? new Date(b.submittedAt).toISOString() : createdIso;
+          const updatedIso = b.updatedAt ? new Date(b.updatedAt).toISOString() : createdIso;
+          const amountNum = Number(b.amount) || 499;
+          const titleStr = b.jobTitle || 'Freelance Project';
+          const companyStr = b.company || b.clientName || 'Client Org';
+          const clientStr = b.clientName || b.company || 'Client';
+          const jobUrlStr = b.jobUrl || (b.id ? `https://freelancer.com/projects/${b.id}` : '#');
+
+          return {
+            id: b.id,
+            job_title: titleStr,
+            jobTitle: titleStr,
+            title: titleStr,
+            company: companyStr,
+            client_name: clientStr,
+            clientName: clientStr,
+            platform: b.platform || 'Freelancer',
+            package: b.package || 'Full-Stack Engineering',
+            bid_amount: amountNum,
+            bidAmount: amountNum,
+            amount: amountNum,
+            status: b.status || 'pending',
+            cover_letter: b.notes || 'High-performance engineering deliverable.',
+            job_url: jobUrlStr,
+            jobUrl: jobUrlStr,
+            submitted_at: submittedIso,
+            submittedAt: submittedIso,
+            created_at: createdIso,
+            createdAt: createdIso,
+            updated_at: updatedIso,
+            updatedAt: updatedIso,
+            workStatus: b.workStatus || 'Not Started',
+            work_status: b.workStatus || 'Not Started',
+            startedAt: b.startedAt ? new Date(b.startedAt).toISOString() : null,
+            started_at: b.startedAt ? new Date(b.startedAt).toISOString() : null,
+            estimatedDays: b.estimatedDays || 7,
+            estimated_days: b.estimatedDays || 7,
+            deadline: b.deadline ? new Date(b.deadline).toISOString() : null,
+            notes: b.notes || '',
+          };
+        });
         return enrichBids(mapped);
       }
     }
   } catch (err: any) {
     console.warn('[FreelancerBids] Prisma query notice:', err.message);
+  }
+
+  // 2. Direct PostgreSQL fallback if Prisma client is not fully initialized or schema cache is stale
+  try {
+    const pgRes = await safeExecutePgQuery('SELECT * FROM "Bid" ORDER BY "createdAt" DESC LIMIT 100');
+    if (pgRes && Array.isArray(pgRes.rows) && pgRes.rows.length > 0) {
+      const mapped: BidRecord[] = pgRes.rows.map((b: any) => {
+        const createdIso = b.createdAt ? new Date(b.createdAt).toISOString() : (b.submittedAt ? new Date(b.submittedAt).toISOString() : new Date().toISOString());
+        const submittedIso = b.submittedAt ? new Date(b.submittedAt).toISOString() : createdIso;
+        const updatedIso = b.updatedAt ? new Date(b.updatedAt).toISOString() : createdIso;
+        const amountNum = Number(b.amount) || 499;
+        const titleStr = b.jobTitle || 'Freelance Project';
+        const companyStr = b.company || b.clientName || 'Client Org';
+        const clientStr = b.clientName || b.company || 'Client';
+        const jobUrlStr = b.jobUrl || (b.id ? `https://freelancer.com/projects/${b.id}` : '#');
+
+        return {
+          id: b.id,
+          job_title: titleStr,
+          jobTitle: titleStr,
+          title: titleStr,
+          company: companyStr,
+          client_name: clientStr,
+          clientName: clientStr,
+          platform: b.platform || 'Freelancer',
+          package: b.package || 'Full-Stack Engineering',
+          bid_amount: amountNum,
+          bidAmount: amountNum,
+          amount: amountNum,
+          status: b.status || 'pending',
+          cover_letter: b.notes || 'High-performance engineering deliverable.',
+          job_url: jobUrlStr,
+          jobUrl: jobUrlStr,
+          submitted_at: submittedIso,
+          submittedAt: submittedIso,
+          created_at: createdIso,
+          createdAt: createdIso,
+          updated_at: updatedIso,
+          updatedAt: updatedIso,
+          workStatus: b.workStatus || 'Not Started',
+          work_status: b.workStatus || 'Not Started',
+          startedAt: b.startedAt ? new Date(b.startedAt).toISOString() : null,
+          started_at: b.startedAt ? new Date(b.startedAt).toISOString() : null,
+          estimatedDays: b.estimatedDays || 7,
+          estimated_days: b.estimatedDays || 7,
+          deadline: b.deadline ? new Date(b.deadline).toISOString() : null,
+          notes: b.notes || '',
+        };
+      });
+      return enrichBids(mapped);
+    }
+  } catch (pgErr: any) {
+    console.warn('[FreelancerBids] PostgreSQL direct query notice:', pgErr.message);
   }
 
   return new Promise((resolve) => {
@@ -394,8 +482,8 @@ router.patch(['/:id/status', '/:id', '/status/:id'], handleBidStatusUpdate);
 router.put(['/:id/status', '/:id', '/status/:id'], handleBidStatusUpdate);
 router.post(['/:id/status', '/status/:id'], handleBidStatusUpdate);
 
-// GET /api/freelancer/stats (Cached with Redis/Memory 60s TTL)
-router.get('/stats', async (_req, res) => {
+// GET /api/freelancer/stats or /api/bids/stats or /api/Bid/stats (Cached with Redis/Memory 60s TTL)
+router.get(['/stats', '/bids/stats', '/Bid/stats', '/Bids/stats'], async (_req, res) => {
   try {
     const cachedStats = await getCache('bids:stats');
     if (cachedStats) {
@@ -455,8 +543,8 @@ router.get('/stats', async (_req, res) => {
   }
 });
 
-// GET /api/bids or /api/freelancer/bids (Cached with Redis/Memory 60s TTL)
-router.get(['/', '/bids'], async (req, res) => {
+// GET /api/bids or /api/Bid or /api/freelancer/bids (Cached with Redis/Memory 60s TTL)
+router.get(['/', '/bids', '/Bid', '/Bids'], async (req, res) => {
   try {
     const limit = Math.min(Number(req.query.limit) || 50, 100);
     const cacheKey = `bids:list:limit_${limit}:${req.query.format || 'standard'}`;

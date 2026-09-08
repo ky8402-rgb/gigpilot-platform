@@ -49,41 +49,55 @@ export const API_BASE_URL = getDashboardApiUrl();
 
 // Fetch dashboard statistics
 export async function fetchStats() {
-    try {
-        const response = await fetch(`${API_BASE_URL}/api/bids/stats`);
-        if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
-        const contentType = (response.headers.get('content-type') || '').toLowerCase();
-        if (!contentType.includes('application/json')) {
-            throw new Error('Unexpected response format. Expected JSON.');
-        }
-        const data = await response.json();
-        updateStatsUI(data);
-        return data;
-    } catch (error: any) {
-        console.error('Error fetching stats:', error);
-        showError('stats', 'Connecting to live EC2 backend service...');
-        return null;
+    const endpoints = [
+        `${API_BASE_URL}/api/Bid/stats`,
+        `${API_BASE_URL}/api/bids/stats`,
+        `${API_BASE_URL}/api/freelancer/stats`
+    ];
+
+    for (const url of endpoints) {
+        try {
+            const response = await fetch(url);
+            if (!response.ok) continue;
+            const contentType = (response.headers.get('content-type') || '').toLowerCase();
+            if (!contentType.includes('application/json')) continue;
+            const data = await response.json();
+            updateStatsUI(data);
+            return data;
+        } catch (_) {}
     }
+
+    showError('stats', 'Connecting to live EC2 backend service...');
+    return null;
 }
 
-// Fetch recent bids
+// Fetch recent bids with /api/Bid (Prisma) and /api/bids fallbacks
 export async function fetchBids(limit = 50) {
-    try {
-        const response = await fetch(`${API_BASE_URL}/api/bids?limit=${limit}`);
-        if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
-        const contentType = (response.headers.get('content-type') || '').toLowerCase();
-        if (!contentType.includes('application/json')) {
-            throw new Error('Unexpected response format. Expected JSON.');
-        }
-        const data = await response.json();
-        updateBidsTable(data);
-        return data;
-    } catch (error: any) {
-        console.error('Error fetching bids:', error);
-        showError('bids', 'Connecting to live EC2 backend service...');
-        return [];
+    const endpoints = [
+        `${API_BASE_URL}/api/Bid?limit=${limit}`,
+        `${API_BASE_URL}/api/bids?limit=${limit}`,
+        `${API_BASE_URL}/api/freelancer/bids?limit=${limit}`
+    ];
+
+    for (const url of endpoints) {
+        try {
+            const response = await fetch(url);
+            if (!response.ok) continue;
+            const contentType = (response.headers.get('content-type') || '').toLowerCase();
+            if (!contentType.includes('application/json')) continue;
+            const data = await response.json();
+            updateBidsTable(data);
+            return data;
+        } catch (_) {}
     }
+
+    showError('bids', 'Connecting to live EC2 backend service...');
+    return [];
 }
+
+// Aliases for dashboard compatibility
+export const getRecentBids = fetchBids;
+export const fetchDashboardBids = fetchBids;
 
 // Fetch leads (from RemoteOK and other sources)
 export async function fetchLeads(limit = 20) {
@@ -153,21 +167,31 @@ export function updateBidsTable(bidsData: any) {
         return;
     }
 
-    tableBody.innerHTML = bids.map((bid: any) => `
+    tableBody.innerHTML = bids.map((bid: any) => {
+        const title = bid.jobTitle || bid.job_title || bid.title || 'Freelance Project';
+        const client = bid.clientName || bid.company || bid.client_name || '—';
+        const pkg = formatPackageName(bid.package);
+        const amount = Number(bid.amount ?? bid.bidAmount ?? bid.bid_amount ?? 0);
+        const status = String(bid.status || 'unknown').toLowerCase();
+        const dateStr = bid.createdAt || bid.created_at || bid.submittedAt || bid.submitted_at;
+        const formattedDate = dateStr ? new Date(dateStr).toLocaleDateString() : '—';
+
+        return `
         <tr class="border-b border-slate-800/60 hover:bg-slate-900/40 transition-colors">
-            <td class="py-3 px-4 font-medium text-white">${escapeHtml(bid.job_title || bid.title || 'Unknown Project')}</td>
-            <td class="py-3 px-4 text-slate-400">${escapeHtml(bid.company || bid.client_name || '—')}</td>
-            <td class="py-3 px-4 text-indigo-300">${escapeHtml(formatPackageName(bid.package))}</td>
-            <td class="py-3 px-4 font-mono font-semibold text-emerald-400">$${(Number(bid.bid_amount) || 0).toFixed(2)}</td>
+            <td class="py-3 px-4 font-medium text-white">${escapeHtml(title)}</td>
+            <td class="py-3 px-4 text-slate-400">${escapeHtml(client)}</td>
+            <td class="py-3 px-4 text-indigo-300">${escapeHtml(pkg)}</td>
+            <td class="py-3 px-4 font-mono font-semibold text-emerald-400">$${amount.toFixed(2)}</td>
             <td class="py-3 px-4"><span class="px-2 py-0.5 rounded text-xs font-bold uppercase tracking-wider ${
-              bid.status === 'won' ? 'bg-emerald-500/20 text-emerald-300' :
-              bid.status === 'active' || bid.status === 'submitted' ? 'bg-cyan-500/20 text-cyan-300' :
-              bid.status === 'interviewing' ? 'bg-indigo-500/20 text-indigo-300' :
+              status === 'won' || status === 'awarded' || status === 'accepted' ? 'bg-emerald-500/20 text-emerald-300' :
+              status === 'active' || status === 'submitted' || status === 'pending' ? 'bg-cyan-500/20 text-cyan-300' :
+              status === 'interviewing' ? 'bg-indigo-500/20 text-indigo-300' :
               'bg-slate-800 text-slate-400'
-            }">${escapeHtml(bid.status || 'unknown')}</span></td>
-            <td class="py-3 px-4 text-slate-400 text-xs">${bid.submitted_at ? new Date(bid.submitted_at).toLocaleDateString() : '—'}</td>
+            }">${escapeHtml(status)}</span></td>
+            <td class="py-3 px-4 text-slate-400 text-xs">${formattedDate}</td>
         </tr>
-    `).join('');
+    `;
+    }).join('');
 }
 
 // Update the leads table
