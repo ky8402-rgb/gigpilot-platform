@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
-import { BackendBidItem, BACKEND_BASE_URL, withdrawOnFreelancer, updateBidStatus, generateAIProposalBackend } from '../services/api';
+import { BackendBidItem, BACKEND_BASE_URL, DEFAULT_PRODUCTION_BACKEND_URL, withdrawOnFreelancer, updateBidStatus, generateAIProposalBackend } from '../services/api';
 import { formatPackageName } from './PackageChart';
 
 // Conditional logic handler for withdraw destination target URL and styling
@@ -507,7 +507,24 @@ export const BidsTable: React.FC<BidsTableProps> = ({
       setLastUpdated(new Date());
       if (onBidsLoadedRef.current) onBidsLoadedRef.current(rawList);
     } catch (err: any) {
-      console.warn('[BidsTable] Backend fetch failed, trying local fallback:', err);
+      console.warn('[BidsTable] Backend fetch failed, trying fallback:', err);
+      // Resilient fallback to canonical AWS EC2 backend if primary endpoint fails (or if static host)
+      try {
+        const fallbackRes = await fetch(`${DEFAULT_PRODUCTION_BACKEND_URL}/api/bids?limit=100`);
+        if (fallbackRes.ok) {
+          const fbData = await fallbackRes.json();
+          const list: BackendBidItem[] = Array.isArray(fbData) ? fbData : (fbData.bids || []);
+          if (list.length > 0) {
+            setBids(list);
+            setLastUpdated(new Date());
+            if (onBidsLoadedRef.current) onBidsLoadedRef.current(list);
+            setLoading(false);
+            return;
+          }
+        }
+      } catch (fbErr) {
+        console.warn('[BidsTable] Fallback fetch failed:', fbErr);
+      }
       try {
         const localRes = await fetch(`/api/freelancer/bids?limit=100`);
         if (localRes.ok) {

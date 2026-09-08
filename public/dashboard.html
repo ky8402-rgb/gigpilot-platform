@@ -684,7 +684,7 @@
         </div>
         <div>
           <h1>GigPilot Auto-Bidding Dashboard</h1>
-          <p>Autonomous Multi-Platform Freelance Engine &bull; Live Telemetry at <span style="color:var(--color-freelancer); font-family:'JetBrains Mono'">gigpilot-backend-g4j0.onrender.com</span></p>
+          <p>Autonomous Multi-Platform Freelance Engine &bull; Live Telemetry at <span style="color:var(--color-freelancer); font-family:'JetBrains Mono'">3-222-149-9.sslip.io</span></p>
         </div>
       </div>
 
@@ -710,7 +710,7 @@
         <i class="fa-solid fa-triangle-exclamation" style="font-size:18px;"></i>
         <div>
           <strong>Backend Service Alert:</strong>
-          <span id="error-message">Unable to connect to https://gigpilot-backend-g4j0.onrender.com</span>
+          <span id="error-message">Unable to connect to https://3-222-149-9.sslip.io</span>
         </div>
       </div>
       <button class="btn btn-outline" style="padding:4px 10px; font-size:12px;" onclick="fetchDashboardData(true)">
@@ -972,9 +972,9 @@
 
   <!-- Application Script -->
   <script>
-    const BACKEND_BASE = window.location.origin.includes('onrender.com') || window.location.origin.includes(':3000') 
+    const BACKEND_BASE = window.location.origin.includes(':3000') 
       ? '/api' 
-      : 'https://gigpilot-backend.onrender.com/api';
+      : 'https://3-222-149-9.sslip.io/api';
     let chartInstance = null;
     let refreshSeconds = 60;
     let refreshTimer = null;
@@ -1251,7 +1251,7 @@
       }
 
       try {
-        // Parallel API Fetch from Render Backend
+        // Parallel API Fetch from EC2 Backend
         const [statsRes, bidsRes, leadsRes] = await Promise.all([
           fetch(`${BACKEND_BASE}/bids/stats`),
           fetch(`${BACKEND_BASE}/bids?limit=50`),
@@ -1435,7 +1435,7 @@
       } catch (err) {
         console.error('Fetch error:', err);
         errorBanner.style.display = 'flex';
-        document.getElementById('error-message').textContent = err.message || 'Failed to reach FastAPI backend at gigpilot-backend-g4j0.onrender.com';
+        document.getElementById('error-message').textContent = err.message || 'Failed to reach live backend at https://3-222-149-9.sslip.io';
         showToast('Backend unreachable. Showing cached/fallback interface.', 'warning');
       } finally {
         if (refreshIcon) {

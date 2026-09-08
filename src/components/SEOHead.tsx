@@ -27,7 +27,7 @@ export const SEOHead: React.FC<SEOHeadProps> = ({
     'Automated Invoicing',
     'Gemini AI Assistant'
   ],
-  canonicalUrl = typeof window !== 'undefined' ? window.location.href : 'https://kundanvision369.onrender.com',
+  canonicalUrl = typeof window !== 'undefined' ? window.location.href : 'https://3-222-149-9.sslip.io',
   ogImage = DEFAULT_OG_IMAGE,
   ogType = 'website',
   author = 'Kundan Kumar (ky8402@gmail.com)',

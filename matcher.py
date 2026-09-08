@@ -7,7 +7,7 @@ logger = logging.getLogger(__name__)
 
 # Our 4 service descriptions for keyword and semantic matching
 PACKAGES = {
-    "fullstack": "Build full stack web applications using React, TypeScript, Node.js, and deploy to cloud platforms like AWS or Render.",
+    "fullstack": "Build full stack web applications using React, TypeScript, Node.js, and deploy to cloud platforms like AWS or Docker.",
     "ai_agent": "Develop AI agents and automation workflows using Gemini LLM, webhooks, HMAC security, and integration with third-party APIs.",
     "payment_gateway": "Integrate payment systems including PayPal, Stripe, and Indian UPI QR codes for e-commerce and fintech platforms.",
     "code_audit": "Perform rapid code auditing, bug fixing, performance optimization, and security hardening for existing codebases."

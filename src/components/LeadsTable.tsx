@@ -20,10 +20,15 @@ export const LeadsTable: React.FC<LeadsTableProps> = ({ onSelectLead, externalRe
     setError(null);
     try {
       const primaryUrl = `${BACKEND_BASE_URL || DEFAULT_PRODUCTION_BACKEND_URL}/api/leads?limit=20`;
-      let response = await fetch(primaryUrl);
+      let response: Response;
+      try {
+        response = await fetch(primaryUrl);
+      } catch (_netErr) {
+        response = await fetch(`${DEFAULT_PRODUCTION_BACKEND_URL}/api/leads?limit=20`);
+      }
       
       const isJson = response.headers.get('content-type')?.includes('application/json');
-      if ((!response.ok || !isJson) && !primaryUrl.includes('sslip.io')) {
+      if (!response.ok || !isJson) {
         response = await fetch(`${DEFAULT_PRODUCTION_BACKEND_URL}/api/leads?limit=20`);
       }
 

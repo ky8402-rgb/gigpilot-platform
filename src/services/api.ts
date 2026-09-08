@@ -6,7 +6,7 @@ import { FreelanceJob, FreelancerProfile, GeneratedProposal } from '../types';
 export const DEFAULT_PRODUCTION_BACKEND_URL = 'https://3-222-149-9.sslip.io';
 
 /**
- * Storage key for user-configured custom backend URL (e.g. AWS App Runner, EC2, or custom Render domain)
+ * Storage key for user-configured custom backend URL (e.g. AWS App Runner, EC2, or custom domain)
  */
 export const CUSTOM_BACKEND_STORAGE_KEY = 'gigpilot_custom_backend_url';
 
@@ -27,7 +27,7 @@ export function isDetachedStaticHost(hostname?: string): boolean {
 
 /**
  * Helper to dynamically resolve API base URL for same-origin fullstack containers,
- * AWS Amplify, Render, EC2, or user-defined custom domains.
+ * AWS Amplify, EC2, or user-defined custom domains.
  */
 export function getApiBaseUrl(): string {
   // 1. Check user-configured override in localStorage (e.g. custom EC2 host or proxy)
@@ -35,7 +35,17 @@ export function getApiBaseUrl(): string {
     try {
       const customUrl = localStorage.getItem(CUSTOM_BACKEND_STORAGE_KEY);
       if (customUrl && typeof customUrl === 'string' && customUrl.trim().length > 0) {
-        return customUrl.trim().replace(/\/+$/, '');
+        // Automatically purge obsolete or defunct endpoints from user storage
+        if (
+          customUrl.includes('onrender.com') ||
+          customUrl.includes('render.com') ||
+          customUrl.includes('ky7079.co') ||
+          customUrl.includes('13-233-54-120')
+        ) {
+          localStorage.removeItem(CUSTOM_BACKEND_STORAGE_KEY);
+        } else {
+          return customUrl.trim().replace(/\/+$/, '');
+        }
       }
     } catch (_) {}
   }
@@ -51,7 +61,10 @@ export function getApiBaseUrl(): string {
     envUrl &&
     typeof envUrl === 'string' &&
     envUrl.trim().length > 0 &&
-    !envUrl.includes('ky7079.co')
+    !envUrl.includes('onrender.com') &&
+    !envUrl.includes('render.com') &&
+    !envUrl.includes('ky7079.co') &&
+    !envUrl.includes('13-233-54-120')
   ) {
     return envUrl.trim().replace(/\/+$/, '');
   }
@@ -76,14 +89,7 @@ export function getApiBaseUrl(): string {
  * Production Backend Base URL for GigPilot Autonomous Autopilot & Payment Gateway
  * Reliably resolves to same-origin in container environments, or live AWS EC2 backend on Amplify
  */
-export const BACKEND_BASE_URL =
-  (typeof window !== 'undefined' && isDetachedStaticHost(window.location?.hostname))
-    ? DEFAULT_PRODUCTION_BACKEND_URL
-    : ((typeof import.meta !== 'undefined' && (import.meta as any).env?.REACT_APP_API_URL) ||
-       (typeof import.meta !== 'undefined' && (import.meta as any).env?.VITE_BACKEND_URL) ||
-       (typeof import.meta !== 'undefined' && (import.meta as any).env?.VITE_API_BASE_URL) ||
-       (typeof window !== 'undefined' && window.location?.origin) ||
-       DEFAULT_PRODUCTION_BACKEND_URL);
+export const BACKEND_BASE_URL = getApiBaseUrl();
 
 /**
  * Information about currently active backend target
@@ -106,8 +112,6 @@ export function getBackendTargetInfo(): BackendTargetInfo {
   let type: BackendTargetInfo['type'] = 'custom';
   if (url.includes('awsapprunner.com')) {
     type = 'apprunner';
-  } else if (url.includes('onrender.com')) {
-    type = 'render';
   } else if (url.includes('localhost') || url.includes('127.0.0.1')) {
     type = 'localhost';
   } else if (
@@ -250,7 +254,7 @@ export async function secureFetch(url: string, options: RequestInit = {}, maxRet
       const response = await fetch(url, {
         ...options,
         headers,
-        credentials: 'include', // Essential for cross-site cookies on *.onrender.com
+        credentials: 'include', // Essential for cross-site cookies on cross-domain backend endpoints
       });
 
       // If server returned 502/503/504 or rate-limited 429 and we have retries left, backoff
@@ -557,7 +561,7 @@ export async function fetchLivePlatformJobs(query?: string): Promise<{
         return {
           jobs: leads,
           source: 'live_api',
-          platformsChecked: ['GigPilot Engine (Render)', 'RemoteOK Verified Stream']
+          platformsChecked: ['GigPilot Engine (EC2)', 'RemoteOK Verified Stream']
         };
       }
     } else {

@@ -42,14 +42,14 @@ export function getFreelancerRequestHeaders(customHeaders: Record<string, string
   const headers: Record<string, string> = {
     'Content-Type': 'application/json',
     'Accept': 'application/json, text/plain, */*',
-    'User-Agent': 'FreelanceAutoBidder/1.0 (+https://kundanvision369.onrender.com)',
+    'User-Agent': 'FreelanceAutoBidder/1.0 (+https://3-222-149-9.sslip.io)',
     ...customHeaders,
   };
 
   if (!oauthToken || oauthToken === '') {
     console.warn(
       '[Freelancer Auth Warning] FREELANCER_ACCESS_TOKEN is missing or empty. ' +
-      'Please obtain your official OAuth token from https://accounts.freelancer.com/settings/develop and set it in your Render environment variables.'
+      'Please obtain your official OAuth token from https://accounts.freelancer.com/settings/develop and set it in your environment variables.'
     );
   } else {
     // Attach official Freelancer OAuth and session cookie headers
@@ -64,7 +64,7 @@ export function getFreelancerRequestHeaders(customHeaders: Record<string, string
 /**
  * Safe Axios wrapper for Freelancer.com requests.
  * Handles 401/403/session-expiration errors gracefully with console warnings
- * to ensure background processes never crash the Render web service.
+ * to ensure background processes never crash the web service.
  */
 export async function executeFreelancerRequest<T = any>(
   url: string,
@@ -93,7 +93,7 @@ export async function executeFreelancerRequest<T = any>(
       console.warn(
         `[Freelancer Auth Warning] Authentication failed (HTTP ${status}) from ${url}. ` +
         `Your FREELANCER_ACCESS_TOKEN may be invalid or expired. ` +
-        `Please generate an official token at https://accounts.freelancer.com/settings/develop. Render service will continue running.`
+        `Please generate an official token at https://accounts.freelancer.com/settings/develop. Service will continue running.`
       );
     } else if (error.code === 'ECONNABORTED' || error.message?.includes('timeout')) {
       console.warn(`[Freelancer Network Notice] Request timed out while accessing ${url}.`);

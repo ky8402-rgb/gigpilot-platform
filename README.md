@@ -1,6 +1,6 @@
 # 🚀 GigPilot - Autonomous AI Freelance Engine
 
-Production-ready Full-Stack application (React + Express + Node.js) with Render deployment support, autonomous freelance project scraping, AI proposal generation with Google Gemini, and real-time dashboard telemetry.
+Production-ready Full-Stack application (React + Express + Node.js) with AWS EC2 & Amplify deployment support, autonomous freelance project scraping, AI proposal generation with Google Gemini, and real-time dashboard telemetry.
 
 ---
 
@@ -28,10 +28,10 @@ Production-ready Full-Stack application (React + Express + Node.js) with Render 
 
 ---
 
-## 🚀 Deployment (Render.com)
+## 🚀 Deployment (AWS EC2 & Amplify)
 
-- **Frontend / Full-stack service**: `https://kundanvision369.onrender.com`
-- **Backend API service**: `https://gigpilot-backend-g4j0.onrender.com`
+- **Backend API Service (AWS EC2)**: `https://3-222-149-9.sslip.io`
+- **Frontend / Client Service**: AWS Amplify production distribution
 
 ---
 

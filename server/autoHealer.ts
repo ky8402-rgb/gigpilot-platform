@@ -91,7 +91,7 @@ export class AutoHealer {
    */
   private initBullQueue() {
     const redisUrl = (process.env.REDIS_URL || '').trim();
-    // Render internal redis hosts (e.g. red-*) are not resolvable outside Render network
+    // Internal private redis hosts are not resolvable without a dedicated cluster VPC
     if (!redisUrl || redisUrl.includes('red-')) {
       console.log('ℹ️ [AutoHealer] Redis unavailable or internal cloud host. Operating with in-memory resilient self-healing queue.');
       return;

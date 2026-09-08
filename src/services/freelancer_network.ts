@@ -10,7 +10,7 @@ export const freelancerNetwork: AxiosInstance = axios.create({
   headers: {
     'Content-Type': 'application/json',
     'Accept': 'application/json, text/plain, */*',
-    'User-Agent': 'FreelanceAutoBidder/1.0 (+https://kundanvision369.onrender.com)',
+    'User-Agent': 'FreelanceAutoBidder/1.0 (+https://3-222-149-9.sslip.io)',
   },
 });
 

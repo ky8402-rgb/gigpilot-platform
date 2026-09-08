@@ -220,7 +220,7 @@ export const BackendConnectionModal: React.FC<BackendConnectionModalProps> = ({
                     </span>
                     <span className="text-[10px] bg-indigo-950/60 text-indigo-300 px-1.5 py-0.5 rounded border border-indigo-800/40">Tier 3</span>
                   </div>
-                  <p className="text-slate-300 text-[11px] font-medium">Neon / Render Cloud PG</p>
+                  <p className="text-slate-300 text-[11px] font-medium">Neon PostgreSQL Cloud</p>
                   <p className="text-slate-500 text-[10px]">users, gigs, proposals, orders</p>
                 </div>
                 <div className="mt-2.5 pt-2 border-t border-slate-800/60 text-[10px] text-slate-400 font-mono">
@@ -285,7 +285,7 @@ export const BackendConnectionModal: React.FC<BackendConnectionModalProps> = ({
                 <div>
                   <span className="font-semibold">Notice:</span> {testResult.error}
                   <p className="text-[11px] text-amber-400/80 mt-0.5">
-                    If using an AWS App Runner or Render service, verify that your service has finished deploying.
+                    If using an AWS EC2 or App Runner service, verify that your service has finished deploying.
                   </p>
                 </div>
               </div>
@@ -319,7 +319,7 @@ export const BackendConnectionModal: React.FC<BackendConnectionModalProps> = ({
                 <code className="text-[10px] text-slate-500 mt-1 font-mono">{window.location.origin}</code>
               </button>
 
-              {/* Option B: Render Cloud Production */}
+              {/* Option B: AWS EC2 Live Production */}
               <button
                 type="button"
                 onClick={() => handleApplyPreset(BACKEND_BASE_URL)}
@@ -332,11 +332,11 @@ export const BackendConnectionModal: React.FC<BackendConnectionModalProps> = ({
                 <div className="flex items-center justify-between w-full mb-1">
                   <span className="font-bold text-xs flex items-center gap-1.5 text-cyan-400">
                     <Globe className="h-3.5 w-3.5" />
-                    Render Production
+                    AWS EC2 Production
                   </span>
                   {targetInfo.url === BACKEND_BASE_URL && <Check className="h-3.5 w-3.5 text-emerald-400" />}
                 </div>
-                <p className="text-[11px] text-slate-400">Live Render Cloud Service & Postgres</p>
+                <p className="text-[11px] text-slate-400">Live EC2 Cloud Service & Neon Postgres</p>
                 <code className="text-[10px] text-slate-500 mt-1 font-mono truncate max-w-full">{BACKEND_BASE_URL}</code>
               </button>
 
@@ -372,7 +372,7 @@ export const BackendConnectionModal: React.FC<BackendConnectionModalProps> = ({
           <form onSubmit={handleSaveCustom} className="space-y-3">
             <label className="text-xs font-semibold text-slate-300 flex items-center justify-between">
               <span>Custom Backend Service URL</span>
-              <span className="text-[11px] text-slate-500 font-normal">Supports AWS App Runner, EC2, Render, or Tunnel</span>
+              <span className="text-[11px] text-slate-500 font-normal">Supports AWS EC2, App Runner, or Tunnel</span>
             </label>
             <div className="flex gap-2">
               <input

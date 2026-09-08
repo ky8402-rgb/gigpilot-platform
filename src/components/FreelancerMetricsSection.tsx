@@ -741,7 +741,7 @@ export const FreelancerMetricsSection: React.FC<FreelancerMetricsSectionProps> =
                     Safe Execution &amp; Fallbacks:
                   </div>
                   <p>
-                    If the token expires or rate-limiting occurs, structured warnings are logged without throwing unhandled exceptions, keeping Render web services 100% stable.
+                    If the token expires or rate-limiting occurs, structured warnings are logged without throwing unhandled exceptions, keeping backend services 100% stable.
                   </p>
                 </div>
               </div>
@@ -937,7 +937,7 @@ export const FreelancerMetricsSection: React.FC<FreelancerMetricsSectionProps> =
               <i className="fas fa-shield-alt text-emerald-400"></i>
               Direct Escrow Checkout linked in each Gemini proposal
             </span>
-            <span className="font-mono text-blue-400 text-[11px]">https://kundanvision369.onrender.com</span>
+            <span className="font-mono text-blue-400 text-[11px]">https://3-222-149-9.sslip.io</span>
           </div>
         </div>
       </div>

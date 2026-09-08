@@ -17,12 +17,11 @@ if (rawDbUrl && (rawDbUrl.startsWith("http://") || rawDbUrl.startsWith("https://
   console.warn("⚠️ [DATABASE_URL CONFIGURATION WARNING]");
   console.warn(`DATABASE_URL is currently set to a web URL: "${rawDbUrl.substring(0, 32)}..."`);
   console.warn("PostgreSQL requires a connection string starting with 'postgresql://' or 'postgres://'");
-  console.warn("\n👉 TO FIX ON RENDER DASHBOARD:");
-  console.warn("1. Go to Render Dashboard -> Your Service -> Environment");
+  console.warn("\n👉 TO FIX IN ENVIRONMENT CONFIGURATION (.env / server):");
+  console.warn("1. Open your server environment variables or .env file");
   console.warn("2. Change DATABASE_URL to your PostgreSQL connection string:");
   console.warn("   postgresql://<USER>:<PASSWORD>@<HOST>:<PORT>/<DATABASE>?sslmode=require");
-  console.warn("3. If you do not have a PostgreSQL database yet, you can create a free PostgreSQL");
-  console.warn("   instance on Render ('New +' -> 'PostgreSQL') and copy its 'Internal Database URL'.");
+  console.warn("3. If using Neon PostgreSQL, copy the pooled connection string from the Neon console.");
   console.warn("==================================================================\n");
   // Temporarily clear invalid HTTP URL so Prisma client does not crash the process
   delete process.env.DATABASE_URL;
@@ -138,7 +137,7 @@ app.use((req, res, next) => {
 });
 
 // =========================================================================
-// 2. CORS & CROSS-ORIGIN COOKIE CONFIGURATION (AWS Amplify, EC2, Render, Localhost)
+// 2. CORS & CROSS-ORIGIN COOKIE CONFIGURATION (AWS Amplify, EC2, Localhost)
 // Reads allowed origins dynamically from CORS_ALLOWED_ORIGINS environment variable
 // =========================================================================
 const parseAllowedOrigins = (): string[] => {
@@ -435,7 +434,7 @@ app.post("/api/webhooks/gig", express.json(), (req, res) => {
   }
 });
 
-// Lightweight Liveness / Ping Endpoint for Render & External Monitors
+// Lightweight Liveness / Ping Endpoint for External Monitors and Health Checks
 app.get("/api/health/ping", (req, res) => {
   res.status(200).json({ status: "ok", uptime: Math.floor(process.uptime()), timestamp: new Date().toISOString() });
 });
@@ -1300,7 +1299,7 @@ app.get("/api/matches/recent", async (req, res) => {
         title: job.title || "Remote Developer Opportunity",
         company: job.client?.name || job.company || "Verified Client",
         package: pkg,
-        url: job.sourceUrl || job.url || "https://kundanvision369.onrender.com",
+        url: job.sourceUrl || job.url || "https://3-222-149-9.sslip.io",
         score: Number((0.85 + (index % 15) * 0.01).toFixed(2))
       };
     });

@@ -131,7 +131,7 @@ while [[ $# -gt 0 ]]; do
       echo "  --key-file PATH      Path to SSH private key (.pem)"
       echo "  --amplify-domain URL Amplify Frontend URL"
       echo "  --region REGION      AWS Region (default: us-east-1)"
-      echo "  --rollback           Execute rollback to previous Render backend"
+      echo "  --rollback           Execute rollback to previous backend"
       echo "  --skip-ec2           Skip remote EC2 SSH CORS update"
       exit 0
       ;;
@@ -473,7 +473,7 @@ run_end_to_end_verification() {
   fi
 
   log_header "MIGRATION COMPLETE & SYSTEM HEALTHY"
-  echo -e "${GREEN}${BOLD}✓ Defunct Render backend permanently replaced.${NC}"
+  echo -e "${GREEN}${BOLD}✓ Legacy backend permanently replaced.${NC}"
   echo -e "${GREEN}${BOLD}✓ AWS Amplify frontend now points to:${NC} ${BOLD}${NEW_BACKEND_URL}${NC}"
   echo -e "${GREEN}${BOLD}✓ CORS configured for:${NC} ${AMPLIFY_DOMAIN} & *.amplifyapp.com"
   echo -e "${GREEN}${BOLD}✓ End-to-end communication established with zero 503 errors.${NC}\n"
@@ -492,7 +492,7 @@ execute_rollback() {
     BRANCH_NAME=$(grep -o '"branchName": "[^"]*' "$BACKUP_STATE_FILE" | cut -d'"' -f4)
     ENV_VAR_NAME=$(grep -o '"envVarName": "[^"]*' "$BACKUP_STATE_FILE" | cut -d'"' -f4)
   else
-    RESTORE_URL="https://gigpilot-platform.onrender.com"
+    RESTORE_URL="https://3-222-149-9.sslip.io"
   fi
 
   log_warn "Reverting '${ENV_VAR_NAME}' back to previous URL: ${RESTORE_URL}"
@@ -526,7 +526,7 @@ fi
 # ------------------------------------------------------------------------------
 # Main Flow
 # ------------------------------------------------------------------------------
-log_header "GIGPILOT PRODUCTION BACKEND MIGRATION (RENDER -> EC2)"
+log_header "GIGPILOT PRODUCTION BACKEND MIGRATION (TO AWS EC2)"
 echo -e "Target URL:       ${BOLD}${NEW_BACKEND_URL}${NC}"
 echo -e "Amplify App:      ${BOLD}${AMPLIFY_APP_NAME}${NC}"
 echo -e "Amplify Frontend: ${BOLD}${AMPLIFY_DOMAIN}${NC}"

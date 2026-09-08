@@ -242,7 +242,7 @@ export default function App() {
   const [watchdogLastRestart, setWatchdogLastRestart] = useState<Date | null>(null);
   const [isWatchdogRestarting, setIsWatchdogRestarting] = useState<boolean>(false);
 
-  // Dedicated 60-second auto-refresh polling effect for backend stats API (https://gigpilot-backend.onrender.com/api/bids/stats)
+  // Dedicated 60-second auto-refresh polling effect for backend stats API (https://3-222-149-9.sslip.io/api/bids/stats)
   useEffect(() => {
     async function syncBackendTelemetryStats() {
       try {
@@ -1621,7 +1621,7 @@ export default function App() {
               id="topbar-btn-backend-gateway"
               onClick={() => setIsBackendModalOpen(true)}
               className="bg-emerald-950/60 hover:bg-emerald-900/60 border border-emerald-500/40 text-emerald-300 hover:text-white px-3 py-2 rounded-full text-xs font-semibold flex items-center gap-2 transition-all cursor-pointer shadow-sm"
-              title="Connect & Monitor AWS App Runner / Render Backend Gateway"
+              title="Connect & Monitor AWS EC2 / App Runner Backend Gateway"
             >
               <i className="fas fa-network-wired text-emerald-400"></i>
               <span>Backend Gateway</span>
@@ -1970,7 +1970,7 @@ export default function App() {
                       CONNECTED
                     </span>
                     <span className="text-[11px] text-slate-400 font-mono">
-                      https://gigpilot-backend-g4j0.onrender.com
+                      {getApiBaseUrl()}
                     </span>
                   </div>
                   <h4 className="text-sm font-bold text-white mt-0.5">Real-time Freelance Proposals, Telemetry &amp; Scored Leads Pipeline</h4>
@@ -2014,7 +2014,7 @@ export default function App() {
               className="mb-2"
             />
 
-            {/* Stats Grid - Populated from https://gigpilot-backend.onrender.com/api/bids/stats */}
+            {/* Stats Grid - Populated from https://3-222-149-9.sslip.io/api/bids/stats */}
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
               
               {/* Stat 1: Total Placed Bids */}
@@ -2121,7 +2121,7 @@ export default function App() {
               </Suspense>
             </div>
 
-            {/* Bids Table Section (https://gigpilot-backend.onrender.com/api/bids?limit=50) */}
+            {/* Bids Table Section (https://3-222-149-9.sslip.io/api/bids?limit=50) */}
             <Suspense fallback={<LazyFallback label="Loading Live Bids Telemetry..." />}>
               <BidsTable
                 onSelectBid={(bid) => {
@@ -2145,7 +2145,7 @@ export default function App() {
               />
             </Suspense>
 
-            {/* Leads Table Section (https://gigpilot-backend.onrender.com/api/leads?limit=20) */}
+            {/* Leads Table Section (https://3-222-149-9.sslip.io/api/leads?limit=20) */}
             <Suspense fallback={<LazyFallback label="Loading Leads Telemetry..." />}>
               <LeadsTable
                 onSelectLead={(lead) => {

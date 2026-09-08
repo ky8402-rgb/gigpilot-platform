@@ -206,7 +206,7 @@ backup_current_environment() {
     --query "app.environmentVariables.${ENV_VAR_NAME}" --output text 2>/dev/null || echo "")
 
   if [ -z "$OLD_BACKEND_URL" ] || [ "$OLD_BACKEND_URL" == "None" ]; then
-    OLD_BACKEND_URL="https://gigpilot-platform.onrender.com"
+    OLD_BACKEND_URL="https://3-222-149-9.sslip.io"
     log_warn "Previous '${ENV_VAR_NAME}' was not set. Using fallback: ${OLD_BACKEND_URL}"
   else
     log_info "Current '${ENV_VAR_NAME}' value: ${BOLD}${OLD_BACKEND_URL}${NC}"
@@ -431,7 +431,7 @@ execute_rollback() {
   if [ -f "$BACKUP_STATE_FILE" ]; then
     RESTORE_URL=$(grep -o '"previousBackendUrl": "[^"]*' "$BACKUP_STATE_FILE" | cut -d'"' -f4)
   else
-    RESTORE_URL="https://gigpilot-platform.onrender.com"
+    RESTORE_URL="https://3-222-149-9.sslip.io"
   fi
 
   log_info "Restoring '${ENV_VAR_NAME}' to previous URL: ${BOLD}${RESTORE_URL}${NC}"
@@ -461,7 +461,7 @@ manual_rollback_mode() {
   if [ -f "$BACKUP_STATE_FILE" ]; then
     RESTORE_URL=$(grep -o '"previousBackendUrl": "[^"]*' "$BACKUP_STATE_FILE" | cut -d'"' -f4)
   else
-    RESTORE_URL="https://gigpilot-platform.onrender.com"
+    RESTORE_URL="https://3-222-149-9.sslip.io"
   fi
 
   log_info "Restoring Amplify environment variable '${ENV_VAR_NAME}' -> ${RESTORE_URL}"

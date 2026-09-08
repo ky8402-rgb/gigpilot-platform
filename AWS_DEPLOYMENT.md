@@ -13,8 +13,7 @@ This guide provides step-by-step instructions to deploy **GigPilot Platform** (`
 | **Option 1: AWS S3 + CloudFront** | Production Frontend (Vite/React), global CDN, custom domain, Vercel-like CI/CD | 🟢 Recommended | Free Tier (5GB S3, 1TB CloudFront/mo) | ✅ Yes |
 | **Option 2: AWS Amplify Hosting** | Frontend (React/Vite), global CloudFront CDN, automatic SSL | 🟢 Easiest | Free Tier (1000 build min/mo) | ✅ Yes |
 | **Option 3: AWS EC2 (t2.micro/t3.micro)** | 100% Free Tier backend (Node 20, Nginx, PostgreSQL, PM2) | 🟢 1-Click Script | **100% Free Tier (750 hrs/mo)** | ✅ Yes (Mumbai & worldwide) |
-| **Option 4: Render (Free Web Service)** | Zero-maintenance backend, auto-sleep, PostgreSQL connected | 🟢 1-Click Git | 100% Free Tier | ✅ Yes (Worldwide) |
-| **Option 5: AWS App Runner** | Managed containers (Requires paid/authorized account in US/EU) | 🟡 Moderate | Pay-per-vCPU / Not Free | ❌ Not in `ap-south-1` |
+| **Option 4: AWS App Runner** | Managed containers (Requires paid/authorized account in US/EU) | 🟡 Moderate | Pay-per-vCPU / Not Free | ❌ Not in `ap-south-1` |
 
 ---
 
@@ -306,7 +305,7 @@ Regardless of the method chosen, prepare these environment variables:
 |---|---|---|
 | `NODE_ENV` | Environment mode | `production` |
 | `PORT` | Web server listening port | `3000` |
-| `DATABASE_URL` | PostgreSQL connection string | `postgresql://user:pass@host:5432/dbname` (AWS RDS or Render/Neon) |
+| `DATABASE_URL` | PostgreSQL connection string | `postgresql://user:pass@host:5432/dbname` (Neon or AWS RDS) |
 | `GEMINI_API_KEY` | Google Gemini API Key | *(Your API Key)* |
 | `PAYPAL_CLIENT_ID` | PayPal Live REST Client ID | `BAAv8rRenc5jlfD6eH_8pvgcU250jXTZCnyPKdBby13EAYRKhCempoPQ3Hj41GEfe2qBMu1P8ZslnbdkIc` |
 | `PAYPAL_CLIENT_SECRET` | PayPal Live REST Client Secret | `EH8CcxBIVPvFhoAKbL-HN8l_jSdOYzlGA2oahgGs1wPV7bogYK_TE4hIOjPtzOVj-mOUUXVy8uMIt6-N` |
@@ -348,7 +347,7 @@ AWS App Runner provides 100% automated backend deployment on every `git push`. T
 ### Step 4: Add Environment Variables
 Add your production variables in the App Runner console:
 - `NODE_ENV`: `production`
-- `DATABASE_URL`: `postgresql://kundanvision_postgres_user:V0n9FJhuJNh8DrbnHkUzLqQpnMRpaA5L@dpg-da8q9tm7bikc73d0ckbg-a.ohio-postgres.render.com/kundanvision_postgres`
+- `DATABASE_URL`: `postgresql://neondb_owner:npg_L6xTbr0PsJuG@ep-green-bread-ae4bhk9u-pooler.c-2.us-east-2.aws.neon.tech/neondb?sslmode=require&channel_binding=require`
 - `PAYPAL_CLIENT_ID`: `BAAv8rRenc5jlfD6eH_8pvgcU250jXTZCnyPKdBby13EAYRKhCempoPQ3Hj41GEfe2qBMu1P8ZslnbdkIc`
 - `PAYPAL_CLIENT_SECRET`: `EH8CcxBIVPvFhoAKbL-HN8l_jSdOYzlGA2oahgGs1wPV7bogYK_TE4hIOjPtzOVj-mOUUXVy8uMIt6-N`
 - `PAYPAL_MODE`: `live`
@@ -426,7 +425,7 @@ Create your production `.env` file:
 cat << 'EOF' > .env
 NODE_ENV=production
 PORT=3000
-DATABASE_URL=postgresql://kundanvision_postgres_user:V0n9FJhuJNh8DrbnHkUzLqQpnMRpaA5L@dpg-da8q9tm7bikc73d0ckbg-a.ohio-postgres.render.com/kundanvision_postgres
+DATABASE_URL=postgresql://neondb_owner:npg_L6xTbr0PsJuG@ep-green-bread-ae4bhk9u-pooler.c-2.us-east-2.aws.neon.tech/neondb?sslmode=require&channel_binding=require
 GEMINI_API_KEY=your_gemini_key_here
 PAYPAL_CLIENT_ID=BAAv8rRenc5jlfD6eH_8pvgcU250jXTZCnyPKdBby13EAYRKhCempoPQ3Hj41GEfe2qBMu1P8ZslnbdkIc
 PAYPAL_CLIENT_SECRET=EH8CcxBIVPvFhoAKbL-HN8l_jSdOYzlGA2oahgGs1wPV7bogYK_TE4hIOjPtzOVj-mOUUXVy8uMIt6-N

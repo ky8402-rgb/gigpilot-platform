@@ -20,3 +20,4 @@ server/data/
 bids.db
 mlruns/
 .git-credentials
+data/snapshots/

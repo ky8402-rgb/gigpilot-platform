@@ -325,7 +325,7 @@ Provide a concise, highly actionable root cause analysis (1-2 sentences) and 3 b
       },
       cors: {
         steps: [
-          "Validate client origin against Render URL",
+          "Validate client origin against backend URL",
           "Ensure credentials: 'include' headers are synchronized",
           "Reload CORS security policy middleware"
         ],

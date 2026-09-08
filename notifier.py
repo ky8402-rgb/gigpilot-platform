@@ -9,7 +9,7 @@ from datetime import datetime
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-BASE_URL = "https://kundanvision369.onrender.com"
+BASE_URL = os.getenv("BASE_URL", "https://3-222-149-9.sslip.io")
 
 def send_telegram_alert(job_title, company, package, url, score):
     """Send a Telegram message for a single job match."""
@@ -79,7 +79,7 @@ def send_email_digest():
     """
     for row in rows:
         html += f"<tr><td>{row[0]}</td><td>{row[1]}</td><td>{row[2]}</td><td><a href='{row[3]}'>Apply</a></td></tr>"
-    html += "</table><br><p>Visit your dashboard: https://kundanvision369.onrender.com</p>"
+    html += f"</table><br><p>Visit your dashboard: {BASE_URL}</p>"
     
     msg = MIMEMultipart()
     msg['Subject'] = subject

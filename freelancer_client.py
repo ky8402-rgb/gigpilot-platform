@@ -18,7 +18,7 @@ class FreelancerClient:
         ).strip()
         self.headers = {
             "Content-Type": "application/json",
-            "User-Agent": "FreelanceAutoBidder/1.0 (+https://kundanvision369.onrender.com)"
+            "User-Agent": "FreelanceAutoBidder/1.0 (+https://3-222-149-9.sslip.io)"
         }
         if self.access_token:
             self.headers["freelancer-oauth-v1"] = self.access_token

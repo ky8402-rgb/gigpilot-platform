@@ -245,7 +245,7 @@ export function PlatformCredentialsModal({
               <div className="bg-[#161c2d] border border-[#262f48] rounded-xl p-4">
                 <h3 className="text-xs font-bold text-white uppercase tracking-wider mb-2 flex items-center justify-between">
                   <span>Required Production Environment Variables</span>
-                  <span className="text-[11px] text-emerald-400 font-mono">Render / Cloud Run Ready</span>
+                  <span className="text-[11px] text-emerald-400 font-mono">AWS EC2 / Cloud Ready</span>
                 </h3>
                 <p className="text-xs text-[#8d98b8] mb-4">
                   Set these environment variables in your deployment dashboard or local <code className="text-cyan-400">.env</code> file:

@@ -376,7 +376,7 @@ export const SystemHealthConnectivityCard: React.FC<SystemHealthConnectivityCard
             <div className="flex items-center gap-3 flex-wrap">
               <span className="flex items-center gap-1.5 text-slate-400">
                 <Radio className="h-3.5 w-3.5 text-emerald-400 animate-pulse" />
-                Automated deployment pipeline synced with GitHub & Render
+                Automated deployment pipeline synced with GitHub & AWS
               </span>
               <span className="hidden sm:inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-cyan-500/10 text-cyan-300 border border-cyan-500/20">
                 <Database className="h-3 w-3" />

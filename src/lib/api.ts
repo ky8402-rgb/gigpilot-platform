@@ -1,8 +1,8 @@
 /**
- * Universal API Client for GigPilot (Frontend to Render Backend)
+ * Universal API Client for GigPilot (Frontend to EC2 Backend)
  * Features:
  * - Automatic credentials: 'include' (fetch) and withCredentials: true (axios)
- * - Cross-subdomain cookie handling for *.onrender.com
+ * - Cross-subdomain cookie handling
  * - Bearer token fallback from localStorage
  * - Robust error interceptors
  */
@@ -63,7 +63,14 @@ export function getBaseApiUrl(): string {
       process.env?.VITE_BACKEND_URL
     ));
 
-  if (customUrl && typeof customUrl === 'string' && customUrl.trim().length > 0 && !customUrl.includes('ky7079.co')) {
+  if (
+    customUrl &&
+    typeof customUrl === 'string' &&
+    customUrl.trim().length > 0 &&
+    !customUrl.includes('ky7079.co') &&
+    !customUrl.includes('onrender.com') &&
+    !customUrl.includes('render.com')
+  ) {
     return customUrl.trim().replace(/\/+$/, '');
   }
 
@@ -71,11 +78,11 @@ export function getBaseApiUrl(): string {
 }
 
 /**
- * 1. Axios Instance configured for Cross-Domain Render Cookies & CORS
+ * 1. Axios Instance configured for Cross-Domain Cookies & CORS
  */
 export const apiClient: AxiosInstance = axios.create({
   baseURL: getBaseApiUrl(),
-  withCredentials: true, // CRITICAL: Sends HTTP-only cookies across onrender.com subdomains
+  withCredentials: true, // Sends HTTP-only cookies across subdomains
   headers: {
     'Content-Type': 'application/json',
     Accept: 'application/json',
@@ -111,7 +118,7 @@ apiClient.interceptors.response.use(
 );
 
 /**
- * 2. Standard Fetch Wrapper with Credentials for Cross-Domain Render Deployment
+ * 2. Standard Fetch Wrapper with Credentials for Cross-Domain Deployment
  */
 export async function apiFetch<T = any>(
   endpoint: string,
@@ -136,7 +143,7 @@ export async function apiFetch<T = any>(
   const response = await fetch(url, {
     ...options,
     headers,
-    credentials: 'include', // CRITICAL: Enables cross-subdomain cookies on Render
+    credentials: 'include', // Enables cross-subdomain cookies
   });
 
   let data: any;

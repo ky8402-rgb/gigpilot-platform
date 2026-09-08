@@ -1,5 +1,5 @@
 // ============================================
-// CONFIGURATION - Live Backend URL (EC2 / Amplify / Render)
+// CONFIGURATION - Live Backend URL (EC2 / Amplify)
 // Canonical Default: https://3-222-149-9.sslip.io
 // ============================================
 export const CANONICAL_BACKEND_URL = 'https://3-222-149-9.sslip.io';
@@ -11,7 +11,14 @@ const getDashboardApiUrl = (): string => {
       (import.meta as any).env.VITE_BACKEND_URL ||
       (import.meta as any).env.VITE_API_BASE_URL ||
       (import.meta as any).env.VITE_API_URL;
-    if (envUrl && typeof envUrl === 'string' && envUrl.trim().length > 0 && !envUrl.includes('ky7079.co')) {
+    if (
+      envUrl &&
+      typeof envUrl === 'string' &&
+      envUrl.trim().length > 0 &&
+      !envUrl.includes('ky7079.co') &&
+      !envUrl.includes('onrender.com') &&
+      !envUrl.includes('render.com')
+    ) {
       return envUrl.trim().replace(/\/+$/, '');
     }
   }
@@ -20,7 +27,14 @@ const getDashboardApiUrl = (): string => {
       process.env.REACT_APP_API_URL ||
       process.env.API_BASE_URL ||
       process.env.VITE_BACKEND_URL;
-    if (procUrl && typeof procUrl === 'string' && procUrl.trim().length > 0) {
+    if (
+      procUrl &&
+      typeof procUrl === 'string' &&
+      procUrl.trim().length > 0 &&
+      !procUrl.includes('ky7079.co') &&
+      !procUrl.includes('onrender.com') &&
+      !procUrl.includes('render.com')
+    ) {
       return procUrl.trim().replace(/\/+$/, '');
     }
   }

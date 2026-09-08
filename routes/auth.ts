@@ -92,7 +92,7 @@ router.post('/register', async (req: Request, res: Response) => {
       { expiresIn: '30d' }
     );
 
-    // Cross-site cookie for Render subdomains (*.onrender.com)
+    // Cross-site cookie for cross-domain / Amplify / EC2 deployment
     res.cookie('token', token, {
       httpOnly: true,
       secure: true,
@@ -172,7 +172,7 @@ router.post('/login', async (req: Request, res: Response) => {
       { expiresIn: '30d' }
     );
 
-    // Cross-site cookie for Render subdomains (*.onrender.com)
+    // Cross-site cookie for cross-domain / Amplify / EC2 deployment
     res.cookie('token', token, {
       httpOnly: true,
       secure: true,

@@ -264,7 +264,7 @@ export async function validateSessionCookies(platform: 'upwork' | 'freelancer', 
             'freelancer-oauth-v1': activeToken,
             'Authorization': `Bearer ${activeToken}`,
             'Cookie': normalized,
-            'User-Agent': 'FreelanceAutoBidder/1.0 (+https://kundanvision369.onrender.com)'
+            'User-Agent': 'FreelanceAutoBidder/1.0 (+https://3-222-149-9.sslip.io)'
           },
           timeout: 4000
         });
