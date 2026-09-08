@@ -15,7 +15,7 @@ export const cloudflareRoutes = express.Router();
  * Queries Cloudflare to inspect zone status and DNS records
  */
 cloudflareRoutes.get('/status', async (req: Request, res: Response) => {
-  const domain = (req.query.domain as string) || 'gigpilot.com';
+  const domain = (req.query.domain as string) || 'ky7079.co';
   const token = (req.query.token as string) || process.env.CLOUDFLARE_API_TOKEN;
 
   if (!token && !process.env.CLOUDFLARE_API_KEY) {
@@ -76,11 +76,11 @@ async function handleDnsRecords(req: Request, res: Response) {
       value = req.body.content || '',
       ttl = 600,
       record_id,
-      domain = 'gigpilot.com',
+      domain = 'ky7079.co',
       proxied = false,
     } = req.body;
 
-    let zoneId = req.body.zone_id || req.params.zone_id || process.env.CLOUDFLARE_ZONE_ID;
+    let zoneId = req.body.zone_id || req.params.zone_id || (domain === 'ky7079.co' ? '4bd2820de10e3037a95a41d823a53e6c' : process.env.CLOUDFLARE_ZONE_ID);
     if (!zoneId) {
       const zoneRes = await getCloudflareZoneId(domain, token);
       if (!zoneRes.success || !zoneRes.zoneId) {

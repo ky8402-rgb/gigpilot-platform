@@ -15,13 +15,13 @@ import {
   updateCloudflareRecord,
   deleteCloudflareRecord,
   executeGigpilotCloudflareMigration
-} from '../server/cloudflareDnsService.js';
+} from '../server/cloudflareDnsService.ts';
 
 async function main() {
   const args = process.argv.slice(2);
-  let domain = 'gigpilot.com';
+  let domain = 'ky7079.co';
   let token = process.env.CLOUDFLARE_API_TOKEN || '';
-  let zoneId = process.env.CLOUDFLARE_ZONE_ID || '';
+  let zoneId = domain === 'ky7079.co' ? '4bd2820de10e3037a95a41d823a53e6c' : (process.env.CLOUDFLARE_ZONE_ID || '');
   let ec2Ip = '3.222.149.9';
   let viewOnly = false;
   let action = 'migrate'; // 'migrate' | 'list' | 'create' | 'delete'

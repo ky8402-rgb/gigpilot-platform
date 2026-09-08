@@ -32,10 +32,24 @@ const CLOUDFLARE_API_BASE = 'https://api.cloudflare.com/client/v4';
  * Returns authorization headers for Cloudflare API v4
  */
 export function getCloudflareHeaders(token?: string) {
+  const apiToken = token || process.env.CLOUDFLARE_API_TOKEN || '';
+  if (apiToken) {
+    return {
+      'Authorization': `Bearer ${apiToken}`,
+      'Content-Type': 'application/json',
+    };
+  }
+
   const apiKey = process.env.CLOUDFLARE_API_KEY;
   const email = process.env.CLOUDFLARE_EMAIL || 'ky8402@gmail.com';
-
   if (apiKey) {
+    // If it looks like a token, use Bearer
+    if (apiKey.startsWith('cf') || apiKey.length > 37) {
+      return {
+        'Authorization': `Bearer ${apiKey}`,
+        'Content-Type': 'application/json',
+      };
+    }
     return {
       'X-Auth-Key': apiKey,
       'X-Auth-Email': email,
@@ -43,7 +57,6 @@ export function getCloudflareHeaders(token?: string) {
     };
   }
 
-  const apiToken = token || process.env.CLOUDFLARE_API_TOKEN || '';
   return {
     'Authorization': `Bearer ${apiToken}`,
     'Content-Type': 'application/json',
@@ -53,19 +66,23 @@ export function getCloudflareHeaders(token?: string) {
 /**
  * Resolves Cloudflare Zone ID for a given domain name (e.g., gigpilot.com)
  */
-export async function getCloudflareZoneId(domain: string = 'gigpilot.com', token?: string): Promise<{
+export async function getCloudflareZoneId(domain: string = 'ky7079.co', token?: string): Promise<{
   success: boolean;
   zoneId?: string;
   zone?: CloudflareZone;
   error?: string;
 }> {
-  const envZoneId = process.env.CLOUDFLARE_ZONE_ID;
-  if (envZoneId) {
-    return { success: true, zoneId: envZoneId };
+  // Known Zone ID mapping for ky7079.co
+  if (domain === 'ky7079.co' || domain === 'www.ky7079.co' || domain === 'api.ky7079.co') {
+    return { success: true, zoneId: '4bd2820de10e3037a95a41d823a53e6c' };
   }
 
   const apiToken = token || process.env.CLOUDFLARE_API_TOKEN;
-  if (!apiToken) {
+  if (!apiToken && !process.env.CLOUDFLARE_API_KEY) {
+    const envZoneId = process.env.CLOUDFLARE_ZONE_ID;
+    if (envZoneId) {
+      return { success: true, zoneId: envZoneId };
+    }
     return { success: false, error: 'CLOUDFLARE_API_TOKEN is not configured.' };
   }
 
@@ -76,20 +93,29 @@ export async function getCloudflareZoneId(domain: string = 'gigpilot.com', token
       timeout: 10000,
     });
 
-    if (!res.data.success || !res.data.result || res.data.result.length === 0) {
+    if (res.data.success && res.data.result && res.data.result.length > 0) {
+      const zone = res.data.result[0];
       return {
-        success: false,
-        error: `No Cloudflare zone found for domain '${domain}'. Please make sure the domain has been added to your Cloudflare account.`,
+        success: true,
+        zoneId: zone.id,
+        zone,
       };
     }
 
-    const zone = res.data.result[0];
+    const envZoneId = process.env.CLOUDFLARE_ZONE_ID;
+    if (envZoneId) {
+      return { success: true, zoneId: envZoneId };
+    }
+
     return {
-      success: true,
-      zoneId: zone.id,
-      zone,
+      success: false,
+      error: `No Cloudflare zone found for domain '${domain}'. Please make sure the domain has been added to your Cloudflare account.`,
     };
   } catch (err: any) {
+    const envZoneId = process.env.CLOUDFLARE_ZONE_ID;
+    if (envZoneId) {
+      return { success: true, zoneId: envZoneId };
+    }
     const errorMsg = err.response?.data?.errors?.[0]?.message || err.message || 'Failed to query Cloudflare zones';
     return { success: false, error: errorMsg };
   }
