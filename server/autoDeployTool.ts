@@ -2,7 +2,7 @@ import fs from 'fs';
 import path from 'path';
 import { exec } from 'child_process';
 import util from 'util';
-import { getStoredGitHubToken, getGitRepoStatus, executePushToDeploy } from './githubService.js';
+import { getStoredGitHubToken, getGitRepoStatus, executePushToDeploy, executeGitOperation } from './githubService.js';
 import { logActivityEvent } from './activityLogger.js';
 import { listWorkflowRuns, triggerWorkflowDispatch } from './devops_actions.js';
 
@@ -596,15 +596,16 @@ export async function executeAutoDeploy(options: {
     // 2. Perform git push to origin main
     logs.push(`[AutoDeploy Tool] Pushing commit ${commitSha} to origin ${targetBranch}...`);
     try {
-      // Try SSH first
-      const { stdout: pushOut } = await execPromise(`git push origin ${targetBranch} 2>&1 || git push origin master 2>&1`, {
-        timeout: 25000,
-      });
-      logs.push(`[AutoDeploy Tool] Git push completed: ${pushOut.trim() || 'Success'}`);
-      gitPushSuccess = true;
+      const gitResult = await executeGitOperation('push', targetBranch, 'origin');
+      if (gitResult.success) {
+        logs.push(`[AutoDeploy Tool] Git push completed: ${gitResult.output.trim() || 'Success'}`);
+        gitPushSuccess = true;
+      } else {
+        logs.push(`[AutoDeploy Tool] Push notice: ${gitResult.output}`);
+        gitPushSuccess = false;
+      }
     } catch (pushErr: any) {
       logs.push(`[AutoDeploy Tool] Push output notice: ${pushErr.message}`);
-      // If direct push fails (due to remote auth or environment), still allow pipeline trigger via webhook/dispatch
       gitPushSuccess = false;
     }
   } catch (gitErr: any) {
