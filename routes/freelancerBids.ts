@@ -10,6 +10,19 @@ import {
 import { prisma } from '../server/db';
 import { safeExecutePgQuery } from '../server/pgDatabase';
 import { getCache, setCache, clearBidsCache } from '../server/redisCache';
+import {
+  recordBidOutcome,
+  updateBidOutcomeStatus,
+  getRevenueIntelligenceStats,
+  getBidsOutcomes,
+  getAutomatedPayoutsLog,
+  getLeadFollowups,
+  processLeadNurturingFollowups,
+  evaluateBankruptcyGuardrails,
+  resumeBiddingAfterReview,
+  runMidnightWinRateAnalysis,
+} from '../server/revenueEngine';
+import { getAllRegisteredTools } from '../server/toolRegistry';
 
 const router = express.Router();
 const dbPath = process.env.SQLITE_DB_PATH || path.join(process.cwd(), 'bids.db');
@@ -463,6 +476,14 @@ const handleBidStatusUpdate = async (req: express.Request, res: express.Response
     // Invalidate Redis and in-memory caches immediately
     await clearBidsCache();
 
+    // Update Win/Loss Feedback Loop (Requirement 1)
+    if (status || targetWorkStatus) {
+      const isWon = status?.toLowerCase() === 'won' || targetWorkStatus === 'Completed';
+      const isLost = status?.toLowerCase() === 'lost';
+      const outcome = isWon ? 'Won' : isLost ? 'Lost' : 'Pending';
+      await updateBidOutcomeStatus(id, outcome).catch(() => {});
+    }
+
     res.json({
       success: true,
       message: `Bid #${id} status updated successfully`,
@@ -804,6 +825,99 @@ if os.path.exists(db_path):
       bidId: req.body?.bidId || 'unknown',
       timestamp: new Date().toISOString()
     });
+  }
+});
+
+// =========================================================================
+// REVENUE INTELLIGENCE & AUTONOMOUS ENGINE API ENDPOINTS
+// =========================================================================
+
+// GET /api/revenue-intelligence & /api/bids/revenue-intelligence
+router.get(['/revenue-intelligence', '/bids/revenue-intelligence', '/revenue/stats'], async (_req, res) => {
+  try {
+    const stats = await getRevenueIntelligenceStats();
+    res.json({ success: true, ...stats });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// GET /api/bids/outcomes (Win/Loss Feedback Loop Data)
+router.get(['/outcomes', '/bids/outcomes', '/Bid/outcomes'], async (req, res) => {
+  try {
+    const limit = Number(req.query.limit) || 100;
+    const outcomes = await getBidsOutcomes(limit);
+    res.json({ success: true, count: outcomes.length, outcomes });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// GET /api/automated-payouts
+router.get(['/automated-payouts', '/payouts/automated'], async (_req, res) => {
+  try {
+    const payouts = getAutomatedPayoutsLog();
+    res.json({ success: true, count: payouts.length, payouts });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// GET /api/lead-nurturing/followups & POST trigger
+router.get(['/lead-nurturing/followups', '/nurturing/followups'], async (_req, res) => {
+  try {
+    const followups = getLeadFollowups();
+    res.json({ success: true, count: followups.length, followups });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+router.post(['/lead-nurturing/trigger', '/nurturing/trigger'], async (_req, res) => {
+  try {
+    const result = await processLeadNurturingFollowups();
+    res.json({ success: true, ...result });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// GET /api/guardrails/status & POST resume
+router.get(['/guardrails/status', '/anti-bankruptcy/status'], async (_req, res) => {
+  try {
+    const status = evaluateBankruptcyGuardrails();
+    res.json({ success: true, ...status });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+router.post(['/guardrails/resume', '/anti-bankruptcy/resume'], async (_req, res) => {
+  try {
+    const result = resumeBiddingAfterReview();
+    res.json({ success: true, ...result });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// POST /api/win-rate/analyze
+router.post(['/win-rate/analyze', '/revenue/retrain'], async (_req, res) => {
+  try {
+    const analysis = await runMidnightWinRateAnalysis();
+    res.json({ success: true, ...analysis });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// GET /api/tools (Dynamic Tool Registry)
+router.get(['/tools', '/tool-registry'], async (_req, res) => {
+  try {
+    const tools = getAllRegisteredTools();
+    res.json({ success: true, count: tools.length, tools });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: err.message });
   }
 });
 

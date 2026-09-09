@@ -21,6 +21,7 @@ import { HealthDashboard } from './components/HealthDashboard';
 import { FreelancerMetricsSection } from './components/FreelancerMetricsSection';
 import { SupportChat } from './components/SupportChat';
 import { WorkOrderTimeline } from './components/WorkOrderTimeline';
+import { AutonomousRevenuePanel } from './components/dashboard/AutonomousRevenuePanel';
 
 // Secondary Tabs & Modals (Safe Lazy Loading with explicit typed named exports)
 const PlatformCredentialsModal = lazy(() => import('./components/PlatformCredentialsModal').then(m => ({ default: m.PlatformCredentialsModal })));
@@ -1314,6 +1315,9 @@ export default function App() {
               onOpenSettings={() => setIsCredentialsModalOpen(true)}
               className="mb-2"
             />
+
+            {/* Autonomous Revenue Intelligence & Dynamic Pricing Panel */}
+            <AutonomousRevenuePanel />
 
             {/* Executive KPI Metrics Grid */}
             <DashboardMetricsCards

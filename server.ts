@@ -371,6 +371,48 @@ app.use("/api/cloudflare", cloudflareRoutes);
 // Compatibility aliases for /api/bids, /api/Bid (Prisma model case), /api/Bids, and /api/leads list
 app.use(["/api/bids", "/api/Bid", "/api/Bids"], freelancerBidsRoutes);
 
+// Direct top-level Revenue Intelligence & ML pipeline endpoints
+app.get("/api/revenue-intelligence", async (_req, res) => {
+  try {
+    const { getRevenueIntelligenceStats } = await import("./server/revenueEngine.js");
+    const stats = await getRevenueIntelligenceStats();
+    res.json({ success: true, ...stats });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+app.get("/api/bids_outcome", async (req, res) => {
+  try {
+    const { getBidsOutcomes } = await import("./server/revenueEngine.js");
+    const limit = Number(req.query.limit) || 100;
+    const outcomes = await getBidsOutcomes(limit);
+    res.json({ success: true, count: outcomes.length, outcomes });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+app.get("/api/guardrails/status", async (_req, res) => {
+  try {
+    const { checkBankruptcyRisk } = await import("./server/revenueEngine.js");
+    const status = await checkBankruptcyRisk();
+    res.json({ success: true, guardrails: status });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+app.get("/api/tools", async (_req, res) => {
+  try {
+    const { getAllRegisteredTools } = await import("./server/toolRegistry.js");
+    const tools = getAllRegisteredTools();
+    res.json({ success: true, count: tools.length, tools });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
 // Public /api/leads listing endpoint for dashboard leads table with 60s Redis/memory caching
 app.get("/api/leads", apiCacheMiddleware(60), async (req, res) => {
   try {

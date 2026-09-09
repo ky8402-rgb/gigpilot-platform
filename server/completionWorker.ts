@@ -3,22 +3,31 @@ import { memoryStore, safeExecutePgQuery, WorkOrder, Transaction, User, Job } fr
 import { createPayPalPayout } from './paypal.js';
 import { logActivityEvent } from './activityLogger.js';
 import { recordCronHeartbeat } from './healthCheck.js';
+import { executeAutonomousCashOut } from './revenueEngine.js';
 
 export interface CompletionResult {
   success: boolean;
   workOrder: WorkOrder | null;
   transaction: Transaction | null;
-  payoutStatus: 'paid' | 'failed' | 'processing';
+  payoutStatus: 'paid' | 'failed' | 'processing' | 'pending_approval';
   message: string;
   error?: string;
+  riskBand?: 'instant_transfer' | 'standard_automated' | 'high_value_review';
+  invoiceNumber?: string;
 }
 
 /**
- * Executes work order completion & triggers PayPal Payout to worker
+ * Autonomous Cash-Out Engine:
+ * Executes work order completion & triggers PayPal milestone payouts without waiting for manual approval.
+ * Risk Bands:
+ *   - Amount < $100: Auto-transfer immediately.
+ *   - Amount $100 - $500: Standard automated escrow release.
+ *   - Amount > $500: High-value outlier, flagged for human-in-the-loop (Telegram alert dispatched).
+ * Auto-generates invoice for time-based projects.
  */
 export async function completeWorkOrderAndPayout(
   workOrderId: string,
-  triggerReason: 'worker_action' | 'customer_confirmation' | 'deadline_auto_approve' | 'retry_engine'
+  triggerReason: 'worker_action' | 'customer_confirmation' | 'deadline_auto_approve' | 'retry_engine' | 'autonomous_milestone'
 ): Promise<CompletionResult> {
   const now = new Date();
 
@@ -99,6 +108,7 @@ export async function completeWorkOrderAndPayout(
   }
 
   const payoutAmount = job?.budget || 100;
+  const isTimeBased = Boolean((job as any)?.type === 'hourly' || (workOrder as any)?.is_time_based);
 
   // 1. Mark Work Order as completed
   workOrder.status = 'completed';
@@ -115,30 +125,31 @@ export async function completeWorkOrderAndPayout(
     worker.current_workload -= 1;
   }
 
-  // 3. Trigger PayPal Payout
-  let payoutResponse;
-  let payoutStatus: 'paid' | 'failed' = 'paid';
-  let payoutBatchId = '';
+  // 3. Trigger Autonomous Cash-Out Engine with Risk Bands (Requirement 7)
+  const cashOutResult = await executeAutonomousCashOut({
+    workOrderId: workOrder.id,
+    projectTitle: job?.title || `Work Order #${workOrderId}`,
+    clientName: 'Client',
+    amount: payoutAmount,
+    workerEmail: worker.paypal_email,
+    isTimeBased,
+  });
 
-  try {
-    payoutResponse = await createPayPalPayout({
-      receiverEmail: worker.paypal_email,
-      amount: payoutAmount,
-      currency: 'USD',
-      note: `Payment for completed work order: ${job?.title || workOrderId} (${triggerReason})`,
-      recipientName: worker.email,
-    });
-
-    payoutBatchId = payoutResponse.payoutBatchId;
+  let payoutStatus: 'paid' | 'failed' | 'pending_approval' = 'paid';
+  if (cashOutResult.status === 'pending_approval') {
+    payoutStatus = 'pending_approval';
+    workOrder.payment_status = 'processing';
+  } else if (cashOutResult.status === 'failed') {
+    payoutStatus = 'failed';
+    workOrder.payment_status = 'failed';
+  } else {
     payoutStatus = 'paid';
     workOrder.payment_status = 'paid';
     workOrder.status = 'paid';
     if (job) job.status = 'paid';
-  } catch (payoutErr: any) {
-    console.error('❌ [CompletionWorker] PayPal Payout failed:', payoutErr?.message || payoutErr);
-    payoutStatus = 'failed';
-    workOrder.payment_status = 'failed';
   }
+
+  const payoutBatchId = cashOutResult.payoutBatchId || '';
 
   // 4. Record Transaction in `transactions` table
   const transactionId = crypto.randomUUID();
@@ -146,7 +157,7 @@ export async function completeWorkOrderAndPayout(
     id: transactionId,
     work_order_id: workOrder.id,
     amount: payoutAmount,
-    status: payoutStatus,
+    status: payoutStatus === 'paid' ? 'paid' : 'failed',
     paypal_payout_batch_id: payoutBatchId || null,
     created_at: now.toISOString(),
   };
@@ -186,22 +197,24 @@ export async function completeWorkOrderAndPayout(
 
   logActivityEvent({
     source: 'PayPal',
-    type: payoutStatus === 'paid' ? 'PAYOUT_COMPLETED' : 'PAYOUT_FAILED',
-    status: payoutStatus === 'paid' ? 'success' : 'error',
+    type: payoutStatus === 'paid' ? 'PAYOUT_COMPLETED' : payoutStatus === 'pending_approval' ? 'PAYOUT_HELD_REVIEW' : 'PAYOUT_FAILED',
+    status: payoutStatus === 'paid' ? 'success' : payoutStatus === 'pending_approval' ? 'warning' : 'error',
     summary: payoutStatus === 'paid'
-      ? `PayPal Payout of $${payoutAmount} sent to ${worker.paypal_email} (Batch: ${payoutBatchId}) for WorkOrder ${workOrderId} via [${triggerReason}]`
+      ? `Autonomous PayPal Payout of $${payoutAmount} sent to ${worker.paypal_email} (Batch: ${payoutBatchId}) [Band: ${cashOutResult.riskBand}]`
+      : payoutStatus === 'pending_approval'
+      ? `High-value cashout of $${payoutAmount} held for review; Telegram alert dispatched.`
       : `PayPal Payout of $${payoutAmount} to ${worker.paypal_email} failed for WorkOrder ${workOrderId}`,
-    tags: ['paypal_payout', 'revenue_withdrawal', triggerReason],
+    tags: ['paypal_payout', 'autonomous_cashout', cashOutResult.riskBand, triggerReason],
   });
 
   return {
-    success: payoutStatus === 'paid',
+    success: payoutStatus === 'paid' || payoutStatus === 'pending_approval',
     workOrder,
     transaction,
     payoutStatus,
-    message: payoutStatus === 'paid'
-      ? `Work order completed and $${payoutAmount} successfully transferred via PayPal Payouts to ${worker.paypal_email} (Batch ID: ${payoutBatchId}).`
-      : `Work order marked complete, but PayPal payout failed. Enqueued for self-healing automatic retry.`,
+    riskBand: cashOutResult.riskBand,
+    invoiceNumber: cashOutResult.invoiceNumber,
+    message: cashOutResult.message,
   };
 }
 

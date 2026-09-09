@@ -282,6 +282,9 @@ export function handlePgFailure(err: any, context: string = 'query'): void {
     circuitBreaker.openUntil = Date.now() + 60000; // 60s cooldown
     resetPgPool();
 
+    // Trigger autonomous exponential backoff reconnection recovery
+    retryPgConnectionWithBackoff().catch(() => {});
+
     // Log throttled informational warning (at most once every 3 minutes)
     const now = Date.now();
     if (now - circuitBreaker.lastWarningLoggedAt > 180000) {
@@ -291,6 +294,41 @@ export function handlePgFailure(err: any, context: string = 'query'): void {
       circuitBreaker.lastWarningLoggedAt = now;
     }
   }
+}
+
+let isPgReconnecting = false;
+/**
+ * Autonomous Database Connection Recovery with Exponential Backoff (1s, 5s, 30s)
+ */
+export async function retryPgConnectionWithBackoff(): Promise<boolean> {
+  if (isPgReconnecting) return false;
+  isPgReconnecting = true;
+  const backoffs = [1000, 5000, 30000];
+  console.log('🔄 [Database] Initiating automated connection recovery with exponential backoff (1s, 5s, 30s)...');
+
+  for (let i = 0; i < backoffs.length; i++) {
+    await new Promise((r) => setTimeout(r, backoffs[i]));
+    resetPgPool();
+    circuitBreaker.state = 'HALF_OPEN';
+    circuitBreaker.consecutiveFailures = 0;
+    circuitBreaker.openUntil = 0;
+    const pool = getPgPool();
+    if (pool) {
+      try {
+        const testRes = await pool.query('SELECT 1 as test');
+        if (testRes?.rows?.[0]?.test === 1) {
+          circuitBreaker.state = 'CLOSED';
+          console.log(`✅ [Database] PostgreSQL connection re-established after ${backoffs[i]}ms backoff.`);
+          isPgReconnecting = false;
+          return true;
+        }
+      } catch (e: any) {
+        console.warn(`⚠️ [Database] Reconnect attempt ${i + 1}/${backoffs.length} failed (${e.message}). Retrying...`);
+      }
+    }
+  }
+  isPgReconnecting = false;
+  return false;
 }
 
 export function getPgPool(): Pool | null {
@@ -467,6 +505,72 @@ export async function initializeDatabaseSchema(): Promise<boolean> {
           active BOOLEAN DEFAULT FALSE,
           metadata JSONB
       );
+
+      CREATE TABLE IF NOT EXISTS bids_outcome (
+          id UUID PRIMARY KEY,
+          bid_id VARCHAR(255) NOT NULL,
+          project_title TEXT,
+          bid_amount DECIMAL,
+          proposal_text TEXT,
+          proposal_tone VARCHAR(50) DEFAULT 'formal_technical',
+          outcome VARCHAR(50) DEFAULT 'Pending',
+          client_hire_rate DECIMAL DEFAULT 0.0,
+          total_bids_on_project INT DEFAULT 1,
+          final_payout_amount DECIMAL DEFAULT 0.0,
+          category VARCHAR(100) DEFAULT 'Full-Stack Engineering',
+          conversion_trigger BOOLEAN DEFAULT FALSE,
+          created_at TIMESTAMP DEFAULT NOW(),
+          updated_at TIMESTAMP DEFAULT NOW()
+      );
+      CREATE INDEX IF NOT EXISTS idx_bids_outcome_bid_id ON bids_outcome (bid_id);
+      CREATE INDEX IF NOT EXISTS idx_bids_outcome_outcome ON bids_outcome (outcome);
+      CREATE INDEX IF NOT EXISTS idx_bids_outcome_created ON bids_outcome (created_at DESC);
+
+      CREATE TABLE IF NOT EXISTS bids_outcome_archive (
+          id UUID PRIMARY KEY,
+          bid_id VARCHAR(255) NOT NULL,
+          project_title TEXT,
+          bid_amount DECIMAL,
+          proposal_text TEXT,
+          proposal_tone VARCHAR(50),
+          outcome VARCHAR(50),
+          client_hire_rate DECIMAL,
+          total_bids_on_project INT,
+          final_payout_amount DECIMAL,
+          category VARCHAR(100),
+          conversion_trigger BOOLEAN,
+          created_at TIMESTAMP,
+          updated_at TIMESTAMP
+      );
+
+      CREATE TABLE IF NOT EXISTS lead_followups (
+          id UUID PRIMARY KEY,
+          bid_id VARCHAR(255) NOT NULL,
+          project_title TEXT,
+          client_name TEXT,
+          message_text TEXT,
+          dispatched_at TIMESTAMP DEFAULT NOW(),
+          status VARCHAR(50) DEFAULT 'sent',
+          conversion_trigger BOOLEAN DEFAULT FALSE
+      );
+      CREATE INDEX IF NOT EXISTS idx_lead_followups_bid ON lead_followups (bid_id);
+
+      CREATE TABLE IF NOT EXISTS automated_payouts (
+          id UUID PRIMARY KEY,
+          work_order_id VARCHAR(255),
+          bid_id VARCHAR(255),
+          project_title TEXT,
+          client_name TEXT,
+          amount DECIMAL NOT NULL,
+          currency VARCHAR(10) DEFAULT 'USD',
+          risk_band VARCHAR(50) DEFAULT 'instant_transfer',
+          status VARCHAR(50) DEFAULT 'completed',
+          payout_batch_id TEXT,
+          invoice_number TEXT,
+          executed_at TIMESTAMP DEFAULT NOW(),
+          details JSONB
+      );
+      CREATE INDEX IF NOT EXISTS idx_automated_payouts_ts ON automated_payouts (executed_at DESC);
     `;
 
     const res = await safeExecutePgQuery(schemaSql);

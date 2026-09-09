@@ -31,6 +31,8 @@ export interface ScoredLead {
   leadScore: number; // 0 - 100
   profitabilityScore: number; // 0 - 100
   clientTrustScore: number; // 0 - 100
+  ml_client_score: number; // 0 - 100 (Client hire history & anti-scam score)
+  client_score?: number; // Alias for 0 - 100
   winProbability: number; // 0 - 100
   hourlyEffectiveRate: string;
   estimatedHours: number;
@@ -201,8 +203,17 @@ export function scoreLead(rawJob: any): ScoredLead {
   const competitionPenalty = Math.max(0, proposals * 2.5);
   const winProbability = Math.max(45, Math.min(98, Math.round((hireRate * 0.6) + (rating * 8) - competitionPenalty)));
 
-  // 3. Client Trust Score (0-100)
+  // 3. Client Trust Score & ML Client Score (0-100)
   const clientTrustScore = Math.max(70, Math.min(99, Math.round(hireRate * 0.5 + (rawJob.paymentVerified ? 35 : 10) + (rating * 3))));
+  
+  // Calculate ML Client Score specifically from client hire history to filter scammers:
+  // Payment verified (25 pts) + Hire Rate (up to 50 pts) + Rating (up to 20 pts) + Previous Hires (up to 5 pts)
+  const ml_client_score = calculateClientScore({
+    hireRate,
+    rating,
+    paymentVerified: rawJob.paymentVerified,
+    hiresCount: rawJob.hiresCount,
+  });
 
   // 4. Overall Weighted Lead Score:
   // 45% Profitability + 35% Win Probability + 20% Client Trust
@@ -268,6 +279,8 @@ export function scoreLead(rawJob: any): ScoredLead {
     leadScore,
     profitabilityScore,
     clientTrustScore,
+    ml_client_score,
+    client_score: ml_client_score,
     winProbability,
     hourlyEffectiveRate: `$${hourlyRate}/hr`,
     estimatedHours: Math.round(budget / hourlyRate),
@@ -388,3 +401,38 @@ export function deleteKeywordAlert(alertId: string) {
   keywordAlertsStore = keywordAlertsStore.filter(a => a.id !== alertId);
   return true;
 }
+
+/**
+ * ML Client Scoring Engine (0-100)
+ * Evaluates client hire history, rating, and payment verification to eliminate scammers.
+ * Scores < 60% are flagged as high risk and blocked from auto-bidding.
+ */
+export function calculateClientScore(clientData?: {
+  hireRate?: number;
+  rating?: number;
+  paymentVerified?: boolean;
+  hiresCount?: number;
+}): number {
+  if (!clientData) return 50;
+
+  const hireRate = Number(clientData.hireRate) || 0; // 0 - 100
+  const rating = Number(clientData.rating) || 0; // 0 - 5
+  const paymentVerified = Boolean(clientData.paymentVerified);
+  const hiresCount = Number(clientData.hiresCount) || 0;
+
+  // 1. Payment Verification weight: 25 points
+  const paymentWeight = paymentVerified ? 25 : 0;
+
+  // 2. Hire Rate weight: up to 45 points (e.g., 80% hire rate -> 36 pts)
+  const hireRateWeight = Math.min(45, Math.round((hireRate / 100) * 45));
+
+  // 3. Rating weight: up to 20 points (e.g., 4.9/5 -> 19.6 pts)
+  const ratingWeight = Math.min(20, Math.round((rating / 5) * 20));
+
+  // 4. Established Hires Count weight: up to 10 points
+  const volumeWeight = Math.min(10, Math.round(Math.log10(Math.max(1, hiresCount + 1)) * 5));
+
+  const totalScore = Math.max(0, Math.min(100, paymentWeight + hireRateWeight + ratingWeight + volumeWeight));
+  return totalScore;
+}
+
