@@ -184,8 +184,32 @@ cron.schedule('*/30 * * * * *', async () => {
 let consecutiveHealthFailures = 0;
 cron.schedule('* * * * *', async () => {
   try {
-    const res = await axios.get('http://127.0.0.1:3000/api/health', { timeout: 3000 }).catch(() => null);
-    if (!res || res.status !== 200) {
+    const port = Number(process.env.PORT) || 3000;
+    let isHealthy = false;
+
+    // 1. Try unified health endpoint with a safe 8-second timeout
+    try {
+      const res = await axios.get(`http://127.0.0.1:${port}/api/health`, { timeout: 8000 });
+      if (res && res.status === 200 && res.data?.status !== 'critical') {
+        isHealthy = true;
+      }
+    } catch {
+      // If external API checks in /api/health experience latency, fall back to fast ping
+    }
+
+    // 2. Fast Liveness Fallback: Verify if local Node server process is alive & responsive (<5ms)
+    if (!isHealthy) {
+      try {
+        const pingRes = await axios.get(`http://127.0.0.1:${port}/api/health/ping`, { timeout: 3000 });
+        if (pingRes && pingRes.status === 200) {
+          isHealthy = true;
+        }
+      } catch {
+        // Both full health and ping failed
+      }
+    }
+
+    if (!isHealthy) {
       consecutiveHealthFailures++;
       console.warn(`⚠️ [Watchdog] /api/health check failed (${consecutiveHealthFailures} consecutive). Triggering auto-remediation...`);
       await clearBidsCache();

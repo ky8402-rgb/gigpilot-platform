@@ -576,24 +576,39 @@ export async function checkTransactions(): Promise<TransactionsCheckResult> {
 // ----------------------------------------------------------------------------
 // 8. Full Unified System Health Check
 // ----------------------------------------------------------------------------
-export async function runFullHealthCheck(): Promise<FullHealthCheckResult> {
-  const [
-    dbResult,
-    cronResult,
-    paypalResult,
-    freelancerResult,
-    queueResult,
-    workOrdersResult,
-    transactionsResult,
-  ] = await Promise.all([
-    checkDatabase().catch((err) => ({ status: 'critical' as HealthStatus, latencyMs: 0, error: err.message })),
-    checkCronJob().catch((err) => ({ status: 'critical' as HealthStatus, lastRun: new Date().toISOString(), secondsSinceLastRun: 999, intervalSeconds: 30, message: err.message })),
-    checkPayPalConnectivity().catch((err) => ({ status: 'degraded' as HealthStatus, message: err.message })),
-    checkFreelancerConnectivity().catch((err) => ({ status: 'degraded' as HealthStatus, message: err.message })),
-    checkQueueHealth().catch((err) => ({ status: 'degraded' as HealthStatus, details: {}, failedJobsCount: 0, message: err.message })),
-    checkWorkOrders().catch((err) => ({ status: 'degraded' as HealthStatus, stuckCount: 0, failedPayments: 0, message: err.message })),
-    checkTransactions().catch((err) => ({ status: 'degraded' as HealthStatus, pendingOld: 0, failedCount: 0, message: err.message })),
-  ]);
+let cachedHealthResult: { result: FullHealthCheckResult; timestamp: number } | null = null;
+let inFlightHealthPromise: Promise<FullHealthCheckResult> | null = null;
+const HEALTH_CACHE_TTL_MS = 6000; // 6-second cache prevents external rate-limiting & timeout cascades
+
+export async function runFullHealthCheck(forceRefresh: boolean = false): Promise<FullHealthCheckResult> {
+  const now = Date.now();
+  if (!forceRefresh && cachedHealthResult && now - cachedHealthResult.timestamp < HEALTH_CACHE_TTL_MS) {
+    return cachedHealthResult.result;
+  }
+
+  if (inFlightHealthPromise) {
+    return inFlightHealthPromise;
+  }
+
+  inFlightHealthPromise = (async () => {
+    try {
+      const [
+        dbResult,
+        cronResult,
+        paypalResult,
+        freelancerResult,
+        queueResult,
+        workOrdersResult,
+        transactionsResult,
+      ] = await Promise.all([
+        checkDatabase().catch((err) => ({ status: 'critical' as HealthStatus, latencyMs: 0, error: err.message })),
+        checkCronJob().catch((err) => ({ status: 'critical' as HealthStatus, lastRun: new Date().toISOString(), secondsSinceLastRun: 999, intervalSeconds: 30, message: err.message })),
+        checkPayPalConnectivity().catch((err) => ({ status: 'degraded' as HealthStatus, message: err.message })),
+        checkFreelancerConnectivity().catch((err) => ({ status: 'degraded' as HealthStatus, message: err.message })),
+        checkQueueHealth().catch((err) => ({ status: 'degraded' as HealthStatus, details: {}, failedJobsCount: 0, message: err.message })),
+        checkWorkOrders().catch((err) => ({ status: 'degraded' as HealthStatus, stuckCount: 0, failedPayments: 0, message: err.message })),
+        checkTransactions().catch((err) => ({ status: 'degraded' as HealthStatus, pendingOld: 0, failedCount: 0, message: err.message })),
+      ]);
 
   // Overall system status calculation
   const allStatuses: HealthStatus[] = [
@@ -728,7 +743,7 @@ export async function runFullHealthCheck(): Promise<FullHealthCheckResult> {
     ? remediationPoints.join('; ') + '.'
     : 'System operating normally. No remediation needed.';
 
-  return {
+  const finalResult: FullHealthCheckResult = {
     status: overallStatus,
     timestamp: new Date().toISOString(),
     checks: {
@@ -744,4 +759,13 @@ export async function runFullHealthCheck(): Promise<FullHealthCheckResult> {
     remediation,
     predictiveML: predictiveMLResult,
   };
+
+      cachedHealthResult = { result: finalResult, timestamp: Date.now() };
+      return finalResult;
+    } finally {
+      inFlightHealthPromise = null;
+    }
+  })();
+
+  return inFlightHealthPromise;
 }

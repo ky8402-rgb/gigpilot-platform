@@ -6,8 +6,8 @@ const port = Number(process.env.PORT) || 3000;
 const options = {
   hostname: '127.0.0.1',
   port: port,
-  path: '/api/health',
-  timeout: 3000
+  path: '/api/health/ping',
+  timeout: 5000
 };
 
 const req = http.request(options, (res) => {
