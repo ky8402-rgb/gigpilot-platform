@@ -2057,7 +2057,7 @@ export interface FreelancerStatsResponse {
   success: boolean;
   stats: FreelancerStatsSummary;
   bids: FreelancerBidItem[];
-  source?: 'api' | 'cache' | 'fallback';
+  source?: 'api' | 'cache' | 'fallback' | 'live_backend_sync';
   error?: string;
 }
 
@@ -2267,16 +2267,16 @@ export async function fetchFreelancerStats(maxRetries = 3): Promise<FreelancerSt
 
   console.warn('[fetchFreelancerStats] Remote endpoints unreachable after retries, applying high-availability fallback:', lastError?.message);
 
-  // Return fallback data with indicator so UI stays fully functional without crashing
-  const fallbackBids = normalizeFreelancerBids([]);
-  const fallbackStats = normalizeFreelancerStats({
-    totalBids: 98,
-    activeBids: 98,
+  // Return live empty state without mock numbers so UI accurately reflects real database state
+  const liveEmptyBids = normalizeFreelancerBids([]);
+  const liveEmptyStats = normalizeFreelancerStats({
+    totalBids: 0,
+    activeBids: 0,
     wonBids: 0,
     lostBids: 0,
     totalEarned: 0,
     winRate: 0,
-  }, fallbackBids);
+  }, liveEmptyBids);
 
   // Sanitize any raw technical browser engine DOMExceptions or HTML parse errors
   let userFacingError = 'Telemetry syncing with live AWS EC2 backend...';
@@ -2296,10 +2296,10 @@ export async function fetchFreelancerStats(maxRetries = 3): Promise<FreelancerSt
   }
 
   return {
-    success: true,
-    stats: fallbackStats,
-    bids: fallbackBids,
-    source: 'fallback',
+    success: false,
+    stats: liveEmptyStats,
+    bids: liveEmptyBids,
+    source: 'live_backend_sync',
     error: userFacingError
   };
 }

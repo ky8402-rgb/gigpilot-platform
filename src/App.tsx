@@ -332,7 +332,7 @@ export default function App() {
             title: job.title,
             platform: job.platform || (job.company?.toLowerCase().includes('freelancer') ? 'Freelancer' : 'RemoteOK'),
             status: 'pending',
-            amount: job.amount || 250,
+            amount: job.amount || 0,
             category: job.category || 'General',
             time: job.time || 'Live Feed',
             clientName: job.company,

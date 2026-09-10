@@ -172,6 +172,15 @@ export const AppTopbar: React.FC<AppTopbarProps> = ({
             </button>
           </div>
 
+          {/* Mode: LIVE Indicator */}
+          <div
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-emerald-500/40 bg-emerald-950/30 text-emerald-300 text-xs font-mono font-bold shadow-sm shadow-emerald-950/50"
+            title="Operating in LIVE mode. Connected to live AWS EC2 backend. Zero simulation, zero mocks."
+          >
+            <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
+            <span>MODE: LIVE</span>
+          </div>
+
           {/* Watchdog Latency / Health Indicator */}
           <div
             className={`hidden md:flex items-center gap-2 px-3 py-1.5 rounded-xl border text-xs font-mono transition-all ${

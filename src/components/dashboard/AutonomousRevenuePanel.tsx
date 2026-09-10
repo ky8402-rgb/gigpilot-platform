@@ -72,10 +72,6 @@ export const AutonomousRevenuePanel: React.FC = () => {
   const [loading, setLoading] = useState<boolean>(true);
   const [activeTab, setActiveTab] = useState<'kpis' | 'ab_testing' | 'guardrails' | 'payouts'>('kpis');
   const [isRefreshing, setIsRefreshing] = useState<boolean>(false);
-  const [isSimulatingWon, setIsSimulatingWon] = useState<boolean>(false);
-  const [simulatedWonResult, setSimulatedWonResult] = useState<any | null>(null);
-  const [isSimulatingWatchdog, setIsSimulatingWatchdog] = useState<boolean>(false);
-  const [watchdogResult, setWatchdogResult] = useState<any | null>(null);
 
   const fetchRevenueData = async () => {
     setIsRefreshing(true);
@@ -98,116 +94,16 @@ export const AutonomousRevenuePanel: React.FC = () => {
 
       if (json && json.summary) {
         setData(json);
+      } else if (json && json.data?.summary) {
+        setData(json.data);
       } else {
-        // High-fidelity fallback initialized from active database simulation
-        setData({
-          summary: {
-            totalBidsTracked: 42,
-            wonBidsCount: 29,
-            lostBidsCount: 5,
-            pendingBidsCount: 8,
-            winRatePercent: 85.3,
-            avgWinAmount: 485,
-            totalRealizedRevenue: 14065,
-            projectedMonthlyRevenue: 16800,
-          },
-          toneABTesting: {
-            variantA: {
-              tone: 'formal_technical',
-              name: 'Formal & Technical',
-              bidsCount: 20,
-              wonCount: 13,
-              winRate: 65,
-              avgWinAmount: 510,
-              isBestPerformer: false,
-            },
-            variantB: {
-              tone: 'impact_driven',
-              name: 'Short & Impact-Driven',
-              bidsCount: 22,
-              wonCount: 16,
-              winRate: 72.7,
-              avgWinAmount: 465,
-              isBestPerformer: true,
-            },
-            recommendedTone: 'Short & Impact-Driven',
-          },
-          guardrails: {
-            canBid: true,
-            reason: 'All risk boundaries within safe thresholds.',
-            consecutiveLosses: 0,
-            lossStreakThreshold: 4,
-            dailyLossAmount: 0,
-            dailyLossThreshold: 1200,
-            status: 'HEALTHY_ACTIVE',
-          },
-          pricingStrategy: {
-            percentileTarget: 60,
-            profitabilityFloor: 150,
-            strategy: 'Dynamic 60% Percentile of Max Budget with $150 Floor',
-          },
-          recentOutcomes: [
-            {
-              bid_id: 'fl_proj_98124',
-              project_title: 'Full-Stack SaaS Platform with React, Node.js & Stripe',
-              bid_amount: 499,
-              proposal_tone: 'impact_driven',
-              outcome: 'Won',
-              client_hire_rate: 92,
-              created_at: new Date(Date.now() - 3600000 * 2).toISOString(),
-            },
-            {
-              bid_id: 'fl_proj_98146',
-              project_title: 'PayPal REST API & Razorpay Payment Integration',
-              bid_amount: 280,
-              proposal_tone: 'formal_technical',
-              outcome: 'Won',
-              client_hire_rate: 88,
-              created_at: new Date(Date.now() - 3600000 * 6).toISOString(),
-            },
-            {
-              bid_id: 'fl_proj_98157',
-              project_title: 'Fix Next.js Production Build Memory Leak & Performance Audit',
-              bid_amount: 195,
-              proposal_tone: 'impact_driven',
-              outcome: 'Won',
-              client_hire_rate: 95,
-              created_at: new Date(Date.now() - 3600000 * 12).toISOString(),
-            },
-          ],
-          recentPayouts: [
-            {
-              id: 'pay_98124',
-              work_order_id: 'wo_98124',
-              amount: 499,
-              status: 'paid',
-              risk_band: 'standard_automated',
-              paypal_batch_id: 'PAYPAL_BATCH_892198',
-              created_at: new Date(Date.now() - 3600000 * 4).toISOString(),
-            },
-            {
-              id: 'pay_98146',
-              work_order_id: 'wo_98146',
-              amount: 280,
-              status: 'paid',
-              risk_band: 'standard_automated',
-              paypal_batch_id: 'PAYPAL_BATCH_892204',
-              created_at: new Date(Date.now() - 3600000 * 18).toISOString(),
-            },
-            {
-              id: 'pay_98157',
-              work_order_id: 'wo_98157',
-              amount: 99,
-              status: 'paid',
-              risk_band: 'instant_transfer',
-              paypal_batch_id: 'PAYPAL_BATCH_892215',
-              created_at: new Date(Date.now() - 3600000 * 28).toISOString(),
-            },
-          ],
-        });
+        // Mode: LIVE. No simulation, no mocks, no fallback numbers.
+        // Pure live database reflection
+        setData(null);
       }
     } catch (e) {
       console.warn('[AutonomousRevenuePanel] Fetch error:', e);
+      setData(null);
     } finally {
       setLoading(false);
       setIsRefreshing(false);
@@ -220,123 +116,15 @@ export const AutonomousRevenuePanel: React.FC = () => {
     return () => clearInterval(interval);
   }, []);
 
-  const handleSimulateWonContract = async () => {
-    setIsSimulatingWon(true);
-    setSimulatedWonResult(null);
-    try {
-      const endpoints = [
-        apiUrl('/api/revenue/simulate-won'),
-        '/api/revenue/simulate-won',
-        apiUrl('/api/bids/simulate-won'),
-      ];
-      let resData: any = null;
-      for (const ep of endpoints) {
-        try {
-          const res = await fetch(ep, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              projectTitle: 'Automated CI/CD & Microservices Cloud Deployment',
-              amount: 280,
-              tone: 'impact_driven',
-              category: 'Cloud & Full-Stack',
-            }),
-          });
-          if (res.ok) {
-            resData = await res.json();
-            if (resData && resData.success) break;
-          }
-        } catch (_) {}
-      }
-      if (resData && resData.success) {
-        setSimulatedWonResult(resData);
-        setActiveTab('payouts');
-        await fetchRevenueData();
-      } else {
-        setSimulatedWonResult({
-          success: true,
-          message: 'Won contract simulated & PayPal automated payout triggered ($280 USD).',
-          contract: {
-            bidId: `won_proj_${Date.now()}`,
-            projectTitle: 'Automated CI/CD & Microservices Cloud Deployment',
-            amount: 280,
-            outcome: 'Won',
-            proposalTone: 'impact_driven',
-          },
-          payout: {
-            payoutBatchId: `PAYPAL_BATCH_${Math.floor(100000 + Math.random() * 900000)}`,
-            status: 'paid',
-            riskBand: 'standard_automated',
-            invoiceNumber: `INV-20260909-${Math.floor(1000 + Math.random() * 9000)}`,
-            transferLatencyMs: 384,
-          },
-        });
-        setActiveTab('payouts');
-      }
-    } catch (err) {
-      console.error('[SimulateWon] Error:', err);
-    } finally {
-      setIsSimulatingWon(false);
-    }
-  };
-
-  const handleSimulatePm2Kill = async () => {
-    setIsSimulatingWatchdog(true);
-    setWatchdogResult(null);
-    try {
-      const endpoints = [
-        apiUrl('/api/self-healing/simulate-pm2-kill'),
-        '/api/self-healing/simulate-pm2-kill',
-        apiUrl('/api/health/restart'),
-      ];
-      let resData: any = null;
-      for (const ep of endpoints) {
-        try {
-          const res = await fetch(ep, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ source: 'dashboard_watchdog_test' }),
-          });
-          if (res.ok) {
-            resData = await res.json();
-            if (resData && (resData.success || resData.remediation)) break;
-          }
-        } catch (_) {}
-      }
-      if (resData) {
-        setWatchdogResult(resData);
-        setActiveTab('guardrails');
-      } else {
-        setWatchdogResult({
-          success: true,
-          message: 'PM2 process termination simulated. Watchdog auto-recovery verified.',
-          watchdogStatus: 'HEALTHY_RESTORED',
-          simulatedKillAt: new Date().toISOString(),
-          recoveredAt: new Date(Date.now() + 650).toISOString(),
-          actionsTaken: [
-            'Intercepted SIGTERM process drop simulation',
-            'Watchdog re-spawned PM2 cluster worker process (PID 4821)',
-            'Flushed in-memory connection pools and verified /api/health (200 OK)',
-          ],
-        });
-        setActiveTab('guardrails');
-      }
-    } catch (err) {
-      console.error('[WatchdogTest] Error:', err);
-    } finally {
-      setIsSimulatingWatchdog(false);
-    }
-  };
-
   const summary = data?.summary || {
     totalBidsTracked: 0,
     wonBidsCount: 0,
     lostBidsCount: 0,
     pendingBidsCount: 0,
-    winRatePercent: 85.3,
-    avgWinAmount: 485,
-    totalRealizedRevenue: 14065,
-    projectedMonthlyRevenue: 16800,
+    winRatePercent: 0,
+    avgWinAmount: 0,
+    totalRealizedRevenue: 0,
+    projectedMonthlyRevenue: 0,
   };
 
   const ab = data?.toneABTesting;
@@ -359,40 +147,35 @@ export const AutonomousRevenuePanel: React.FC = () => {
             </div>
             <div>
               <h3 className="text-base font-bold text-white tracking-tight flex items-center gap-2">
-                Autonomous Revenue Intelligence & Dynamic Pricing
+                Autonomous Revenue Intelligence &amp; Dynamic Pricing
                 <span className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-500/15 text-emerald-300 font-mono font-semibold border border-emerald-500/30">
-                  ML PIPELINE ACTIVE
+                  MODE: LIVE
                 </span>
               </h3>
               <p className="text-xs text-slate-400 mt-0.5">
-                Dynamic 60% percentile pricing, A/B proposal tone testing, anti-bankruptcy stop-loss guardrails & autonomous cash-out.
+                Real-time database pricing models, A/B proposal tone testing, anti-bankruptcy stop-loss guardrails &amp; autonomous settlement.
               </p>
             </div>
           </div>
         </div>
 
-        {/* Tab switcher & refresh */}
+        {/* Live Controls & Tab switcher */}
         <div className="flex flex-wrap items-center gap-2">
-          {/* Action: Simulate Won Contract */}
-          <button
-            onClick={handleSimulateWonContract}
-            disabled={isSimulatingWon}
-            className="px-3 py-1.5 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-medium text-xs shadow-md shadow-emerald-900/30 flex items-center gap-1.5 transition-all disabled:opacity-50"
-            title="Simulate Won Contract and trigger automated PayPal payout"
-          >
-            <i className={`fas ${isSimulatingWon ? 'fa-spinner fa-spin' : 'fa-handshake'}`}></i>
-            <span>{isSimulatingWon ? 'Triggering Payout...' : 'Simulate Won Contract'}</span>
-          </button>
+          {/* Live Indicator Badge */}
+          <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-emerald-950/40 border border-emerald-500/30 text-emerald-300 font-mono text-xs font-semibold">
+            <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
+            <span>LIVE PRODUCTION</span>
+          </div>
 
-          {/* Action: Test PM2 Kill */}
+          {/* Action: Live Audit Refresh */}
           <button
-            onClick={handleSimulatePm2Kill}
-            disabled={isSimulatingWatchdog}
-            className="px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 font-medium text-xs flex items-center gap-1.5 transition-all disabled:opacity-50"
-            title="Temporarily test PM2 kill to verify Watchdog auto-restart"
+            onClick={fetchRevenueData}
+            disabled={isRefreshing}
+            className="px-3 py-1.5 rounded-xl bg-[#161e31] hover:bg-[#1f2a44] border border-slate-800 hover:border-slate-700 text-slate-200 hover:text-white font-medium text-xs flex items-center gap-1.5 transition-all disabled:opacity-50"
+            title="Run live database audit & refresh revenue intelligence"
           >
-            <i className={`fas ${isSimulatingWatchdog ? 'fa-spinner fa-spin text-amber-400' : 'fa-shield-virus text-amber-400'}`}></i>
-            <span>{isSimulatingWatchdog ? 'Testing Watchdog...' : 'Test Self-Healing'}</span>
+            <i className={`fas fa-sync-alt ${isRefreshing ? 'fa-spin text-emerald-400' : 'text-slate-400'}`}></i>
+            <span>{isRefreshing ? 'Auditing...' : 'Live Audit'}</span>
           </button>
 
           <div className="bg-[#161e31] p-1 rounded-xl border border-slate-800 flex items-center gap-1 text-xs">
@@ -437,69 +220,8 @@ export const AutonomousRevenuePanel: React.FC = () => {
               Automatic Payouts
             </button>
           </div>
-
-          <button
-            onClick={fetchRevenueData}
-            disabled={isRefreshing}
-            className="w-8 h-8 rounded-xl bg-[#161e31] border border-slate-800 hover:border-slate-700 text-slate-300 hover:text-white flex items-center justify-center text-xs transition-colors"
-            title="Refresh Revenue Intelligence"
-          >
-            <i className={`fas fa-sync-alt ${isRefreshing ? 'fa-spin text-emerald-400' : ''}`}></i>
-          </button>
         </div>
       </div>
-
-      {/* Simulated Won Feedback Banner */}
-      {simulatedWonResult && (
-        <div className="mb-4 p-3.5 rounded-xl bg-emerald-950/40 border border-emerald-500/40 text-xs text-emerald-200 flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 animate-fadeIn">
-          <div className="flex items-start gap-2.5">
-            <div className="w-6 h-6 rounded-lg bg-emerald-500/20 text-emerald-400 flex items-center justify-center flex-shrink-0 mt-0.5">
-              <i className="fas fa-check-circle"></i>
-            </div>
-            <div>
-              <div className="font-bold text-white flex items-center gap-2">
-                Contract Won &amp; PayPal Transfer Dispatched!
-                <span className="font-mono text-[10px] px-2 py-0.5 rounded bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
-                  {simulatedWonResult.payout?.riskBand || 'standard_automated'}
-                </span>
-              </div>
-              <p className="text-[11px] text-emerald-300/80 mt-0.5">
-                {simulatedWonResult.contract?.projectTitle} &bull; ${simulatedWonResult.contract?.amount || 280} USD transferred to worker.
-                {simulatedWonResult.payout?.invoiceNumber && ` Invoice: ${simulatedWonResult.payout.invoiceNumber}.`}
-              </p>
-            </div>
-          </div>
-          <div className="font-mono text-[11px] text-right bg-black/30 px-3 py-1.5 rounded-lg border border-emerald-500/20">
-            <span className="text-slate-400 block text-[9px] uppercase">PayPal Batch ID</span>
-            <span className="text-emerald-300 font-bold">{simulatedWonResult.payout?.payoutBatchId || 'PAYPAL_BATCH_SUCCESS'}</span>
-          </div>
-        </div>
-      )}
-
-      {/* Watchdog Simulation Feedback Banner */}
-      {watchdogResult && (
-        <div className="mb-4 p-3.5 rounded-xl bg-slate-900 border border-indigo-500/40 text-xs text-slate-200 flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 animate-fadeIn">
-          <div className="flex items-start gap-2.5">
-            <div className="w-6 h-6 rounded-lg bg-indigo-500/20 text-indigo-400 flex items-center justify-center flex-shrink-0 mt-0.5">
-              <i className="fas fa-shield-alt"></i>
-            </div>
-            <div>
-              <div className="font-bold text-white flex items-center gap-2">
-                Watchdog Self-Healing Verification Complete
-                <span className="font-mono text-[10px] px-2 py-0.5 rounded bg-indigo-500/20 text-indigo-300 border border-indigo-500/30">
-                  {watchdogResult.watchdogStatus || 'HEALTHY_RESTORED'}
-                </span>
-              </div>
-              <p className="text-[11px] text-slate-400 mt-0.5">
-                Process kill detected &bull; PM2 worker re-spawned &bull; Health check verified (200 OK).
-              </p>
-            </div>
-          </div>
-          <div className="font-mono text-[10px] text-slate-400">
-            Recovered: {new Date(watchdogResult.recoveredAt || Date.now()).toLocaleTimeString()}
-          </div>
-        </div>
-      )}
 
       {/* Main Content Area based on tab */}
       {activeTab === 'kpis' && (
@@ -515,7 +237,7 @@ export const AutonomousRevenuePanel: React.FC = () => {
             </div>
             <div className="mt-2 flex items-center justify-between text-[11px] text-slate-400">
               <span>{summary.wonBidsCount} won of {summary.totalBidsTracked} tracked</span>
-              <span className="text-emerald-400 font-semibold">+14.2% vs static</span>
+              <span className="text-emerald-400 font-semibold">{summary.totalBidsTracked > 0 ? `${summary.wonBidsCount} Verified Wins` : 'Live Feed Active'}</span>
             </div>
             <div className="w-full bg-slate-800 h-1.5 rounded-full mt-2 overflow-hidden">
               <div
@@ -754,23 +476,31 @@ export const AutonomousRevenuePanel: React.FC = () => {
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-800/60 font-mono text-[11px]">
-                {(data?.recentPayouts || []).map((p) => (
-                  <tr key={p.id} className="hover:bg-slate-800/40">
-                    <td className="py-2.5 px-3 font-medium text-white">{p.work_order_id}</td>
-                    <td className="py-2.5 px-3 font-bold text-emerald-400">${p.amount} USD</td>
-                    <td className="py-2.5 px-3">
-                      <span className="px-2 py-0.5 rounded text-[10px] bg-indigo-500/15 text-indigo-300 border border-indigo-500/30">
-                        {p.risk_band}
-                      </span>
-                    </td>
-                    <td className="py-2.5 px-3 text-slate-400">{p.paypal_batch_id || 'PENDING'}</td>
-                    <td className="py-2.5 px-3">
-                      <span className="px-2 py-0.5 rounded text-[10px] bg-emerald-500/20 text-emerald-300 border border-emerald-500/40">
-                        PAID
-                      </span>
+                {(data?.recentPayouts || []).length === 0 ? (
+                  <tr>
+                    <td colSpan={5} className="py-6 px-3 text-center text-slate-500 font-sans text-xs">
+                      No payouts recorded in live database yet. Once contracts reach milestone fulfillment, transfers appear automatically.
                     </td>
                   </tr>
-                ))}
+                ) : (
+                  (data?.recentPayouts || []).map((p) => (
+                    <tr key={p.id} className="hover:bg-slate-800/40">
+                      <td className="py-2.5 px-3 font-medium text-white">{p.work_order_id}</td>
+                      <td className="py-2.5 px-3 font-bold text-emerald-400">${p.amount} USD</td>
+                      <td className="py-2.5 px-3">
+                        <span className="px-2 py-0.5 rounded text-[10px] bg-indigo-500/15 text-indigo-300 border border-indigo-500/30">
+                          {p.risk_band}
+                        </span>
+                      </td>
+                      <td className="py-2.5 px-3 text-slate-400">{p.paypal_batch_id || 'PENDING'}</td>
+                      <td className="py-2.5 px-3">
+                        <span className="px-2 py-0.5 rounded text-[10px] bg-emerald-500/20 text-emerald-300 border border-emerald-500/40">
+                          PAID
+                        </span>
+                      </td>
+                    </tr>
+                  ))
+                )}
               </tbody>
             </table>
           </div>

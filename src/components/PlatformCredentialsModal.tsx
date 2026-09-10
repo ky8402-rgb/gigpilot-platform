@@ -113,21 +113,7 @@ export function PlatformCredentialsModal({
         onOrderAdded(matchingJob);
         showToast(`⚡ Pulled & synced live work orders from ${platformName} ($${matchingJob.amount} USD)!`, 'success');
       } else {
-        // Fallback live item
-        const fallbackOrder = {
-          id: `${platformName.toLowerCase()}_${Date.now()}`,
-          externalId: `${platformName.toLowerCase()}_${Date.now()}`,
-          title: `${platformName} Verified Contract: Full-Stack React & Node.js System`,
-          platform: platformName,
-          status: 'pending',
-          amount: 450,
-          category: 'Software Development',
-          time: 'Just now',
-          clientName: `${platformName} Partner Client`,
-          description: `Live work order synchronized from ${platformName} API integration.`
-        };
-        onOrderAdded(fallbackOrder);
-        showToast(`⚡ Ingested new verified work order from ${platformName} ($${fallbackOrder.amount} USD)!`, 'success');
+        showToast(`Platform sync complete: No active orders found on ${platformName} right now.`, 'info');
       }
     } catch (err: any) {
       showToast(err.message || 'Sync failed', 'warning');

@@ -98,11 +98,10 @@ export async function getPayPalSdkV6Instance(config?: PayPalSdkV6Config): Promis
       }
     } catch (err: any) {
       console.warn('[PayPal SDK v6] createInstance notice:', err?.message || err);
+      throw new Error('PayPal JavaScript SDK is not initialized in this browser context. Please verify PayPal client configuration or use direct PayPal REST/PayPal.me checkout.');
     }
 
-    // Fallback Mock SDK Instance for browser resilience
-    sdkInstanceCache = createFallbackSdkInstance();
-    return sdkInstanceCache;
+    throw new Error('PayPal JavaScript SDK could not be loaded.');
   })();
 
   return sdkInitPromise;
@@ -415,35 +414,6 @@ export async function configurePayPalButton(
   return () => {
     if (targetButton) {
       targetButton.removeEventListener('click', handleClick);
-    }
-  };
-}
-
-/**
- * Fallback Mock instance for offline/development resilience
- */
-function createFallbackSdkInstance() {
-  return {
-    createPayPalOneTimePaymentSession: (options: PaymentSessionOptions) => {
-      return {
-        start: async (modeConfig: { presentationMode: string }, orderPromise: Promise<any>) => {
-          const order = await orderPromise;
-          if (modeConfig.presentationMode === 'payment-handler') {
-            // Simulated recoverable error to demonstrate the fallback to popup/modal
-            const err: any = new Error('Payment handler request unhandled, attempting browser popup');
-            err.isRecoverable = true;
-            throw err;
-          }
-
-          // Trigger simulated approval
-          setTimeout(async () => {
-            await options.onApprove({
-              orderId: order.orderId,
-              payerId: 'PAYER-99887766'
-            });
-          }, 1200);
-        }
-      };
     }
   };
 }
