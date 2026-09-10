@@ -181,53 +181,7 @@ class RevenueStateStore {
       this.bidsOutcomes.set(item.bid_id, item);
     }
 
-    this.automatedPayouts = [
-      {
-        id: 'payout_1',
-        work_order_id: 'wo_98124',
-        bid_id: 'fl_proj_98124',
-        project_title: 'Full-Stack SaaS Platform with React, Node.js & Stripe',
-        client_name: 'Apex Tech Labs',
-        amount: 540,
-        currency: 'USD',
-        risk_band: 'high_value_review',
-        status: 'completed',
-        payout_batch_id: 'batch_pp_98124_01',
-        invoice_number: 'INV-2026-081',
-        executed_at: new Date(Date.now() - 3600000 * 24 * 2).toISOString(),
-        details: { approvedVia: 'telegram_quick_confirm', autoEscrowRelease: true },
-      },
-      {
-        id: 'payout_2',
-        work_order_id: 'wo_98135',
-        bid_id: 'fl_proj_98135',
-        project_title: 'Gemini 2.5 AI Workflow Agent & Webhook Automation',
-        client_name: 'OmniFlow Systems',
-        amount: 380,
-        currency: 'USD',
-        risk_band: 'standard_automated',
-        status: 'completed',
-        payout_batch_id: 'batch_pp_98135_02',
-        invoice_number: 'INV-2026-082',
-        executed_at: new Date(Date.now() - 3600000 * 20).toISOString(),
-        details: { autoEscrowRelease: true, milestone: 'Production Delivery' },
-      },
-      {
-        id: 'payout_3',
-        work_order_id: 'wo_98157',
-        bid_id: 'fl_proj_98157',
-        project_title: 'Fix Next.js Production Build Memory Leak & Performance Audit',
-        client_name: 'Velocity Studios',
-        amount: 90,
-        currency: 'USD',
-        risk_band: 'instant_transfer',
-        status: 'completed',
-        payout_batch_id: 'batch_pp_98157_03',
-        invoice_number: 'INV-2026-083',
-        executed_at: new Date(Date.now() - 3600000 * 30).toISOString(),
-        details: { autoEscrowRelease: true, immediateUnder100Transfer: true },
-      },
-    ];
+    this.automatedPayouts = [];
   }
 }
 
