@@ -160,21 +160,16 @@ export function getApiBaseUrl(): string {
   return DEFAULT_PRODUCTION_BACKEND_URL;
 }
 
-<<<<<<< HEAD
 /**
  * Creates an order on the backend via /api/paypal/create-order or /api/create-order
  */
 export async function createBackendOrder(params: {
-=======
-async function createBackendOrder(payload: {
->>>>>>> 8fab0ab (Deploy to AWS EC2 and AWS Amplify)
   amount: number;
   currency?: string;
   description?: string;
   clientName?: string;
   clientEmail?: string;
   customId?: string;
-<<<<<<< HEAD
 }): Promise<{ orderId: string; approveUrl?: string; isLiveRest?: boolean }> {
   const baseUrl = getApiBaseUrl();
   const endpoint = `${baseUrl}/api/paypal/create-order`;
@@ -234,31 +229,6 @@ async function createBackendOrder(payload: {
 export async function captureBackendOrder(params: {
   orderId: string;
   amount: number;
-=======
-}): Promise<{ orderId: string; [key: string]: any }> {
-  const baseUrl = getApiBaseUrl();
-  let res = await fetch(`${baseUrl}/api/paypal/create-order`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(payload),
-  });
-  if (!res.ok) {
-    res = await fetch(`${baseUrl}/api/create-order`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload),
-    });
-  }
-  if (!res.ok) {
-    throw new Error(`Create backend order failed with status ${res.status}`);
-  }
-  return res.json();
-}
-
-async function captureBackendOrder(payload: {
-  orderId: string;
-  amount?: number;
->>>>>>> 8fab0ab (Deploy to AWS EC2 and AWS Amplify)
   clientName?: string;
   clientEmail?: string;
   title?: string;
@@ -266,7 +236,6 @@ async function captureBackendOrder(payload: {
   userId?: string;
 }): Promise<any> {
   const baseUrl = getApiBaseUrl();
-<<<<<<< HEAD
   const endpoint = `${baseUrl}/api/paypal/capture-order`;
 
   const response = await fetch(endpoint, {
@@ -292,24 +261,6 @@ async function captureBackendOrder(payload: {
 
   const data = await response.json();
   return data;
-=======
-  let res = await fetch(`${baseUrl}/api/paypal/capture-order`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(payload),
-  });
-  if (!res.ok) {
-    res = await fetch(`${baseUrl}/api/capture-payment`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload),
-    });
-  }
-  if (!res.ok) {
-    throw new Error(`Capture backend order failed with status ${res.status}`);
-  }
-  return res.json();
->>>>>>> 8fab0ab (Deploy to AWS EC2 and AWS Amplify)
 }
 
 /**

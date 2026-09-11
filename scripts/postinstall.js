@@ -1,7 +1,6 @@
 #!/usr/bin/env node
 /**
  * Postinstall lifecycle script
-<<<<<<< HEAD
  * Prunes extraneous packages and rebuilds native modules without recursive loops.
  */
 import fs from 'fs';
@@ -45,9 +44,3 @@ try {
     }
   } catch (_) {}
 }
-=======
- * Fast no-op to prevent blocking dev server startup
- */
-console.log('⚡ [postinstall] Dependencies ready.');
-process.exit(0);
->>>>>>> 8fab0ab (Deploy to AWS EC2 and AWS Amplify)

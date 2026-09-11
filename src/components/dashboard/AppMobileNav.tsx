@@ -16,14 +16,8 @@ interface AppMobileNavProps {
   onOpenPayPalSettlement: () => void;
   onOpenGitHubSettings: () => void;
   onOpenAutoDeploy: () => void;
-<<<<<<< HEAD
   onOpenCredentialsModal: () => void;
   onOpenLegal: (tab: 'terms' | 'privacy' | 'gst' | 'refunds') => void;
-=======
-  onOpenSelfUpdatingPipeline?: () => void;
-  onOpenCredentialsModal: () => void;
-  onOpenLegal: (tab: 'contract' | 'terms' | 'privacy' | 'gst' | 'refunds') => void;
->>>>>>> 8fab0ab (Deploy to AWS EC2 and AWS Amplify)
   fmt: (n: number) => string;
 }
 
@@ -42,10 +36,6 @@ export const AppMobileNav: React.FC<AppMobileNavProps> = ({
   onOpenPayPalSettlement,
   onOpenGitHubSettings,
   onOpenAutoDeploy,
-<<<<<<< HEAD
-=======
-  onOpenSelfUpdatingPipeline,
->>>>>>> 8fab0ab (Deploy to AWS EC2 and AWS Amplify)
   onOpenCredentialsModal,
   onOpenLegal,
   fmt,
@@ -244,41 +234,15 @@ export const AppMobileNav: React.FC<AppMobileNavProps> = ({
                 <i className="fab fa-github"></i>
                 <span>GitHub SSH &amp; GitOps</span>
               </button>
-<<<<<<< HEAD
-=======
-
-              <button
-                onClick={() => {
-                  setIsMobileMenuOpen(false);
-                  onOpenSelfUpdatingPipeline?.();
-                }}
-                className="w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs font-semibold text-emerald-300 bg-emerald-950/40 border border-emerald-500/40 cursor-pointer"
-              >
-                <i className="fas fa-brain text-emerald-400"></i>
-                <div className="flex items-center justify-between flex-1">
-                  <span>Self-Updating Engine</span>
-                  <span className="text-[9px] px-1.5 py-0.2 bg-emerald-500/20 text-emerald-300 rounded font-mono">LOOP</span>
-                </div>
-              </button>
->>>>>>> 8fab0ab (Deploy to AWS EC2 and AWS Amplify)
             </div>
 
             {/* Legal Links */}
             <div className="pt-2 border-t border-slate-800 text-[11px] text-slate-500 flex justify-around">
-<<<<<<< HEAD
-=======
-              <button onClick={() => { setIsMobileMenuOpen(false); onOpenLegal('contract'); }} className="text-emerald-400 font-semibold hover:text-emerald-300">Contract</button>
-              <span>•</span>
->>>>>>> 8fab0ab (Deploy to AWS EC2 and AWS Amplify)
               <button onClick={() => { setIsMobileMenuOpen(false); onOpenLegal('terms'); }} className="hover:text-slate-300">Terms</button>
               <span>•</span>
               <button onClick={() => { setIsMobileMenuOpen(false); onOpenLegal('privacy'); }} className="hover:text-slate-300">Privacy</button>
               <span>•</span>
-<<<<<<< HEAD
               <button onClick={() => { setIsMobileMenuOpen(false); onOpenLegal('gst'); }} className="hover:text-emerald-400">GST 18%</button>
-=======
-              <button onClick={() => { setIsMobileMenuOpen(false); onOpenLegal('gst'); }} className="hover:text-emerald-400">GST</button>
->>>>>>> 8fab0ab (Deploy to AWS EC2 and AWS Amplify)
             </div>
 
           </div>

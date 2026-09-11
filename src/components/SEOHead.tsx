@@ -11,11 +11,7 @@ export interface SEOHeadProps {
   activeSection?: string;
 }
 
-<<<<<<< HEAD
 export const DEFAULT_OG_IMAGE = 'https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?q=80&w=1200&auto=format&fit=crop';
-=======
-const DEFAULT_OG_IMAGE = 'https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?q=80&w=1200&auto=format&fit=crop';
->>>>>>> 8fab0ab (Deploy to AWS EC2 and AWS Amplify)
 
 export const SEOHead: React.FC<SEOHeadProps> = ({
   title = 'kundanvision369 · AI Freelance Autopilot & Payment Gateway',

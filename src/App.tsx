@@ -42,10 +42,6 @@ const EmailVerificationModal = lazy(() => import('./components/EmailVerification
 const GitHubSettingsModal = lazy(() => import('./components/GitHubSettingsModal').then(m => ({ default: m.GitHubSettingsModal })));
 const AutoDeployPipelineTool = lazy(() => import('./components/AutoDeployPipelineTool').then(m => ({ default: m.AutoDeployPipelineTool })));
 const BackendConnectionModal = lazy(() => import('./components/BackendConnectionModal').then(m => ({ default: m.BackendConnectionModal })));
-<<<<<<< HEAD
-=======
-const SelfUpdatingPipelineConsole = lazy(() => import('./components/SelfUpdatingPipelineConsole').then(m => ({ default: m.SelfUpdatingPipelineConsole })));
->>>>>>> 8fab0ab (Deploy to AWS EC2 and AWS Amplify)
 
 // Dynamic helper for celebratory confetti without bloating the main bundle
 const triggerConfetti = (opts: any) => {
@@ -198,11 +194,7 @@ export default function App() {
 
   // Compliance, Terms of Service, Privacy Policy & Invoicing State
   const [isLegalModalOpen, setIsLegalModalOpen] = useState<boolean>(false);
-<<<<<<< HEAD
   const [legalTab, setLegalTab] = useState<'terms' | 'privacy' | 'gst' | 'refunds'>('terms');
-=======
-  const [legalTab, setLegalTab] = useState<'contract' | 'terms' | 'privacy' | 'gst' | 'refunds'>('contract');
->>>>>>> 8fab0ab (Deploy to AWS EC2 and AWS Amplify)
   const [isGSTInvoiceOpen, setIsGSTInvoiceOpen] = useState<boolean>(false);
   const [selectedGSTInvoice, setSelectedGSTInvoice] = useState<any | null>(null);
 
@@ -219,11 +211,6 @@ export default function App() {
   const [isCredentialsModalOpen, setIsCredentialsModalOpen] = useState<boolean>(false);
   const [isGitHubSettingsOpen, setIsGitHubSettingsOpen] = useState<boolean>(false);
   const [isAutoDeployModalOpen, setIsAutoDeployModalOpen] = useState<boolean>(false);
-<<<<<<< HEAD
-=======
-  const [isSelfUpdatingPipelineOpen, setIsSelfUpdatingPipelineOpen] = useState<boolean>(false);
-  const [pipelineInitialData, setPipelineInitialData] = useState<{ source: 'user_chat' | 'aiops_error_log'; content: string } | null>(null);
->>>>>>> 8fab0ab (Deploy to AWS EC2 and AWS Amplify)
   const [isScanningPlatforms, setIsScanningPlatforms] = useState<boolean>(false);
   const [isSyncingRemoteOK, setIsSyncingRemoteOK] = useState<boolean>(false);
   const [editingOrderId, setEditingOrderId] = useState<number | string | null>(null);
@@ -1100,10 +1087,6 @@ export default function App() {
         onOpenPayPalConnect={() => setIsPayPalConnectOpen(true)}
         onOpenGitHubSettings={() => setIsGitHubSettingsOpen(true)}
         onOpenAutoDeploy={() => setIsAutoDeployModalOpen(true)}
-<<<<<<< HEAD
-=======
-        onOpenSelfUpdatingPipeline={() => setIsSelfUpdatingPipelineOpen(true)}
->>>>>>> 8fab0ab (Deploy to AWS EC2 and AWS Amplify)
         onOpenCredentialsModal={() => setIsCredentialsModalOpen(true)}
         onOpenLegal={(tab) => {
           setLegalTab(tab);
@@ -1127,10 +1110,6 @@ export default function App() {
         onOpenPayPalSettlement={() => setIsPayPalSettlementModalOpen(true)}
         onOpenGitHubSettings={() => setIsGitHubSettingsOpen(true)}
         onOpenAutoDeploy={() => setIsAutoDeployModalOpen(true)}
-<<<<<<< HEAD
-=======
-        onOpenSelfUpdatingPipeline={() => setIsSelfUpdatingPipelineOpen(true)}
->>>>>>> 8fab0ab (Deploy to AWS EC2 and AWS Amplify)
         onOpenCredentialsModal={() => setIsCredentialsModalOpen(true)}
         onOpenLegal={(tab) => {
           setLegalTab(tab);
@@ -1180,10 +1159,6 @@ export default function App() {
           onOpenCredentialsModal={() => setIsCredentialsModalOpen(true)}
           onOpenGitHubSettings={() => setIsGitHubSettingsOpen(true)}
           onOpenAutoDeploy={() => setIsAutoDeployModalOpen(true)}
-<<<<<<< HEAD
-=======
-          onOpenSelfUpdatingPipeline={() => setIsSelfUpdatingPipelineOpen(true)}
->>>>>>> 8fab0ab (Deploy to AWS EC2 and AWS Amplify)
           onOpenEmailVerification={() => setIsEmailVerificationOpen(true)}
           onOpenPasswordReset={() => setIsPasswordResetOpen(true)}
           onOpenPayPalConnect={() => setIsPayPalConnectOpen(true)}
@@ -1338,10 +1313,6 @@ export default function App() {
             {/* Dedicated System Connectivity & Health Diagnostics Widget */}
             <HealthDashboard
               onOpenSettings={() => setIsCredentialsModalOpen(true)}
-<<<<<<< HEAD
-=======
-              onOpenSelfUpdatingPipeline={() => setIsSelfUpdatingPipelineOpen(true)}
->>>>>>> 8fab0ab (Deploy to AWS EC2 and AWS Amplify)
               className="mb-2"
             />
 
@@ -2006,13 +1977,6 @@ export default function App() {
                   setSelectedGSTInvoice(inv);
                   setIsGSTInvoiceOpen(true);
                 }}
-<<<<<<< HEAD
-=======
-                onOpenContractAgreement={() => {
-                  setLegalTab('contract');
-                  setIsLegalModalOpen(true);
-                }}
->>>>>>> 8fab0ab (Deploy to AWS EC2 and AWS Amplify)
                 onDownloadPDF={(invId) => showToast(`📥 Downloading ${invId}.pdf...`, 'success')}
                 onDownloadAllInvoices={() => showToast('📥 Exporting all invoices as ZIP/CSV archive...', 'success')}
                 fmt={fmt}
@@ -2150,14 +2114,7 @@ export default function App() {
               onOpenSettings={() => setIsCredentialsModalOpen(true)}
               onNavigateToSnapshots={() => setActiveTab('snapshots')}
             />
-<<<<<<< HEAD
             <HealthDashboard onOpenSettings={() => setIsCredentialsModalOpen(true)} />
-=======
-            <HealthDashboard
-              onOpenSettings={() => setIsCredentialsModalOpen(true)}
-              onOpenSelfUpdatingPipeline={() => setIsSelfUpdatingPipelineOpen(true)}
-            />
->>>>>>> 8fab0ab (Deploy to AWS EC2 and AWS Amplify)
           </div>
         )}
 
@@ -2326,11 +2283,7 @@ export default function App() {
           }}
           onOpenPayPal={() => setIsPayPalConnectOpen(true)}
           onOpenLegal={() => {
-<<<<<<< HEAD
             setLegalTab('terms');
-=======
-            setLegalTab('contract');
->>>>>>> 8fab0ab (Deploy to AWS EC2 and AWS Amplify)
             setIsLegalModalOpen(true);
           }}
         />
@@ -2414,35 +2367,9 @@ export default function App() {
             activeOrdersCount: workOrders.length
           }}
           onToast={showToast}
-<<<<<<< HEAD
         />
       </Suspense>
 
-=======
-          onOpenSelfUpdatingPipeline={(data) => {
-            if (data) setPipelineInitialData(data);
-            setIsSelfUpdatingPipelineOpen(true);
-          }}
-        />
-      </Suspense>
-
-      {/* ===== AUTONOMOUS SELF-UPDATING & ORCHESTRATOR PIPELINE MODAL ===== */}
-      {isSelfUpdatingPipelineOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-2 sm:p-4 md:p-6 bg-black/80 backdrop-blur-md animate-in fade-in duration-200">
-          <div className="w-full max-w-7xl h-[92vh] rounded-2xl overflow-hidden border border-slate-700/80 shadow-2xl shadow-emerald-500/10 flex flex-col bg-[#0a0d14]">
-            <Suspense fallback={<LazyFallback label="Booting Autonomous Self-Updating Pipeline..." />}>
-              <SelfUpdatingPipelineConsole
-                onClose={() => setIsSelfUpdatingPipelineOpen(false)}
-                initialSource={pipelineInitialData?.source || 'user_chat'}
-                initialContent={pipelineInitialData?.content || ''}
-                onToast={showToast}
-              />
-            </Suspense>
-          </div>
-        </div>
-      )}
-
->>>>>>> 8fab0ab (Deploy to AWS EC2 and AWS Amplify)
       {/* ===== BACKEND CONNECTION & ARCHITECTURE GATEWAY MODAL ===== */}
       <Suspense fallback={null}>
         <BackendConnectionModal

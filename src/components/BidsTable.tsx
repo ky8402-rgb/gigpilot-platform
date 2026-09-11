@@ -3,11 +3,7 @@ import { BackendBidItem, BACKEND_BASE_URL, DEFAULT_PRODUCTION_BACKEND_URL, withd
 import { formatPackageName } from './PackageChart';
 
 // Conditional logic handler for withdraw destination target URL and styling
-<<<<<<< HEAD
 export function getWithdrawalTarget(platform?: string, jobUrl?: string) {
-=======
-function getWithdrawalTarget(platform?: string, jobUrl?: string) {
->>>>>>> 8fab0ab (Deploy to AWS EC2 and AWS Amplify)
   const p = (platform || '').toLowerCase().trim();
   if (p.includes('upwork')) {
     return {

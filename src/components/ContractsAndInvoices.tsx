@@ -16,21 +16,11 @@ import {
   Copy,
   ExternalLink,
   QrCode,
-<<<<<<< HEAD
   Share2
-=======
-  Share2,
-  Scale,
-  FileCheck
->>>>>>> 8fab0ab (Deploy to AWS EC2 and AWS Amplify)
 } from 'lucide-react';
 import { ActiveContract } from '../types';
 import { generateClientReply } from '../services/api';
 import { PayPalSdkV6Button } from './PayPalSdkV6Button';
-<<<<<<< HEAD
-=======
-import { ContractAgreementModal } from './ContractAgreementModal';
->>>>>>> 8fab0ab (Deploy to AWS EC2 and AWS Amplify)
 
 interface ContractsAndInvoicesProps {
   contracts: ActiveContract[];
@@ -48,10 +38,6 @@ export const ContractsAndInvoices: React.FC<ContractsAndInvoicesProps> = ({
   const [strategyNotes, setStrategyNotes] = useState<string | null>(null);
   const [isGeneratingReply, setIsGeneratingReply] = useState(false);
   const [showInvoiceModal, setShowInvoiceModal] = useState<ActiveContract | null>(null);
-<<<<<<< HEAD
-=======
-  const [showContractAgreementModal, setShowContractAgreementModal] = useState<ActiveContract | null>(null);
->>>>>>> 8fab0ab (Deploy to AWS EC2 and AWS Amplify)
   const [invoiceCopied, setInvoiceCopied] = useState(false);
 
   const handleClearChat = () => {
@@ -142,25 +128,6 @@ export const ContractsAndInvoices: React.FC<ContractsAndInvoicesProps> = ({
                       💬 "{c.lastMessage}"
                     </div>
                   )}
-<<<<<<< HEAD
-=======
-
-                  <div className="mt-3 pt-2 border-t border-slate-800/80 flex items-center justify-between">
-                    <button
-                      type="button"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        setSelectedContract(c);
-                        setShowContractAgreementModal(c);
-                      }}
-                      className="text-[11px] text-emerald-400 hover:text-emerald-300 font-semibold flex items-center gap-1 transition-colors cursor-pointer"
-                    >
-                      <Scale className="w-3 h-3" />
-                      <span>Contract Agreement</span>
-                    </button>
-                    <span className="text-[10px] text-slate-500 font-mono">ID: {c.id}</span>
-                  </div>
->>>>>>> 8fab0ab (Deploy to AWS EC2 and AWS Amplify)
                 </div>
               );
             })}
@@ -184,26 +151,10 @@ export const ContractsAndInvoices: React.FC<ContractsAndInvoicesProps> = ({
                   <p className="text-xs text-slate-400">Client: <span className="text-slate-200 font-semibold">{selectedContract.clientName}</span></p>
                 </div>
 
-<<<<<<< HEAD
                 <div className="flex items-center space-x-2">
                   <button
                     onClick={() => setShowInvoiceModal(selectedContract)}
                     className="flex items-center space-x-1.5 rounded-lg border border-slate-700 bg-slate-800 px-3 py-1.5 text-xs font-semibold text-slate-200 hover:bg-slate-700 transition-all"
-=======
-                <div className="flex flex-wrap items-center gap-2">
-                  <button
-                    onClick={() => setShowContractAgreementModal(selectedContract)}
-                    className="flex items-center space-x-1.5 rounded-lg border border-emerald-500/40 bg-emerald-500/15 hover:bg-emerald-500/25 px-3 py-1.5 text-xs font-bold text-emerald-300 transition-all shadow-sm active:scale-95 cursor-pointer"
-                    title="View formal Master Services Contract Agreement & SOW"
-                  >
-                    <Scale className="h-3.5 w-3.5 text-emerald-400" />
-                    <span>View Contract Agreement</span>
-                  </button>
-
-                  <button
-                    onClick={() => setShowInvoiceModal(selectedContract)}
-                    className="flex items-center space-x-1.5 rounded-lg border border-slate-700 bg-slate-800 px-3 py-1.5 text-xs font-semibold text-slate-200 hover:bg-slate-700 transition-all cursor-pointer"
->>>>>>> 8fab0ab (Deploy to AWS EC2 and AWS Amplify)
                   >
                     <FileText className="h-3.5 w-3.5" />
                     <span>View Invoice</span>
@@ -595,16 +546,6 @@ export const ContractsAndInvoices: React.FC<ContractsAndInvoicesProps> = ({
         </div>
       )}
 
-<<<<<<< HEAD
-=======
-      {/* Formal Independent Contractor Master Services Agreement Modal */}
-      <ContractAgreementModal
-        isOpen={!!showContractAgreementModal}
-        contract={showContractAgreementModal}
-        onClose={() => setShowContractAgreementModal(null)}
-      />
-
->>>>>>> 8fab0ab (Deploy to AWS EC2 and AWS Amplify)
     </div>
   );
 };

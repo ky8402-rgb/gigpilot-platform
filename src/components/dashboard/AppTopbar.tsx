@@ -17,18 +17,10 @@ interface AppTopbarProps {
   onOpenCredentialsModal: () => void;
   onOpenGitHubSettings: () => void;
   onOpenAutoDeploy: () => void;
-<<<<<<< HEAD
   onOpenEmailVerification: () => void;
   onOpenPasswordReset: () => void;
   onOpenPayPalConnect: () => void;
   onOpenLegal: (tab: 'terms' | 'privacy' | 'gst' | 'refunds') => void;
-=======
-  onOpenSelfUpdatingPipeline?: () => void;
-  onOpenEmailVerification: () => void;
-  onOpenPasswordReset: () => void;
-  onOpenPayPalConnect: () => void;
-  onOpenLegal: (tab: 'contract' | 'terms' | 'privacy' | 'gst' | 'refunds') => void;
->>>>>>> 8fab0ab (Deploy to AWS EC2 and AWS Amplify)
   isEmailVerified: boolean;
   paypalMeUrl: string;
   paypalMeHandle: string;
@@ -52,10 +44,6 @@ export const AppTopbar: React.FC<AppTopbarProps> = ({
   onOpenCredentialsModal,
   onOpenGitHubSettings,
   onOpenAutoDeploy,
-<<<<<<< HEAD
-=======
-  onOpenSelfUpdatingPipeline,
->>>>>>> 8fab0ab (Deploy to AWS EC2 and AWS Amplify)
   onOpenEmailVerification,
   onOpenPasswordReset,
   onOpenPayPalConnect,
@@ -322,30 +310,6 @@ export const AppTopbar: React.FC<AppTopbarProps> = ({
                   </div>
                 </button>
 
-<<<<<<< HEAD
-=======
-                {/* Self-Updating Pipeline */}
-                <button
-                  id="topbar-btn-self-updating"
-                  onClick={() => {
-                    setIsToolsMenuOpen(false);
-                    onOpenSelfUpdatingPipeline?.();
-                  }}
-                  className="w-full flex items-center gap-3 px-3 py-2 rounded-xl text-xs hover:bg-emerald-950/40 transition-colors text-left cursor-pointer group"
-                >
-                  <div className="w-6 h-6 rounded-lg bg-emerald-500/20 text-emerald-400 flex items-center justify-center text-xs group-hover:scale-110 transition-transform">
-                    <i className="fas fa-brain"></i>
-                  </div>
-                  <div>
-                    <div className="font-semibold text-emerald-300 flex items-center gap-1.5">
-                      <span>Self-Updating Engine</span>
-                      <span className="text-[9px] px-1 py-0.2 bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 rounded font-mono">LOOP</span>
-                    </div>
-                    <div className="text-[10px] text-slate-400">Prompt 1 ➔ Prompt 2 ➔ Sandbox ➔ Live</div>
-                  </div>
-                </button>
-
->>>>>>> 8fab0ab (Deploy to AWS EC2 and AWS Amplify)
                 {/* Credentials & Backup */}
                 <button
                   id="topbar-btn-settings-backup"
@@ -411,22 +375,6 @@ export const AppTopbar: React.FC<AppTopbarProps> = ({
                   <span>Indian Bank &amp; UPI Setup</span>
                 </button>
 
-<<<<<<< HEAD
-=======
-                {/* Contract Agreement */}
-                <button
-                  id="topbar-btn-contract-agreement"
-                  onClick={() => {
-                    setIsToolsMenuOpen(false);
-                    onOpenLegal('contract');
-                  }}
-                  className="w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs hover:bg-slate-800/80 transition-colors text-left cursor-pointer text-slate-300 hover:text-white"
-                >
-                  <i className="fas fa-file-signature text-xs text-emerald-400"></i>
-                  <span className="font-semibold text-emerald-300">Contract Agreement (MSA)</span>
-                </button>
-
->>>>>>> 8fab0ab (Deploy to AWS EC2 and AWS Amplify)
                 {/* Legal / ToS */}
                 <button
                   id="topbar-btn-legal-compliance"
@@ -436,11 +384,7 @@ export const AppTopbar: React.FC<AppTopbarProps> = ({
                   }}
                   className="w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs hover:bg-slate-800/80 transition-colors text-left cursor-pointer text-slate-400 hover:text-slate-200"
                 >
-<<<<<<< HEAD
                   <i className="fas fa-file-contract text-xs"></i>
-=======
-                  <i className="fas fa-balance-scale text-xs"></i>
->>>>>>> 8fab0ab (Deploy to AWS EC2 and AWS Amplify)
                   <span>Terms, Privacy &amp; GST</span>
                 </button>
               </div>

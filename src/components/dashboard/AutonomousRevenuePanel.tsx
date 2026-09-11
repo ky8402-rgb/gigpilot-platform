@@ -56,7 +56,6 @@ export interface RevenueIntelligenceData {
     client_hire_rate: number;
     created_at: string;
   }>;
-<<<<<<< HEAD
   recentPayouts: Array<{
     id: string;
     work_order_id: string;
@@ -64,19 +63,10 @@ export interface RevenueIntelligenceData {
     status: string;
     risk_band: string;
     paypal_batch_id: string;
-=======
-  recentReceivables?: Array<{
-    id: string;
-    work_order_id: string;
-    client_name: string;
-    amount: number;
-    status: string;
->>>>>>> 8fab0ab (Deploy to AWS EC2 and AWS Amplify)
     created_at: string;
   }>;
 }
 
-<<<<<<< HEAD
 export const AutonomousRevenuePanel: React.FC = () => {
   const [data, setData] = useState<RevenueIntelligenceData | null>(null);
   const [loading, setLoading] = useState<boolean>(true);
@@ -85,68 +75,6 @@ export const AutonomousRevenuePanel: React.FC = () => {
 
   const fetchRevenueData = async () => {
     setIsRefreshing(true);
-=======
-export interface ReceivableItem {
-  id: string;
-  title: string;
-  clientName: string;
-  amount: number;
-  currency: string;
-  status: string;
-  createdAt: string;
-}
-
-export const AutonomousRevenuePanel: React.FC = () => {
-  const [data, setData] = useState<RevenueIntelligenceData | null>(null);
-  const [receivables, setReceivables] = useState<ReceivableItem[]>([]);
-  const [loading, setLoading] = useState<boolean>(true);
-  const [activeTab, setActiveTab] = useState<'kpis' | 'ab_testing' | 'guardrails' | 'receivables'>('kpis');
-  const [isRefreshing, setIsRefreshing] = useState<boolean>(false);
-
-  const fetchReceivables = async () => {
-    try {
-      const endpoints = [
-        apiUrl('/api/paypal/work-orders'),
-        '/api/paypal/work-orders',
-      ];
-      let orders: any[] = [];
-      for (const ep of endpoints) {
-        try {
-          const res = await fetch(ep);
-          if (res.ok) {
-            const json = await res.json();
-            if (json && Array.isArray(json.workOrders)) {
-              orders = json.workOrders;
-              break;
-            }
-          }
-        } catch (_) {}
-      }
-
-      // Filter work orders where status != 'COMPLETED'
-      const pendingOrders = orders
-        .filter((o: any) => String(o.status || '').toUpperCase() !== 'COMPLETED')
-        .map((o: any) => ({
-          id: o.id,
-          title: o.title || `Work Order #${o.id.slice(0, 8)}`,
-          clientName: o.clientName || 'Direct Client',
-          amount: Number(o.totalAmount || o.amount || 0),
-          currency: o.currency || 'USD',
-          status: o.status || 'PENDING',
-          createdAt: o.createdAt || new Date().toISOString(),
-        }));
-
-      setReceivables(pendingOrders);
-    } catch (e) {
-      console.warn('[AutonomousRevenuePanel] Fetch receivables error:', e);
-      setReceivables([]);
-    }
-  };
-
-  const fetchRevenueData = async () => {
-    setIsRefreshing(true);
-    fetchReceivables();
->>>>>>> 8fab0ab (Deploy to AWS EC2 and AWS Amplify)
     try {
       const endpoints = [
         apiUrl('/api/revenue-intelligence'),
@@ -282,24 +210,14 @@ export const AutonomousRevenuePanel: React.FC = () => {
               Guardrails
             </button>
             <button
-<<<<<<< HEAD
               onClick={() => setActiveTab('payouts')}
               className={`px-3 py-1 rounded-lg font-medium transition-all ${
                 activeTab === 'payouts'
-=======
-              onClick={() => setActiveTab('receivables')}
-              className={`px-3 py-1 rounded-lg font-medium transition-all ${
-                activeTab === 'receivables'
->>>>>>> 8fab0ab (Deploy to AWS EC2 and AWS Amplify)
                   ? 'bg-purple-500/20 text-purple-300 border border-purple-500/30 shadow-sm'
                   : 'text-slate-400 hover:text-white'
               }`}
             >
-<<<<<<< HEAD
               Automatic Payouts
-=======
-              Receivables
->>>>>>> 8fab0ab (Deploy to AWS EC2 and AWS Amplify)
             </button>
           </div>
         </div>
@@ -512,84 +430,44 @@ export const AutonomousRevenuePanel: React.FC = () => {
         </div>
       )}
 
-<<<<<<< HEAD
       {/* Tab: Autonomous Cash-Out Engine */}
       {activeTab === 'payouts' && (
-=======
-      {/* Tab: Receivables (What is Owed to You) */}
-      {activeTab === 'receivables' && (
->>>>>>> 8fab0ab (Deploy to AWS EC2 and AWS Amplify)
         <div className="space-y-3">
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs">
             <div className="bg-[#141b2d] border border-slate-800 p-3 rounded-xl">
               <div className="flex items-center justify-between mb-1">
-<<<<<<< HEAD
                 <span className="font-bold text-emerald-400">Band 1: &lt; $100</span>
                 <span className="px-1.5 py-0.5 rounded bg-emerald-500/20 text-emerald-300 text-[10px] font-mono">INSTANT</span>
               </div>
               <p className="text-slate-400 text-[11px]">
                 Immediate automated PayPal transfer without manual approval upon milestone trigger.
-=======
-                <span className="font-bold text-emerald-400">Total Outstanding</span>
-                <span className="px-1.5 py-0.5 rounded bg-emerald-500/20 text-emerald-300 text-[10px] font-mono">OWED</span>
-              </div>
-              <p className="text-xl font-bold font-mono text-white mt-1">
-                ${receivables.reduce((sum, r) => sum + r.amount, 0).toLocaleString()} <span className="text-xs font-normal text-slate-400">USD</span>
-              </p>
-              <p className="text-slate-400 text-[11px] mt-1">
-                Cumulative revenue owed from active and pending work orders.
->>>>>>> 8fab0ab (Deploy to AWS EC2 and AWS Amplify)
               </p>
             </div>
             <div className="bg-[#141b2d] border border-slate-800 p-3 rounded-xl">
               <div className="flex items-center justify-between mb-1">
-<<<<<<< HEAD
                 <span className="font-bold text-indigo-400">Band 2: $100 - $500</span>
                 <span className="px-1.5 py-0.5 rounded bg-indigo-500/20 text-indigo-300 text-[10px] font-mono">AUTOMATED</span>
               </div>
               <p className="text-slate-400 text-[11px]">
                 Standard automated escrow settlement and PayPal payout batch execution.
-=======
-                <span className="font-bold text-indigo-400">Pending Orders</span>
-                <span className="px-1.5 py-0.5 rounded bg-indigo-500/20 text-indigo-300 text-[10px] font-mono">ACTIVE</span>
-              </div>
-              <p className="text-xl font-bold font-mono text-white mt-1">
-                {receivables.length} <span className="text-xs font-normal text-slate-400">Work Orders</span>
-              </p>
-              <p className="text-slate-400 text-[11px] mt-1">
-                Contracts awaiting client milestone settlement or delivery approval.
->>>>>>> 8fab0ab (Deploy to AWS EC2 and AWS Amplify)
               </p>
             </div>
             <div className="bg-[#141b2d] border border-slate-800 p-3 rounded-xl">
               <div className="flex items-center justify-between mb-1">
-<<<<<<< HEAD
                 <span className="font-bold text-amber-400">Band 3: &gt; $500</span>
                 <span className="px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-300 text-[10px] font-mono">TELEGRAM REVIEW</span>
               </div>
               <p className="text-slate-400 text-[11px]">
                 High-value outlier flagged; automated Telegram alert dispatched for quick Yes/No chat approval.
-=======
-                <span className="font-bold text-amber-400">Settlement Mode</span>
-                <span className="px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-300 text-[10px] font-mono">INBOUND ONLY</span>
-              </div>
-              <p className="text-slate-400 text-[11px] mt-2">
-                All client funds settle directly into your linked checking account via inbound PayPal/Stripe rails.
->>>>>>> 8fab0ab (Deploy to AWS EC2 and AWS Amplify)
               </p>
             </div>
           </div>
 
-<<<<<<< HEAD
           {/* Recent Payouts Table */}
-=======
-          {/* Receivables Table */}
->>>>>>> 8fab0ab (Deploy to AWS EC2 and AWS Amplify)
           <div className="overflow-x-auto rounded-xl border border-slate-800 bg-[#141b2d]">
             <table className="w-full text-left text-xs text-slate-300">
               <thead className="bg-[#0a0e1a]/80 text-[10px] uppercase font-mono text-slate-400 border-b border-slate-800">
                 <tr>
-<<<<<<< HEAD
                   <th className="py-2.5 px-3">Work Order / Payout</th>
                   <th className="py-2.5 px-3">Amount</th>
                   <th className="py-2.5 px-3">Risk Band</th>
@@ -619,40 +497,6 @@ export const AutonomousRevenuePanel: React.FC = () => {
                         <span className="px-2 py-0.5 rounded text-[10px] bg-emerald-500/20 text-emerald-300 border border-emerald-500/40">
                           PAID
                         </span>
-=======
-                  <th className="py-2.5 px-3">Work Order / Project</th>
-                  <th className="py-2.5 px-3">Client</th>
-                  <th className="py-2.5 px-3">Amount Owed</th>
-                  <th className="py-2.5 px-3">Status</th>
-                  <th className="py-2.5 px-3">Created</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-800/60 font-mono text-[11px]">
-                {receivables.length === 0 ? (
-                  <tr>
-                    <td colSpan={5} className="py-6 px-3 text-center text-slate-500 font-sans text-xs">
-                      No pending receivables currently owed. Completed contracts will appear in history.
-                    </td>
-                  </tr>
-                ) : (
-                  receivables.map((r) => (
-                    <tr key={r.id} className="hover:bg-slate-800/40">
-                      <td className="py-2.5 px-3 font-medium text-white">
-                        <div className="font-medium text-slate-200">{r.title}</div>
-                        <div className="text-[10px] text-slate-500">{r.id}</div>
-                      </td>
-                      <td className="py-2.5 px-3 text-slate-300">{r.clientName}</td>
-                      <td className="py-2.5 px-3 font-bold text-emerald-400">
-                        ${r.amount.toFixed(2)} {r.currency}
-                      </td>
-                      <td className="py-2.5 px-3">
-                        <span className="px-2 py-0.5 rounded text-[10px] bg-amber-500/20 text-amber-300 border border-amber-500/40 uppercase font-semibold">
-                          {r.status}
-                        </span>
-                      </td>
-                      <td className="py-2.5 px-3 text-slate-400">
-                        {new Date(r.createdAt).toLocaleDateString()}
->>>>>>> 8fab0ab (Deploy to AWS EC2 and AWS Amplify)
                       </td>
                     </tr>
                   ))

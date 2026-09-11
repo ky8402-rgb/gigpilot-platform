@@ -1,9 +1,6 @@
 import crypto from 'crypto';
 import { memoryStore, safeExecutePgQuery, WorkOrder, Transaction, User, Job } from './pgDatabase.js';
-<<<<<<< HEAD
 import { createPayPalPayout } from './paypal.js';
-=======
->>>>>>> 8fab0ab (Deploy to AWS EC2 and AWS Amplify)
 import { logActivityEvent } from './activityLogger.js';
 import { recordCronHeartbeat } from './healthCheck.js';
 import { executeAutonomousCashOut } from './revenueEngine.js';
@@ -20,16 +17,12 @@ export interface CompletionResult {
 }
 
 /**
-<<<<<<< HEAD
  * Autonomous Cash-Out Engine:
  * Executes work order completion & triggers PayPal milestone payouts without waiting for manual approval.
  * Risk Bands:
  *   - Amount < $100: Auto-transfer immediately.
  *   - Amount $100 - $500: Standard automated escrow release.
  *   - Amount > $500: High-value outlier, flagged for human-in-the-loop (Telegram alert dispatched).
-=======
- * Executes work order completion and records receivable milestone without external payout triggers.
->>>>>>> 8fab0ab (Deploy to AWS EC2 and AWS Amplify)
  * Auto-generates invoice for time-based projects.
  */
 export async function completeWorkOrderAndPayout(
@@ -90,18 +83,12 @@ export async function completeWorkOrderAndPayout(
     job = memoryStore.jobs.get(workOrder.job_id) || null;
   }
 
-<<<<<<< HEAD
   if (!worker || !worker.paypal_email) {
     const errorMsg = `Worker ${workOrder.worker_id} has no valid PayPal payout email configured.`;
-=======
-  if (!worker) {
-    const errorMsg = `Worker ${workOrder.worker_id} not found.`;
->>>>>>> 8fab0ab (Deploy to AWS EC2 and AWS Amplify)
     workOrder.status = 'completed';
     workOrder.payment_status = 'failed';
     memoryStore.workOrders.set(workOrder.id, workOrder);
 
-<<<<<<< HEAD
     logActivityEvent({
       source: 'PayPal',
       type: 'PAYOUT_FAILED',
@@ -110,8 +97,6 @@ export async function completeWorkOrderAndPayout(
       tags: ['payout_failed', 'paypal', 'self_healing'],
     });
 
-=======
->>>>>>> 8fab0ab (Deploy to AWS EC2 and AWS Amplify)
     return {
       success: false,
       workOrder,
@@ -140,11 +125,7 @@ export async function completeWorkOrderAndPayout(
     worker.current_workload -= 1;
   }
 
-<<<<<<< HEAD
   // 3. Trigger Autonomous Cash-Out Engine with Risk Bands (Requirement 7)
-=======
-  // 3. Record milestone completion and update outcome
->>>>>>> 8fab0ab (Deploy to AWS EC2 and AWS Amplify)
   const cashOutResult = await executeAutonomousCashOut({
     workOrderId: workOrder.id,
     projectTitle: job?.title || `Work Order #${workOrderId}`,
@@ -154,7 +135,6 @@ export async function completeWorkOrderAndPayout(
     isTimeBased,
   });
 
-<<<<<<< HEAD
   let payoutStatus: 'paid' | 'failed' | 'pending_approval' = 'paid';
   if (cashOutResult.status === 'pending_approval') {
     payoutStatus = 'pending_approval';
@@ -172,26 +152,13 @@ export async function completeWorkOrderAndPayout(
   const payoutBatchId = cashOutResult.payoutBatchId || '';
 
   // 4. Record Transaction in `transactions` table
-=======
-  const payoutStatus: 'paid' | 'failed' | 'pending_approval' = 'paid';
-  workOrder.payment_status = 'paid';
-  workOrder.status = 'paid';
-  if (job) job.status = 'paid';
-
-  // 4. Record Transaction in `transactions` table as completed receivable
->>>>>>> 8fab0ab (Deploy to AWS EC2 and AWS Amplify)
   const transactionId = crypto.randomUUID();
   const transaction: Transaction = {
     id: transactionId,
     work_order_id: workOrder.id,
     amount: payoutAmount,
-<<<<<<< HEAD
     status: payoutStatus === 'paid' ? 'paid' : 'failed',
     paypal_payout_batch_id: payoutBatchId || null,
-=======
-    status: 'paid',
-    paypal_payout_batch_id: null,
->>>>>>> 8fab0ab (Deploy to AWS EC2 and AWS Amplify)
     created_at: now.toISOString(),
   };
 
@@ -219,11 +186,7 @@ export async function completeWorkOrderAndPayout(
   await safeExecutePgQuery(
     `INSERT INTO transactions (id, work_order_id, amount, status, paypal_payout_batch_id, created_at)
      VALUES ($1, $2, $3, $4, $5, $6)`,
-<<<<<<< HEAD
     [transaction.id, transaction.work_order_id, transaction.amount, transaction.status, transaction.paypal_payout_batch_id, transaction.created_at]
-=======
-    [transaction.id, transaction.work_order_id, transaction.amount, transaction.status, null, transaction.created_at]
->>>>>>> 8fab0ab (Deploy to AWS EC2 and AWS Amplify)
   );
 
   // Persist to Memory Store
@@ -234,7 +197,6 @@ export async function completeWorkOrderAndPayout(
 
   logActivityEvent({
     source: 'PayPal',
-<<<<<<< HEAD
     type: payoutStatus === 'paid' ? 'PAYOUT_COMPLETED' : payoutStatus === 'pending_approval' ? 'PAYOUT_HELD_REVIEW' : 'PAYOUT_FAILED',
     status: payoutStatus === 'paid' ? 'success' : payoutStatus === 'pending_approval' ? 'warning' : 'error',
     summary: payoutStatus === 'paid'
@@ -250,19 +212,6 @@ export async function completeWorkOrderAndPayout(
     workOrder,
     transaction,
     payoutStatus,
-=======
-    type: 'PAYMENT_COMPLETED',
-    status: 'success',
-    summary: `Milestone of $${payoutAmount} completed for WorkOrder ${workOrderId}`,
-    tags: ['work_order', 'milestone_completed', triggerReason],
-  });
-
-  return {
-    success: true,
-    workOrder,
-    transaction,
-    payoutStatus: 'paid',
->>>>>>> 8fab0ab (Deploy to AWS EC2 and AWS Amplify)
     riskBand: cashOutResult.riskBand,
     invoiceNumber: cashOutResult.invoiceNumber,
     message: cashOutResult.message,

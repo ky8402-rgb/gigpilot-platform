@@ -279,15 +279,7 @@ export class AutoHealer {
       // Step 3: Verify Resolution via Post-Remediation Health Check
       const finalHealth: FullHealthCheckResult = remediationRes.health || (await runFullHealthCheck());
       const finalStatus: HealthStatus = finalHealth.status;
-<<<<<<< HEAD
       const isResolved = finalStatus === 'healthy' || (initialStatus === 'critical' && finalStatus === 'degraded');
-=======
-      const coreHealthy = Object.entries(finalHealth.checks).every(([key, check]) => {
-        if (key === 'autoHeal') return true;
-        return check?.status === 'healthy';
-      });
-      const isResolved = finalStatus === 'healthy' || coreHealthy || (initialStatus === 'critical' && finalStatus === 'degraded');
->>>>>>> 8fab0ab (Deploy to AWS EC2 and AWS Amplify)
 
       const attemptNumber = this.consecutiveFailures + 1;
 
@@ -405,7 +397,6 @@ export class AutoHealer {
     // 3. Dispatch HTTP Post to external webhook if configured
     if (this.config.alertWebhookUrl) {
       try {
-<<<<<<< HEAD
         const payload = {
           text: message,
           attachments: [
@@ -421,44 +412,6 @@ export class AutoHealer {
             },
           ],
         };
-=======
-        const isDiscord = this.config.alertWebhookUrl.includes('discord.com');
-        let payload: any;
-
-        if (isDiscord) {
-          payload = {
-            content: message,
-            embeds: [
-              {
-                title: 'GigPilot Autonomous DevOps Escalation',
-                color: 0xf43f5e,
-                fields: [
-                  { name: 'Consecutive Failures', value: String(this.consecutiveFailures), inline: true },
-                  { name: 'Max Allowed Retries', value: String(this.config.maxAttempts), inline: true },
-                  { name: 'Timestamp', value: new Date().toISOString(), inline: false },
-                  { name: 'Details', value: JSON.stringify(details, null, 2).slice(0, 1000), inline: false },
-                ],
-              },
-            ],
-          };
-        } else {
-          payload = {
-            text: message,
-            attachments: [
-              {
-                color: '#f43f5e',
-                title: 'GigPilot Autonomous DevOps Escalation',
-                fields: [
-                  { title: 'Consecutive Failures', value: String(this.consecutiveFailures), short: true },
-                  { title: 'Max Allowed Retries', value: String(this.config.maxAttempts), short: true },
-                  { title: 'Timestamp', value: new Date().toISOString(), short: false },
-                  { title: 'Details', value: JSON.stringify(details, null, 2), short: false },
-                ],
-              },
-            ],
-          };
-        }
->>>>>>> 8fab0ab (Deploy to AWS EC2 and AWS Amplify)
 
         await axios.post(this.config.alertWebhookUrl, payload, {
           timeout: 8000,
@@ -513,21 +466,6 @@ export class AutoHealer {
   }
 
   /**
-<<<<<<< HEAD
-=======
-   * Reset consecutive failures and clear escalation state
-   */
-  public resetFailures(): AutoHealerStatus {
-    this.consecutiveFailures = 0;
-    this.lastSuccessAt = new Date().toISOString();
-    this.lastBackoffUntil = 0;
-    this.isCurrentlyHealing = false;
-    console.log('🔄 [AutoHealer] Consecutive failures and escalation manually reset.');
-    return this.getStatus();
-  }
-
-  /**
->>>>>>> 8fab0ab (Deploy to AWS EC2 and AWS Amplify)
    * Runtime Toggle to enable/disable automated healing loop
    */
   public toggle(enabled: boolean): AutoHealerStatus {
