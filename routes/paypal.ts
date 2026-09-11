@@ -4,7 +4,10 @@ import {
   updatePayPalConfig,
   createPayPalOrder,
   capturePayPalOrder,
+<<<<<<< HEAD
   createPayPalPayout,
+=======
+>>>>>>> 8fab0ab (Deploy to AWS EC2 and AWS Amplify)
   isPayPalConfigured,
   getPayPalAccessToken,
   getPayPalLiveBalance,
@@ -391,6 +394,7 @@ router.get('/work-orders', async (req, res) => {
 
 /**
  * POST /api/paypal/payout
+<<<<<<< HEAD
  * Send automated payout to collaborator / subcontractor
  */
 router.post('/payout', async (req, res) => {
@@ -436,6 +440,15 @@ router.post('/payout', async (req, res) => {
     console.error('PayPal payout error:', err);
     res.status(500).json({ success: false, error: err.message });
   }
+=======
+ * Outbound payouts are permanently disabled (India accounts cannot disburse payouts).
+ */
+router.post('/payout', async (req, res) => {
+  return res.status(400).json({
+    success: false,
+    error: 'PayPal outbound payout rail is disabled. Account operates in Receive and Withdraw mode only.'
+  });
+>>>>>>> 8fab0ab (Deploy to AWS EC2 and AWS Amplify)
 });
 
 /**

@@ -22,7 +22,11 @@ export interface ToolDefinition {
   handlerName?: string;
 }
 
+<<<<<<< HEAD
 export const TOOL_REGISTRY: ToolDefinition[] = [
+=======
+const TOOL_REGISTRY: ToolDefinition[] = [
+>>>>>>> 8fab0ab (Deploy to AWS EC2 and AWS Amplify)
   {
     name: 'calculate_optimal_bid',
     description: 'Calculates dynamic optimal bid using percentile strategy and profitability floor based on client budget and category.',
@@ -51,12 +55,21 @@ export const TOOL_REGISTRY: ToolDefinition[] = [
     isNative: true,
   },
   {
+<<<<<<< HEAD
     name: 'execute_autonomous_payout',
     description: 'Autonomous Cash-Out Engine: triggers immediate PayPal milestone release or routes to human-in-the-loop based on risk bands.',
     parameters: {
       workOrderId: { type: 'string', description: 'Work Order identifier', required: true },
       amount: { type: 'number', description: 'Gross payout amount in USD', required: true },
       workerEmail: { type: 'string', description: 'Beneficiary worker PayPal email', required: true },
+=======
+    name: 'record_receivable',
+    description: 'Receivables Engine: logs fulfilled work order milestones and accrues outstanding client receivables.',
+    parameters: {
+      workOrderId: { type: 'string', description: 'Work Order identifier', required: true },
+      amount: { type: 'number', description: 'Gross receivable amount in USD', required: true },
+      clientName: { type: 'string', description: 'Client name or account', required: false },
+>>>>>>> 8fab0ab (Deploy to AWS EC2 and AWS Amplify)
     },
     category: 'revenue',
     createdAt: '2026-09-08T00:00:00.000Z',

@@ -8,7 +8,11 @@ export const DEFAULT_PRODUCTION_BACKEND_URL = 'https://3-222-149-9.sslip.io';
 /**
  * Storage key for user-configured custom backend URL (e.g. AWS App Runner, EC2, or custom domain)
  */
+<<<<<<< HEAD
 export const CUSTOM_BACKEND_STORAGE_KEY = 'gigpilot_custom_backend_url';
+=======
+const CUSTOM_BACKEND_STORAGE_KEY = 'gigpilot_custom_backend_url';
+>>>>>>> 8fab0ab (Deploy to AWS EC2 and AWS Amplify)
 
 /**
  * Helper to determine if running inside a detached static frontend environment (e.g. AWS Amplify, CloudFront, Vercel)
@@ -217,7 +221,11 @@ export function apiUrl(endpoint: string): string {
  * "SyntaxError: The string did not match the expected pattern" or "Unexpected token '<'"
  * when a reverse proxy, CDN, or static host returns an HTML error page or SPA index.html.
  */
+<<<<<<< HEAD
 export async function safeResponseJson<T = any>(response: Response, fallback?: T): Promise<T> {
+=======
+async function safeResponseJson<T = any>(response: Response, fallback?: T): Promise<T> {
+>>>>>>> 8fab0ab (Deploy to AWS EC2 and AWS Amplify)
   const contentType = response.headers.get('content-type') || '';
   if (!contentType.includes('application/json')) {
     const text = await response.text();
@@ -239,7 +247,11 @@ export async function safeResponseJson<T = any>(response: Response, fallback?: T
  * Standard fetch wrapper that always includes credentials and headers,
  * with smart exponential backoff retry for transient network and 5xx errors.
  */
+<<<<<<< HEAD
 export async function secureFetch(url: string, options: RequestInit = {}, maxRetries = 2): Promise<Response> {
+=======
+async function secureFetch(url: string, options: RequestInit = {}, maxRetries = 2): Promise<Response> {
+>>>>>>> 8fab0ab (Deploy to AWS EC2 and AWS Amplify)
   const token = typeof localStorage !== 'undefined' ? localStorage.getItem('gigpilot_token') : null;
   const headers = new Headers(options.headers || {});
   
@@ -830,6 +842,7 @@ export interface PayPalTransactionItem {
   paymentSource: 'paypal_wallet' | 'card' | 'paypal_me' | 'invoice';
 }
 
+<<<<<<< HEAD
 export async function fetchPayPalConfig(): Promise<{ success: boolean; config: PayPalConfig; totalReceived: number; transactionCount: number }> {
   try {
     const res = await fetch(apiUrl('/api/paypal/config'));
@@ -919,6 +932,9 @@ export async function capturePayPalPayment(params: {
     return { success: false, error: e.message };
   }
 }
+=======
+
+>>>>>>> 8fab0ab (Deploy to AWS EC2 and AWS Amplify)
 
 export async function fetchPayPalTransactions(): Promise<{ success: boolean; transactions: PayPalTransactionItem[]; liveCount?: number; dbCount?: number }> {
   try {
@@ -1153,6 +1169,7 @@ export async function fetchActivityLogs(filter?: {
   }
 }
 
+<<<<<<< HEAD
 export async function simulateActivityWebhook(params: {
   platform: string;
   eventType: string;
@@ -1174,6 +1191,9 @@ export async function simulateActivityWebhook(params: {
     return { success: false, error: err.message || 'Failed to simulate webhook event' };
   }
 }
+=======
+
+>>>>>>> 8fab0ab (Deploy to AWS EC2 and AWS Amplify)
 
 export interface GitOpsDeploymentItem {
   id: string;
@@ -1659,6 +1679,7 @@ export interface PayPalWorkOrderItem {
   createdAt: string;
 }
 
+<<<<<<< HEAD
 export async function fetchPayPalWorkOrders(): Promise<{
   success: boolean;
   workOrders: PayPalWorkOrderItem[];
@@ -1669,6 +1690,9 @@ export async function fetchPayPalWorkOrders(): Promise<{
   }
   return res.json();
 }
+=======
+
+>>>>>>> 8fab0ab (Deploy to AWS EC2 and AWS Amplify)
 
 export interface ScoredLeadItem {
   id: string;
@@ -1852,6 +1876,7 @@ export async function testSendKeywordAlert(email: string, keyword: string): Prom
   return res.json();
 }
 
+<<<<<<< HEAD
 export async function fetchSubscriptionTiers(): Promise<{
   success: boolean;
   tiers: Array<{
@@ -1867,6 +1892,9 @@ export async function fetchSubscriptionTiers(): Promise<{
   const res = await fetch(apiUrl('/api/subscription/tiers'));
   return res.json();
 }
+=======
+
+>>>>>>> 8fab0ab (Deploy to AWS EC2 and AWS Amplify)
 
 export async function createSubscriptionCheckout(plan: 'pro' | 'enterprise'): Promise<{
   url: string;
@@ -1990,6 +2018,7 @@ export async function fetchLeadNotificationStatus(): Promise<LeadNotificationSta
   }
 }
 
+<<<<<<< HEAD
 export async function fetchLeadNotificationCookies(): Promise<any> {
   try {
     const res = await secureFetch(apiUrl('/api/notifications/cookies'));
@@ -2003,6 +2032,9 @@ export async function fetchLeadNotificationCookies(): Promise<any> {
     };
   }
 }
+=======
+
+>>>>>>> 8fab0ab (Deploy to AWS EC2 and AWS Amplify)
 
 export async function savePlatformCookies(platform: 'upwork' | 'freelancer', cookies: string): Promise<any> {
   const res = await secureFetch(apiUrl('/api/notifications/cookies'), {
@@ -2463,6 +2495,7 @@ export async function createSpeedCheckout(plan: 'pro_speed' | 'ultra_alpha'): Pr
 // PAYPAL LIVE REST API & GATEWAY
 // ==========================================
 
+<<<<<<< HEAD
 export async function fetchPayPalGatewayConfig(): Promise<{
   success: boolean;
   config: {
@@ -2495,6 +2528,8 @@ export async function savePayPalGatewayConfig(payload: {
   return res.json();
 }
 
+=======
+>>>>>>> 8fab0ab (Deploy to AWS EC2 and AWS Amplify)
 export async function createPayPalCheckoutOrder(payload: {
   amount: number;
   currency?: string;
@@ -2525,6 +2560,7 @@ export async function createPayPalCheckoutOrder(payload: {
   return res.json();
 }
 
+<<<<<<< HEAD
 export async function capturePayPalCheckoutOrder(payload: {
   orderId: string;
   amount?: number;
@@ -2571,6 +2607,9 @@ export async function disbursePayPalPayout(payload: {
   });
   return res.json();
 }
+=======
+
+>>>>>>> 8fab0ab (Deploy to AWS EC2 and AWS Amplify)
 
 // ==========================================
 // DATABASE / POSTGRESQL / CLOUD SQL STATUS
@@ -3455,6 +3494,7 @@ export interface SelfHealingLogItem {
   retry_count: number;
 }
 
+<<<<<<< HEAD
 /**
  * Fetch live AutoHealer status
  */
@@ -3476,6 +3516,9 @@ export async function fetchAutoHealerStatus(): Promise<AutoHealerStatus | null> 
     return null;
   }
 }
+=======
+
+>>>>>>> 8fab0ab (Deploy to AWS EC2 and AWS Amplify)
 
 /**
  * Fetch historical AutoHealer audit logs
@@ -4358,6 +4401,7 @@ class GigWebhookDispatcher {
 
 export const gigWebhookDispatcher = new GigWebhookDispatcher();
 
+<<<<<<< HEAD
 /**
  * Convenience hook/function for incoming webhook triggers
  */
@@ -4370,6 +4414,9 @@ export function handleIncomingGigWebhook(
   }
   return gigWebhookDispatcher.handleIncomingWebhook(payload);
 }
+=======
+
+>>>>>>> 8fab0ab (Deploy to AWS EC2 and AWS Amplify)
 
 // =========================================================================
 // PostgreSQL Database Snapshot & Disaster Recovery API Client
@@ -5288,6 +5335,295 @@ export async function fetchAutoDeploySecretsGuide(): Promise<AutoDeploySecretsGu
   }
 }
 
+<<<<<<< HEAD
+=======
+// ============================================================================
+// AUTONOMOUS SELF-UPDATING & ORCHESTRATOR PIPELINE APIS
+// [ User Chat ] OR [ AIOps Error Log ] 
+//               │
+//               ▼
+//     [ Prompt 1: Orchestrator ] 
+//               │ (Creates Structured Specs)
+//               ▼
+//     [ Prompt 2: Self-Updating Engine ] ──► [ Modifies Code in Sandbox ]
+//               ▲                                      │
+//               │ (If Tests/Telemetry Fail)            ▼
+//               └─────────────────────────── [ Runs App & Tests ]
+//                                                      │ (If Success)
+//                                                      ▼
+//                                            [ Live App Updates ]
+// ============================================================================
+
+export type PipelineSource = 'user_chat' | 'aiops_error_log';
+
+export type LoopEngineeringStage = 
+  | 'comprehend' 
+  | 'drill_down' 
+  | 'generate_fix' 
+  | 'sandbox_execution' 
+  | 'evaluate_and_heal' 
+  | 'complete' 
+  | 'failed' 
+  | 'rolled_back';
+
+export interface ComprehendResult {
+  faultyFunctions: string[];
+  responsibleFiles: string[];
+  incidentFingerprint: string;
+  blastRadius: 'isolated' | 'subsystem' | 'critical_path';
+  rootCauseHypothesis: string;
+}
+
+export interface DrillDownResult {
+  queriedFiles: Array<{
+    path: string;
+    exists: boolean;
+    sizeBytes: number;
+    relevantSymbols: string[];
+    sampleSnippet: string;
+  }>;
+  existingDependencies: string[];
+  systemContextNotes: string;
+}
+
+export interface AntiOverfittingAnalysis {
+  passed: boolean;
+  semanticSystemScore: number;
+  checks: Array<{
+    name: string;
+    passed: boolean;
+    details: string;
+  }>;
+  preservesDependencies: boolean;
+  notes: string;
+}
+
+export interface PullRequestDetails {
+  prNumber: number;
+  title: string;
+  branch: string;
+  targetBranch: string;
+  autoMerged: boolean;
+  mergedAt: string;
+  url: string;
+  commitHash: string;
+  changeSummary: string;
+}
+
+export interface StructuredSpec {
+  specId: string;
+  source: PipelineSource;
+  title: string;
+  description: string;
+  category: 'feature' | 'bugfix' | 'performance' | 'security' | 'telemetry_remediation';
+  severity: 'low' | 'medium' | 'high' | 'critical';
+  targetFiles: Array<{
+    path: string;
+    purpose: string;
+    action: 'modify' | 'create' | 'delete';
+  }>;
+  architecturalChanges: string[];
+  requirements: string[];
+  testCriteria: string[];
+  rollbackPlan: string;
+  estimatedEffort: string;
+  timestamp: string;
+  comprehend?: ComprehendResult;
+  drillDown?: DrillDownResult;
+}
+
+export interface SandboxFileChange {
+  path: string;
+  action: 'modify' | 'create' | 'delete';
+  diffSummary: string;
+  sandboxContent: string;
+  originalContent?: string;
+  language: string;
+}
+
+export interface SandboxPatch {
+  patchId: string;
+  specId: string;
+  iteration: number;
+  commitMessage: string;
+  files: SandboxFileChange[];
+  explanation: string;
+  appliedAt: string;
+  antiOverfitting?: AntiOverfittingAnalysis;
+}
+
+export interface UnitTestResult {
+  name: string;
+  passed: boolean;
+  durationMs: number;
+  assertion: string;
+  error?: string;
+}
+
+export interface TestTelemetryResult {
+  passed: boolean;
+  iteration: number;
+  syntaxCheck: {
+    passed: boolean;
+    compiler: string;
+    errors: string[];
+  };
+  unitTests: UnitTestResult[];
+  telemetryCheck: {
+    passed: boolean;
+    latencyMs: number;
+    memoryMb: number;
+    errorRatePercent: number;
+    dbHealthStatus: string;
+    notes: string;
+  };
+  failureAnalysis?: {
+    rootCause: string;
+    failedTests: string[];
+    diagnosticLog: string;
+    recommendedPatchAdjustments: string[];
+  };
+  executedAt: string;
+}
+
+export interface LiveUpdateResult {
+  success: boolean;
+  deployedAt: string;
+  versionHash: string;
+  appliedFiles: string[];
+  rollbackToken: string;
+  summary: string;
+  gitOpsAction?: string;
+  pullRequest?: PullRequestDetails;
+}
+
+export interface PipelineLog {
+  timestamp: string;
+  stage: 'input' | 'comprehend' | 'drill_down' | 'generate_fix' | 'sandbox_execution' | 'evaluate_and_heal' | 'prompt_1_orchestrator' | 'prompt_2_engine' | 'sandbox_modify' | 'run_tests' | 'retry_loop' | 'live_update' | 'rollback';
+  message: string;
+  type: 'info' | 'success' | 'warn' | 'error';
+  details?: any;
+}
+
+export interface PipelineExecutionRun {
+  id: string;
+  source: PipelineSource;
+  inputPrompt: string;
+  inputContext?: any;
+  status: 'received' | 'orchestrating' | 'spec_ready' | 'generating_code' | 'sandbox_modified' | 'running_tests' | 'retrying_failure' | 'live_deployed' | 'failed' | 'rolled_back';
+  loopStage?: LoopEngineeringStage;
+  comprehendResult?: ComprehendResult;
+  drillDownResult?: DrillDownResult;
+  spec: StructuredSpec | null;
+  patches: SandboxPatch[];
+  testResults: TestTelemetryResult[];
+  currentIteration: number;
+  maxIterations: number;
+  liveUpdate: LiveUpdateResult | null;
+  logs: PipelineLog[];
+  durationMs: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface PipelinePresetsResponse {
+  success: boolean;
+  presets: {
+    userChat: Array<{ id: string; title: string; prompt: string; context: any }>;
+    aiopsErrorLogs: Array<{ id: string; title: string; prompt: string; context: any }>;
+  };
+}
+
+export async function fetchOrchestratorPresets(): Promise<PipelinePresetsResponse> {
+  try {
+    const res = await fetch('/api/orchestrator/presets');
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    return await res.json();
+  } catch (err) {
+    return {
+      success: true,
+      presets: {
+        userChat: [
+          {
+            id: 'chat-paypal-retry',
+            title: 'Add Exponential Backoff for Failed PayPal Payouts',
+            prompt: 'Implement an automatic exponential backoff retry mechanism with jitter for failed PayPal payout webhooks and transactions, preventing API rate limit lockout.',
+            context: { route: '/api/paypal/payout', component: 'PayPalPayoutWorker' }
+          },
+          {
+            id: 'chat-neon-cache',
+            title: 'Neon Serverless DB Query Caching & Connection Guard',
+            prompt: 'Add an in-memory TTL query cache with connection pooling circuit-breaker for the Neon PostgreSQL jobs radar queries to reduce database latency under 40ms.',
+            context: { route: '/api/neon/query', component: 'NeonConnectionPool' }
+          }
+        ],
+        aiopsErrorLogs: [
+          {
+            id: 'err-neon-exhausted',
+            title: '500 Error: Neon PostgreSQL Connection Pool Exhaustion',
+            prompt: 'ERROR 2026-09-11T10:45:12.190Z [NeonClient] ConnectionPoolTimeoutError: Timeout after 5000ms waiting for available client in pool (max=20, active=20, waiting=14). Queries blocked on /api/freelancer/active-bids. State: POOL_EXHAUSTED.',
+            context: { errorStack: 'at NeonPool.acquireConnection (server/db.ts:142:18)\nat async syncLiveJobsToPostgres (server/db.ts:284:7)', component: 'db.ts' }
+          },
+          {
+            id: 'err-paypal-signature',
+            title: '401 Webhook Error: PayPal Signature Verification Failure',
+            prompt: 'WARN 2026-09-11T11:02:44.882Z [WebhookSecurity] SignatureVerificationFailed: Expected valid CRC32 token matching PAYPAL-TRANSMISSION-SIG. Received header malformed or timestamp skewed by 340s. Webhook payload rejected.',
+            context: { errorStack: 'at verifyWebhookSignature (server/webhookSecurity.ts:48:11)\nat handlePayPalWebhook (server/paypal.ts:182:5)', component: 'webhookSecurity.ts' }
+          }
+        ]
+      }
+    };
+  }
+}
+
+export async function fetchOrchestratorRuns(): Promise<{ success: boolean; total: number; runs: PipelineExecutionRun[] }> {
+  try {
+    const res = await fetch('/api/orchestrator/runs');
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    return await res.json();
+  } catch (err) {
+    return { success: false, total: 0, runs: [] };
+  }
+}
+
+
+
+export async function runOrchestratorPipeline(options: {
+  source: PipelineSource;
+  content: string;
+  context?: any;
+  maxIterations?: number;
+  simulateFailureOnFirstIteration?: boolean;
+}): Promise<{ success: boolean; run: PipelineExecutionRun; error?: string }> {
+  try {
+    const res = await fetch('/api/orchestrator/pipeline/run', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(options)
+    });
+    const data = await res.json();
+    return data;
+  } catch (err: any) {
+    return {
+      success: false,
+      run: null as any,
+      error: err.message || 'Failed to execute pipeline'
+    };
+  }
+}
+
+export async function rollbackOrchestratorUpdate(runId: string): Promise<{ success: boolean; message: string }> {
+  try {
+    const res = await fetch(`/api/orchestrator/rollback/${encodeURIComponent(runId)}`, {
+      method: 'POST'
+    });
+    return await res.json();
+  } catch (err: any) {
+    return { success: false, message: err.message || 'Rollback failed' };
+  }
+}
+
+>>>>>>> 8fab0ab (Deploy to AWS EC2 and AWS Amplify)
 
 
 

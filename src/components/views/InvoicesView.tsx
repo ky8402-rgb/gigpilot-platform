@@ -6,6 +6,10 @@ interface InvoicesViewProps {
   onGenerateInvoice: () => void;
   onOpenPayPalInvoice: (inv: Invoice) => void;
   onOpenGSTInvoice: (inv: Invoice) => void;
+<<<<<<< HEAD
+=======
+  onOpenContractAgreement?: (inv: Invoice) => void;
+>>>>>>> 8fab0ab (Deploy to AWS EC2 and AWS Amplify)
   onDownloadPDF: (invId: string) => void;
   onDownloadAllInvoices: () => void;
   fmt: (n: number) => string;
@@ -16,6 +20,10 @@ export const InvoicesView: React.FC<InvoicesViewProps> = ({
   onGenerateInvoice,
   onOpenPayPalInvoice,
   onOpenGSTInvoice,
+<<<<<<< HEAD
+=======
+  onOpenContractAgreement,
+>>>>>>> 8fab0ab (Deploy to AWS EC2 and AWS Amplify)
   onDownloadPDF,
   onDownloadAllInvoices,
   fmt,
@@ -91,6 +99,21 @@ export const InvoicesView: React.FC<InvoicesViewProps> = ({
                     <span>GST Invoice (₹)</span>
                   </button>
 
+<<<<<<< HEAD
+=======
+                  {/* Contract Agreement Action */}
+                  {onOpenContractAgreement && (
+                    <button
+                      onClick={() => onOpenContractAgreement(inv)}
+                      className="bg-slate-800 hover:bg-slate-700 text-emerald-300 border border-emerald-500/30 px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 shadow-sm cursor-pointer"
+                      title="View Master Services Contract Agreement & SOW"
+                    >
+                      <i className="fas fa-file-signature text-emerald-400"></i>
+                      <span>Contract (MSA)</span>
+                    </button>
+                  )}
+
+>>>>>>> 8fab0ab (Deploy to AWS EC2 and AWS Amplify)
                   <button
                     onClick={() => onDownloadPDF(inv.id)}
                     className="p-2 text-[#9aa2bf] hover:text-white bg-[#161b2b] hover:bg-[#1e2438] rounded-lg transition-all cursor-pointer"

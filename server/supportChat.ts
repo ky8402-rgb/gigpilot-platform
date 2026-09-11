@@ -54,7 +54,11 @@ Provide a concise response in valid JSON with two fields:
 }`;
 
       const response = await gemini.models.generateContent({
+<<<<<<< HEAD
         model: 'gemini-3.7-flash',
+=======
+        model: 'gemini-3.8-flash',
+>>>>>>> 8fab0ab (Deploy to AWS EC2 and AWS Amplify)
         contents: prompt,
         config: {
           responseMimeType: 'application/json',
@@ -129,7 +133,11 @@ Conversation history: ${JSON.stringify(history)}
 Explain clearly how auto-dispatch, auto-completion, PayPal Payouts, and the self-healing retry mechanism work. Provide actionable next steps.`;
 
     const response = await gemini.models.generateContent({
+<<<<<<< HEAD
       model: 'gemini-3.7-flash',
+=======
+      model: 'gemini-3.8-flash',
+>>>>>>> 8fab0ab (Deploy to AWS EC2 and AWS Amplify)
       contents: prompt,
     });
 

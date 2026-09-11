@@ -19,7 +19,11 @@ export interface StageConfig {
   icon: React.ComponentType<{ className?: string }>;
 }
 
+<<<<<<< HEAD
 export const LIFECYCLE_STAGES: StageConfig[] = [
+=======
+const LIFECYCLE_STAGES: StageConfig[] = [
+>>>>>>> 8fab0ab (Deploy to AWS EC2 and AWS Amplify)
   {
     id: 'pending',
     label: 'Pending',
@@ -50,7 +54,11 @@ export const LIFECYCLE_STAGES: StageConfig[] = [
   },
 ];
 
+<<<<<<< HEAD
 export function getWorkOrderStageIndex(params: {
+=======
+function getWorkOrderStageIndex(params: {
+>>>>>>> 8fab0ab (Deploy to AWS EC2 and AWS Amplify)
   status?: string;
   paymentStatus?: string;
   customerConfirmed?: boolean;

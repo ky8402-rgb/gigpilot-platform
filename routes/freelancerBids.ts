@@ -27,7 +27,11 @@ import { getAllRegisteredTools } from '../server/toolRegistry';
 const router = express.Router();
 const dbPath = process.env.SQLITE_DB_PATH || path.join(process.cwd(), 'bids.db');
 
+<<<<<<< HEAD
 export interface BidTrackingData {
+=======
+interface BidTrackingData {
+>>>>>>> 8fab0ab (Deploy to AWS EC2 and AWS Amplify)
   workStatus?: string;
   work_status?: string;
   startedAt?: string | null;

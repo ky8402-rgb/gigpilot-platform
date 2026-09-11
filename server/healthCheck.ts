@@ -230,7 +230,11 @@ export async function checkDatabase(): Promise<DatabaseCheckResult> {
         // Table queries optional if schema in bootstrap
       }
 
+<<<<<<< HEAD
       const status: HealthStatus = latencyMs > 800 ? 'degraded' : 'healthy';
+=======
+      const status: HealthStatus = latencyMs > 2500 ? 'degraded' : 'healthy';
+>>>>>>> 8fab0ab (Deploy to AWS EC2 and AWS Amplify)
 
       return {
         status,
@@ -698,9 +702,18 @@ export async function runFullHealthCheck(forceRefresh: boolean = false): Promise
           message: ahMessage,
         };
 
+<<<<<<< HEAD
         if (ahHealth === 'critical') {
           overallStatus = 'critical';
           remediationPoints.push('DevOps attention required: Auto-healing escalation limit reached');
+=======
+        // Do not force overallStatus to 'critical' or 'degraded' solely due to ahHealth being 'critical'.
+        // The AutoHealer's escalation is an advisory DevOps alert, not an underlying service failure.
+        // If underlying services (db, cron, queues, work orders, transactions) are healthy,
+        // overallStatus remains healthy so the AutoHealer can successfully reset its retry counter.
+        if (ahHealth === 'critical') {
+          remediationPoints.push('DevOps advisory: Auto-healing escalation limit was reached');
+>>>>>>> 8fab0ab (Deploy to AWS EC2 and AWS Amplify)
         }
       }
     } catch {

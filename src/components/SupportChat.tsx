@@ -87,9 +87,16 @@ interface DiagnosticReport {
 interface SupportChatProps {
   appContext?: any;
   onToast?: (message: string, type?: 'success' | 'info' | 'warning' | 'error') => void;
+<<<<<<< HEAD
 }
 
 export const SupportChat: React.FC<SupportChatProps> = ({ appContext, onToast }) => {
+=======
+  onOpenSelfUpdatingPipeline?: (initialData?: { source: 'user_chat' | 'aiops_error_log'; content: string }) => void;
+}
+
+export const SupportChat: React.FC<SupportChatProps> = ({ appContext, onToast, onOpenSelfUpdatingPipeline }) => {
+>>>>>>> 8fab0ab (Deploy to AWS EC2 and AWS Amplify)
   const [isOpen, setIsOpen] = useState(false);
   const [isMinimized, setIsMinimized] = useState(false);
   const [activeTab, setActiveTab] = useState<'chat' | 'diagnostics' | 'learned' | 'actions'>('chat');
@@ -100,6 +107,10 @@ export const SupportChat: React.FC<SupportChatProps> = ({ appContext, onToast })
       text: '👋 Hello! I am your AI Self-Healing & Diagnostic Agent. I run deep real-time system diagnostics, execute actual backend auto-fixes with health verification, and give live step-by-step progress feedback.',
       timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
       quickActions: [
+<<<<<<< HEAD
+=======
+        { id: 'selfUpdatingEngine', label: '⚡ Self-Updating Engine', action: 'selfUpdatingEngine' },
+>>>>>>> 8fab0ab (Deploy to AWS EC2 and AWS Amplify)
         { id: 'reconnectDB', label: 'Verify PostgreSQL', action: 'reconnectDB' },
         { id: 'clearCache', label: 'Flush Cache & GC', action: 'clearCache' },
         { id: 'healWorkOrders', label: 'Heal Work Orders', action: 'healWorkOrders' },
@@ -143,6 +154,10 @@ export const SupportChat: React.FC<SupportChatProps> = ({ appContext, onToast })
           actionKey: 'clearCache'
         },
         quickActions: [
+<<<<<<< HEAD
+=======
+          { id: 'openPipelineForErr', label: '⚡ Self-Updating Pipeline (Prompt 1 ➔ 2 ➔ Live)', action: 'openPipelineForErr' },
+>>>>>>> 8fab0ab (Deploy to AWS EC2 and AWS Amplify)
           { id: 'clearCache', label: 'Execute Cache Flush', action: 'clearCache' },
           { id: 'reconnectDB', label: 'Reconnect Database', action: 'reconnectDB' }
         ]
@@ -209,6 +224,25 @@ export const SupportChat: React.FC<SupportChatProps> = ({ appContext, onToast })
    * Directly executes a concrete backend self-healing fix action with real-time feedback
    */
   const executeDirectAction = async (actionKey: string, customLabel?: string) => {
+<<<<<<< HEAD
+=======
+    if (actionKey === 'selfUpdatingEngine') {
+      onOpenSelfUpdatingPipeline?.({
+        source: 'user_chat',
+        content: 'Autonomous optimization of database connection pooling and job polling rate limiter with automatic rollback protection.'
+      });
+      return;
+    }
+
+    if (actionKey === 'openPipelineForErr') {
+      onOpenSelfUpdatingPipeline?.({
+        source: 'aiops_error_log',
+        content: `AIOps Alert: Client exception detected.\nDetails: ${customLabel || 'Unhandled exception in UI lifecycle'}\nTimestamp: ${new Date().toISOString()}`
+      });
+      return;
+    }
+
+>>>>>>> 8fab0ab (Deploy to AWS EC2 and AWS Amplify)
     if (isLoading) return;
 
     setActiveTab('chat');

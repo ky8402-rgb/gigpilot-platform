@@ -2,7 +2,10 @@ import crypto from 'crypto';
 import axios from 'axios';
 import { safeExecutePgQuery } from './pgDatabase.js';
 import { getGeminiAI } from './gemini.js';
+<<<<<<< HEAD
 import { createPayPalPayout } from './paypal.js';
+=======
+>>>>>>> 8fab0ab (Deploy to AWS EC2 and AWS Amplify)
 import { logActivityEvent } from './activityLogger.js';
 import { clearBidsCache } from './redisCache.js';
 
@@ -619,7 +622,11 @@ export async function runMidnightWinRateAnalysis(): Promise<{
 }
 
 // =========================================================================
+<<<<<<< HEAD
 // 6. AUTONOMOUS REVENUE REALIZATION & RISK BANDS (Requirement 7)
+=======
+// 6. REVENUE REALIZATION & RECEIVABLES RECORDING
+>>>>>>> 8fab0ab (Deploy to AWS EC2 and AWS Amplify)
 // =========================================================================
 
 export async function executeAutonomousCashOut(params: {
@@ -641,6 +648,7 @@ export async function executeAutonomousCashOut(params: {
   const { workOrderId, bidId, projectTitle, clientName, amount, workerEmail, isTimeBased } = params;
   const numAmount = Number(amount);
 
+<<<<<<< HEAD
   // Determine Risk Band:
   // - < $100: Auto-transfer immediately
   // - $100 - $500: Standard automated escrow release
@@ -782,6 +790,52 @@ Reply *YES* to immediately transfer via PayPal, or *HOLD* for review.`;
       message: `PayPal payout execution failed: ${err.message}`,
     };
   }
+=======
+  const invoiceNumber = `INV-${new Date().getFullYear()}-${Math.floor(1000 + Math.random() * 9000)}`;
+
+  if (isTimeBased) {
+    console.log(`📄 [Receivables] Generated invoice ${invoiceNumber} for time-based milestone: $${numAmount}`);
+  }
+
+  const record: AutomatedPayoutRecord = {
+    id: `rec_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+    work_order_id: workOrderId,
+    bid_id: bidId,
+    project_title: projectTitle,
+    client_name: clientName,
+    amount: numAmount,
+    currency: 'USD',
+    risk_band: 'standard_automated',
+    status: 'completed',
+    payout_batch_id: null,
+    invoice_number: invoiceNumber,
+    executed_at: new Date().toISOString(),
+    details: { isTimeBased: Boolean(isTimeBased), autoEscrowRelease: false, receivableAccrued: true },
+  };
+
+  revenueStore.automatedPayouts.unshift(record);
+
+  if (bidId) {
+    await updateBidOutcomeStatus(bidId, 'Won', numAmount);
+  }
+
+  logActivityEvent({
+    source: 'PayPal',
+    type: 'WORK_ORDER_COMPLETED',
+    status: 'success',
+    summary: `Work order milestone recorded as receivable: $${numAmount} for ${projectTitle} (${clientName})`,
+    tags: ['receivable', 'completed', 'work_order'],
+  });
+
+  return {
+    success: true,
+    riskBand: 'standard_automated',
+    status: 'completed',
+    payoutBatchId: null,
+    invoiceNumber,
+    message: `Milestone completed and recorded as receivable ($${numAmount}).`,
+  };
+>>>>>>> 8fab0ab (Deploy to AWS EC2 and AWS Amplify)
 }
 
 export function getAutomatedPayoutsLog(): AutomatedPayoutRecord[] {

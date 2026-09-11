@@ -39,11 +39,20 @@ import { MLOpsPanel } from './MLOpsPanel';
 interface HealthDashboardProps {
   className?: string;
   onOpenSettings?: () => void;
+<<<<<<< HEAD
+=======
+  onOpenSelfUpdatingPipeline?: () => void;
+>>>>>>> 8fab0ab (Deploy to AWS EC2 and AWS Amplify)
 }
 
 export const HealthDashboard: React.FC<HealthDashboardProps> = ({
   className = '',
+<<<<<<< HEAD
   onOpenSettings
+=======
+  onOpenSettings,
+  onOpenSelfUpdatingPipeline
+>>>>>>> 8fab0ab (Deploy to AWS EC2 and AWS Amplify)
 }) => {
   const [healthData, setHealthData] = useState<SystemHealthStatus | null>(null);
   const [isLoading, setIsLoading] = useState<boolean>(false);
@@ -275,6 +284,21 @@ export const HealthDashboard: React.FC<HealthDashboardProps> = ({
             <Wrench className={`w-3.5 h-3.5 ${isRemediating ? 'animate-spin' : ''}`} />
             <span>{isRemediating ? 'Remediating...' : 'Self-Healing Trigger'}</span>
           </button>
+<<<<<<< HEAD
+=======
+
+          {onOpenSelfUpdatingPipeline && (
+            <button
+              id="health-self-updating-pipeline-button"
+              onClick={onOpenSelfUpdatingPipeline}
+              className="inline-flex items-center gap-1.5 rounded-lg bg-emerald-950/40 hover:bg-emerald-900/50 border border-emerald-500/40 px-3.5 py-1.5 text-xs font-bold text-emerald-300 transition-all cursor-pointer"
+              title="Open Autonomous Self-Updating Pipeline"
+            >
+              <Zap className="w-3.5 h-3.5 text-emerald-400" />
+              <span>Self-Updating Engine</span>
+            </button>
+          )}
+>>>>>>> 8fab0ab (Deploy to AWS EC2 and AWS Amplify)
         </div>
       </div>
 

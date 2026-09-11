@@ -26,8 +26,14 @@ interface AppSidebarProps {
   onOpenPayPalConnect: () => void;
   onOpenGitHubSettings: () => void;
   onOpenAutoDeploy: () => void;
+<<<<<<< HEAD
   onOpenCredentialsModal: () => void;
   onOpenLegal: (tab: 'terms' | 'privacy' | 'gst' | 'refunds') => void;
+=======
+  onOpenSelfUpdatingPipeline?: () => void;
+  onOpenCredentialsModal: () => void;
+  onOpenLegal: (tab: 'contract' | 'terms' | 'privacy' | 'gst' | 'refunds') => void;
+>>>>>>> 8fab0ab (Deploy to AWS EC2 and AWS Amplify)
 }
 
 export const AppSidebar: React.FC<AppSidebarProps> = ({
@@ -41,6 +47,10 @@ export const AppSidebar: React.FC<AppSidebarProps> = ({
   onOpenPayPalConnect,
   onOpenGitHubSettings,
   onOpenAutoDeploy,
+<<<<<<< HEAD
+=======
+  onOpenSelfUpdatingPipeline,
+>>>>>>> 8fab0ab (Deploy to AWS EC2 and AWS Amplify)
   onOpenCredentialsModal,
   onOpenLegal,
 }) => {
@@ -349,7 +359,11 @@ export const AppSidebar: React.FC<AppSidebarProps> = ({
               className="w-full flex items-center justify-between px-3 py-2 rounded-xl text-xs font-semibold text-cyan-400 hover:text-cyan-300 hover:bg-cyan-950/20 transition-all cursor-pointer"
             >
               <div className="flex items-center gap-3">
+<<<<<<< HEAD
                 <i className="fas fa-rocket w-4 text-center text-sm text-cyan-400"></i>
+=======
+                 <i className="fas fa-rocket w-4 text-center text-sm text-cyan-400"></i>
+>>>>>>> 8fab0ab (Deploy to AWS EC2 and AWS Amplify)
                 <span>Auto-Deploy Tool</span>
               </div>
               <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-cyan-500/15 text-cyan-300 border border-cyan-500/30">
@@ -358,6 +372,23 @@ export const AppSidebar: React.FC<AppSidebarProps> = ({
             </button>
 
             <button
+<<<<<<< HEAD
+=======
+              id="sidebar-nav-self-updating-pipeline"
+              onClick={onOpenSelfUpdatingPipeline}
+              className="w-full flex items-center justify-between px-3 py-2 rounded-xl text-xs font-semibold text-emerald-400 hover:text-emerald-300 hover:bg-emerald-950/30 transition-all cursor-pointer group"
+            >
+              <div className="flex items-center gap-3">
+                <i className="fas fa-brain w-4 text-center text-sm text-emerald-400 group-hover:scale-110 transition-transform"></i>
+                <span>Self-Updating Engine</span>
+              </div>
+              <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-emerald-500/20 text-emerald-300 border border-emerald-500/40">
+                LOOP
+              </span>
+            </button>
+
+            <button
+>>>>>>> 8fab0ab (Deploy to AWS EC2 and AWS Amplify)
               onClick={onOpenCredentialsModal}
               className="w-full flex items-center justify-between px-3 py-2 rounded-xl text-xs font-semibold text-slate-400 hover:text-slate-100 hover:bg-slate-900/60 transition-all cursor-pointer"
             >
@@ -386,6 +417,16 @@ export const AppSidebar: React.FC<AppSidebarProps> = ({
 
         <div className="flex items-center justify-between text-[11px] text-slate-500 pt-1 border-t border-slate-800/40">
           <button
+<<<<<<< HEAD
+=======
+            onClick={() => onOpenLegal('contract')}
+            className="text-emerald-400 hover:text-emerald-300 transition-colors cursor-pointer font-semibold"
+          >
+            Contract
+          </button>
+          <span>•</span>
+          <button
+>>>>>>> 8fab0ab (Deploy to AWS EC2 and AWS Amplify)
             onClick={() => onOpenLegal('terms')}
             className="hover:text-slate-300 transition-colors cursor-pointer"
           >
@@ -403,7 +444,11 @@ export const AppSidebar: React.FC<AppSidebarProps> = ({
             onClick={() => onOpenLegal('gst')}
             className="hover:text-emerald-400 transition-colors cursor-pointer font-mono"
           >
+<<<<<<< HEAD
             GST 18%
+=======
+            GST
+>>>>>>> 8fab0ab (Deploy to AWS EC2 and AWS Amplify)
           </button>
         </div>
       </div>

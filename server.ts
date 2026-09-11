@@ -42,6 +42,10 @@ import devopsActionsRoutes from "./server/devopsActionsRoutes.js";
 import autoDeployRoutes from "./server/autoDeployRoutes.js";
 import godaddyRoutes from "./server/godaddyRoutes.js";
 import cloudflareRoutes from "./server/cloudflareRoutes.js";
+<<<<<<< HEAD
+=======
+import orchestratorRoutes from "./server/orchestratorRoutes.js";
+>>>>>>> 8fab0ab (Deploy to AWS EC2 and AWS Amplify)
 import "./server/worker.js";
 import { logActivityEvent } from "./server/activityLogger.js";
 import { verifyWebhookSignature } from "./server/webhookSecurity.js";
@@ -368,6 +372,12 @@ app.use("/api/godaddy", godaddyRoutes);
 // 15. Cloudflare Automated DNS Management & Migration Engine
 app.use("/api/cloudflare", cloudflareRoutes);
 
+<<<<<<< HEAD
+=======
+// 16. Autonomous Self-Updating Pipeline (Prompt 1: Orchestrator -> Prompt 2: Self-Updating Engine -> Sandbox -> Live App Updates)
+app.use("/api/orchestrator", orchestratorRoutes);
+
+>>>>>>> 8fab0ab (Deploy to AWS EC2 and AWS Amplify)
 // Compatibility aliases for /api/bids, /api/Bid (Prisma model case), /api/Bids, and /api/leads list
 app.use(["/api/bids", "/api/Bid", "/api/Bids"], freelancerBidsRoutes);
 
@@ -945,6 +955,22 @@ app.post("/api/health/auto-heal/trigger", async (req, res) => {
   }
 });
 
+<<<<<<< HEAD
+=======
+app.post("/api/health/auto-heal/reset", (req, res) => {
+  try {
+    const updatedStatus = autoHealer.resetFailures();
+    return res.json({
+      success: true,
+      message: 'Auto-healer failure counter and escalation state reset.',
+      status: updatedStatus,
+    });
+  } catch (err: any) {
+    return res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+>>>>>>> 8fab0ab (Deploy to AWS EC2 and AWS Amplify)
 // =========================================================================
 // PREDICTIVE MACHINE LEARNING AIOPS ENDPOINTS
 // =========================================================================
@@ -1927,6 +1953,11 @@ snapshotService.initialize().then(() => {
 
 // Start Server & Mount Vite Middleware
 async function startServer() {
+<<<<<<< HEAD
+=======
+  const distPath = path.join(process.cwd(), 'dist');
+
+>>>>>>> 8fab0ab (Deploy to AWS EC2 and AWS Amplify)
   if (process.env.NODE_ENV !== "production") {
     try {
       const { createServer: createViteServer } = await import("vite");
@@ -1935,12 +1966,34 @@ async function startServer() {
         appType: "spa",
       });
       app.use(vite.middlewares);
+<<<<<<< HEAD
     } catch (viteErr) {
       console.warn("⚠️ Vite middleware could not be loaded dynamically (production/bundled mode):", viteErr);
     }
   } else {
     const distPath = path.join(process.cwd(), 'dist');
 
+=======
+      console.log('⚡ [Vite] Middleware mounted in development mode');
+    } catch (viteErr) {
+      console.warn("⚠️ Vite middleware could not be loaded dynamically (falling back to static dist):", viteErr);
+      if (fs.existsSync(distPath)) {
+        app.use(express.static(distPath));
+        app.get('*', (req, res) => {
+          if (req.path.startsWith('/api/')) {
+            return res.status(404).json({ error: `API endpoint ${req.path} not found` });
+          }
+          const indexPath = path.join(distPath, 'index.html');
+          if (fs.existsSync(indexPath)) {
+            res.sendFile(indexPath);
+          } else {
+            res.status(500).send('Application build in progress or index.html not found.');
+          }
+        });
+      }
+    }
+  } else {
+>>>>>>> 8fab0ab (Deploy to AWS EC2 and AWS Amplify)
     app.use(express.static(distPath, {
       maxAge: '1y',
       immutable: true,
@@ -1970,7 +2023,12 @@ async function startServer() {
   }
 
   app.listen(PORT, "0.0.0.0", () => {
+<<<<<<< HEAD
     console.log(`Server running on http://0.0.0.0:${PORT}`);
+=======
+    console.log(`Server running on http://localhost:${PORT}`);
+    console.log(`Server listening on http://0.0.0.0:${PORT}`);
+>>>>>>> 8fab0ab (Deploy to AWS EC2 and AWS Amplify)
   });
 }
 

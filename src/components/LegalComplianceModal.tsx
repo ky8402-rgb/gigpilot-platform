@@ -1,4 +1,8 @@
+<<<<<<< HEAD
 import React, { useState } from 'react';
+=======
+import React, { useState, useEffect } from 'react';
+>>>>>>> 8fab0ab (Deploy to AWS EC2 and AWS Amplify)
 import { 
   X, 
   ShieldCheck, 
@@ -10,23 +14,49 @@ import {
   Printer,
   Copy,
   Check,
+<<<<<<< HEAD
   Scale
+=======
+  Scale,
+  FileCheck,
+  User,
+  Briefcase,
+  Clock
+>>>>>>> 8fab0ab (Deploy to AWS EC2 and AWS Amplify)
 } from 'lucide-react';
 
 interface LegalComplianceModalProps {
   isOpen: boolean;
   onClose: () => void;
+<<<<<<< HEAD
   initialTab?: 'terms' | 'privacy' | 'gst' | 'refunds';
+=======
+  initialTab?: 'contract' | 'terms' | 'privacy' | 'gst' | 'refunds';
+>>>>>>> 8fab0ab (Deploy to AWS EC2 and AWS Amplify)
 }
 
 export const LegalComplianceModal: React.FC<LegalComplianceModalProps> = ({
   isOpen,
   onClose,
+<<<<<<< HEAD
   initialTab = 'terms'
 }) => {
   const [activeTab, setActiveTab] = useState<'terms' | 'privacy' | 'gst' | 'refunds'>(initialTab);
   const [copied, setCopied] = useState(false);
 
+=======
+  initialTab = 'contract'
+}) => {
+  const [activeTab, setActiveTab] = useState<'contract' | 'terms' | 'privacy' | 'gst' | 'refunds'>(initialTab);
+  const [copied, setCopied] = useState(false);
+
+  useEffect(() => {
+    if (initialTab) {
+      setActiveTab(initialTab);
+    }
+  }, [initialTab]);
+
+>>>>>>> 8fab0ab (Deploy to AWS EC2 and AWS Amplify)
   if (!isOpen) return null;
 
   const handleCopyLink = () => {
@@ -93,6 +123,21 @@ export const LegalComplianceModal: React.FC<LegalComplianceModalProps> = ({
         {/* Tab Navigation */}
         <div className="flex items-center gap-2 border-b border-slate-800 bg-slate-950/60 px-6 py-2 overflow-x-auto text-xs font-semibold">
           <button
+<<<<<<< HEAD
+=======
+            onClick={() => setActiveTab('contract')}
+            className={`flex items-center gap-2 px-3.5 py-2 rounded-lg transition-all ${
+              activeTab === 'contract'
+                ? 'bg-emerald-600 text-white shadow-sm'
+                : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/60'
+            }`}
+          >
+            <FileCheck className="h-4 w-4 text-emerald-300" />
+            <span>Contract Agreement (MSA)</span>
+          </button>
+
+          <button
+>>>>>>> 8fab0ab (Deploy to AWS EC2 and AWS Amplify)
             onClick={() => setActiveTab('terms')}
             className={`flex items-center gap-2 px-3.5 py-2 rounded-lg transition-all ${
               activeTab === 'terms'
@@ -144,6 +189,159 @@ export const LegalComplianceModal: React.FC<LegalComplianceModalProps> = ({
         {/* Content Body */}
         <div className="flex-1 overflow-y-auto p-6 text-slate-300 text-xs sm:text-sm leading-relaxed space-y-6">
           
+<<<<<<< HEAD
+=======
+          {/* TAB 0: CONTRACT AGREEMENT (MSA & STATEMENT OF WORK) */}
+          {activeTab === 'contract' && (
+            <div className="space-y-6">
+              <div className="rounded-2xl border border-emerald-500/20 bg-slate-950 p-5 text-center space-y-1.5 shadow-inner">
+                <span className="text-[10px] font-mono tracking-widest text-emerald-400 font-bold uppercase">
+                  Standard Commercial Agreement • Ref: MSA-CONTRACT-KVK-2026-ENF
+                </span>
+                <h3 className="text-base sm:text-xl font-black text-white uppercase tracking-tight">
+                  Independent Contractor Master Services Agreement (MSA) &amp; SOW
+                </h3>
+                <p className="text-xs text-slate-400 max-w-xl mx-auto">
+                  Legally binding agreement governing client software engagements, autonomous AI integration, IP assignment, escrow milestone releases, and liability terms.
+                </p>
+              </div>
+
+              {/* Parties Block */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div className="rounded-xl border border-slate-800 bg-slate-950 p-4 space-y-1.5">
+                  <div className="text-[11px] font-bold text-emerald-400 uppercase tracking-wider flex items-center gap-1.5">
+                    <User className="w-3.5 h-3.5" /> Service Provider / Contractor
+                  </div>
+                  <div className="font-bold text-white text-sm">Kundan Kumar</div>
+                  <div className="text-xs text-slate-300">Kundan Vision AI Technologies</div>
+                  <div className="text-[11px] text-slate-400">
+                    Principal Full-Stack Developer &amp; Autonomous Systems Architect<br />
+                    Email: <span className="text-slate-200 font-mono">ky8402@gmail.com</span><br />
+                    Bank: Federal Bank (A/C: 99980119788763 | IFSC: FDRL0001447)<br />
+                    UPI: chandimay@ybl | PayPal: paypal.me/ky8402
+                  </div>
+                </div>
+
+                <div className="rounded-xl border border-slate-800 bg-slate-950 p-4 space-y-1.5">
+                  <div className="text-[11px] font-bold text-indigo-400 uppercase tracking-wider flex items-center gap-1.5">
+                    <Briefcase className="w-3.5 h-3.5" /> Client / Retaining Principal
+                  </div>
+                  <div className="font-bold text-white text-sm">Retaining Enterprise Client / Customer</div>
+                  <div className="text-xs text-slate-300">Contract Principal via Platform or Direct Escrow</div>
+                  <div className="text-[11px] text-slate-400">
+                    Platform Channels: RemoteOK, Upwork, Freelancer.com, or Direct MSA<br />
+                    Authorized Signatory: Designated Account Representative<br />
+                    Currency: USD ($ United States Dollars) / INR (₹ Indian Rupees)
+                  </div>
+                </div>
+              </div>
+
+              {/* Articles */}
+              <div className="space-y-4">
+                <div>
+                  <h4 className="text-sm font-bold text-white flex items-center gap-2">
+                    <span className="rounded bg-emerald-500/20 text-emerald-400 px-1.5 py-0.5 text-xs font-mono">1</span>
+                    Engagement &amp; Statement of Work (SOW) Scope
+                  </h4>
+                  <p className="text-slate-300 mt-1">
+                    Client engages Contractor as an independent software contractor to perform technical services including custom web development, autonomous scraping daemons, database architectures (PostgreSQL / Neon), Gemini AI pipeline integrations, testing, and cloud deployment as defined in accepted proposals and milestone orders.
+                  </p>
+                </div>
+
+                <div>
+                  <h4 className="text-sm font-bold text-white flex items-center gap-2">
+                    <span className="rounded bg-emerald-500/20 text-emerald-400 px-1.5 py-0.5 text-xs font-mono">2</span>
+                    Milestone Settlement, Escrow &amp; Compensation
+                  </h4>
+                  <p className="text-slate-300 mt-1">
+                    All work shall be funded via verified escrow or remitted within five (5) business days of deliverable submission. Client shall release milestone escrow upon verification of deliverables. Contractor accepts remittances via Direct Bank Wire (Federal Bank), Instant UPI (Domestic INR), and PayPal REST Gateway (International USD).
+                  </p>
+                </div>
+
+                <div>
+                  <h4 className="text-sm font-bold text-white flex items-center gap-2">
+                    <span className="rounded bg-emerald-500/20 text-emerald-400 px-1.5 py-0.5 text-xs font-mono">3</span>
+                    Intellectual Property Ownership (Work Made for Hire)
+                  </h4>
+                  <p className="text-slate-300 mt-1">
+                    Subject to full payment of the agreed contract fees, Contractor assigns to Client all right, title, and interest in and to custom source code, documentation, and specific digital assets created exclusively for Client. Contractor retains all ownership rights in pre-existing developer frameworks, generic algorithms, and open-source tooling.
+                  </p>
+                </div>
+
+                <div>
+                  <h4 className="text-sm font-bold text-white flex items-center gap-2">
+                    <span className="rounded bg-emerald-500/20 text-emerald-400 px-1.5 py-0.5 text-xs font-mono">4</span>
+                    Confidentiality &amp; Bilateral Non-Disclosure (NDA)
+                  </h4>
+                  <p className="text-slate-300 mt-1">
+                    Each party agrees to maintain strict confidentiality regarding all proprietary business data, credentials, source code, and API keys disclosed in the course of performance. Neither party shall disclose Confidential Information to third parties without prior written authorization.
+                  </p>
+                </div>
+
+                <div>
+                  <h4 className="text-sm font-bold text-white flex items-center gap-2">
+                    <span className="rounded bg-emerald-500/20 text-emerald-400 px-1.5 py-0.5 text-xs font-mono">5</span>
+                    14-Day Acceptance Testing &amp; 30-Day Defect Warranty
+                  </h4>
+                  <p className="text-slate-300 mt-1">
+                    Client shall have fourteen (14) days following milestone delivery to verify that deliverables function substantially in accordance with project specifications. For thirty (30) days post-acceptance, Contractor warrants the correction of reproducible critical software defects at zero additional fee.
+                  </p>
+                </div>
+
+                <div>
+                  <h4 className="text-sm font-bold text-white flex items-center gap-2">
+                    <span className="rounded bg-emerald-500/20 text-emerald-400 px-1.5 py-0.5 text-xs font-mono">6</span>
+                    Independent Contractor Status &amp; Tax Obligations
+                  </h4>
+                  <p className="text-slate-300 mt-1">
+                    The relationship between the parties is that of independent contractor and client. Neither party is an employee, partner, or legal agent of the other. Contractor is solely responsible for compliance with tax authorities, including Indian GST registration (18%, SAC 998315).
+                  </p>
+                </div>
+
+                <div>
+                  <h4 className="text-sm font-bold text-white flex items-center gap-2">
+                    <span className="rounded bg-emerald-500/20 text-emerald-400 px-1.5 py-0.5 text-xs font-mono">7</span>
+                    Governing Law &amp; Commercial Arbitration
+                  </h4>
+                  <p className="text-slate-300 mt-1">
+                    This Agreement shall be interpreted in accordance with commercial contract principles, the Indian Contract Act, 1872, and the Information Technology Act, 2000. Any dispute shall be settled by binding arbitration in accordance with UNCITRAL Commercial Arbitration Rules.
+                  </p>
+                </div>
+              </div>
+
+              {/* Execution Block */}
+              <div className="rounded-xl border border-slate-800 bg-slate-950 p-4 space-y-3">
+                <div className="flex items-center justify-between text-xs border-b border-slate-800 pb-2">
+                  <span className="font-bold text-white flex items-center gap-1.5">
+                    <CheckCircle2 className="w-4 h-4 text-emerald-400" />
+                    Certified Digital Execution
+                  </span>
+                  <span className="text-[10px] font-mono text-emerald-400 font-bold bg-emerald-500/10 px-2 py-0.5 rounded border border-emerald-500/20">
+                    STATUS: LEGALLY ACTIVE &amp; BINDING
+                  </span>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-xs">
+                  <div>
+                    <div className="text-slate-400 text-[11px]">Contractor Digital Seal:</div>
+                    <div className="font-serif italic text-base text-emerald-400 font-bold mt-1">Kundan Kumar</div>
+                    <div className="text-slate-400 text-[10px] font-mono mt-0.5">
+                      Verification: SHA256: 7f8a91c0b34de88c21a4f0283e71d982b4
+                    </div>
+                  </div>
+                  <div>
+                    <div className="text-slate-400 text-[11px]">Client Counter-Execution:</div>
+                    <div className="font-serif italic text-base text-indigo-300 font-bold mt-1">Authorized Client Representative</div>
+                    <div className="text-slate-400 text-[10px] font-mono mt-0.5">
+                      Mutual Assent: Executed upon Order Confirmation &amp; Escrow Funding
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+          
+>>>>>>> 8fab0ab (Deploy to AWS EC2 and AWS Amplify)
           {/* TAB 1: TERMS OF SERVICE */}
           {activeTab === 'terms' && (
             <div className="space-y-6">
