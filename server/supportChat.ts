@@ -1,4 +1,4 @@
-import { getGeminiAI } from './gemini.js';
+import { getGeminiAI, generateContentResilient } from './gemini.js';
 import { logActivityEvent } from './activityLogger.js';
 
 export interface SupportTicket {
@@ -27,15 +27,39 @@ export async function triggerAISupportIncident(params: {
 }): Promise<SupportTicket> {
   const ticketId = `TICK-${Date.now().toString().slice(-6)}`;
   const severity = params.severity || 'medium';
-  const gemini = getGeminiAI();
 
-  let aiAnalysis = 'Automated system diagnostic initiated. Evaluating PayPal webhook/payout retry queue and worker status.';
+  // Category-specific deterministic diagnostic baseline
+  let aiAnalysis = 'Automated system diagnostic initiated. Evaluating services and background worker queues.';
   let recommendedActions = [
-    'Verify PayPal Sandbox/Live credentials and business account payout balance',
-    'Confirm recipient worker PayPal email address validity',
-    'Review exponential backoff retry logs in system activity stream',
+    'Review system health status at /api/health',
+    'Check recent activity events in telemetry stream',
+    'Verify background workers and queue processing status',
   ];
 
+  if (params.category === 'DATABASE_ANOMALY') {
+    aiAnalysis = 'Autonomous database diagnostic: evaluated connection pool, Neon serverless query latency, and table schemas.';
+    recommendedActions = [
+      'Check PostgreSQL connection pool and query latency in system health metrics',
+      'Verify DATABASE_URL credentials and SSL configuration (sslmode=require)',
+      'Run diagnostic reconciliation to synchronize in-memory caches with database state',
+    ];
+  } else if (params.category === 'STUCK_WORK_ORDER') {
+    aiAnalysis = 'Autonomous work order diagnostic: scanned for overdue orders and pending milestone completions.';
+    recommendedActions = [
+      'Run auto-completion worker to approve work orders exceeding SLA deadline',
+      'Verify recipient worker payment status and PayPal invoice linkage',
+      'Inspect worker retry queue for exponential backoff items',
+    ];
+  } else if (params.category === 'PAYPAL_PAYOUT_ERROR') {
+    aiAnalysis = 'Automated payment gateway diagnostic: evaluating PayPal webhook/payout retry queue and worker status.';
+    recommendedActions = [
+      'Verify PayPal Sandbox/Live credentials and business account payout balance',
+      'Confirm recipient worker PayPal email address validity',
+      'Review exponential backoff retry logs in system activity stream',
+    ];
+  }
+
+  const gemini = getGeminiAI();
   if (gemini) {
     try {
       const prompt = `You are an Autonomous AI DevOps & Payment Gateway Support Assistant for an automated freelancer dispatch and PayPal revenue withdrawal platform.
@@ -53,8 +77,9 @@ Provide a concise response in valid JSON with two fields:
   "recommendedActions": ["step 1", "step 2", "step 3"]
 }`;
 
-      const response = await gemini.models.generateContent({
-        model: 'gemini-3.7-flash',
+      const response = await generateContentResilient({
+        model: 'gemini-3.8-flash',
+        fallbackModels: ['gemini-2.5-flash', 'gemini-2.5-pro'],
         contents: prompt,
         config: {
           responseMimeType: 'application/json',
@@ -128,8 +153,9 @@ Conversation history: ${JSON.stringify(history)}
 
 Explain clearly how auto-dispatch, auto-completion, PayPal Payouts, and the self-healing retry mechanism work. Provide actionable next steps.`;
 
-    const response = await gemini.models.generateContent({
-      model: 'gemini-3.7-flash',
+    const response = await generateContentResilient({
+      model: 'gemini-3.8-flash',
+      fallbackModels: ['gemini-2.5-flash', 'gemini-2.5-pro'],
       contents: prompt,
     });
 
@@ -150,3 +176,4 @@ Explain clearly how auto-dispatch, auto-completion, PayPal Payouts, and the self
     };
   }
 }
+

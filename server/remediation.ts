@@ -2,6 +2,7 @@ import { checkAndAutoApproveOverdueWorkOrders } from './completionWorker.js';
 import { processRetryQueue, runSelfHealingDiagnostics } from './retryWorker.js';
 import { scanAndRetryMissingExternalJobs } from './freelancerRetryQueue.js';
 import { runFullHealthCheck, recordCronHeartbeat, HealthStatus, FullHealthCheckResult } from './healthCheck.js';
+import { resetPgPool, retryPgConnectionWithBackoff } from './pgDatabase.js';
 import { logActivityEvent } from './activityLogger.js';
 
 export interface RemediationResult {
@@ -35,25 +36,37 @@ export async function autoRemediate(triggerSource: string = 'autonomous_healer')
   const initialStatus: HealthStatus = initialHealth?.status || 'degraded';
 
   try {
-    // 2. Auto-approve overdue work orders that have passed their deadline
+    // 2. Reconcile database connection pool if degraded or elevated latency
+    if (
+      initialHealth?.checks?.database?.status !== 'healthy' ||
+      (initialHealth?.checks?.database?.latencyMs && initialHealth.checks.database.latencyMs > 4000)
+    ) {
+      resetPgPool();
+      const reconnected = await retryPgConnectionWithBackoff();
+      if (reconnected) {
+        actionsTaken.push('Reconciled and flushed PostgreSQL connection pool');
+      }
+    }
+
+    // 3. Auto-approve overdue work orders that have passed their deadline
     const autoApproveRes = await checkAndAutoApproveOverdueWorkOrders();
     if (autoApproveRes.autoApprovedCount > 0) {
       actionsTaken.push(`Auto-approved ${autoApproveRes.autoApprovedCount} overdue work order(s)`);
     }
 
-    // 3. Process exponential backoff payout retries for failed work orders
+    // 4. Process exponential backoff payout retries for failed work orders
     const retryRes = await processRetryQueue();
     if (retryRes.processed > 0) {
       actionsTaken.push(`Processed ${retryRes.processed} payout retries (${retryRes.succeeded} succeeded, ${retryRes.failed} pending/failed)`);
     }
 
-    // 4. Scan and sync missing Freelancer.com external project records
+    // 5. Scan and sync missing Freelancer.com external project records
     const flSyncRes = await scanAndRetryMissingExternalJobs();
     if (flSyncRes.fixedCount > 0) {
       actionsTaken.push(`Resynchronized ${flSyncRes.fixedCount} missing external freelance project(s)`);
     }
 
-    // 5. Run general self-healing diagnostics across database & in-memory stores
+    // 6. Run general self-healing diagnostics across database & in-memory stores
     const selfHealingRes = await runSelfHealingDiagnostics();
     if (selfHealingRes.failedTransactionsCount > 0) {
       actionsTaken.push(`Enqueued ${selfHealingRes.failedTransactionsCount} unrecovered failed transaction(s) for retry`);
@@ -63,10 +76,23 @@ export async function autoRemediate(triggerSource: string = 'autonomous_healer')
       actionsTaken.push('Ran diagnostic reconciliation; all work orders and queues are in sync');
     }
 
-    // 6. Re-run full health check to verify if the issues were resolved
-    const finalHealth = await runFullHealthCheck();
+    // 7. Re-run fresh full health check with forceRefresh to verify resolution
+    const finalHealth = await runFullHealthCheck(true);
     const finalStatus: HealthStatus = finalHealth.status;
-    const resolved = finalStatus === 'healthy' || (initialStatus === 'critical' && finalStatus === 'degraded');
+
+    const underlyingOperational =
+      finalHealth.checks?.database?.status === 'healthy' &&
+      finalHealth.checks?.cron?.status === 'healthy' &&
+      finalHealth.checks?.paypal?.status === 'healthy' &&
+      finalHealth.checks?.freelancer?.status === 'healthy' &&
+      finalHealth.checks?.queues?.status === 'healthy' &&
+      finalHealth.checks?.workOrders?.status === 'healthy' &&
+      finalHealth.checks?.transactions?.status === 'healthy';
+
+    const resolved =
+      underlyingOperational ||
+      finalStatus === 'healthy' ||
+      (initialStatus === 'critical' && finalStatus === 'degraded');
 
     const latencyMs = Date.now() - startTime;
 

@@ -7,7 +7,7 @@ import {
   deleteKeywordAlert,
   ScoredLead
 } from '../server/leadScoring.js';
-import { getGeminiAI } from '../server/gemini.js';
+import { getGeminiAI, generateContentResilient } from '../server/gemini.js';
 import { prisma } from '../server/db.js';
 import { createPayPalOrder, isPayPalConfigured } from '../server/paypal.js';
 import { authMiddleware, AuthenticatedRequest } from '../server/authMiddleware.js';
@@ -118,8 +118,9 @@ router.post('/bulk-analyze', authMiddleware, async (req: AuthenticatedRequest, r
     for (const lead of targetLeads.slice(0, 5)) {
       if (ai) {
         try {
-          const resp = await ai.models.generateContent({
-            model: 'gemini-3.7-flash',
+          const resp = await generateContentResilient({
+            model: 'gemini-3.8-flash',
+            fallbackModels: ['gemini-2.5-flash', 'gemini-2.5-pro'],
             contents: `Evaluate this job for immediate high-probability win: "${lead.title}". Budget: $${lead.budget}. Description: ${lead.description.slice(0, 200)}. Provide 1 winning angle.`
           });
           batchSummaries.push({

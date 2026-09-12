@@ -1,47 +1,74 @@
 import Queue from 'bull';
+import dns from 'dns';
+import { URL } from 'url';
 import { getPgPool, memoryStore } from './pgDatabase.js';
 import { createFreelancerProject, getFreelancerConfig } from './freelancerApi.js';
 import { logActivityEvent } from './activityLogger.js';
 
 let freelancerSyncQueue: Queue.Queue | null = null;
-const redisUrl = (process.env.REDIS_URL || '').trim();
+const redisUrl = (process.env.REDIS_URL || 'redis://red-daarifid0e5s7392b3k0:6379').trim();
 
-// Initialize Bull Queue safely only when REDIS_URL is explicitly configured and not an internal cloud host
-if (redisUrl && !redisUrl.includes('red-')) {
+function checkHostResolvable(urlStr: string): Promise<boolean> {
   try {
-    freelancerSyncQueue = new Queue('freelancer-sync', redisUrl, {
-      redis: {
-        maxRetriesPerRequest: 1,
-        connectTimeout: 2000,
-        retryStrategy: () => null, // Do not hang indefinitely if Redis unreachable
-      },
-      defaultJobOptions: {
-        attempts: 3,
-        backoff: {
-          type: 'exponential',
-          delay: 5000,
-        },
-        removeOnComplete: true,
-      },
+    const parsed = new URL(urlStr);
+    const host = parsed.hostname;
+    if (!host || host === 'localhost' || host === '127.0.0.1') return Promise.resolve(true);
+    return new Promise((resolve) => {
+      dns.lookup(host, (err) => resolve(!err));
     });
-
-    freelancerSyncQueue.process(async (job) => {
-      const { jobId } = job.data;
-      console.log(`🔄 [Bull Queue: freelancer-sync] Processing project creation retry for job: ${jobId} (Attempt ${job.attemptsMade + 1}/3)`);
-      const success = await syncJobToFreelancer(jobId);
-      if (!success && job.attemptsMade < 2) {
-        throw new Error(`Freelancer sync retry failed for job ${jobId}. Bull will retry with exponential backoff.`);
-      }
-      return { success, jobId };
-    });
-
-    freelancerSyncQueue.on('failed', (job, err) => {
-      console.warn(`⚠️ [Bull Queue: freelancer-sync] Job ${job.id} (app jobId: ${job.data?.jobId}) failed attempt ${job.attemptsMade}/3: ${err.message}`);
-    });
-  } catch (err: any) {
-    console.warn(`⚠️ [Bull Queue: freelancer-sync] Redis unavailable at ${redisUrl}. Using in-memory retry processor:`, err.message);
-    freelancerSyncQueue = null;
+  } catch {
+    return Promise.resolve(false);
   }
+}
+
+// Initialize Bull Queue safely when REDIS_URL host is resolvable in network
+if (redisUrl) {
+  checkHostResolvable(redisUrl).then((isResolvable) => {
+    if (!isResolvable) {
+      console.log(`ℹ️ [Bull Queue: freelancer-sync] Redis host (${redisUrl}) is an internal cloud host or not resolvable in current network. Operating with resilient in-memory retry processor.`);
+      return;
+    }
+
+    try {
+      freelancerSyncQueue = new Queue('freelancer-sync', redisUrl, {
+        redis: {
+          maxRetriesPerRequest: 1,
+          connectTimeout: 2000,
+          retryStrategy: () => null, // Do not hang indefinitely if Redis unreachable
+        },
+        defaultJobOptions: {
+          attempts: 3,
+          backoff: {
+            type: 'exponential',
+            delay: 5000,
+          },
+          removeOnComplete: true,
+        },
+      });
+
+      freelancerSyncQueue.on('error', (err) => {
+        console.warn('⚠️ [Bull Queue: freelancer-sync] Connection notice:', err.message);
+      });
+
+      freelancerSyncQueue.process(async (job) => {
+        const { jobId } = job.data;
+        console.log(`🔄 [Bull Queue: freelancer-sync] Processing project creation retry for job: ${jobId} (Attempt ${job.attemptsMade + 1}/3)`);
+        const success = await syncJobToFreelancer(jobId);
+        if (!success && job.attemptsMade < 2) {
+          throw new Error(`Freelancer sync retry failed for job ${jobId}. Bull will retry with exponential backoff.`);
+        }
+        return { success, jobId };
+      });
+
+      freelancerSyncQueue.on('failed', (job, err) => {
+        console.warn(`⚠️ [Bull Queue: freelancer-sync] Job ${job.id} (app jobId: ${job.data?.jobId}) failed attempt ${job.attemptsMade}/3: ${err.message}`);
+      });
+      console.log(`✅ [Bull Queue: freelancer-sync] Connected to Redis queue engine at ${redisUrl}`);
+    } catch (err: any) {
+      console.warn(`⚠️ [Bull Queue: freelancer-sync] Redis unavailable at ${redisUrl}. Using in-memory retry processor:`, err.message);
+      freelancerSyncQueue = null;
+    }
+  });
 } else {
   // Resilient in-memory retry queue processor is used automatically
   freelancerSyncQueue = null;

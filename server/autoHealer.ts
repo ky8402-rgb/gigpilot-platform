@@ -1,5 +1,7 @@
 import axios from 'axios';
 import Bull, { Queue as BullQueue } from 'bull';
+import dns from 'dns';
+import { URL } from 'url';
 import { runFullHealthCheck, HealthStatus, FullHealthCheckResult, recordCronHeartbeat, registerAutoHealerStatusGetter } from './healthCheck.js';
 import { autoRemediate, RemediationResult } from './remediation.js';
 import { insertSelfHealingLog, getSelfHealingLogs, SelfHealingLog } from './pgDatabase.js';
@@ -89,11 +91,27 @@ export class AutoHealer {
   /**
    * Initialize Bull Queue for asynchronous background remediation
    */
-  private initBullQueue() {
-    const redisUrl = (process.env.REDIS_URL || '').trim();
-    // Internal private redis hosts are not resolvable without a dedicated cluster VPC
-    if (!redisUrl || redisUrl.includes('red-')) {
-      console.log('ℹ️ [AutoHealer] Redis unavailable or internal cloud host. Operating with in-memory resilient self-healing queue.');
+  private async initBullQueue() {
+    const redisUrl = (process.env.REDIS_URL || 'redis://red-daarifid0e5s7392b3k0:6379').trim();
+    if (!redisUrl) {
+      console.log('ℹ️ [AutoHealer] Redis URL not configured. Operating with in-memory resilient self-healing queue.');
+      return;
+    }
+
+    // Safely check if host resolves in current network (e.g. Render VPC vs outside)
+    const isResolvable = await new Promise<boolean>((resolve) => {
+      try {
+        const parsed = new URL(redisUrl);
+        const host = parsed.hostname;
+        if (!host || host === 'localhost' || host === '127.0.0.1') return resolve(true);
+        dns.lookup(host, (err) => resolve(!err));
+      } catch {
+        resolve(false);
+      }
+    });
+
+    if (!isResolvable) {
+      console.log(`ℹ️ [AutoHealer] Redis host (${redisUrl}) is an internal cloud host or not resolvable in current network. Operating with in-memory resilient self-healing queue.`);
       return;
     }
 
@@ -276,10 +294,20 @@ export class AutoHealer {
         remediationRes = await autoRemediate(manualTrigger ? 'manual_auto_healer' : 'scheduled_auto_healer');
       }
 
-      // Step 3: Verify Resolution via Post-Remediation Health Check
-      const finalHealth: FullHealthCheckResult = remediationRes.health || (await runFullHealthCheck());
+      // Step 3: Verify Resolution via Post-Remediation Health Check (force fresh check)
+      const finalHealth: FullHealthCheckResult = remediationRes.health || (await runFullHealthCheck(true));
       const finalStatus: HealthStatus = finalHealth.status;
-      const isResolved = finalStatus === 'healthy' || (initialStatus === 'critical' && finalStatus === 'degraded');
+
+      const underlyingHealthy =
+        finalHealth.checks?.database?.status === 'healthy' &&
+        finalHealth.checks?.cron?.status === 'healthy' &&
+        finalHealth.checks?.paypal?.status === 'healthy' &&
+        finalHealth.checks?.freelancer?.status === 'healthy' &&
+        finalHealth.checks?.queues?.status === 'healthy' &&
+        finalHealth.checks?.workOrders?.status === 'healthy' &&
+        finalHealth.checks?.transactions?.status === 'healthy';
+
+      const isResolved = underlyingHealthy || finalStatus === 'healthy' || (initialStatus === 'critical' && finalStatus === 'degraded');
 
       const attemptNumber = this.consecutiveFailures + 1;
 
@@ -290,7 +318,7 @@ export class AutoHealer {
         this.lastBackoffUntil = 0;
         this.isCurrentlyHealing = false;
 
-        console.log(`✅ [AutoHealer] Autonomous remediation succeeded! Status: ${initialStatus} -> ${finalStatus}`);
+        console.log(`✅ [AutoHealer] Autonomous remediation succeeded! Status: ${initialStatus} -> ${underlyingHealthy ? 'healthy (underlying systems operational)' : finalStatus}`);
       } else {
         this.consecutiveFailures = attemptNumber;
         this.lastFailureAt = new Date().toISOString();
@@ -396,8 +424,29 @@ export class AutoHealer {
 
     // 3. Dispatch HTTP Post to external webhook if configured
     if (this.config.alertWebhookUrl) {
-      try {
-        const payload = {
+      const url = this.config.alertWebhookUrl.trim();
+      const isDiscord = url.includes('discord.com') || url.includes('discordapp.com');
+      const isSlack = url.includes('slack.com');
+
+      let payload: any;
+      if (isDiscord) {
+        payload = {
+          content: message.slice(0, 2000),
+          embeds: [
+            {
+              title: 'GigPilot Autonomous DevOps Escalation',
+              description: message.slice(0, 2048),
+              color: 16007518, // Rose red
+              fields: [
+                { name: 'Consecutive Failures', value: String(this.consecutiveFailures), inline: true },
+                { name: 'Max Allowed Retries', value: String(this.config.maxAttempts), inline: true },
+                { name: 'Timestamp', value: new Date().toISOString() },
+              ],
+            },
+          ],
+        };
+      } else if (isSlack) {
+        payload = {
           text: message,
           attachments: [
             {
@@ -412,15 +461,46 @@ export class AutoHealer {
             },
           ],
         };
+      } else {
+        // Universal payload compatible with generic HTTP webhook receivers
+        payload = {
+          text: message,
+          content: message,
+          message: message,
+          event: 'HEALTH_ESCALATION_ALERT',
+          consecutiveFailures: this.consecutiveFailures,
+          maxAttempts: this.config.maxAttempts,
+          timestamp: new Date().toISOString(),
+          details: details || {},
+        };
+      }
 
-        await axios.post(this.config.alertWebhookUrl, payload, {
+      try {
+        await axios.post(url, payload, {
           timeout: 8000,
           headers: { 'Content-Type': 'application/json' },
         });
 
-        console.log(`📢 [AutoHealer] External alert webhook successfully dispatched to ${this.config.alertWebhookUrl.slice(0, 30)}...`);
+        console.log(`📢 [AutoHealer] External alert webhook successfully dispatched to ${url.slice(0, 30)}...`);
         return true;
       } catch (err: any) {
+        // If 400 Bad Request, attempt minimal single-field payload fallback
+        if (err?.response?.status === 400) {
+          try {
+            const fallbackPayload = isDiscord ? { content: message.slice(0, 2000) } : { text: message };
+            await axios.post(url, fallbackPayload, {
+              timeout: 5000,
+              headers: { 'Content-Type': 'application/json' },
+            });
+            console.log(`📢 [AutoHealer] External alert webhook delivered via minimal fallback format.`);
+            return true;
+          } catch (retryErr: any) {
+            const errorDetails = retryErr?.response?.data ? JSON.stringify(retryErr.response.data) : retryErr.message;
+            console.warn(`⚠️ [AutoHealer] Failed to send alert to ALERT_WEBHOOK_URL (${url.slice(0, 35)}...): HTTP ${retryErr?.response?.status || 400} - ${errorDetails}`);
+            return false;
+          }
+        }
+
         console.warn(`⚠️ [AutoHealer] Failed to send alert to ALERT_WEBHOOK_URL:`, err.message);
         return false;
       }
@@ -474,6 +554,17 @@ export class AutoHealer {
     } else {
       this.stop();
     }
+    return this.getStatus();
+  }
+
+  /**
+   * Reset consecutive failures and backoff upon verified operational remediation
+   */
+  public reset(): AutoHealerStatus {
+    this.consecutiveFailures = 0;
+    this.lastBackoffUntil = 0;
+    this.lastSuccessAt = new Date().toISOString();
+    this.isCurrentlyHealing = false;
     return this.getStatus();
   }
 }

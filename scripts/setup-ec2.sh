@@ -174,8 +174,8 @@ CORS_ALLOWED_ORIGINS="${FRONTEND_URL},https://*.amplifyapp.com,http://localhost:
 # Neon PostgreSQL Database Connection (Serverless Pooler)
 DATABASE_URL="${NEON_DATABASE_URL}"
 
-# Redis / ElastiCache Connection (Defaults to local or ElastiCache cluster)
-REDIS_URL=redis://127.0.0.1:6379
+# Redis / Render / ElastiCache Connection
+REDIS_URL=redis://red-daarifid0e5s7392b3k0:6379
 
 # PayPal Payment Gateway & Virtual Terminal (Sandbox / Production Mode)
 PAYPAL_CLIENT_ID=BAAv8rRenc5jlfD6eH_8pvgcU250jXTZCnyPKdBby13EAYRKhCempoPQ3Hj41GEfe2qBMu1P8ZslnbdkIc

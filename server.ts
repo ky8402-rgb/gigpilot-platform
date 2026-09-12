@@ -42,13 +42,14 @@ import devopsActionsRoutes from "./server/devopsActionsRoutes.js";
 import autoDeployRoutes from "./server/autoDeployRoutes.js";
 import godaddyRoutes from "./server/godaddyRoutes.js";
 import cloudflareRoutes from "./server/cloudflareRoutes.js";
+import { aiRouter } from "./server/aiRoutes.js";
 import "./server/worker.js";
 import { logActivityEvent } from "./server/activityLogger.js";
 import { verifyWebhookSignature } from "./server/webhookSecurity.js";
 import { checkCredits } from "./server/checkCredits.js";
 import { authMiddleware } from "./server/authMiddleware.js";
 import { prisma, checkDatabaseConnection, syncLiveJobsToPostgres } from "./server/db.js";
-import { getGeminiAI } from "./server/gemini.js";
+import { getGeminiAI, generateContentResilient } from "./server/gemini.js";
 import { clearBidsCache, apiCacheMiddleware, getCacheStats } from "./server/redisCache.js";
 import { selfHealer, supportSystem, metricsRegistry, predictiveHealer } from "./server/selfHealing.js";
 import { diagnosticEngine, advancedResolutionEngine } from "./server/diagnosticEngine.js";
@@ -266,6 +267,7 @@ app.post("/api/ai/generate-proposal", aiProposalRateLimiter, async (req, res) =>
 
     const ai = getGeminiAI();
     let proposalText = "";
+    let modelUsed = "fallback-template-engine";
 
     if (ai) {
       const prompt = `You are a world-class senior freelance full-stack engineer and AI specialist.
@@ -290,11 +292,13 @@ FORMATTING GUIDELINES:
 Keep the tone professional, direct, crisp, and senior.`;
 
       try {
-        const response = await ai.models.generateContent({
-          model: "gemini-3.7-flash",
+        const response = await generateContentResilient({
+          model: "gemini-3.8-flash",
+          fallbackModels: ["gemini-2.5-flash", "gemini-2.5-pro"],
           contents: prompt,
         });
         proposalText = response.text || "";
+        modelUsed = response.modelUsed;
       } catch (geminiErr: any) {
         console.warn("[AI Proposal Generation] Gemini API notice, using fallback engine:", geminiErr.message);
       }
@@ -310,7 +314,7 @@ Keep the tone professional, direct, crisp, and senior.`;
       clientName: clientName || "Client",
       proposal: proposalText,
       generatedAt: new Date().toISOString(),
-      model: ai ? "gemini-3.7-flash" : "fallback-template-engine"
+      model: modelUsed
     });
   } catch (err: any) {
     console.error("[/api/ai/generate-proposal] Error:", err);
@@ -367,6 +371,9 @@ app.use("/api/godaddy", godaddyRoutes);
 
 // 15. Cloudflare Automated DNS Management & Migration Engine
 app.use("/api/cloudflare", cloudflareRoutes);
+
+// 16. Autonomous AIOps & System Self-Healing Command Layer
+app.use(aiRouter);
 
 // Compatibility aliases for /api/bids, /api/Bid (Prisma model case), /api/Bids, and /api/leads list
 app.use(["/api/bids", "/api/Bid", "/api/Bids"], freelancerBidsRoutes);
@@ -939,6 +946,19 @@ app.post("/api/health/auto-heal/trigger", async (req, res) => {
       message: 'Self-healing cycle executed.',
       result: cycleResult,
       status: autoHealer.getStatus(),
+    });
+  } catch (err: any) {
+    return res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+app.post("/api/health/auto-heal/reset", (req, res) => {
+  try {
+    const updatedStatus = autoHealer.reset();
+    return res.json({
+      success: true,
+      message: 'Auto-healer failure counters reset to healthy baseline.',
+      status: updatedStatus,
     });
   } catch (err: any) {
     return res.status(500).json({ success: false, error: err.message });

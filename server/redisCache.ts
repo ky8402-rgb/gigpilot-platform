@@ -12,8 +12,8 @@ let redisClient: Redis | null = null;
 export let isRedisAvailable = false;
 let hasReportedFallback = false;
 
-// Initialize Redis if REDIS_URL environment variable is provided
-const redisUrl = process.env.REDIS_URL;
+// Initialize Redis if REDIS_URL environment variable is provided (defaults to configured Render/ElastiCache host)
+const redisUrl = process.env.REDIS_URL || 'redis://red-daarifid0e5s7392b3k0:6379';
 
 if (redisUrl && redisUrl.trim() !== '') {
   try {
@@ -181,6 +181,8 @@ export function getCacheStats() {
   const hitRate = total > 0 ? (cacheHits / total) * 100 : 0;
   return {
     isRedisAvailable,
+    configuredRedisUrl: redisUrl ? 'redis://red-daarifid0e5s7392b3k0:6379' : null,
+    provider: isRedisAvailable ? 'Redis (Render/ElastiCache)' : 'In-Memory High-Speed TTL Cache',
     memoryKeysCount: memoryStore.size,
     hits: cacheHits,
     misses: cacheMisses,

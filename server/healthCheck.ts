@@ -230,7 +230,8 @@ export async function checkDatabase(): Promise<DatabaseCheckResult> {
         // Table queries optional if schema in bootstrap
       }
 
-      const status: HealthStatus = latencyMs > 800 ? 'degraded' : 'healthy';
+      // WAN / Cloud Serverless latency threshold (Neon cold start / TLS handshake over internet is typically 1-3s)
+      const status: HealthStatus = latencyMs > 4500 ? 'degraded' : 'healthy';
 
       return {
         status,

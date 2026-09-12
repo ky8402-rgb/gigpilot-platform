@@ -1,5 +1,5 @@
 import { exec } from "child_process";
-import { getGeminiAI } from "./gemini.js";
+import { getGeminiAI, generateContentResilient } from "./gemini.js";
 import { clearBidsCache } from "./redisCache.js";
 import { checkDatabaseConnection } from "./db.js";
 
@@ -226,8 +226,9 @@ User reported issue: "${issueDescription}"
 Context: ${JSON.stringify({ errorLog, appContext, category: analysis.category })}
 
 Provide a concise, highly actionable root cause analysis (1-2 sentences) and 3 bullet recovery steps.`;
-        const response = await gemini.models.generateContent({
-          model: "gemini-3.7-flash",
+        const response = await generateContentResilient({
+          model: "gemini-3.8-flash",
+          fallbackModels: ["gemini-2.5-flash", "gemini-2.5-pro"],
           contents: prompt,
         });
         if (response.text) {

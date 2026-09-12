@@ -269,9 +269,9 @@ class MLClient {
       issue = 'paypal_failure';
       confidence = Math.min(0.98, 0.72 + (f.transactions_failed_count * 0.05) + (f.paypal_error_flag ? 0.15 : 0.05));
       remediation = 'Retry failed PayPal payouts with exponential backoff and verify API credentials.';
-    } else if (f.db_connected === 0 || f.db_latency_ms > 400 || (f.db_latency_ms > 200 && f.recent_autoheal_consecutive_failures > 0)) {
+    } else if (f.db_connected === 0 || f.db_latency_ms > 4500 || (f.db_latency_ms > 3000 && f.recent_autoheal_consecutive_failures > 0)) {
       issue = 'db_timeout';
-      confidence = Math.min(0.97, 0.75 + (f.db_latency_ms / 2000) * 0.2);
+      confidence = Math.min(0.97, 0.75 + (f.db_latency_ms / 10000) * 0.2);
       remediation = 'Reconcile database connections, flush connection pool, and verify Neon latency.';
     } else if (f.queue_failed_jobs >= 3 || f.queue_waiting_jobs >= 12 || (f.cpu_usage_pct > 80 && f.queue_waiting_jobs >= 6)) {
       issue = 'queue_stuck';

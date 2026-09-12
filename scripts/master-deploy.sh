@@ -160,6 +160,15 @@ if [ "$SKIP_SSH" = false ]; then
         echo 'DATABASE_URL=\"${NEON_DATABASE_URL}\"' > \"${APP_DIR}/.env\"
       fi
 
+      # Update or append REDIS_URL
+      if [ -f \"${APP_DIR}/.env\" ]; then
+        if grep -q '^REDIS_URL=' \"${APP_DIR}/.env\"; then
+          sed -i 's|^REDIS_URL=.*|REDIS_URL=\"redis://red-daarifid0e5s7392b3k0:6379\"|' \"${APP_DIR}/.env\"
+        else
+          echo 'REDIS_URL=\"redis://red-daarifid0e5s7392b3k0:6379\"' >> \"${APP_DIR}/.env\"
+        fi
+      fi
+
       # Ensure CORS origins are configured
       if ! grep -q 'CORS_ALLOWED_ORIGINS' \"${APP_DIR}/.env\"; then
         echo 'CORS_ALLOWED_ORIGINS=\"${FRONTEND_URL},https://*.amplifyapp.com,http://localhost:3000\"' >> \"${APP_DIR}/.env\"

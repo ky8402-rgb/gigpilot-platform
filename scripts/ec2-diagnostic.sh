@@ -205,7 +205,7 @@ fi
 # ------------------------------------------------------------------------------
 echo -e "\n${BOLD}6. Cache & Queue Engine (Redis)${NC}"
 
-REDIS_URL="${REDIS_URL:-redis://127.0.0.1:6379}"
+REDIS_URL="${REDIS_URL:-redis://red-daarifid0e5s7392b3k0:6379}"
 REDIS_HOST=$(echo "$REDIS_URL" | sed -E 's|.*://([^:/]+).*|\1|')
 REDIS_PORT=$(echo "$REDIS_URL" | sed -E 's|.*://([^:/]+):([0-9]+).*|\2|')
 if [ "$REDIS_PORT" == "$REDIS_URL" ]; then REDIS_PORT=6379; fi

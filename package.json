@@ -23,6 +23,8 @@
     "push": "./scripts/push-and-deploy.sh",
     "lint": "tsc --noEmit",
     "test": "tsc --noEmit",
+    "test:aiops": "tsx scripts/test-aiops.ts",
+    "test:phase7": "tsx scripts/validate-phase7-e2e.ts",
     "postinstall": "node scripts/postinstall.js"
   },
   "dependencies": {
@@ -53,7 +55,8 @@
     "pg": "^8.23.0",
     "react": "^19.0.1",
     "react-dom": "^19.0.1",
-    "recharts": "^3.10.1"
+    "recharts": "^3.10.1",
+    "zod": "^4.6.2"
   },
   "devDependencies": {
     "@types/compression": "^1.8.1",

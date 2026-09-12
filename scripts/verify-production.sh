@@ -285,7 +285,7 @@ REDIS_OK=false
 
 # Method A: Direct redis-cli ping if installed
 if command -v redis-cli >/dev/null 2>&1; then
-  REDIS_URL_TEST="${REDIS_URL:-redis://127.0.0.1:6379}"
+  REDIS_URL_TEST="${REDIS_URL:-redis://red-daarifid0e5s7392b3k0:6379}"
   REDIS_PING=$(redis-cli -u "$REDIS_URL_TEST" ping 2>/dev/null || redis-cli ping 2>/dev/null || echo "FAIL")
   if [[ "$REDIS_PING" == "PONG" ]]; then
     REDIS_OK=true
@@ -307,7 +307,7 @@ if [[ "$REDIS_OK" != "true" && "$CAN_SSH" = true ]]; then
     node -e \"
       require('dotenv').config();
       const Redis = require('ioredis');
-      const url = process.env.REDIS_URL || 'redis://127.0.0.1:6379';
+      const url = process.env.REDIS_URL || 'redis://red-daarifid0e5s7392b3k0:6379';
       const r = new Redis(url, { connectTimeout: 3000, maxRetriesPerRequest: 1 });
       r.ping((err, res) => {
         if (err) { console.log('REDIS_ERR:' + err.message); process.exit(1); }
