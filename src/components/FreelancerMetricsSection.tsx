@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import Chart from 'chart.js/auto';
 import { BACKEND_BASE_URL, apiUrl, fetchFreelancerStats } from '../services/api';
+import { FreelancerTokenModal } from './FreelancerTokenModal';
 
 export interface FreelancerBid {
   id: string;
@@ -82,6 +83,7 @@ export const FreelancerMetricsSection: React.FC<FreelancerMetricsSectionProps> =
     status: string;
     message: string;
   } | null>(null);
+  const [isTokenModalOpen, setIsTokenModalOpen] = useState<boolean>(false);
 
   const conversionChartRef = useRef<HTMLCanvasElement | null>(null);
   const conversionChartInstance = useRef<Chart | null>(null);
@@ -400,6 +402,16 @@ export const FreelancerMetricsSection: React.FC<FreelancerMetricsSectionProps> =
         </div>
 
         <div className="flex items-center gap-2 flex-wrap">
+          {/* Update Freelancer API Token Button */}
+          <button
+            onClick={() => setIsTokenModalOpen(true)}
+            className="px-3.5 py-1.5 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all shadow-sm border bg-gradient-to-r from-blue-600/20 to-indigo-600/20 hover:from-blue-600/30 hover:to-indigo-600/30 text-blue-300 border-blue-500/40 hover:border-blue-400"
+            title="Update Freelancer OAuth Personal Access Token in the web app"
+          >
+            <i className="fas fa-key text-blue-400"></i>
+            <span>Update API Token</span>
+          </button>
+
           {/* Toggle Settings Panel Button */}
           <button
             onClick={() => setIsSettingsOpen(!isSettingsOpen)}
@@ -714,6 +726,15 @@ export const FreelancerMetricsSection: React.FC<FreelancerMetricsSectionProps> =
                 </div>
 
                 <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setIsTokenModalOpen(true)}
+                    className="text-[11px] font-bold px-2.5 py-1 rounded-lg bg-blue-600 hover:bg-blue-500 text-white flex items-center gap-1.5 shadow-sm transition-all cursor-pointer"
+                  >
+                    <i className="fas fa-edit text-[10px]"></i>
+                    <span>Update Token</span>
+                  </button>
+
                   <span className={`text-[10.5px] font-mono px-2.5 py-1 rounded-lg border font-bold ${
                     authStatus?.tokenPresent
                       ? 'bg-emerald-500/10 text-emerald-300 border-emerald-500/30'
@@ -1145,6 +1166,17 @@ export const FreelancerMetricsSection: React.FC<FreelancerMetricsSectionProps> =
           </div>
         </div>
       )}
+      {/* Freelancer OAuth Token Management Modal */}
+      <FreelancerTokenModal
+        isOpen={isTokenModalOpen}
+        onClose={() => setIsTokenModalOpen(false)}
+        onTokenUpdated={(newUsername) => {
+          fetchAuthStatus();
+          fetchBidsData(true);
+          setSaveSuccessMsg(`Freelancer API token updated successfully${newUsername ? ` for @${newUsername}` : ''}!`);
+          setTimeout(() => setSaveSuccessMsg(null), 6000);
+        }}
+      />
     </div>
   );
 };

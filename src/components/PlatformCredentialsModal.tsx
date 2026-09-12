@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { getPlatformStatus, PlatformConnectionStatus, fetchRemoteOKJobs, apiUrl } from '../services/api';
 import { exportStateAsBackup, generateBackupJson, BackupDataPayload } from '../utils/exportBackup';
+import { FreelancerTokenModal } from './FreelancerTokenModal';
 
 export interface PlatformCredentialsModalProps {
   isOpen: boolean;
@@ -38,6 +39,7 @@ export function PlatformCredentialsModal({
   const [isSyncing, setIsSyncing] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<'env' | 'platforms' | 'paypal' | 'backup'>('env');
   const [copiedBackup, setCopiedBackup] = useState(false);
+  const [isFreelancerTokenModalOpen, setIsFreelancerTokenModalOpen] = useState(false);
 
   useEffect(() => {
     if (isOpen) {
@@ -249,6 +251,26 @@ export function PlatformCredentialsModal({
                     </span>
                   </div>
 
+                  {/* Freelancer.com OAuth Token */}
+                  <div className="p-3 bg-[#0d101a] rounded-lg border border-blue-500/30 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                    <div>
+                      <div className="text-blue-400 font-bold flex items-center gap-2">
+                        <span>2. FREELANCER_ACCESS_TOKEN</span>
+                        <button
+                          type="button"
+                          onClick={() => setIsFreelancerTokenModalOpen(true)}
+                          className="text-[10px] px-2 py-0.5 rounded bg-blue-600 hover:bg-blue-500 text-white font-sans transition-colors cursor-pointer"
+                        >
+                          Configure in UI
+                        </button>
+                      </div>
+                      <div className="text-[#8d98b8] text-[11px]">Official Freelancer.com OAuth Access Token from accounts.freelancer.com/settings/develop</div>
+                    </div>
+                    <span className="px-2 py-0.5 rounded text-[10px] bg-blue-500/10 text-blue-400 border border-blue-500/20 font-semibold self-start sm:self-auto">
+                      Freelancer v0.1
+                    </span>
+                  </div>
+
                   {/* Remote OK API Key */}
                   <div className="p-3 bg-[#0d101a] rounded-lg border border-[#20273a] flex flex-col sm:flex-row sm:items-center justify-between gap-2">
                     <div>
@@ -310,7 +332,35 @@ export function PlatformCredentialsModal({
 
           {activeTab === 'platforms' && (
             <div className="space-y-4">
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+                {/* Freelancer.com Card */}
+                <div className="p-4 rounded-xl bg-[#161c2d] border border-blue-500/40 flex flex-col justify-between">
+                  <div>
+                    <div className="flex items-center justify-between mb-2">
+                      <span className="text-xs font-bold text-white flex items-center gap-1.5">
+                        <i className="fas fa-bolt text-blue-400"></i>
+                        Freelancer.com
+                      </span>
+                      <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+                        OAuth v0.1
+                      </span>
+                    </div>
+                    <p className="text-[11px] text-[#8d98b8] mb-3">
+                      Live projects, auto-bids, and win telemetry via official REST API.
+                    </p>
+                    <div className="text-[10px] font-mono text-blue-400 bg-[#0d101a] p-2 rounded mb-3 flex items-center justify-between">
+                      <span>Env: FREELANCER_ACCESS_TOKEN</span>
+                    </div>
+                  </div>
+                  <button
+                    onClick={() => setIsFreelancerTokenModalOpen(true)}
+                    className="w-full py-2 px-3 rounded-lg bg-blue-600 hover:bg-blue-500 text-white text-xs font-semibold transition-colors flex items-center justify-center gap-1.5 cursor-pointer"
+                  >
+                    <i className="fas fa-key text-[10px]"></i>
+                    <span>Update &amp; Verify Token</span>
+                  </button>
+                </div>
+
                 {/* Remote OK Card */}
                 <div className="p-4 rounded-xl bg-[#161c2d] border border-[#262f48] flex flex-col justify-between">
                   <div>
@@ -541,6 +591,18 @@ export function PlatformCredentialsModal({
         </div>
 
       </div>
+
+      {/* Freelancer Token Configuration Modal */}
+      <FreelancerTokenModal
+        isOpen={isFreelancerTokenModalOpen}
+        onClose={() => setIsFreelancerTokenModalOpen(false)}
+        showToast={showToast}
+        onTokenUpdated={(username) => {
+          if (showToast) {
+            showToast(`Freelancer token updated for @${username || 'user'}!`, 'success');
+          }
+        }}
+      />
     </div>
   );
 }

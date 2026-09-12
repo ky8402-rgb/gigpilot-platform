@@ -5288,6 +5288,101 @@ export async function fetchAutoDeploySecretsGuide(): Promise<AutoDeploySecretsGu
   }
 }
 
+export interface FreelancerTokenDetails {
+  configured: boolean;
+  tokenPresent: boolean;
+  maskedToken: string;
+  username?: string;
+  userId?: number | string;
+  status: 'valid' | 'expired' | 'unverified' | 'missing';
+  message: string;
+  isCustomToken: boolean;
+  developerPortalUrl: string;
+}
+
+export interface FreelancerTokenTestResult {
+  valid: boolean;
+  status: 'valid' | 'expired' | 'unverified' | 'missing';
+  username?: string;
+  userId?: number | string;
+  email?: string;
+  latencyMs: number;
+  message: string;
+}
+
+export interface FreelancerTokenUpdateResponse {
+  success: boolean;
+  message: string;
+  username?: string;
+  userId?: number | string;
+  authStatus?: {
+    configured: boolean;
+    tokenPresent: boolean;
+    maskedToken?: string;
+    username?: string;
+    userId?: number | string;
+    status: string;
+    message: string;
+  };
+  error?: string;
+}
+
+export async function getFreelancerTokenDetails(): Promise<{ success: boolean; details?: FreelancerTokenDetails; error?: string }> {
+  try {
+    const res = await secureFetch(apiUrl('/api/freelancer/token'));
+    return await res.json();
+  } catch (err: any) {
+    return {
+      success: false,
+      error: err.message,
+      details: {
+        configured: false,
+        tokenPresent: false,
+        maskedToken: '',
+        status: 'unverified',
+        message: err.message,
+        isCustomToken: false,
+        developerPortalUrl: 'https://accounts.freelancer.com/settings/develop'
+      }
+    };
+  }
+}
+
+export async function testFreelancerTokenCandidate(token: string): Promise<FreelancerTokenTestResult> {
+  try {
+    const res = await secureFetch(apiUrl('/api/freelancer/token/test'), {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ token })
+    });
+    return await res.json();
+  } catch (err: any) {
+    return {
+      valid: false,
+      status: 'unverified',
+      latencyMs: 0,
+      message: err.message || 'Error connecting to Freelancer verification service'
+    };
+  }
+}
+
+export async function updateFreelancerToken(token: string): Promise<FreelancerTokenUpdateResponse> {
+  try {
+    const res = await secureFetch(apiUrl('/api/freelancer/token'), {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ token })
+    });
+    return await res.json();
+  } catch (err: any) {
+    return {
+      success: false,
+      message: err.message,
+      error: err.message
+    };
+  }
+}
+
 
 
 

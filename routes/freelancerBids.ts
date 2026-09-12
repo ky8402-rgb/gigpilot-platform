@@ -5,7 +5,11 @@ import { exec } from 'child_process';
 import {
   verifyFreelancerAuthStatus,
   fetchFreelancerLiveProjects,
-  getFreelancerRequestHeaders
+  getFreelancerRequestHeaders,
+  testFreelancerToken,
+  saveFreelancerApiToken,
+  getFreelancerTokenDetails,
+  maskFreelancerToken
 } from '../server/freelancerService';
 import { prisma } from '../server/db';
 import { safeExecutePgQuery } from '../server/pgDatabase';
@@ -732,6 +736,67 @@ router.get('/auth-status', async (req, res) => {
         status: 'unverified',
         message: err.message
       }
+    });
+  }
+});
+
+// GET /api/freelancer/token
+// Returns current token metadata, masked string, verified username, and developer link
+router.get('/token', async (req, res) => {
+  try {
+    const details = await getFreelancerTokenDetails();
+    res.json({
+      success: true,
+      details
+    });
+  } catch (err: any) {
+    console.error('[Freelancer Token GET] Error:', err);
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// POST /api/freelancer/token
+// Updates and saves the Freelancer OAuth Personal Access Token across the app
+router.post('/token', async (req, res) => {
+  try {
+    const { token } = req.body;
+    if (!token || typeof token !== 'string') {
+      return res.status(400).json({
+        success: false,
+        error: 'Please provide a valid Freelancer API token string.'
+      });
+    }
+
+    const result = await saveFreelancerApiToken(token);
+    res.json(result);
+  } catch (err: any) {
+    console.error('[Freelancer Token POST] Error:', err);
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// POST /api/freelancer/token/test
+// Non-destructive live test of a candidate token against Freelancer REST API v0.1
+router.post('/token/test', async (req, res) => {
+  try {
+    const { token } = req.body;
+    if (!token || typeof token !== 'string') {
+      return res.status(400).json({
+        valid: false,
+        status: 'missing',
+        message: 'No token string provided for testing.'
+      });
+    }
+
+    const testResult = await testFreelancerToken(token);
+    res.json(testResult);
+  } catch (err: any) {
+    console.error('[Freelancer Token Test] Error:', err);
+    res.status(500).json({
+      valid: false,
+      status: 'unverified',
+      latencyMs: 0,
+      message: err.message
     });
   }
 });
