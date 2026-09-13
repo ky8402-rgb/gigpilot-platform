@@ -40,9 +40,10 @@ export interface LinkHealthCheckResult {
  */
 export function getFreelancerConfig() {
   const apiBase = (
+    process.env.FREELANCER_API_BASE_URL ||
     process.env.FREELANCER_API_BASE ||
     process.env.FREELANCER_API_URL ||
-    'https://www.freelancer.com/api/'
+    'https://www.freelancer.com/api'
   ).trim().replace(/\/+$/, '') + '/';
 
   const accessToken = (
@@ -60,14 +61,14 @@ export function getFreelancerConfig() {
 }
 
 /**
- * Constructs standard headers for Freelancer.com REST API v0.1
+ * Constructs standard headers for Freelancer.com REST API with standard OAuth 2.0 Bearer token.
+ * Legacy v0.1 custom headers (freelancer-oauth-v1) are completely deprecated and removed.
  */
 function getFreelancerHeaders() {
   const { accessToken } = getFreelancerConfig();
   return {
     'Content-Type': 'application/json',
     'Accept': 'application/json',
-    'freelancer-oauth-v1': accessToken,
     'Authorization': `Bearer ${accessToken}`,
   };
 }

@@ -251,11 +251,12 @@ export function PlatformCredentialsModal({
                     </span>
                   </div>
 
-                  {/* Freelancer.com OAuth Token */}
+                  {/* Freelancer.com OAuth 2.0 Token */}
                   <div className="p-3 bg-[#0d101a] rounded-lg border border-blue-500/30 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
                     <div>
                       <div className="text-blue-400 font-bold flex items-center gap-2">
                         <span>2. FREELANCER_ACCESS_TOKEN</span>
+                        <span className="text-[10px] px-1.5 py-0.2 rounded bg-indigo-500/20 text-indigo-300 font-mono font-normal">OAuth 2.0</span>
                         <button
                           type="button"
                           onClick={() => setIsFreelancerTokenModalOpen(true)}
@@ -264,11 +265,18 @@ export function PlatformCredentialsModal({
                           Configure in UI
                         </button>
                       </div>
-                      <div className="text-[#8d98b8] text-[11px]">Official Freelancer.com OAuth Access Token from accounts.freelancer.com/settings/develop</div>
+                      <div className="text-[#8d98b8] text-[11px]">
+                        OAuth 2.0 Authorization Code or Personal Bearer Token (Legacy v0.1 config deprecated)
+                      </div>
                     </div>
-                    <span className="px-2 py-0.5 rounded text-[10px] bg-blue-500/10 text-blue-400 border border-blue-500/20 font-semibold self-start sm:self-auto">
-                      Freelancer v0.1
-                    </span>
+                    <div className="flex items-center gap-1.5 self-start sm:self-auto">
+                      <span className="px-2 py-0.5 rounded text-[10px] bg-blue-500/10 text-blue-400 border border-blue-500/20 font-semibold">
+                        OAuth 2.0
+                      </span>
+                      <span className="px-1.5 py-0.5 rounded text-[9px] bg-amber-500/10 text-amber-400/80 border border-amber-500/20 font-mono" title="Legacy v0.1 OAuth header scheme deprecated">
+                        v0.1 Deprecated
+                      </span>
+                    </div>
                   </div>
 
                   {/* Remote OK API Key */}
@@ -341,9 +349,14 @@ export function PlatformCredentialsModal({
                         <i className="fas fa-bolt text-blue-400"></i>
                         Freelancer.com
                       </span>
-                      <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
-                        OAuth v0.1
-                      </span>
+                      <div className="flex items-center gap-1">
+                        <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-blue-500/10 text-blue-400 border border-blue-500/20">
+                          OAuth 2.0
+                        </span>
+                        <span className="text-[9px] font-mono px-1 py-0.5 rounded bg-amber-500/10 text-amber-400/80 border border-amber-500/20" title="Legacy v0.1 deprecated">
+                          v0.1 Deprecated
+                        </span>
+                      </div>
                     </div>
                     <p className="text-[11px] text-[#8d98b8] mb-3">
                       Live projects, auto-bids, and win telemetry via official REST API.

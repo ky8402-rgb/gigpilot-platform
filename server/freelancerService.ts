@@ -24,9 +24,18 @@ export interface FreelancerProjectSummary {
   status: string;
 }
 
+export function getFreelancerApiBase(): string {
+  const raw = (
+    process.env.FREELANCER_API_BASE_URL ||
+    process.env.FREELANCER_API_BASE ||
+    'https://www.freelancer.com/api'
+  ).trim().replace(/\/+$/, '');
+  return raw.endsWith('/api') ? raw : `${raw}/api`;
+}
+
 /**
- * Constructs authenticated headers for Freelancer.com API and scraping requests.
- * Uses active session cookies from cookieConfigStore or process.env.
+ * Constructs authenticated headers for Freelancer.com API requests using standard OAuth 2.0 Bearer tokens.
+ * Legacy v0.1 custom headers (freelancer-oauth-v1) are completely deprecated and removed.
  */
 export function getFreelancerRequestHeaders(customHeaders: Record<string, string> = {}): Record<string, string> {
   const dynamicCookies = getCookieConfig ? getCookieConfig().freelancerCookies : '';
@@ -54,10 +63,11 @@ export function getFreelancerRequestHeaders(customHeaders: Record<string, string
       'Please obtain your official OAuth token from https://accounts.freelancer.com/settings/develop and set it in your environment variables.'
     );
   } else {
-    // Attach official Freelancer OAuth and session cookie headers
-    headers['freelancer-oauth-v1'] = oauthToken;
+    // Standard OAuth 2.0 Bearer Authorization header
     headers['Authorization'] = `Bearer ${oauthToken}`;
-    headers['Cookie'] = dynamicCookies || `freelancer_session=${oauthToken}; auth_token=${oauthToken}`;
+    if (dynamicCookies) {
+      headers['Cookie'] = dynamicCookies;
+    }
   }
 
   return headers;
@@ -119,7 +129,7 @@ export async function fetchFreelancerLiveProjects(
   query: string = 'react',
   limit: number = 10
 ): Promise<FreelancerProjectSummary[]> {
-  const apiUrl = 'https://api.freelancer.com/api/projects/0.1/projects/active/';
+  const apiUrl = `${getFreelancerApiBase()}/projects/0.1/projects/active/`;
   
   const result = await executeFreelancerRequest(apiUrl, {
     method: 'GET',
@@ -181,13 +191,12 @@ export async function verifyFreelancerAuthStatus(): Promise<{
   }
 
   // Attempt official test call to verify authentication: /api/users/0.1/self
-  // In Freelancer API 0.1, the authenticated user profile endpoint is /api/users/0.1/self (or /api/users/0.1/users/self)
-  let testResult = await executeFreelancerRequest('https://api.freelancer.com/api/users/0.1/self', {
+  let testResult = await executeFreelancerRequest(`${getFreelancerApiBase()}/users/0.1/self`, {
     method: 'GET',
   });
 
   if (!testResult.success && testResult.status === 404) {
-    testResult = await executeFreelancerRequest('https://api.freelancer.com/api/users/0.1/users/self', {
+    testResult = await executeFreelancerRequest(`${getFreelancerApiBase()}/users/0.1/users/self`, {
       method: 'GET',
     });
   }
@@ -257,9 +266,8 @@ export async function testFreelancerToken(candidateToken: string): Promise<{
 
   const startTime = Date.now();
   try {
-    const res = await axios.get('https://api.freelancer.com/api/users/0.1/self', {
+    const res = await axios.get(`${getFreelancerApiBase()}/users/0.1/self`, {
       headers: {
-        'freelancer-oauth-v1': token,
         'Authorization': `Bearer ${token}`,
         'Accept': 'application/json',
         'User-Agent': 'FreelanceAutoBidder/1.0 (+https://3-222-149-9.sslip.io)',
@@ -468,3 +476,414 @@ export async function saveFreelancerApiToken(rawToken: string): Promise<{
     },
   };
 }
+
+export interface FreelancerOAuth2Config {
+  oauthVersion: '2.0';
+  legacyV01Deprecated: boolean;
+  configured: boolean;
+  clientId: string;
+  clientSecretConfigured: boolean;
+  redirectUri: string;
+  scopes: string;
+  authorizationUrl: string;
+  hasRefreshToken: boolean;
+  maskedRefreshToken?: string;
+  expiresAt?: string | null;
+  authMode: 'personal_token' | 'oauth2_app';
+  currentUsername?: string;
+  tokenStatus?: string;
+}
+
+export interface FreelancerOAuth2ExchangeResult {
+  success: boolean;
+  message: string;
+  username?: string;
+  userId?: number | string;
+  expiresIn?: number;
+  tokenStatus?: string;
+  error?: string;
+}
+
+/**
+ * Loads current OAuth2 configuration from environment and bidding_config.json
+ */
+export function getFreelancerOAuth2Config(): FreelancerOAuth2Config {
+  let storedConfig: any = {};
+  try {
+    const configPath = path.join(process.cwd(), 'bidding_config.json');
+    if (fs.existsSync(configPath)) {
+      storedConfig = JSON.parse(fs.readFileSync(configPath, 'utf-8'));
+    }
+  } catch {}
+
+  const clientId = (
+    process.env.FREELANCER_CLIENT_ID ||
+    storedConfig.freelancerClientId ||
+    ''
+  ).trim();
+
+  const clientSecret = (
+    process.env.FREELANCER_CLIENT_SECRET ||
+    storedConfig.freelancerClientSecret ||
+    ''
+  ).trim();
+
+  const defaultRedirectUri = process.env.BASE_URL 
+    ? `${process.env.BASE_URL.replace(/\/+$/, '')}/api/freelancer/oauth2/callback`
+    : 'https://3-222-149-9.sslip.io/api/freelancer/oauth2/callback';
+
+  const redirectUri = (
+    process.env.FREELANCER_REDIRECT_URI ||
+    storedConfig.freelancerRedirectUri ||
+    defaultRedirectUri
+  ).trim();
+
+  const scopes = (
+    process.env.FREELANCER_SCOPES ||
+    storedConfig.freelancerScopes ||
+    'basic profile projects'
+  ).trim();
+
+  const refreshToken = (
+    process.env.FREELANCER_REFRESH_TOKEN ||
+    storedConfig.freelancerRefreshToken ||
+    ''
+  ).trim();
+
+  const expiresAt = storedConfig.freelancerTokenExpiresAt || null;
+  const authMode = storedConfig.freelancerAuthMode || (clientId ? 'oauth2_app' : 'personal_token');
+  const currentUsername = storedConfig.freelancerUsername || 'kundank879';
+
+  // Construct official Freelancer authorization URL
+  const authUrlParams = new URLSearchParams({
+    response_type: 'code',
+    client_id: clientId,
+    redirect_uri: redirectUri,
+    scope: scopes,
+    prompt: 'consent'
+  });
+  const authorizationUrl = `https://accounts.freelancer.com/oauth/authorize?${authUrlParams.toString()}`;
+
+  return {
+    oauthVersion: '2.0',
+    legacyV01Deprecated: true,
+    configured: Boolean(clientId && clientSecret),
+    clientId,
+    clientSecretConfigured: Boolean(clientSecret),
+    redirectUri,
+    scopes,
+    authorizationUrl,
+    hasRefreshToken: Boolean(refreshToken),
+    maskedRefreshToken: refreshToken ? maskFreelancerToken(refreshToken) : undefined,
+    expiresAt,
+    authMode,
+    currentUsername,
+    tokenStatus: storedConfig.freelancerAccessToken ? 'active' : 'missing'
+  };
+}
+
+/**
+ * Persist Freelancer OAuth2 App credentials
+ */
+export async function saveFreelancerOAuth2AppConfig(config: {
+  clientId?: string;
+  clientSecret?: string;
+  redirectUri?: string;
+  scopes?: string;
+  authMode?: 'personal_token' | 'oauth2_app';
+}): Promise<{ success: boolean; message: string; config: FreelancerOAuth2Config }> {
+  const cleanClientId = (config.clientId || '').trim();
+  const cleanClientSecret = (config.clientSecret || '').trim();
+  const cleanRedirectUri = (config.redirectUri || '').trim();
+  const cleanScopes = (config.scopes || 'basic profile projects').trim();
+
+  // 1. Update runtime environment
+  if (cleanClientId) process.env.FREELANCER_CLIENT_ID = cleanClientId;
+  if (cleanClientSecret) process.env.FREELANCER_CLIENT_SECRET = cleanClientSecret;
+  if (cleanRedirectUri) process.env.FREELANCER_REDIRECT_URI = cleanRedirectUri;
+  if (cleanScopes) process.env.FREELANCER_SCOPES = cleanScopes;
+
+  // 2. Persist to .env and .env.production
+  try {
+    for (const envFileName of ['.env', '.env.production']) {
+      const fullEnvPath = path.join(process.cwd(), envFileName);
+      if (fs.existsSync(fullEnvPath)) {
+        let content = fs.readFileSync(fullEnvPath, 'utf-8');
+        const updates: Record<string, string> = {};
+        if (cleanClientId) updates.FREELANCER_CLIENT_ID = cleanClientId;
+        if (cleanClientSecret) updates.FREELANCER_CLIENT_SECRET = cleanClientSecret;
+        if (cleanRedirectUri) updates.FREELANCER_REDIRECT_URI = cleanRedirectUri;
+        if (cleanScopes) updates.FREELANCER_SCOPES = cleanScopes;
+
+        for (const [key, val] of Object.entries(updates)) {
+          if (content.includes(`${key}=`)) {
+            content = content.replace(new RegExp(`${key}=.*`, 'g'), `${key}="${val}"`);
+          } else {
+            content += `\n${key}="${val}"\n`;
+          }
+        }
+        fs.writeFileSync(fullEnvPath, content, 'utf-8');
+      }
+    }
+  } catch (err: any) {
+    console.warn('[Freelancer OAuth2] Could not write to .env files:', err.message);
+  }
+
+  // 3. Persist to bidding_config.json
+  try {
+    const configPath = path.join(process.cwd(), 'bidding_config.json');
+    let configData: any = {};
+    if (fs.existsSync(configPath)) {
+      try {
+        configData = JSON.parse(fs.readFileSync(configPath, 'utf-8'));
+      } catch {
+        configData = {};
+      }
+    }
+    if (cleanClientId) configData.freelancerClientId = cleanClientId;
+    if (cleanClientSecret) configData.freelancerClientSecret = cleanClientSecret;
+    if (cleanRedirectUri) configData.freelancerRedirectUri = cleanRedirectUri;
+    if (cleanScopes) configData.freelancerScopes = cleanScopes;
+    if (config.authMode) configData.freelancerAuthMode = config.authMode;
+    configData.freelancerOAuthUpdated = new Date().toISOString();
+    fs.writeFileSync(configPath, JSON.stringify(configData, null, 2), 'utf-8');
+  } catch (cfgErr: any) {
+    console.warn('[Freelancer OAuth2] Could not update bidding_config.json:', cfgErr.message);
+  }
+
+  const updatedConfig = getFreelancerOAuth2Config();
+  return {
+    success: true,
+    message: 'Freelancer OAuth2 app credentials configured and stored successfully.',
+    config: updatedConfig
+  };
+}
+
+/**
+ * Exchange Freelancer OAuth2 Authorization Code for Access and Refresh Tokens
+ */
+export async function exchangeFreelancerOAuth2Code(
+  code: string,
+  redirectUriOverride?: string
+): Promise<FreelancerOAuth2ExchangeResult> {
+  const cleanCode = (code || '').trim();
+  if (!cleanCode) {
+    return {
+      success: false,
+      message: 'Authorization code is required for OAuth2 token exchange.'
+    };
+  }
+
+  const oauthConfig = getFreelancerOAuth2Config();
+  const clientId = oauthConfig.clientId;
+  let storedConfig: any = {};
+  try {
+    const configPath = path.join(process.cwd(), 'bidding_config.json');
+    if (fs.existsSync(configPath)) {
+      storedConfig = JSON.parse(fs.readFileSync(configPath, 'utf-8'));
+    }
+  } catch {}
+
+  const clientSecret = (
+    process.env.FREELANCER_CLIENT_SECRET ||
+    storedConfig.freelancerClientSecret ||
+    ''
+  ).trim();
+
+  if (!clientId || !clientSecret) {
+    return {
+      success: false,
+      message: 'Freelancer Client ID and Client Secret must be configured before exchanging OAuth2 codes.'
+    };
+  }
+
+  const redirectUri = redirectUriOverride || oauthConfig.redirectUri;
+
+  try {
+    console.log(`[Freelancer OAuth2] Exchanging code with accounts.freelancer.com/oauth/token...`);
+    
+    // Freelancer OAuth2 Token Endpoint accepts URL-encoded form data
+    const params = new URLSearchParams({
+      grant_type: 'authorization_code',
+      client_id: clientId,
+      client_secret: clientSecret,
+      code: cleanCode,
+      redirect_uri: redirectUri
+    });
+
+    const tokenRes = await axios.post('https://accounts.freelancer.com/oauth/token', params.toString(), {
+      headers: {
+        'Content-Type': 'application/x-www-form-urlencoded',
+        'Accept': 'application/json',
+        'User-Agent': 'FreelanceAutoBidder/1.0 (+https://3-222-149-9.sslip.io)'
+      },
+      timeout: 15000
+    });
+
+    const data = tokenRes.data;
+    const accessToken = data.access_token;
+    const refreshToken = data.refresh_token;
+    const expiresIn = data.expires_in || 3600;
+
+    if (!accessToken) {
+      return {
+        success: false,
+        message: data.error_description || data.error || 'No access token returned from Freelancer OAuth token endpoint.'
+      };
+    }
+
+    // 1. Activate & persist access token
+    const saveResult = await saveFreelancerApiToken(accessToken);
+
+    // 2. Persist refresh token & expiry
+    try {
+      const configPath = path.join(process.cwd(), 'bidding_config.json');
+      let configData: any = {};
+      if (fs.existsSync(configPath)) {
+        try {
+          configData = JSON.parse(fs.readFileSync(configPath, 'utf-8'));
+        } catch {
+          configData = {};
+        }
+      }
+      if (refreshToken) {
+        configData.freelancerRefreshToken = refreshToken;
+        process.env.FREELANCER_REFRESH_TOKEN = refreshToken;
+      }
+      const expiresAt = new Date(Date.now() + expiresIn * 1000).toISOString();
+      configData.freelancerTokenExpiresAt = expiresAt;
+      configData.freelancerAuthMode = 'oauth2_app';
+      fs.writeFileSync(configPath, JSON.stringify(configData, null, 2), 'utf-8');
+    } catch (e: any) {
+      console.warn('[Freelancer OAuth2] Failed to save refresh token to config:', e.message);
+    }
+
+    return {
+      success: true,
+      message: `OAuth2 token exchange successful! Verified user: @${saveResult.username || 'unknown'} (expires in ${expiresIn}s).`,
+      username: saveResult.username,
+      userId: saveResult.userId,
+      expiresIn,
+      tokenStatus: saveResult.authStatus.status
+    };
+  } catch (err: any) {
+    const errorDetails = err.response?.data?.error_description || err.response?.data?.message || err.message;
+    console.error('[Freelancer OAuth2] Code exchange error:', errorDetails);
+    return {
+      success: false,
+      message: `Token exchange failed: ${errorDetails}`,
+      error: errorDetails
+    };
+  }
+}
+
+/**
+ * Refresh Freelancer OAuth2 Access Token using stored Refresh Token
+ */
+export async function refreshFreelancerOAuth2Token(): Promise<FreelancerOAuth2ExchangeResult> {
+  const oauthConfig = getFreelancerOAuth2Config();
+  let storedConfig: any = {};
+  try {
+    const configPath = path.join(process.cwd(), 'bidding_config.json');
+    if (fs.existsSync(configPath)) {
+      storedConfig = JSON.parse(fs.readFileSync(configPath, 'utf-8'));
+    }
+  } catch {}
+
+  const clientId = oauthConfig.clientId;
+  const clientSecret = (
+    process.env.FREELANCER_CLIENT_SECRET ||
+    storedConfig.freelancerClientSecret ||
+    ''
+  ).trim();
+  const refreshToken = (
+    process.env.FREELANCER_REFRESH_TOKEN ||
+    storedConfig.freelancerRefreshToken ||
+    ''
+  ).trim();
+
+  if (!clientId || !clientSecret) {
+    return {
+      success: false,
+      message: 'Freelancer Client ID and Client Secret must be configured to refresh tokens.'
+    };
+  }
+
+  if (!refreshToken) {
+    return {
+      success: false,
+      message: 'No Freelancer refresh token available. Complete initial OAuth2 authorization first.'
+    };
+  }
+
+  try {
+    console.log(`[Freelancer OAuth2] Refreshing token at accounts.freelancer.com/oauth/token...`);
+    const params = new URLSearchParams({
+      grant_type: 'refresh_token',
+      client_id: clientId,
+      client_secret: clientSecret,
+      refresh_token: refreshToken
+    });
+
+    const tokenRes = await axios.post('https://accounts.freelancer.com/oauth/token', params.toString(), {
+      headers: {
+        'Content-Type': 'application/x-www-form-urlencoded',
+        'Accept': 'application/json',
+        'User-Agent': 'FreelanceAutoBidder/1.0 (+https://3-222-149-9.sslip.io)'
+      },
+      timeout: 15000
+    });
+
+    const data = tokenRes.data;
+    const accessToken = data.access_token;
+    const newRefreshToken = data.refresh_token || refreshToken;
+    const expiresIn = data.expires_in || 3600;
+
+    if (!accessToken) {
+      return {
+        success: false,
+        message: data.error_description || data.error || 'Failed to obtain access token from refresh.'
+      };
+    }
+
+    // Save newly refreshed access token
+    const saveResult = await saveFreelancerApiToken(accessToken);
+
+    // Save updated refresh token & expiry
+    try {
+      const configPath = path.join(process.cwd(), 'bidding_config.json');
+      let configData: any = {};
+      if (fs.existsSync(configPath)) {
+        try {
+          configData = JSON.parse(fs.readFileSync(configPath, 'utf-8'));
+        } catch {
+          configData = {};
+        }
+      }
+      configData.freelancerRefreshToken = newRefreshToken;
+      process.env.FREELANCER_REFRESH_TOKEN = newRefreshToken;
+      configData.freelancerTokenExpiresAt = new Date(Date.now() + expiresIn * 1000).toISOString();
+      fs.writeFileSync(configPath, JSON.stringify(configData, null, 2), 'utf-8');
+    } catch (e: any) {
+      console.warn('[Freelancer OAuth2] Could not update config with refreshed token:', e.message);
+    }
+
+    return {
+      success: true,
+      message: `OAuth2 token refreshed successfully for @${saveResult.username || 'unknown'}!`,
+      username: saveResult.username,
+      userId: saveResult.userId,
+      expiresIn,
+      tokenStatus: saveResult.authStatus.status
+    };
+  } catch (err: any) {
+    const errorDetails = err.response?.data?.error_description || err.response?.data?.message || err.message;
+    console.error('[Freelancer OAuth2] Token refresh error:', errorDetails);
+    return {
+      success: false,
+      message: `Token refresh failed: ${errorDetails}`,
+      error: errorDetails
+    };
+  }
+}
+

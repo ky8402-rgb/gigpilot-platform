@@ -3,15 +3,19 @@ frontend:
   phases:
     preBuild:
       commands:
-        - echo "REACT_APP_API_URL=https://3-222-149-9.sslip.io" > .env.production
-        - echo "API_BASE_URL=https://3-222-149-9.sslip.io" >> .env.production
-        - echo "VITE_BACKEND_URL=https://3-222-149-9.sslip.io" >> .env.production
-        - echo "VITE_API_URL=https://3-222-149-9.sslip.io" >> .env.production
-        - echo "VITE_API_BASE_URL=https://3-222-149-9.sslip.io" >> .env.production
+        - BACKEND_URL="${VITE_BACKEND_URL:-${API_BASE_URL:-https://3-222-149-9.sslip.io}}"
+        - echo "REACT_APP_API_URL=${BACKEND_URL}" > .env.production
+        - echo "API_BASE_URL=${BACKEND_URL}" >> .env.production
+        - echo "VITE_BACKEND_URL=${BACKEND_URL}" >> .env.production
+        - echo "VITE_API_URL=${BACKEND_URL}" >> .env.production
+        - echo "VITE_API_BASE_URL=${BACKEND_URL}" >> .env.production
+        - if [ -n "$FREELANCER_CLIENT_ID" ]; then echo "VITE_FREELANCER_CLIENT_ID=${FREELANCER_CLIENT_ID}" >> .env.production; fi
+        - if [ -n "$FREELANCER_API_BASE_URL" ]; then echo "VITE_FREELANCER_API_BASE_URL=${FREELANCER_API_BASE_URL}" >> .env.production; fi
+        - if [ -n "$FREELANCER_ACCESS_TOKEN" ]; then echo "FREELANCER_ACCESS_TOKEN=${FREELANCER_ACCESS_TOKEN}" >> .env.production; fi
         - npm ci || npm install --legacy-peer-deps
     build:
       commands:
-        - npm run build
+        - npm run build:client || npm run build
   artifacts:
     baseDirectory: dist
     files:

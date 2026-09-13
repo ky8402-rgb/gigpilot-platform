@@ -5383,6 +5383,102 @@ export async function updateFreelancerToken(token: string): Promise<FreelancerTo
   }
 }
 
+export interface FreelancerOAuth2Config {
+  oauthVersion?: '2.0';
+  legacyV01Deprecated?: boolean;
+  configured: boolean;
+  clientId: string;
+  clientSecretConfigured: boolean;
+  redirectUri: string;
+  scopes: string;
+  authorizationUrl: string;
+  hasRefreshToken: boolean;
+  maskedRefreshToken?: string;
+  expiresAt?: string | null;
+  authMode: 'personal_token' | 'oauth2_app';
+  currentUsername?: string;
+  tokenStatus?: string;
+}
+
+export interface FreelancerOAuth2ExchangeResult {
+  success: boolean;
+  message: string;
+  username?: string;
+  userId?: number | string;
+  expiresIn?: number;
+  tokenStatus?: string;
+  error?: string;
+}
+
+export async function getFreelancerOAuth2Config(): Promise<{ success: boolean; config?: FreelancerOAuth2Config; error?: string }> {
+  try {
+    const res = await secureFetch(apiUrl('/api/freelancer/oauth2/config'));
+    return await res.json();
+  } catch (err: any) {
+    return { success: false, error: err.message };
+  }
+}
+
+export async function saveFreelancerOAuth2Config(payload: {
+  clientId?: string;
+  clientSecret?: string;
+  redirectUri?: string;
+  scopes?: string;
+  authMode?: 'personal_token' | 'oauth2_app';
+}): Promise<{ success: boolean; message: string; config?: FreelancerOAuth2Config; error?: string }> {
+  try {
+    const res = await secureFetch(apiUrl('/api/freelancer/oauth2/config'), {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    });
+    return await res.json();
+  } catch (err: any) {
+    return { success: false, message: err.message, error: err.message };
+  }
+}
+
+export async function exchangeFreelancerOAuth2Code(
+  code: string,
+  redirectUri?: string
+): Promise<FreelancerOAuth2ExchangeResult> {
+  try {
+    const res = await secureFetch(apiUrl('/api/freelancer/oauth2/callback'), {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ code, redirectUri })
+    });
+    return await res.json();
+  } catch (err: any) {
+    return { success: false, message: err.message, error: err.message };
+  }
+}
+
+export async function refreshFreelancerOAuth2Token(): Promise<FreelancerOAuth2ExchangeResult> {
+  try {
+    const res = await secureFetch(apiUrl('/api/freelancer/oauth2/refresh'), {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' }
+    });
+    return await res.json();
+  } catch (err: any) {
+    return { success: false, message: err.message, error: err.message };
+  }
+}
+
+// Re-export Freelancer OAuth2 Service & Types for universal application access
+export {
+  freelancerOAuthService,
+  freelancerOAuthAxios,
+  FreelancerOAuthService
+} from './freelancer-oauth.service';
+export type {
+  FreelancerOAuthTokenData,
+  GenerateAuthUrlOptions,
+  CSRFStateValidationResult
+} from './freelancer-oauth.service';
+
+
 
 
 

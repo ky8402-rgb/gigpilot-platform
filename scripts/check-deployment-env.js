@@ -74,10 +74,33 @@ const CHECKS = [
   },
   {
     key: 'FREELANCER_ACCESS_TOKEN',
-    name: 'Freelancer.com OAuth Token',
+    name: 'Freelancer.com OAuth 2.0 Access Token',
     category: 'freelancer',
     required: false,
-    hint: 'Required for automated Freelancer.com bid submission & scraping API.'
+    default: '3PKsiB3m736mE0wnirnHeLTUzLP1xc',
+    hint: 'Active OAuth 2.0 Bearer token for automated Freelancer.com bid submission.'
+  },
+  {
+    key: 'FREELANCER_API_BASE_URL',
+    name: 'Freelancer.com REST API Base URL',
+    category: 'freelancer',
+    required: false,
+    default: 'https://www.freelancer.com/api',
+    hint: 'Base endpoint URL for official Freelancer REST API calls.'
+  },
+  {
+    key: 'FREELANCER_CLIENT_ID',
+    name: 'Freelancer.com OAuth 2.0 Client ID',
+    category: 'freelancer',
+    required: false,
+    hint: 'Client ID from accounts.freelancer.com/settings/develop for OAuth 2.0 Authorization Code flow.'
+  },
+  {
+    key: 'FREELANCER_CLIENT_SECRET',
+    name: 'Freelancer.com OAuth 2.0 Client Secret',
+    category: 'freelancer',
+    required: false,
+    hint: 'Client Secret from accounts.freelancer.com/settings/develop for token exchanges & automated refreshes.'
   },
   {
     key: 'GEMINI_API_KEY',

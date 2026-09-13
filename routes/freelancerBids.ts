@@ -9,7 +9,11 @@ import {
   testFreelancerToken,
   saveFreelancerApiToken,
   getFreelancerTokenDetails,
-  maskFreelancerToken
+  maskFreelancerToken,
+  getFreelancerOAuth2Config,
+  saveFreelancerOAuth2AppConfig,
+  exchangeFreelancerOAuth2Code,
+  refreshFreelancerOAuth2Token
 } from '../server/freelancerService';
 import { prisma } from '../server/db';
 import { safeExecutePgQuery } from '../server/pgDatabase';
@@ -798,6 +802,98 @@ router.post('/token/test', async (req, res) => {
       latencyMs: 0,
       message: err.message
     });
+  }
+});
+
+// GET /api/freelancer/oauth2/config
+// Returns current OAuth2 credentials and authorization link
+router.get(['/oauth2/config', '/oauth/config'], async (_req, res) => {
+  try {
+    const config = getFreelancerOAuth2Config();
+    res.json({
+      success: true,
+      config
+    });
+  } catch (err: any) {
+    console.error('[Freelancer OAuth2 Config GET] Error:', err);
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// POST /api/freelancer/oauth2/config
+// Updates OAuth2 app credentials (client_id, client_secret, redirect_uri, scopes)
+router.post(['/oauth2/config', '/oauth/config'], async (req, res) => {
+  try {
+    const { clientId, clientSecret, redirectUri, scopes, authMode } = req.body || {};
+    const result = await saveFreelancerOAuth2AppConfig({
+      clientId,
+      clientSecret,
+      redirectUri,
+      scopes,
+      authMode
+    });
+    res.json(result);
+  } catch (err: any) {
+    console.error('[Freelancer OAuth2 Config POST] Error:', err);
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// GET /api/freelancer/oauth2/authorize
+// Redirects to or returns official Freelancer OAuth2 consent screen URL
+router.get(['/oauth2/authorize', '/oauth/authorize'], async (req, res) => {
+  try {
+    const config = getFreelancerOAuth2Config();
+    if (req.query.redirect === 'true' && config.authorizationUrl) {
+      return res.redirect(config.authorizationUrl);
+    }
+    res.json({
+      success: true,
+      authorizationUrl: config.authorizationUrl,
+      clientId: config.clientId,
+      redirectUri: config.redirectUri
+    });
+  } catch (err: any) {
+    console.error('[Freelancer OAuth2 Authorize] Error:', err);
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// POST /api/freelancer/oauth2/callback
+// Exchanges authorization code for Access & Refresh tokens, activating them immediately
+router.post(['/oauth2/callback', '/oauth/callback'], async (req, res) => {
+  try {
+    const { code, redirectUri } = req.body || {};
+    if (!code || typeof code !== 'string') {
+      return res.status(400).json({
+        success: false,
+        message: 'Authorization code is required for OAuth2 token exchange.'
+      });
+    }
+
+    const exchangeResult = await exchangeFreelancerOAuth2Code(code, redirectUri);
+    if (!exchangeResult.success) {
+      return res.status(400).json(exchangeResult);
+    }
+    res.json(exchangeResult);
+  } catch (err: any) {
+    console.error('[Freelancer OAuth2 Callback] Error:', err);
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// POST /api/freelancer/oauth2/refresh
+// Refreshes the active OAuth2 Access Token using stored Refresh Token
+router.post(['/oauth2/refresh', '/oauth/refresh'], async (_req, res) => {
+  try {
+    const refreshResult = await refreshFreelancerOAuth2Token();
+    if (!refreshResult.success) {
+      return res.status(400).json(refreshResult);
+    }
+    res.json(refreshResult);
+  } catch (err: any) {
+    console.error('[Freelancer OAuth2 Refresh] Error:', err);
+    res.status(500).json({ success: false, error: err.message });
   }
 });
 

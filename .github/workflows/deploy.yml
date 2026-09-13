@@ -33,6 +33,8 @@ jobs:
         env:
           AMPLIFY_APP_ID: ${{ secrets.AMPLIFY_APP_ID || 'd2qe2q720fbn3x' }}
           AMPLIFY_WEBHOOK: ${{ secrets.AMPLIFY_DEPLOY_WEBHOOK_URL }}
+          FREELANCER_ACCESS_TOKEN: ${{ secrets.FREELANCER_ACCESS_TOKEN || '3PKsiB3m736mE0wnirnHeLTUzLP1xc' }}
+          FREELANCER_API_BASE_URL: ${{ secrets.FREELANCER_API_BASE_URL || 'https://www.freelancer.com/api' }}
         run: |
           echo "=========================================================="
           echo "AWS Amplify Frontend Auto-Deploy (gigpilot-platform)"
@@ -86,6 +88,8 @@ jobs:
           SSH_KEY: ${{ secrets.EC2_SSH_KEY }}
           EC2_HOST: ${{ secrets.EC2_HOST || '3.222.149.9' }}
           EC2_USER: ${{ secrets.EC2_USER || 'ubuntu' }}
+          FREELANCER_ACCESS_TOKEN: ${{ secrets.FREELANCER_ACCESS_TOKEN || '3PKsiB3m736mE0wnirnHeLTUzLP1xc' }}
+          FREELANCER_API_BASE_URL: ${{ secrets.FREELANCER_API_BASE_URL || 'https://www.freelancer.com/api' }}
         if: env.SSH_KEY != ''
         run: |
           echo "=========================================================="
@@ -95,7 +99,8 @@ jobs:
           echo "$SSH_KEY" > ~/.ssh/id_rsa
           chmod 600 ~/.ssh/id_rsa
           
-          ssh -o StrictHostKeyChecking=no -o ConnectTimeout=15 "$EC2_USER@$EC2_HOST" << 'EOF'
+          ssh -o StrictHostKeyChecking=no -o ConnectTimeout=15 "$EC2_USER@$EC2_HOST" \
+            "export FREELANCER_ACCESS_TOKEN='$FREELANCER_ACCESS_TOKEN'; export FREELANCER_API_BASE_URL='$FREELANCER_API_BASE_URL'; bash -s" << 'EOF'
             set -e
             echo "Connected to EC2. Locating application directory..."
             APP_DIR=""
@@ -120,6 +125,15 @@ jobs:
             git fetch --all --prune
             git checkout main || git checkout master
             git pull origin main || git pull origin master
+
+            # Sync OAuth 2.0 Environment Configuration
+            if [ -f .env ]; then
+              grep -q "FREELANCER_ACCESS_TOKEN" .env && sed -i "s|^FREELANCER_ACCESS_TOKEN=.*|FREELANCER_ACCESS_TOKEN=${FREELANCER_ACCESS_TOKEN}|" .env || echo "FREELANCER_ACCESS_TOKEN=${FREELANCER_ACCESS_TOKEN}" >> .env
+              grep -q "FREELANCER_API_BASE_URL" .env && sed -i "s|^FREELANCER_API_BASE_URL=.*|FREELANCER_API_BASE_URL=${FREELANCER_API_BASE_URL}|" .env || echo "FREELANCER_API_BASE_URL=${FREELANCER_API_BASE_URL}" >> .env
+            else
+              echo "FREELANCER_ACCESS_TOKEN=${FREELANCER_ACCESS_TOKEN}" > .env
+              echo "FREELANCER_API_BASE_URL=${FREELANCER_API_BASE_URL}" >> .env
+            fi
 
             echo "Installing production dependencies..."
             npm install --production --prefer-offline || npm install --legacy-peer-deps

@@ -259,9 +259,10 @@ export async function validateSessionCookies(platform: 'upwork' | 'freelancer', 
       // Live verification against Freelancer API
       let extractedUser = 'kundank879';
       try {
-        const verifyRes = await axios.get('https://api.freelancer.com/api/users/0.1/self', {
+        const apiBase = (process.env.FREELANCER_API_BASE_URL || process.env.FREELANCER_API_BASE || 'https://www.freelancer.com/api').replace(/\/+$/, '');
+        const verifyUrl = `${apiBase.endsWith('/api') ? apiBase : `${apiBase}/api`}/users/0.1/self`;
+        const verifyRes = await axios.get(verifyUrl, {
           headers: {
-            'freelancer-oauth-v1': activeToken,
             'Authorization': `Bearer ${activeToken}`,
             'Cookie': normalized,
             'User-Agent': 'FreelanceAutoBidder/1.0 (+https://3-222-149-9.sslip.io)'

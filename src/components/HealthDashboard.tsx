@@ -663,7 +663,7 @@ export const HealthDashboard: React.FC<HealthDashboardProps> = ({
                 </div>
                 <div className="flex justify-between text-slate-400">
                   <span>Token Status:</span>
-                  <span className="text-slate-200">OAuth Bearer Configured</span>
+                  <span className="text-slate-200">OAuth 2.0 Bearer (v0.1 Deprecated)</span>
                 </div>
                 <p className="text-[11px] text-slate-400 italic pt-1 border-t border-slate-800/40 truncate">
                   {freelancerCheck?.message || 'Connected'}

@@ -749,10 +749,10 @@ export const FreelancerMetricsSection: React.FC<FreelancerMetricsSectionProps> =
                 <div className="bg-[#0b0f19] p-2.5 rounded-lg border border-slate-800 text-[11px] text-slate-400 space-y-1">
                   <div className="text-slate-300 font-semibold flex items-center gap-1.5">
                     <i className="fas fa-lock text-blue-400"></i>
-                    Official OAuth Header Standards:
+                    OAuth 2.0 Standards &amp; Header Security:
                   </div>
                   <p>
-                    Outbound calls securely inject <code className="text-slate-300 font-mono">Authorization: Bearer &lt;token&gt;</code> and <code className="text-slate-300 font-mono">freelancer-oauth-v1</code> into the official REST API v0.1.
+                    Outbound calls securely inject <code className="text-slate-300 font-mono">Authorization: Bearer &lt;token&gt;</code> (OAuth 2.0 standard). The legacy <code className="text-slate-400 font-mono">freelancer-oauth-v1</code> header has been deprecated and completely removed.
                   </p>
                 </div>
 
