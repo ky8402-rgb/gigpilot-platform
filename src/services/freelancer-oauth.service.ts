@@ -430,7 +430,7 @@ export class FreelancerOAuthService {
     }
 
     // Client ID fallback
-    clientId = clientId || '3PKsiB3m736mE0wnirnHeLTUzLP1xc';
+    clientId = clientId || '';
 
     // Redirect URI fallback
     if (!redirectUri && typeof window !== 'undefined') {

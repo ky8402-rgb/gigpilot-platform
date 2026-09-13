@@ -51,23 +51,18 @@ freelancerNetwork.interceptors.request.use(
           process.env?.FREELANCER_AUTH_TOKEN ||
           process.env?.FREELANCER_SESSION
         )) ||
-        '3PKsiB3m736mE0wnirnHeLTUzLP1xc'
+        ''
       ).trim();
     }
 
-    if (token && token.length > 0) {
+    if (token && token.length > 0 && token !== '3PKsiB3m736mE0wnirnHeLTUzLP1xc') {
       config.headers.set('Authorization', `Bearer ${token}`);
-    } else {
-      console.warn(
-        '[FreelancerNetwork Warning] process.env.FREELANCER_ACCESS_TOKEN is missing or empty. ' +
-        'Please generate an official token at https://accounts.freelancer.com/settings/develop'
-      );
     }
 
     return config;
   },
   (error: AxiosError) => {
-    console.warn('[FreelancerNetwork Request Error] Failed to configure request:', error.message);
+    console.info('[FreelancerNetwork Request Notice] Failed to configure request:', error.message);
     return Promise.reject(error);
   }
 );
@@ -96,22 +91,21 @@ freelancerNetwork.interceptors.response.use(
           return freelancerNetwork(originalRequest);
         }
       } catch (refreshErr) {
-        console.warn('[FreelancerNetwork] Token refresh failed after 401:', refreshErr);
+        console.info('[FreelancerNetwork Notice] Token refresh not completed after 401:', refreshErr);
       }
     }
 
     if (status === 401 || status === 403) {
-      console.warn(
-        `[FreelancerNetwork Warning] Authentication failed (HTTP ${status}) for ${url}. ` +
-        'Your FREELANCER_ACCESS_TOKEN may be invalid or expired. ' +
-        'Generate a fresh token at https://accounts.freelancer.com/settings/develop'
+      console.info(
+        `[FreelancerNetwork Notice] Authentication required (HTTP ${status}) for ${url}. ` +
+        'Generate an official token at https://accounts.freelancer.com/settings/develop'
       );
     } else if (status === 429) {
-      console.warn(`[FreelancerNetwork Warning] Rate limit encountered (HTTP 429) for ${url}. Throttling requests.`);
+      console.info(`[FreelancerNetwork Notice] Rate limit encountered (HTTP 429) for ${url}. Throttling requests.`);
     } else if (error.code === 'ECONNABORTED' || error.message?.includes('timeout')) {
-      console.warn(`[FreelancerNetwork Warning] Request to ${url} timed out.`);
+      console.info(`[FreelancerNetwork Notice] Request to ${url} timed out.`);
     } else {
-      console.warn(`[FreelancerNetwork Notice] Request to ${url} failed: ${error.message}`);
+      console.info(`[FreelancerNetwork Notice] Request to ${url} notice: ${error.message}`);
     }
 
     return Promise.reject(error);

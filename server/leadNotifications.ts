@@ -48,14 +48,18 @@ const defaultFreelancerAuth = (
   process.env.FREELANCER_ACCESS_TOKEN ||
   process.env.FREELANCER_AUTH_TOKEN ||
   process.env.FREELANCER_SESSION ||
-  '3PKsiB3m736mE0wnirnHeLTUzLP1xc'
+  ''
 ).trim();
+
+const isDefaultValid = Boolean(
+  defaultFreelancerAuth && defaultFreelancerAuth !== '3PKsiB3m736mE0wnirnHeLTUzLP1xc'
+);
 
 let cookieConfigStore: UserSessionCookieConfig = {
   upworkCookies: '',
-  freelancerCookies: `freelancer_session=${defaultFreelancerAuth}; auth_token=${defaultFreelancerAuth}`,
+  freelancerCookies: isDefaultValid ? `freelancer_session=${defaultFreelancerAuth}; auth_token=${defaultFreelancerAuth}` : '',
   upworkStatus: 'unconfigured',
-  freelancerStatus: 'active',
+  freelancerStatus: isDefaultValid ? 'active' : 'unconfigured',
   lastValidatedAt: new Date().toISOString()
 };
 
@@ -195,13 +199,14 @@ export function normalizeFreelancerCookies(raw: string): { normalized: string; t
  * Resets Freelancer session cookies to default active verified credentials
  */
 export function resetDefaultFreelancerCookies(): UserSessionCookieConfig {
-  const defaultAuth = defaultFreelancerAuth || '3PKsiB3m736mE0wnirnHeLTUzLP1xc';
-  cookieConfigStore.freelancerCookies = `freelancer_session=${defaultAuth}; auth_token=${defaultAuth}`;
-  cookieConfigStore.freelancerStatus = 'active';
+  if (isDefaultValid) {
+    cookieConfigStore.freelancerCookies = `freelancer_session=${defaultFreelancerAuth}; auth_token=${defaultFreelancerAuth}`;
+    cookieConfigStore.freelancerStatus = 'active';
+  } else {
+    cookieConfigStore.freelancerCookies = '';
+    cookieConfigStore.freelancerStatus = 'unconfigured';
+  }
   cookieConfigStore.lastValidatedAt = new Date().toISOString();
-  process.env.FREELANCER_ACCESS_TOKEN = defaultAuth;
-  process.env.FREELANCER_AUTH_TOKEN = defaultAuth;
-  process.env.FREELANCER_SESSION = defaultAuth;
   return cookieConfigStore;
 }
 
@@ -244,36 +249,38 @@ export async function validateSessionCookies(platform: 'upwork' | 'freelancer', 
     const hasFlToken = Boolean(token || normalized.includes('freelancer_session') || normalized.includes('auth_token') || normalized.length > 15);
 
     if (hasFlToken) {
-      const activeToken = token || defaultFreelancerAuth || '3PKsiB3m736mE0wnirnHeLTUzLP1xc';
+      const activeToken = token || (isDefaultValid ? defaultFreelancerAuth : '');
       cookieConfigStore.freelancerCookies = normalized;
       cookieConfigStore.freelancerStatus = 'active';
       cookieConfigStore.lastValidatedAt = new Date().toISOString();
 
       // Synchronize runtime environment so entire application uses the fresh token
-      if (activeToken) {
+      if (activeToken && activeToken !== '3PKsiB3m736mE0wnirnHeLTUzLP1xc') {
         process.env.FREELANCER_ACCESS_TOKEN = activeToken;
         process.env.FREELANCER_AUTH_TOKEN = activeToken;
         process.env.FREELANCER_SESSION = activeToken;
       }
 
-      // Live verification against Freelancer API
+      // Live verification against Freelancer API if active token is valid
       let extractedUser = 'kundank879';
-      try {
-        const apiBase = (process.env.FREELANCER_API_BASE_URL || process.env.FREELANCER_API_BASE || 'https://www.freelancer.com/api').replace(/\/+$/, '');
-        const verifyUrl = `${apiBase.endsWith('/api') ? apiBase : `${apiBase}/api`}/users/0.1/self`;
-        const verifyRes = await axios.get(verifyUrl, {
-          headers: {
-            'Authorization': `Bearer ${activeToken}`,
-            'Cookie': normalized,
-            'User-Agent': 'FreelanceAutoBidder/1.0 (+https://3-222-149-9.sslip.io)'
-          },
-          timeout: 4000
-        });
-        if (verifyRes.data?.result?.username) {
-          extractedUser = verifyRes.data.result.username;
+      if (activeToken && activeToken !== '3PKsiB3m736mE0wnirnHeLTUzLP1xc') {
+        try {
+          const apiBase = (process.env.FREELANCER_API_BASE_URL || process.env.FREELANCER_API_BASE || 'https://www.freelancer.com/api').replace(/\/+$/, '');
+          const verifyUrl = `${apiBase.endsWith('/api') ? apiBase : `${apiBase}/api`}/users/0.1/self`;
+          const verifyRes = await axios.get(verifyUrl, {
+            headers: {
+              'Authorization': `Bearer ${activeToken}`,
+              'Cookie': normalized,
+              'User-Agent': 'FreelanceAutoBidder/1.0 (+https://3-222-149-9.sslip.io)'
+            },
+            timeout: 4000
+          });
+          if (verifyRes.data?.result?.username) {
+            extractedUser = verifyRes.data.result.username;
+          }
+        } catch (err: any) {
+          console.info(`[Freelancer Session Verification Notice]: ${err.message}`);
         }
-      } catch (err: any) {
-        console.log(`[Freelancer Session Verification Note]: ${err.message} (Using authenticated session @${extractedUser})`);
       }
 
       return {

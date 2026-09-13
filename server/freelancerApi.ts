@@ -49,7 +49,7 @@ export function getFreelancerConfig() {
   const accessToken = (
     process.env.FREELANCER_ACCESS_TOKEN ||
     process.env.FREELANCER_API_KEY ||
-    '3PKsiB3m736mE0wnirnHeLTUzLP1xc'
+    ''
   ).trim();
 
   const projectBaseUrl = (
@@ -66,11 +66,14 @@ export function getFreelancerConfig() {
  */
 function getFreelancerHeaders() {
   const { accessToken } = getFreelancerConfig();
-  return {
+  const headers: Record<string, string> = {
     'Content-Type': 'application/json',
     'Accept': 'application/json',
-    'Authorization': `Bearer ${accessToken}`,
   };
+  if (accessToken && accessToken !== '3PKsiB3m736mE0wnirnHeLTUzLP1xc') {
+    headers['Authorization'] = `Bearer ${accessToken}`;
+  }
+  return headers;
 }
 
 /**

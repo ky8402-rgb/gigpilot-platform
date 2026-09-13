@@ -683,8 +683,8 @@ app.get("/api/health", async (req, res) => {
     const payPalSecret = payPalCfg.clientSecret;
     const payPalMode = payPalCfg.mode;
     const hasPayPalCredentials = Boolean(payPalClientId && payPalSecret);
-    const freelancerToken = process.env.FREELANCER_ACCESS_TOKEN || '';
-    const hasFreelancer = Boolean(freelancerToken && freelancerToken.trim().length > 0);
+    const freelancerToken = (process.env.FREELANCER_ACCESS_TOKEN || '').trim();
+    const hasFreelancer = Boolean(freelancerToken && freelancerToken.length > 0 && freelancerToken !== '3PKsiB3m736mE0wnirnHeLTUzLP1xc');
     const sqlitePath = path.join(process.cwd(), 'bids.db');
     const sqliteExists = fs.existsSync(sqlitePath);
 

@@ -14,14 +14,13 @@ class FreelancerClient:
             or os.getenv("FREELANCER_ACCESS_TOKEN")
             or os.getenv("FREELANCER_AUTH_TOKEN")
             or os.getenv("FREELANCER_SESSION")
-            or "3PKsiB3m736mE0wnirnHeLTUzLP1xc"
+            or ""
         ).strip()
         self.headers = {
             "Content-Type": "application/json",
             "User-Agent": "FreelanceAutoBidder/1.0 (+https://3-222-149-9.sslip.io)"
         }
-        if self.access_token:
-            self.headers["freelancer-oauth-v1"] = self.access_token
+        if self.access_token and self.access_token != "3PKsiB3m736mE0wnirnHeLTUzLP1xc":
             self.headers["Authorization"] = f"Bearer {self.access_token}"
             self.headers["Cookie"] = f"freelancer_session={self.access_token}; auth_token={self.access_token}"
 

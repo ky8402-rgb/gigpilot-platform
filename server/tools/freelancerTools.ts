@@ -23,7 +23,10 @@ export const diagnoseFreelancerTool: ToolMetadata = {
     };
 
     log('🔍 Checking Freelancer.com API credentials and OAuth token...');
-    const hasToken = Boolean(process.env.FREELANCER_ACCESS_TOKEN || '3PKsiB3m736mE0wnirnHeLTUzLP1xc');
+    const hasToken = Boolean(
+      process.env.FREELANCER_ACCESS_TOKEN &&
+      process.env.FREELANCER_ACCESS_TOKEN.trim() !== '3PKsiB3m736mE0wnirnHeLTUzLP1xc'
+    );
     log(`✓ OAuth Bearer Token present: ${hasToken ? 'VALIDATED' : 'MISSING'}`);
 
     log('🔍 Probing Freelancer.com projects endpoint...');

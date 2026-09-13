@@ -42,13 +42,19 @@ export function getFreelancerRequestHeaders(customHeaders: Record<string, string
   const tokenMatch = dynamicCookies ? dynamicCookies.match(/(?:freelancer_session|auth_token)=([^;\s]+)/i) : null;
   const cookieToken = tokenMatch?.[1];
 
-  const oauthToken = (
+  const candidateToken = (
     cookieToken ||
     process.env.FREELANCER_ACCESS_TOKEN ||
     process.env.FREELANCER_AUTH_TOKEN ||
     process.env.FREELANCER_SESSION ||
-    '3PKsiB3m736mE0wnirnHeLTUzLP1xc'
+    ''
   ).trim();
+
+  const isLiveToken = Boolean(
+    candidateToken &&
+    candidateToken.length > 0 &&
+    candidateToken !== '3PKsiB3m736mE0wnirnHeLTUzLP1xc'
+  );
 
   const headers: Record<string, string> = {
     'Content-Type': 'application/json',
@@ -57,14 +63,9 @@ export function getFreelancerRequestHeaders(customHeaders: Record<string, string
     ...customHeaders,
   };
 
-  if (!oauthToken || oauthToken === '') {
-    console.warn(
-      '[Freelancer Auth Warning] FREELANCER_ACCESS_TOKEN is missing or empty. ' +
-      'Please obtain your official OAuth token from https://accounts.freelancer.com/settings/develop and set it in your environment variables.'
-    );
-  } else {
+  if (isLiveToken) {
     // Standard OAuth 2.0 Bearer Authorization header
-    headers['Authorization'] = `Bearer ${oauthToken}`;
+    headers['Authorization'] = `Bearer ${candidateToken}`;
     if (dynamicCookies) {
       headers['Cookie'] = dynamicCookies;
     }
@@ -73,14 +74,18 @@ export function getFreelancerRequestHeaders(customHeaders: Record<string, string
   return headers;
 }
 
+export interface FreelancerRequestOptions extends AxiosRequestConfig {
+  silent?: boolean;
+}
+
 /**
  * Safe Axios wrapper for Freelancer.com requests.
- * Handles 401/403/session-expiration errors gracefully with console warnings
- * to ensure background processes never crash the web service.
+ * Handles 401/403/session-expiration errors gracefully with telemetry logs
+ * to ensure background processes never crash the web service or flood error monitors.
  */
 export async function executeFreelancerRequest<T = any>(
   url: string,
-  options: AxiosRequestConfig = {}
+  options: FreelancerRequestOptions = {}
 ): Promise<{ success: boolean; data?: T; status?: number; error?: string }> {
   const requestHeaders = getFreelancerRequestHeaders(options.headers as Record<string, string>);
 
@@ -101,16 +106,17 @@ export async function executeFreelancerRequest<T = any>(
     const status = error?.response?.status;
     const responseBody = error?.response?.data;
 
-    if (status === 401 || status === 403) {
-      console.warn(
-        `[Freelancer Auth Warning] Authentication failed (HTTP ${status}) from ${url}. ` +
-        `Your FREELANCER_ACCESS_TOKEN may be invalid or expired. ` +
-        `Please generate an official token at https://accounts.freelancer.com/settings/develop. Service will continue running.`
-      );
-    } else if (error.code === 'ECONNABORTED' || error.message?.includes('timeout')) {
-      console.warn(`[Freelancer Network Notice] Request timed out while accessing ${url}.`);
-    } else {
-      console.warn(`[Freelancer Request Notice] Request to ${url} failed: ${error.message}`);
+    if (!options.silent) {
+      if (status === 401 || status === 403) {
+        console.info(
+          `[Freelancer Auth Notice] Authentication status HTTP ${status} from ${url}. ` +
+          `An official token can be configured at https://accounts.freelancer.com/settings/develop.`
+        );
+      } else if (error.code === 'ECONNABORTED' || error.message?.includes('timeout')) {
+        console.info(`[Freelancer Network Notice] Request timed out while accessing ${url}.`);
+      } else {
+        console.info(`[Freelancer Request Notice] Request to ${url} notice: ${error.message}`);
+      }
     }
 
     return {
@@ -177,27 +183,34 @@ export async function verifyFreelancerAuthStatus(): Promise<{
     process.env.FREELANCER_ACCESS_TOKEN ||
     process.env.FREELANCER_AUTH_TOKEN ||
     process.env.FREELANCER_SESSION ||
-    '3PKsiB3m736mE0wnirnHeLTUzLP1xc'
+    ''
   ).trim();
-  const tokenPresent = Boolean(tokenString && tokenString.length > 0);
 
-  if (!tokenPresent) {
+  const isConfigured = Boolean(
+    tokenString &&
+    tokenString.length > 0 &&
+    tokenString !== '3PKsiB3m736mE0wnirnHeLTUzLP1xc'
+  );
+
+  if (!isConfigured) {
     return {
       configured: false,
       tokenPresent: false,
       status: 'missing',
-      message: 'FREELANCER_ACCESS_TOKEN is not configured in environment variables. Obtain your token at https://accounts.freelancer.com/settings/develop',
+      message: 'Freelancer Personal Access Token is not yet configured. Please generate an official token at https://accounts.freelancer.com/settings/develop and configure it in Settings.',
     };
   }
 
   // Attempt official test call to verify authentication: /api/users/0.1/self
   let testResult = await executeFreelancerRequest(`${getFreelancerApiBase()}/users/0.1/self`, {
     method: 'GET',
+    silent: true,
   });
 
   if (!testResult.success && testResult.status === 404) {
     testResult = await executeFreelancerRequest(`${getFreelancerApiBase()}/users/0.1/users/self`, {
       method: 'GET',
+      silent: true,
     });
   }
 
@@ -217,7 +230,7 @@ export async function verifyFreelancerAuthStatus(): Promise<{
       configured: true,
       tokenPresent: true,
       status: 'expired',
-      message: 'Freelancer authentication failed (HTTP 401/403). Access token may have expired or is invalid.',
+      message: 'Freelancer token expired or unauthorized (HTTP 401/403). Please renew your Personal Access Token in Settings.',
     };
   }
 
@@ -261,6 +274,15 @@ export async function testFreelancerToken(candidateToken: string): Promise<{
       status: 'missing',
       latencyMs: 0,
       message: 'No Freelancer API token provided.',
+    };
+  }
+
+  if (token === '3PKsiB3m736mE0wnirnHeLTUzLP1xc') {
+    return {
+      valid: false,
+      status: 'missing',
+      latencyMs: 0,
+      message: 'This is the sample demo token. Please paste your official Personal Access Token from https://accounts.freelancer.com/settings/develop.',
     };
   }
 
@@ -334,13 +356,28 @@ export async function getFreelancerTokenDetails(): Promise<{
     process.env.FREELANCER_ACCESS_TOKEN ||
     process.env.FREELANCER_AUTH_TOKEN ||
     process.env.FREELANCER_SESSION ||
-    '3PKsiB3m736mE0wnirnHeLTUzLP1xc'
+    ''
   ).trim();
 
   const isCustomToken = Boolean(
-    process.env.FREELANCER_ACCESS_TOKEN &&
-    process.env.FREELANCER_ACCESS_TOKEN.trim() !== '3PKsiB3m736mE0wnirnHeLTUzLP1xc'
+    currentToken &&
+    currentToken.length > 0 &&
+    currentToken !== '3PKsiB3m736mE0wnirnHeLTUzLP1xc'
   );
+
+  if (!isCustomToken) {
+    return {
+      configured: false,
+      tokenPresent: false,
+      maskedToken: '',
+      username: undefined,
+      userId: undefined,
+      status: 'missing',
+      message: 'Freelancer Personal Access Token not yet configured. Please generate an official token at https://accounts.freelancer.com/settings/develop.',
+      isCustomToken: false,
+      developerPortalUrl: 'https://accounts.freelancer.com/settings/develop',
+    };
+  }
 
   const verification = await testFreelancerToken(currentToken);
 
@@ -352,7 +389,7 @@ export async function getFreelancerTokenDetails(): Promise<{
     userId: verification.userId || 94426143,
     status: verification.status,
     message: verification.message,
-    isCustomToken,
+    isCustomToken: true,
     developerPortalUrl: 'https://accounts.freelancer.com/settings/develop',
   };
 }

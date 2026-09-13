@@ -77,7 +77,7 @@ const CHECKS = [
     name: 'Freelancer.com OAuth 2.0 Access Token',
     category: 'freelancer',
     required: false,
-    default: '3PKsiB3m736mE0wnirnHeLTUzLP1xc',
+    default: '',
     hint: 'Active OAuth 2.0 Bearer token for automated Freelancer.com bid submission.'
   },
   {

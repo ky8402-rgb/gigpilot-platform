@@ -49,7 +49,7 @@ export const LeadNotificationsHub: React.FC<LeadNotificationsHubProps> = ({
 
   // Cookie Form States
   const [upworkCookieInput, setUpworkCookieInput] = useState('');
-  const [freelancerCookieInput, setFreelancerCookieInput] = useState('freelancer_session=3PKsiB3m736mE0wnirnHeLTUzLP1xc; auth_token=3PKsiB3m736mE0wnirnHeLTUzLP1xc');
+  const [freelancerCookieInput, setFreelancerCookieInput] = useState('');
   const [isSavingCookies, setIsSavingCookies] = useState(false);
 
   // Notification Config Form States

@@ -283,9 +283,8 @@ export const FreelancerTokenModal: React.FC<FreelancerTokenModalProps> = ({
     if (showToast) showToast('Redirect URI copied to clipboard!', 'info');
   };
 
-  const handleLoadDefaultSession = () => {
-    setTokenInput('3PKsiB3m736mE0wnirnHeLTUzLP1xc');
-    if (showToast) showToast('Loaded verified active session token (@kundank879)', 'info');
+  const handleOpenDeveloperPortal = () => {
+    window.open('https://accounts.freelancer.com/settings/develop', '_blank');
   };
 
   if (!isOpen) return null;
@@ -427,10 +426,11 @@ export const FreelancerTokenModal: React.FC<FreelancerTokenModalProps> = ({
                   </label>
                   <button
                     type="button"
-                    onClick={handleLoadDefaultSession}
-                    className="text-[11px] text-blue-400 hover:text-blue-300 underline underline-offset-2 transition-colors cursor-pointer"
+                    onClick={handleOpenDeveloperPortal}
+                    className="text-[11px] text-blue-400 hover:text-blue-300 underline underline-offset-2 transition-colors cursor-pointer flex items-center gap-1"
                   >
-                    Load Default (@kundank879)
+                    <span>Get Token from Developer Portal</span>
+                    <i className="fas fa-external-link-alt text-[9px]"></i>
                   </button>
                 </div>
 
@@ -439,7 +439,7 @@ export const FreelancerTokenModal: React.FC<FreelancerTokenModalProps> = ({
                     rows={3}
                     value={tokenInput}
                     onChange={(e) => setTokenInput(e.target.value)}
-                    placeholder="Paste your official Freelancer OAuth2 Personal Access Token (e.g. 3PKsiB3m736mE0wnirnHeLTUzLP1xc)"
+                    placeholder="Paste your official Freelancer OAuth2 Personal Access Token from accounts.freelancer.com/settings/develop"
                     className="w-full bg-[#161c2d] border border-[#262f48] rounded-xl p-3 text-xs text-white placeholder-slate-500 font-mono focus:outline-none focus:border-blue-500 transition-colors pr-10"
                   />
                   {tokenInput && (
