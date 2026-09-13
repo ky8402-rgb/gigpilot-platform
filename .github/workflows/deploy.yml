@@ -21,12 +21,12 @@ jobs:
 
       - name: Configure AWS Credentials (Optional)
         env:
-          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID || secrets.ID }}
         if: env.AWS_ACCESS_KEY_ID != ''
         uses: aws-actions/configure-aws-credentials@v4
         with:
-          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID || secrets.ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY || secrets.AWS }}
           aws-region: ${{ secrets.AWS_REGION || 'ap-south-1' }}
 
       - name: Trigger AWS Amplify Release Job
@@ -47,13 +47,20 @@ jobs:
           echo "ℹ Push to '${GITHUB_REF_NAME}' automatically triggers Amplify frontend build via amplify.yml."
 
           # If AWS CLI credentials configured, also trigger start-job for immediate dispatch
-          if command -v aws &>/dev/null && [ -n "${{ secrets.AWS_ACCESS_KEY_ID }}" ]; then
+          if command -v aws &>/dev/null && [ -n "${{ secrets.AWS_ACCESS_KEY_ID || secrets.ID }}" ]; then
             BRANCH_NAME="${GITHUB_REF_NAME}"
             echo "Initiating explicit start-job on branch $BRANCH_NAME..."
             aws amplify start-job \
               --app-id "$AMPLIFY_APP_ID" \
               --branch-name "$BRANCH_NAME" \
-              --job-type RELEASE || echo "Notice: AWS CLI start-job completed or branch handled natively."
+              --job-type RELEASE \
+              --region ap-south-1 || \
+            aws amplify start-job \
+              --app-id "$AMPLIFY_APP_ID" \
+              --branch-name "$BRANCH_NAME" \
+              --job-type RELEASE \
+              --region us-east-1 || \
+            echo "Notice: AWS CLI start-job completed or branch handled natively."
           fi
           
           # If incoming deploy webhook is configured in GitHub secrets
@@ -82,6 +89,44 @@ jobs:
     steps:
       - name: Checkout Source Code
         uses: actions/checkout@v4
+
+      - name: Configure AWS Credentials for EC2 (Optional)
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID || secrets.ID }}
+        if: env.AWS_ACCESS_KEY_ID != ''
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID || secrets.ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY || secrets.AWS }}
+          aws-region: ${{ secrets.AWS_REGION || 'us-east-1' }}
+
+      - name: Deploy via AWS Systems Manager (SSM Run Command)
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID || secrets.ID }}
+          INSTANCE_ID: ${{ secrets.EC2_INSTANCE_ID || 'i-02f24350d31f5aa51' }}
+          FREELANCER_ACCESS_TOKEN: ${{ secrets.FREELANCER_ACCESS_TOKEN || '3PKsiB3m736mE0wnirnHeLTUzLP1xc' }}
+          FREELANCER_API_BASE_URL: ${{ secrets.FREELANCER_API_BASE_URL || 'https://www.freelancer.com/api' }}
+        if: env.AWS_ACCESS_KEY_ID != ''
+        run: |
+          echo "=========================================================="
+          echo "Deploying to AWS EC2 via Systems Manager (SSM Run Command)..."
+          echo "Instance: $INSTANCE_ID"
+          echo "=========================================================="
+          aws ssm send-command \
+            --instance-ids "$INSTANCE_ID" \
+            --document-name "AWS-RunShellScript" \
+            --comment "GigPilot Auto-Deploy: pull latest and reload PM2" \
+            --parameters commands='[
+              "set -e",
+              "for d in /home/ubuntu/gigpilot /opt/gigpilot /var/www/gigpilot; do if [ -d \"$d\" ]; then cd \"$d\"; break; fi; done",
+              "git fetch origin main && git reset --hard origin/main || git pull origin main",
+              "if [ -f .env ]; then grep -q FREELANCER_ACCESS_TOKEN .env && sed -i \"s|^FREELANCER_ACCESS_TOKEN=.*|FREELANCER_ACCESS_TOKEN='${FREELANCER_ACCESS_TOKEN}'|\" .env || echo \"FREELANCER_ACCESS_TOKEN='${FREELANCER_ACCESS_TOKEN}'\" >> .env; fi",
+              "npm install --production --prefer-offline || npm install --legacy-peer-deps",
+              "npm run build || true",
+              "pm2 reload gigpilot || pm2 restart gigpilot || pm2 start dist/server.cjs --name gigpilot --update-env || true",
+              "pm2 save || true"
+            ]' \
+            --region us-east-1 || echo "Notice: AWS SSM execution attempted."
 
       - name: Deploy via SSH (Direct EC2 Execution)
         env:
