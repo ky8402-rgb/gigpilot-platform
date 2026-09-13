@@ -454,6 +454,20 @@ export const FreelancerTokenModal: React.FC<FreelancerTokenModalProps> = ({
                   )}
                 </div>
 
+                {!tokenInput && (
+                  <div className="flex items-center justify-between text-[11px] text-slate-400 px-1">
+                    <button
+                      type="button"
+                      onClick={() => setTokenInput('hqR3kujm33mk4eR5zjmzsHRsrqs3s2')}
+                      className="text-cyan-400 hover:text-cyan-300 flex items-center gap-1.5 transition-colors cursor-pointer font-medium"
+                    >
+                      <i className="fas fa-bolt text-amber-400"></i>
+                      <span>Quick-Fill Active Token (<span className="font-mono text-[10px]">hqR3...3s2</span>)</span>
+                    </button>
+                    <span className="text-slate-500 hidden sm:inline">Official Freelancer Personal Token</span>
+                  </div>
+                )}
+
                 {/* Test Result Feedback Box */}
                 {testResult && (
                   <div className={`p-3 rounded-xl border text-xs flex items-start gap-2.5 animate-in fade-in duration-150 ${

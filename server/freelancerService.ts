@@ -33,6 +33,43 @@ export function getFreelancerApiBase(): string {
   return raw.endsWith('/api') ? raw : `${raw}/api`;
 }
 
+export function getSavedConfigToken(): string {
+  try {
+    const configPath = path.join(process.cwd(), 'bidding_config.json');
+    if (fs.existsSync(configPath)) {
+      const data = JSON.parse(fs.readFileSync(configPath, 'utf-8'));
+      if (data && data.freelancerAccessToken) {
+        return String(data.freelancerAccessToken).trim();
+      }
+    }
+  } catch (_) {}
+  return '';
+}
+
+const DUMMY_PLACEHOLDER_TOKEN = '3PKsiB3m736mE0wnirnHeLTUzLP1xc';
+
+export function resolveActiveFreelancerToken(): string {
+  const saved = getSavedConfigToken();
+  if (saved && saved !== DUMMY_PLACEHOLDER_TOKEN) {
+    return saved;
+  }
+  const env1 = (process.env.FREELANCER_ACCESS_TOKEN || '').trim();
+  if (env1 && env1 !== DUMMY_PLACEHOLDER_TOKEN) return env1;
+  const env2 = (process.env.FREELANCER_AUTH_TOKEN || '').trim();
+  if (env2 && env2 !== DUMMY_PLACEHOLDER_TOKEN) return env2;
+  const env3 = (process.env.FREELANCER_SESSION || '').trim();
+  if (env3 && env3 !== DUMMY_PLACEHOLDER_TOKEN) return env3;
+  return '';
+}
+
+// Auto-hydrate environment on startup if bidding_config.json or valid token exists
+const savedStartupToken = resolveActiveFreelancerToken();
+if (savedStartupToken) {
+  process.env.FREELANCER_ACCESS_TOKEN = savedStartupToken;
+  process.env.FREELANCER_AUTH_TOKEN = savedStartupToken;
+  process.env.FREELANCER_SESSION = savedStartupToken;
+}
+
 /**
  * Constructs authenticated headers for Freelancer.com API requests using standard OAuth 2.0 Bearer tokens.
  * Legacy v0.1 custom headers (freelancer-oauth-v1) are completely deprecated and removed.
@@ -44,9 +81,7 @@ export function getFreelancerRequestHeaders(customHeaders: Record<string, string
 
   const candidateToken = (
     cookieToken ||
-    process.env.FREELANCER_ACCESS_TOKEN ||
-    process.env.FREELANCER_AUTH_TOKEN ||
-    process.env.FREELANCER_SESSION ||
+    resolveActiveFreelancerToken() ||
     ''
   ).trim();
 
@@ -352,12 +387,7 @@ export async function getFreelancerTokenDetails(): Promise<{
   isCustomToken: boolean;
   developerPortalUrl: string;
 }> {
-  const currentToken = (
-    process.env.FREELANCER_ACCESS_TOKEN ||
-    process.env.FREELANCER_AUTH_TOKEN ||
-    process.env.FREELANCER_SESSION ||
-    ''
-  ).trim();
+  const currentToken = resolveActiveFreelancerToken();
 
   const isCustomToken = Boolean(
     currentToken &&

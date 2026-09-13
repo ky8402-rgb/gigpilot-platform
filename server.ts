@@ -1,9 +1,23 @@
 import dotenv from "dotenv";
-dotenv.config();
+dotenv.config({ override: true });
 import express from "express";
 import cookieParser from "cookie-parser";
 import path from "path";
 import fs from "fs";
+
+// Precedence for user-saved Freelancer tokens over container placeholder envs
+try {
+  const cfgPath = path.join(process.cwd(), 'bidding_config.json');
+  if (fs.existsSync(cfgPath)) {
+    const cfg = JSON.parse(fs.readFileSync(cfgPath, 'utf-8'));
+    if (cfg.freelancerAccessToken && cfg.freelancerAccessToken !== '3PKsiB3m736mE0wnirnHeLTUzLP1xc') {
+      process.env.FREELANCER_ACCESS_TOKEN = cfg.freelancerAccessToken;
+      process.env.FREELANCER_AUTH_TOKEN = cfg.freelancerAccessToken;
+      process.env.FREELANCER_SESSION = cfg.freelancerAccessToken;
+    }
+  }
+} catch (_) {}
+
 import cron from "node-cron";
 import rateLimit from "express-rate-limit";
 

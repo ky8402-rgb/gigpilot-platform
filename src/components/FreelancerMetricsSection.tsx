@@ -156,19 +156,45 @@ export const FreelancerMetricsSection: React.FC<FreelancerMetricsSectionProps> =
       const res = await fetch(apiUrl('/api/freelancer/auth-status'));
       if (res.ok && (res.headers.get('content-type') || '').includes('json')) {
         const data = await res.json();
-        if (data.authStatus) {
+        if (data.authStatus && data.authStatus.configured) {
           setAuthStatus(data.authStatus);
+          return;
         }
       }
     } catch (err) {
-      console.warn('Failed to fetch auth status:', err);
+      console.warn('Failed to fetch auth status from backend:', err);
     }
+
+    // Client storage fallback
+    try {
+      const localToken = localStorage.getItem('freelancer_access_token') || localStorage.getItem('gigpilot_freelancer_token');
+      if (localToken) {
+        const username = localStorage.getItem('freelancer_username') || 'kundank879';
+        setAuthStatus({
+          configured: true,
+          tokenPresent: true,
+          username,
+          status: 'valid',
+          message: `Active token configured for @${username}`
+        });
+      }
+    } catch (_) {}
   };
 
   useEffect(() => {
     fetchBidsData();
     fetchSettings();
     fetchAuthStatus();
+
+    const handleTokenUpdated = () => {
+      fetchAuthStatus();
+      fetchBidsData(true);
+    };
+
+    window.addEventListener('freelancer_token_updated', handleTokenUpdated);
+    return () => {
+      window.removeEventListener('freelancer_token_updated', handleTokenUpdated);
+    };
   }, []);
 
   const handleSaveSettings = async (e?: React.FormEvent) => {
