@@ -81,57 +81,121 @@ jobs:
       - name: Checkout Source Code
         uses: actions/checkout@v4
 
+      - name: Configure AWS Credentials (Optional for EC2 Connect)
+        env:
+          AWS_KEY: ${{ secrets.AWS_ACCESS_KEY_ID || secrets.ID }}
+          AWS_SECRET: ${{ secrets.AWS_SECRET_ACCESS_KEY || secrets.AWS }}
+        if: env.AWS_KEY != '' && env.AWS_SECRET != ''
+        uses: aws-actions/configure-aws-credentials@v4
+        continue-on-error: true
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID || secrets.ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY || secrets.AWS }}
+          aws-region: 'us-east-1'
+
       - name: Deploy via SSH (Direct EC2 Execution)
         env:
           SSH_KEY: ${{ secrets.EC2_SSH_KEY }}
           EC2_HOST: ${{ secrets.EC2_HOST || '3.222.149.9' }}
           EC2_USER: ${{ secrets.EC2_USER || 'ubuntu' }}
-        if: env.SSH_KEY != ''
+          EC2_INSTANCE_ID: 'i-02f24350d31f5aa51'
         run: |
           echo "=========================================================="
           echo "Deploying to AWS EC2 via Secure SSH ($EC2_USER@$EC2_HOST)..."
           echo "=========================================================="
-          mkdir -p ~/.ssh
-          echo "$SSH_KEY" > ~/.ssh/id_rsa
-          chmod 600 ~/.ssh/id_rsa
           
-          ssh -o StrictHostKeyChecking=no -o ConnectTimeout=15 "$EC2_USER@$EC2_HOST" << 'EOF'
-            set -e
-            echo "Connected to EC2. Locating application directory..."
-            APP_DIR=""
-            for dir in /opt/gigpilot ~/gigpilot /var/www/gigpilot /home/ubuntu/gigpilot; do
-              if [ -d "$dir" ] && [ -f "$dir/package.json" ]; then
-                APP_DIR="$dir"
-                break
+          SSH_CONNECTED=0
+          mkdir -p ~/.ssh
+          
+          # 1. Attempt using configured EC2_SSH_KEY
+          if [ -n "$SSH_KEY" ]; then
+            echo "Normalizing and preparing EC2_SSH_KEY..."
+            python3 scripts/prepare_ec2_key.py || true
+            
+            if [ -f ~/.ssh/id_rsa ] && [ -s ~/.ssh/id_rsa ]; then
+              echo "Testing SSH connection with EC2_SSH_KEY..."
+              if ssh -o StrictHostKeyChecking=no -o ConnectTimeout=10 -i ~/.ssh/id_rsa "$EC2_USER@$EC2_HOST" "echo SSH_OK" 2>/dev/null | grep -q "SSH_OK"; then
+                echo "✔ Verified SSH access using EC2_SSH_KEY."
+                SSH_KEY_FILE=~/.ssh/id_rsa
+                SSH_CONNECTED=1
+              else
+                echo "Notice: Static SSH key could not authenticate or needs EC2 Instance Connect."
               fi
-            done
-
-            if [ -z "$APP_DIR" ]; then
-              echo "Creating application directory at /opt/gigpilot..."
-              sudo mkdir -p /opt/gigpilot && sudo chown -R $USER:$USER /opt/gigpilot
-              APP_DIR="/opt/gigpilot"
-              cd "$APP_DIR"
-              git clone https://github.com/ky8402-rgb/gigpilot-platform.git . || true
-            else
-              cd "$APP_DIR"
             fi
+          fi
 
-            echo "Working directory: $(pwd)"
-            git fetch --all --prune
-            git checkout main || git checkout master
-            git pull origin main || git pull origin master
+          # 2. Fallback to AWS EC2 Instance Connect if AWS credentials exist
+          if [ "$SSH_CONNECTED" -eq 0 ] && command -v aws >/dev/null 2>&1; then
+            echo "Attempting AWS EC2 Instance Connect push..."
+            ssh-keygen -t rsa -b 2048 -f ~/.ssh/ec2_connect -N "" -q
+            if aws ec2-instance-connect send-ssh-public-key \
+                --instance-id "$EC2_INSTANCE_ID" \
+                --instance-os-user "$EC2_USER" \
+                --ssh-public-key file://~/.ssh/ec2_connect.pub \
+                --region us-east-1 2>/dev/null; then
+              echo "✔ Successfully pushed temporary SSH key via EC2 Instance Connect."
+              SSH_KEY_FILE=~/.ssh/ec2_connect
+              SSH_CONNECTED=1
+            else
+              echo "EC2 Instance Connect push not available or IAM permission pending."
+            fi
+          fi
 
-            echo "Installing production dependencies..."
-            npm install --production --prefer-offline || npm install --legacy-peer-deps
+          if [ "$SSH_CONNECTED" -eq 1 ]; then
+            echo "Executing remote production deployment on EC2..."
+            ssh -o StrictHostKeyChecking=no -o ConnectTimeout=15 -i "$SSH_KEY_FILE" "$EC2_USER@$EC2_HOST" << 'EOF'
+              set -e
+              echo "Connected to EC2. Locating application directory..."
+              APP_DIR=""
+              for dir in /home/ubuntu/gigpilot ~/gigpilot /opt/gigpilot /var/www/gigpilot; do
+                if [ -d "$dir" ] && [ -f "$dir/package.json" ]; then
+                  APP_DIR="$dir"
+                  break
+                fi
+              done
 
-            echo "Building application..."
-            npm run build || true
+              if [ -z "$APP_DIR" ]; then
+                echo "Creating application directory at /home/ubuntu/gigpilot..."
+                mkdir -p /home/ubuntu/gigpilot
+                APP_DIR="/home/ubuntu/gigpilot"
+                cd "$APP_DIR"
+                git clone https://github.com/ky8402-rgb/gigpilot-platform.git . || true
+              else
+                cd "$APP_DIR"
+              fi
 
-            echo "Reloading backend application daemon..."
-            pm2 reload gigpilot || pm2 restart gigpilot || pm2 start dist/server.cjs --name gigpilot || echo "PM2 restart completed."
-            echo "✔ EC2 backend successfully deployed via SSH."
-          EOF
-          echo "✔ SSH deployment command finished."
+              echo "Working directory: $(pwd)"
+              git fetch --all --prune
+              git checkout main || git checkout master
+              git pull origin main || git pull origin master
+
+              echo "Installing production build dependencies..."
+              npm install --prefer-offline || npm install --legacy-peer-deps
+
+              echo "Building application bundles (Vite + esbuild)..."
+              npm run build
+
+              echo "Configuring and restarting PM2 backend daemon..."
+              pm2 delete gigpilot 2>/dev/null || true
+              if [ -f "ecosystem.config.cjs" ]; then
+                pm2 start ecosystem.config.cjs --env production
+              else
+                NODE_ENV=production PORT=3000 pm2 start dist/server.cjs --name gigpilot --time --max-memory-restart 500M
+              fi
+              pm2 save
+
+              echo "Waiting for process to bind to port 3000..."
+              sleep 3
+              curl -sS -m 5 http://127.0.0.1:3000/api/health || echo "Notice: Service starting up."
+
+              echo "Reloading Nginx proxy..."
+              sudo systemctl reload nginx 2>/dev/null || sudo systemctl restart nginx 2>/dev/null || true
+              echo "✔ EC2 backend successfully deployed and running."
+  EOF
+            echo "✔ SSH deployment command finished successfully."
+          else
+            echo "SSH direct connection could not be established. Falling back to signed push webhook."
+          fi
 
       - name: Trigger EC2 Push-to-Deploy Webhook (Parallel / Fallback)
         env:

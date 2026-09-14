@@ -115,7 +115,7 @@ registerMLPredictor(async (health) => {
 startMLWorker();
 
 const app = express();
-const PORT = 3000;
+const PORT = process.env.PORT ? parseInt(process.env.PORT, 10) : 3000;
 
 // HTTP Response Compression Middleware (Brotli / Gzip)
 app.use(compression({ level: 6 }));
@@ -2063,9 +2063,20 @@ snapshotService.initialize().then(() => {
   console.error('[SnapshotService] Failed to initialize snapshot service:', err);
 });
 
+// Global Exception & Rejection Handlers to prevent silent process crashes
+process.on('uncaughtException', (err) => {
+  console.error('[GigPilot Error] Uncaught Exception:', err);
+});
+process.on('unhandledRejection', (reason) => {
+  console.error('[GigPilot Error] Unhandled Rejection:', reason);
+});
+
 // Start Server & Mount Vite Middleware
 async function startServer() {
-  if (process.env.NODE_ENV !== "production") {
+  const isCjsBundle = typeof __filename !== 'undefined' && __filename.endsWith('.cjs');
+  const isProduction = process.env.NODE_ENV === "production" || isCjsBundle;
+
+  if (!isProduction) {
     try {
       const { createServer: createViteServer } = await import("vite");
       const vite = await createViteServer({
@@ -2107,8 +2118,12 @@ async function startServer() {
     });
   }
 
-  app.listen(PORT, "0.0.0.0", () => {
-    console.log(`Server running on http://0.0.0.0:${PORT}`);
+  const server = app.listen(PORT, "0.0.0.0", () => {
+    console.log(`Server running on http://0.0.0.0:${PORT} (PID: ${process.pid}, Production: ${isProduction})`);
+  });
+
+  server.on('error', (err: any) => {
+    console.error(`[GigPilot Server Error] Failed to bind to port ${PORT}:`, err.message);
   });
 }
 
