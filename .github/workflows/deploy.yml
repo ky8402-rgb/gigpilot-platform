@@ -142,56 +142,8 @@ jobs:
           fi
 
           if [ "$SSH_CONNECTED" -eq 1 ]; then
-            echo "Executing remote production deployment on EC2..."
-            ssh -o StrictHostKeyChecking=no -o ConnectTimeout=15 -i "$SSH_KEY_FILE" "$EC2_USER@$EC2_HOST" << 'EOF'
-              set -e
-              echo "Connected to EC2. Locating application directory..."
-              APP_DIR=""
-              for dir in /home/ubuntu/gigpilot ~/gigpilot /opt/gigpilot /var/www/gigpilot; do
-                if [ -d "$dir" ] && [ -f "$dir/package.json" ]; then
-                  APP_DIR="$dir"
-                  break
-                fi
-              done
-
-              if [ -z "$APP_DIR" ]; then
-                echo "Creating application directory at /home/ubuntu/gigpilot..."
-                mkdir -p /home/ubuntu/gigpilot
-                APP_DIR="/home/ubuntu/gigpilot"
-                cd "$APP_DIR"
-                git clone https://github.com/ky8402-rgb/gigpilot-platform.git . || true
-              else
-                cd "$APP_DIR"
-              fi
-
-              echo "Working directory: $(pwd)"
-              git fetch --all --prune
-              git checkout main || git checkout master
-              git pull origin main || git pull origin master
-
-              echo "Installing production build dependencies..."
-              npm install --prefer-offline || npm install --legacy-peer-deps
-
-              echo "Building application bundles (Vite + esbuild)..."
-              npm run build
-
-              echo "Configuring and restarting PM2 backend daemon..."
-              pm2 delete gigpilot 2>/dev/null || true
-              if [ -f "ecosystem.config.cjs" ]; then
-                pm2 start ecosystem.config.cjs --env production
-              else
-                NODE_ENV=production PORT=3000 pm2 start dist/server.cjs --name gigpilot --time --max-memory-restart 500M
-              fi
-              pm2 save
-
-              echo "Waiting for process to bind to port 3000..."
-              sleep 3
-              curl -sS -m 5 http://127.0.0.1:3000/api/health || echo "Notice: Service starting up."
-
-              echo "Reloading Nginx proxy..."
-              sudo systemctl reload nginx 2>/dev/null || sudo systemctl restart nginx 2>/dev/null || true
-              echo "✔ EC2 backend successfully deployed and running."
-EOF
+            echo "Executing remote production deployment on EC2 via scripts/deploy-ec2.sh..."
+            ssh -o StrictHostKeyChecking=no -o ConnectTimeout=20 -i "$SSH_KEY_FILE" "$EC2_USER@$EC2_HOST" 'bash -s' < scripts/deploy-ec2.sh
             echo "✔ SSH deployment command finished successfully."
           else
             echo "SSH direct connection could not be established. Falling back to signed push webhook."
