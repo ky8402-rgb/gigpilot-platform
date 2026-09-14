@@ -6030,6 +6030,8 @@ export interface FreelancerOAuth2Config {
   scopes: string;
   authorizationUrl: string;
   hasRefreshToken: boolean;
+  refreshTokenRequired?: boolean;
+  refreshTokenNote?: string;
   maskedRefreshToken?: string;
   expiresAt?: string | null;
   authMode: 'personal_token' | 'oauth2_app';

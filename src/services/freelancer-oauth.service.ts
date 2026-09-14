@@ -539,9 +539,12 @@ export class FreelancerOAuthService {
     }
 
     const currentRefreshToken = this.getRefreshToken();
-    if (!currentRefreshToken) {
+    const currentAccessToken = this.getAccessToken();
+
+    // If neither token is present, we cannot authenticate
+    if (!currentRefreshToken && !currentAccessToken) {
       this.clearTokens();
-      throw new Error('No refresh token available. User must re-authenticate.');
+      throw new Error('No Freelancer access token or refresh token configured. User must authenticate.');
     }
 
     this.isRefreshing = true;
@@ -551,10 +554,10 @@ export class FreelancerOAuthService {
       const endpoint = `${backendBase}/api/freelancer/oauth2/refresh`;
 
       try {
-        console.log('[FreelancerOAuthService] Executing silent token refresh...');
+        console.log('[FreelancerOAuthService] Executing token refresh/verification...');
         const res = await axios.post(
           endpoint,
-          { refreshToken: currentRefreshToken },
+          { refreshToken: currentRefreshToken || undefined },
           {
             headers: { 'Content-Type': 'application/json' },
             timeout: 15000,
@@ -563,32 +566,44 @@ export class FreelancerOAuthService {
 
         const data = res.data;
         if (!data.success && !data.access_token) {
-          throw new Error(data.message || data.error || 'Failed to refresh OAuth token.');
+          throw new Error(data.message || data.error || 'Failed to refresh or verify token.');
         }
 
         const newTokens: Partial<FreelancerOAuthTokenData> = {
-          accessToken: data.access_token || data.accessToken,
+          accessToken: data.access_token || data.accessToken || currentAccessToken || '',
           refreshToken: data.refresh_token || data.refreshToken || currentRefreshToken,
           tokenType: data.token_type || 'Bearer',
-          expiresIn: data.expires_in || data.expiresIn || 3600,
+          expiresIn: data.expires_in || data.expiresIn || 315360000,
           username: data.username || this.inMemoryTokens?.username,
           userId: data.userId || data.user_id || this.inMemoryTokens?.userId,
           tokenStatus: data.tokenStatus || 'active',
         };
 
         const saved = this.saveTokens(newTokens);
-        console.log('[FreelancerOAuthService] Token refreshed successfully.');
+        console.log('[FreelancerOAuthService] Token verified/refreshed successfully.');
 
         // Flush queued requests
         this.processFailedQueue(null, saved.accessToken);
         return saved;
       } catch (err: any) {
+        // If we have an active personal access token, avoid destructive deletion
+        if (!currentRefreshToken && currentAccessToken) {
+          console.warn('[FreelancerOAuthService] Personal token verification note:', err.message);
+          const current = this.inMemoryTokens || this.loadTokensFromStorage();
+          if (current) {
+            this.processFailedQueue(null, current.accessToken);
+            return current;
+          }
+        }
+
         const errorMsg = err.response?.data?.message || err.message;
         console.error('[FreelancerOAuthService] Token refresh failed:', errorMsg);
 
         // Reject queued requests
         this.processFailedQueue(err, null);
-        this.clearTokens();
+        if (!currentAccessToken) {
+          this.clearTokens();
+        }
         throw err;
       } finally {
         this.isRefreshing = false;
@@ -663,10 +678,9 @@ export class FreelancerOAuthService {
         if (status === 401 && !originalRequest._retry) {
           const refreshToken = this.getRefreshToken();
 
-          // If no refresh token is stored, we cannot recover
+          // If no refresh token is stored, log and fail the request without destroying personal credentials
           if (!refreshToken) {
-            console.warn('[FreelancerOAuthService] 401 received and no refresh token present. Clearing auth.');
-            this.clearTokens();
+            console.warn('[FreelancerOAuthService] 401 received and no refresh token present.');
             return Promise.reject(error);
           }
 

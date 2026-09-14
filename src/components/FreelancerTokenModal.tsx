@@ -546,6 +546,10 @@ export const FreelancerTokenModal: React.FC<FreelancerTokenModalProps> = ({
                   <li>Click on your registered Application or create a new Developer App</li>
                   <li>Copy your <strong>Personal Access Token</strong> and paste it into the field above</li>
                 </ol>
+                <div className="pt-1.5 border-t border-[#20273a] text-[11px] text-emerald-400/90 flex items-center gap-1.5">
+                  <i className="fas fa-shield-alt text-emerald-400"></i>
+                  <span><strong>Automatic Status:</strong> Personal Access Tokens are permanent. You do <strong>not</strong> need a <code>FREELANCER_REFRESH_TOKEN</code> secret value.</span>
+                </div>
               </div>
             </div>
           )}
@@ -718,17 +722,23 @@ export const FreelancerTokenModal: React.FC<FreelancerTokenModalProps> = ({
                     OAuth2 Token Rotation &amp; Refresh
                   </div>
                   <span className={`text-[10px] font-mono px-2 py-0.5 rounded-full border ${
-                    oauthConfig?.hasRefreshToken
+                    oauthConfig?.authMode === 'personal_token' || oauthConfig?.hasRefreshToken
                       ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-300'
                       : 'bg-slate-700/30 border-slate-600 text-slate-400'
                   }`}>
-                    {oauthConfig?.hasRefreshToken ? '● Refresh Token Available' : 'No Refresh Token'}
+                    {oauthConfig?.authMode === 'personal_token'
+                      ? '● Permanent Token (No Refresh Needed)'
+                      : oauthConfig?.hasRefreshToken
+                      ? '● Refresh Token Available'
+                      : 'No Refresh Token'}
                   </span>
                 </div>
 
                 <div className="flex items-center justify-between pt-1">
                   <div className="text-[11px] text-[#8d98b8]">
-                    {oauthConfig?.expiresAt ? (
+                    {oauthConfig?.authMode === 'personal_token' ? (
+                      <span className="text-emerald-400/90 font-medium">Personal Access Token is active &amp; permanent; FREELANCER_REFRESH_TOKEN is not required.</span>
+                    ) : oauthConfig?.expiresAt ? (
                       <span>Expires: {new Date(oauthConfig.expiresAt).toLocaleTimeString()}</span>
                     ) : (
                       <span>Auto-refreshes tokens before expiration</span>
@@ -737,11 +747,11 @@ export const FreelancerTokenModal: React.FC<FreelancerTokenModalProps> = ({
                   <button
                     type="button"
                     onClick={handleRefreshToken}
-                    disabled={isRefreshingToken || !oauthConfig?.hasRefreshToken}
+                    disabled={isRefreshingToken}
                     className="py-1.5 px-3 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-semibold transition-all border border-slate-700 disabled:opacity-40 flex items-center gap-1.5 cursor-pointer"
                   >
                     <i className={`fas fa-sync-alt ${isRefreshingToken ? 'fa-spin text-cyan-400' : ''}`}></i>
-                    <span>{isRefreshingToken ? 'Refreshing...' : 'Rotate Token Now'}</span>
+                    <span>{isRefreshingToken ? 'Verifying...' : oauthConfig?.authMode === 'personal_token' ? 'Verify Active Token' : 'Rotate Token Now'}</span>
                   </button>
                 </div>
               </div>

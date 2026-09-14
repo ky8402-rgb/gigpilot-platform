@@ -554,6 +554,8 @@ export interface FreelancerOAuth2Config {
   scopes: string;
   authorizationUrl: string;
   hasRefreshToken: boolean;
+  refreshTokenRequired?: boolean;
+  refreshTokenNote?: string;
   maskedRefreshToken?: string;
   expiresAt?: string | null;
   authMode: 'personal_token' | 'oauth2_app';
@@ -631,6 +633,9 @@ export function getFreelancerOAuth2Config(): FreelancerOAuth2Config {
   });
   const authorizationUrl = `https://accounts.freelancer.com/oauth/authorize?${authUrlParams.toString()}`;
 
+  const hasRefreshToken = Boolean(refreshToken);
+  const isPersonalToken = authMode === 'personal_token' || (!clientId && Boolean(storedConfig.freelancerAccessToken || process.env.FREELANCER_ACCESS_TOKEN));
+
   return {
     oauthVersion: '2.0',
     legacyV01Deprecated: true,
@@ -640,12 +645,16 @@ export function getFreelancerOAuth2Config(): FreelancerOAuth2Config {
     redirectUri,
     scopes,
     authorizationUrl,
-    hasRefreshToken: Boolean(refreshToken),
+    hasRefreshToken,
+    refreshTokenRequired: !isPersonalToken,
+    refreshTokenNote: isPersonalToken
+      ? 'Permanent Personal Access Token active (FREELANCER_REFRESH_TOKEN is not required).'
+      : (hasRefreshToken ? 'OAuth2 Refresh Token active.' : 'No refresh token stored; re-authorization required if expired.'),
     maskedRefreshToken: refreshToken ? maskFreelancerToken(refreshToken) : undefined,
-    expiresAt,
+    expiresAt: isPersonalToken ? null : expiresAt,
     authMode,
     currentUsername,
-    tokenStatus: storedConfig.freelancerAccessToken ? 'active' : 'missing'
+    tokenStatus: storedConfig.freelancerAccessToken || process.env.FREELANCER_ACCESS_TOKEN ? 'active' : 'missing'
   };
 }
 
@@ -869,17 +878,44 @@ export async function refreshFreelancerOAuth2Token(): Promise<FreelancerOAuth2Ex
     ''
   ).trim();
 
-  if (!clientId || !clientSecret) {
-    return {
-      success: false,
-      message: 'Freelancer Client ID and Client Secret must be configured to refresh tokens.'
-    };
-  }
+  const personalAccessToken = (
+    process.env.FREELANCER_ACCESS_TOKEN ||
+    storedConfig.freelancerAccessToken ||
+    ''
+  ).trim();
 
-  if (!refreshToken) {
+  // If no refresh token or OAuth App credentials exist, verify Personal Access Token
+  if (!refreshToken || !clientId || !clientSecret) {
+    if (personalAccessToken) {
+      const verification = await testFreelancerToken(personalAccessToken);
+      if (verification.valid) {
+        return {
+          success: true,
+          message: `Personal Access Token is verified and active for @${verification.username || storedConfig.freelancerUsername || 'user'}. Permanent tokens do not require a refresh token (FREELANCER_REFRESH_TOKEN).`,
+          username: verification.username || storedConfig.freelancerUsername,
+          userId: verification.userId || storedConfig.freelancerUserId,
+          tokenStatus: 'active',
+          expiresIn: 315360000 // 10 years / permanent
+        };
+      } else {
+        return {
+          success: false,
+          message: `Personal Access Token verification returned: ${verification.message}. Please check or re-enter your Freelancer access token in Settings.`,
+          error: verification.message
+        };
+      }
+    }
+
+    if (!clientId || !clientSecret) {
+      return {
+        success: false,
+        message: 'No Freelancer token or OAuth2 credentials configured. Add your Freelancer Access Token in Settings.'
+      };
+    }
+
     return {
       success: false,
-      message: 'No Freelancer refresh token available. Complete initial OAuth2 authorization first.'
+      message: 'No Freelancer refresh token available. If using OAuth2, complete authorization first. If using a Personal Access Token, refresh tokens are not required.'
     };
   }
 
