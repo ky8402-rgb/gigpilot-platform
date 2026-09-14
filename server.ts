@@ -1798,11 +1798,24 @@ app.post("/api/platform/bid", async (req, res) => {
   }
 });
 
-// Get Live Work Orders
+// Get Live Work Orders (Optimized payload with pagination and edge caching headers)
 app.get("/api/work-orders", (req, res) => {
   try {
-    const orders = getAllLiveOrders();
-    res.json({ success: true, orders });
+    const rawLimit = req.query.limit;
+    const limit = rawLimit === 'all' ? undefined : (rawLimit ? Math.min(Math.max(Number(rawLimit) || 50, 1), 500) : 50);
+    const allOrders = getAllLiveOrders();
+    const total = allOrders.length;
+    const orders = limit ? allOrders.slice(0, limit) : allOrders;
+
+    // Set client and CDN cache headers: 15s fresh, 60s stale-while-revalidate
+    res.setHeader('Cache-Control', 'public, max-age=15, stale-while-revalidate=60');
+    res.json({
+      success: true,
+      orders,
+      workOrders: orders,
+      total,
+      limit: limit || total
+    });
   } catch (err: any) {
     res.status(500).json({ success: false, error: err.message });
   }

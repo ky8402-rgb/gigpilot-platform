@@ -18,10 +18,12 @@ import { LeadsTable } from './components/LeadsTable';
 import { WithdrawalSummary } from './components/WithdrawalSummary';
 import { SystemHealthConnectivityCard } from './components/SystemHealthConnectivityCard';
 import { HealthDashboard } from './components/HealthDashboard';
-import { FreelancerMetricsSection } from './components/FreelancerMetricsSection';
-import { SupportChat } from './components/SupportChat';
 import { WorkOrderTimeline } from './components/WorkOrderTimeline';
 import { AutonomousRevenuePanel } from './components/dashboard/AutonomousRevenuePanel';
+
+// Lazy-load heavy non-critical dashboard components to reduce initial JavaScript bundle
+const FreelancerMetricsSection = lazy(() => import('./components/FreelancerMetricsSection').then(m => ({ default: m.FreelancerMetricsSection })));
+const SupportChat = lazy(() => import('./components/SupportChat').then(m => ({ default: m.SupportChat })));
 
 // Secondary Tabs & Modals (Safe Lazy Loading with explicit typed named exports)
 const PlatformCredentialsModal = lazy(() => import('./components/PlatformCredentialsModal').then(m => ({ default: m.PlatformCredentialsModal })));
@@ -266,29 +268,29 @@ export default function App() {
       }
     }
 
-    // Run immediately on mount
-    syncBackendTelemetryStats();
-
-    // Auto-refresh every 60 seconds
+    // Periodic background telemetry sync every 60 seconds (initial load handled concurrently by loadAllInitialOrders)
     const statsTimer = setInterval(syncBackendTelemetryStats, 60000);
     return () => clearInterval(statsTimer);
   }, []);
 
-  // Load real backend work orders, stats, leads, and public live feeds on mount
+  // Load real backend work orders, stats, leads, and public live feeds on mount in parallel
   useEffect(() => {
     async function loadAllInitialOrders() {
       setIsBackendLoading(true);
       setBackendError(null);
 
-      // 1. Fetch live telemetry stats, bids, and leads directly from backend
       try {
-        const [statsData, bidsData, leadsData] = await Promise.all([
+        // High-Performance Parallel Batch: Fetch all primary above-the-fold UI data concurrently
+        const [statsResult, bidsResult, leadsResult, ordersResult, publicFeedsResult] = await Promise.allSettled([
           fetchBackendStats(),
           fetchBackendBids(50),
-          fetchBackendLeads(50)
+          fetchBackendLeads(50),
+          fetchBackendWorkOrders(25),
+          fetchAllPublicJobs()
         ]);
 
-        if (statsData) {
+        if (statsResult.status === 'fulfilled' && statsResult.value) {
+          const statsData = statsResult.value;
           setBackendStats(statsData);
           if (statsData.earned && statsData.earned > 0) {
             setTodayEarnings(statsData.earned);
@@ -298,35 +300,22 @@ export default function App() {
           }
         }
 
-        if (bidsData && bidsData.length > 0) {
-          setBackendBids(bidsData);
+        if (bidsResult.status === 'fulfilled' && bidsResult.value && bidsResult.value.length > 0) {
+          setBackendBids(bidsResult.value);
         }
 
-        if (leadsData && leadsData.length > 0) {
-          setBackendLeads(leadsData);
+        if (leadsResult.status === 'fulfilled' && leadsResult.value && leadsResult.value.length > 0) {
+          setBackendLeads(leadsResult.value);
         }
-      } catch (err: any) {
-        console.warn('Backend connection notice:', err);
-        setBackendError(`Unable to reach backend service (${getApiBaseUrl() || 'local server'}). Live metrics and bids may fallback to cached states.`);
-      } finally {
-        setIsBackendLoading(false);
-      }
-
-      // 2. Fetch combined Work Orders and Public Job Feeds
-      try {
-        const [backendOrders, publicFeeds] = await Promise.allSettled([
-          fetchBackendWorkOrders(),
-          fetchAllPublicJobs()
-        ]);
 
         const combinedNewOrders: WorkOrder[] = [];
 
-        if (backendOrders.status === 'fulfilled' && Array.isArray(backendOrders.value)) {
-          combinedNewOrders.push(...backendOrders.value);
+        if (ordersResult.status === 'fulfilled' && Array.isArray(ordersResult.value)) {
+          combinedNewOrders.push(...ordersResult.value);
         }
 
-        if (publicFeeds.status === 'fulfilled' && Array.isArray(publicFeeds.value) && publicFeeds.value.length > 0) {
-          const formattedPublicJobs: WorkOrder[] = publicFeeds.value.slice(0, 10).map((job) => ({
+        if (publicFeedsResult.status === 'fulfilled' && Array.isArray(publicFeedsResult.value) && publicFeedsResult.value.length > 0) {
+          const formattedPublicJobs: WorkOrder[] = publicFeedsResult.value.slice(0, 10).map((job) => ({
             id: job.id,
             externalId: String(job.id),
             title: job.title,
@@ -351,61 +340,53 @@ export default function App() {
             return [...newItems, ...prev];
           });
         }
-
-        // Fetch PostgreSQL / Cloud SQL Status
-        try {
-          const dbRes = await fetchDatabaseStatus();
-          setDbStatus(dbRes);
-        } catch {
-          // ignore
-        }
-
-        // Fetch User Profile & Verification Status
-        try {
-          const userRes = await fetchCurrentUser('ky8402@gmail.com');
-          if (userRes.success && userRes.user) {
-            setIsEmailVerified(userRes.user.isEmailVerified);
-            setUserEmail(userRes.user.email);
-          }
-        } catch {
-          // ignore
-        }
-
-        // Fetch Live PayPal Balance & Ledger
-        try {
-          const [balRes, txRes] = await Promise.allSettled([
-            fetchPayPalLiveBalance(),
-            fetchPayPalTransactions()
-          ]);
-
-          if (balRes.status === 'fulfilled' && balRes.value) {
-            setLivePayPalBalance(balRes.value);
-          }
-
-          if (txRes.status === 'fulfilled' && txRes.value?.transactions) {
-            const mappedTx: Transaction[] = txRes.value.transactions.slice(0, 20).map((t: any) => ({
-              id: t.id || `tx_${Math.random().toString(36).slice(2, 6)}`,
-              name: t.isLiveRest
-                ? `PayPal Cleared: ${t.payerName || 'Client'} (${t.description || 'Service'})`
-                : (t.description || `Milestone: ${t.payerName || 'Client'}`),
-              date: t.date ? new Date(t.date).toLocaleDateString() : 'Today',
-              amount: t.amount,
-              type: t.type || 'credit',
-              method: t.isLiveRest ? 'PayPal' : 'Direct',
-              referenceId: t.orderId || t.id,
-              isLiveRest: t.isLiveRest
-            }));
-            if (mappedTx.length > 0) {
-              setTransactions(mappedTx);
-            }
-          }
-        } catch (ppErr) {
-          console.warn('Initial PayPal sync error:', ppErr);
-        }
-      } catch (err) {
-        console.warn('Orders sync error:', err);
+      } catch (err: any) {
+        console.warn('Backend connection notice:', err);
+        setBackendError(`Unable to reach backend service (${getApiBaseUrl() || 'local server'}). Live metrics and bids may fallback to cached states.`);
+      } finally {
+        // UI is interactive and unblocked immediately!
+        setIsBackendLoading(false);
       }
+
+      // Secondary Background Batch: Asynchronously load non-blocking auxiliary telemetry & authentication
+      Promise.allSettled([
+        fetchDatabaseStatus(),
+        fetchCurrentUser('ky8402@gmail.com'),
+        fetchPayPalLiveBalance(),
+        fetchPayPalTransactions()
+      ]).then(([dbRes, userRes, balRes, txRes]) => {
+        if (dbRes.status === 'fulfilled' && dbRes.value) {
+          setDbStatus(dbRes.value);
+        }
+        if (userRes.status === 'fulfilled' && userRes.value?.success && userRes.value.user) {
+          setIsEmailVerified(userRes.value.user.isEmailVerified);
+          setUserEmail(userRes.value.user.email);
+        }
+        if (balRes.status === 'fulfilled' && balRes.value) {
+          setLivePayPalBalance(balRes.value);
+        }
+        if (txRes.status === 'fulfilled' && txRes.value?.transactions) {
+          const mappedTx: Transaction[] = txRes.value.transactions.slice(0, 20).map((t: any) => ({
+            id: t.id || `tx_${Math.random().toString(36).slice(2, 6)}`,
+            name: t.isLiveRest
+              ? `PayPal Cleared: ${t.payerName || 'Client'} (${t.description || 'Service'})`
+              : (t.description || `Milestone: ${t.payerName || 'Client'}`),
+            date: t.date ? new Date(t.date).toLocaleDateString() : 'Today',
+            amount: t.amount,
+            type: t.type || 'credit',
+            method: t.isLiveRest ? 'PayPal' : 'Direct',
+            referenceId: t.orderId || t.id,
+            isLiveRest: t.isLiveRest
+          }));
+          if (mappedTx.length > 0) {
+            setTransactions(mappedTx);
+          }
+        }
+      }).catch(bgErr => {
+        console.warn('Background telemetry sync notice:', bgErr);
+      });
     }
+
     loadAllInitialOrders();
   }, []);
 

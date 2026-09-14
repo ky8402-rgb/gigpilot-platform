@@ -239,14 +239,20 @@ router.get(['/workorders/:id/status', '/work-orders/:id/status'], async (req, re
 
 /**
  * GET /api/work-orders or /api/workorders
- * List all work orders with worker and job details including external project link
+ * List all work orders with worker and job details including external project link (optimized with pagination and caching)
  */
 router.get(['/work-orders', '/workorders'], async (req, res) => {
   try {
+    const rawLimit = req.query.limit;
+    const limit = rawLimit === 'all' ? undefined : (rawLimit ? Math.min(Math.max(Number(rawLimit) || 50, 1), 500) : 50);
+
+    // Cache-control header for browser and CDN caching
+    res.setHeader('Cache-Control', 'public, max-age=15, stale-while-revalidate=60');
+
     const pool = getPgPool();
     if (pool) {
       try {
-        const result = await pool.query(`
+        const queryText = `
           SELECT 
             wo.*,
             COALESCE(j.title, 'Auto-Dispatched Task') as title,
@@ -263,18 +269,28 @@ router.get(['/work-orders', '/workorders'], async (req, res) => {
           LEFT JOIN bids b ON wo.bid_id = b.id
           LEFT JOIN users u ON wo.worker_id = u.id
           ORDER BY wo.completion_deadline ASC
-        `);
+          ${limit ? `LIMIT ${limit}` : ''}
+        `;
+        const result = await pool.query(queryText);
         const workOrders = result.rows.map((wo) => ({
           ...wo,
           external_project_url: getFreelancerProjectUrl(wo.external_id),
         }));
-        return res.json({ success: true, workOrders });
+        return res.json({
+          success: true,
+          workOrders,
+          orders: workOrders,
+          count: workOrders.length,
+          limit: limit || 'all'
+        });
       } catch (err: any) {
         console.warn('⚠️ [WorkOrders Route] Postgres query fallback:', err.message);
       }
     }
 
-    const workOrders = Array.from(memoryStore.workOrders.values()).map((wo) => {
+    const allStoreOrders = Array.from(memoryStore.workOrders.values());
+    const sliced = limit ? allStoreOrders.slice(0, limit) : allStoreOrders;
+    const workOrders = sliced.map((wo) => {
       const job = memoryStore.jobs.get(wo.job_id);
       const worker = memoryStore.users.get(wo.worker_id);
       const bid = wo.bid_id ? memoryStore.bids.get(wo.bid_id) : null;
@@ -293,7 +309,13 @@ router.get(['/work-orders', '/workorders'], async (req, res) => {
       };
     });
 
-    return res.json({ success: true, workOrders });
+    return res.json({
+      success: true,
+      workOrders,
+      orders: workOrders,
+      count: workOrders.length,
+      limit: limit || 'all'
+    });
   } catch (err: any) {
     return res.status(500).json({ success: false, error: err.message });
   }

@@ -633,9 +633,9 @@ export async function submitLivePlatformBid(orderId: number | string, bidData: {
   }
 }
 
-export async function fetchBackendWorkOrders(): Promise<any[]> {
+export async function fetchBackendWorkOrders(limit: number = 50): Promise<any[]> {
   try {
-    const localRes = await fetch(apiUrl('/api/work-orders'));
+    const localRes = await fetch(apiUrl(`/api/work-orders?limit=${limit}`));
     if (localRes.ok) {
       const localData = await localRes.json();
       const rawList = Array.isArray(localData)

@@ -352,10 +352,14 @@ export async function checkPayPalConnectivity(): Promise<PayPalCheckResult> {
 }
 
 // ----------------------------------------------------------------------------
+// Cached external Freelancer link health to avoid blocking health checks with slow HTTP hops
+let cachedFreelancerLinkHealth: { result: any; timestamp: number } | null = null;
+const FREELANCER_CHECK_TTL_MS = 60000; // 60-second cache for external link probe
+
 // 4. Freelancer.com API Connectivity Check
 // ----------------------------------------------------------------------------
 export async function checkFreelancerConnectivity(): Promise<FreelancerCheckResult> {
-  const { accessToken, apiBase } = getFreelancerConfig();
+  const { accessToken } = getFreelancerConfig();
 
   if (!accessToken || accessToken.trim().length === 0) {
     return {
@@ -364,38 +368,48 @@ export async function checkFreelancerConnectivity(): Promise<FreelancerCheckResu
     };
   }
 
+  const now = Date.now();
+  if (cachedFreelancerLinkHealth && now - cachedFreelancerLinkHealth.timestamp < FREELANCER_CHECK_TTL_MS) {
+    return cachedFreelancerLinkHealth.result;
+  }
+
   try {
     // Perform link health check and token test
     const linkHealth = await checkFreelancerLinkHealth('sample-project');
+    let res: FreelancerCheckResult;
 
     if (linkHealth.isHealthy || linkHealth.httpStatus === 200 || linkHealth.httpStatus === 301 || linkHealth.httpStatus === 302 || linkHealth.httpStatus === 404) {
-      return {
+      res = {
         status: 'healthy',
         message: 'Connected (Freelancer.com reachable)',
         latencyMs: linkHealth.responseTimeMs,
         testedUrl: linkHealth.testedUrl,
       };
     } else if (linkHealth.httpStatus === 401 || linkHealth.httpStatus === 403) {
-      return {
+      res = {
         status: 'degraded',
         message: 'Freelancer token expired or unauthorized (HTTP 401)',
         latencyMs: linkHealth.responseTimeMs,
         testedUrl: linkHealth.testedUrl,
       };
     } else {
-      return {
+      res = {
         status: 'degraded',
         message: linkHealth.error || `Freelancer API returned HTTP ${linkHealth.httpStatus}`,
         latencyMs: linkHealth.responseTimeMs,
         testedUrl: linkHealth.testedUrl,
       };
     }
+    cachedFreelancerLinkHealth = { result: res, timestamp: now };
+    return res;
   } catch (err: any) {
-    return {
+    const fallbackRes: FreelancerCheckResult = {
       status: 'degraded',
       message: err.message || 'Freelancer.com network check failed',
       error: err.message,
     };
+    cachedFreelancerLinkHealth = { result: fallbackRes, timestamp: now };
+    return fallbackRes;
   }
 }
 
@@ -468,41 +482,41 @@ export async function checkQueueHealth(): Promise<QueueCheckResult> {
 export async function checkWorkOrders(): Promise<WorkOrdersCheckResult> {
   const now = new Date();
 
-  let allOrders: any[] = [];
   let stuckCount = 0;
   let failedPayments = 0;
-
-  const res = await safeExecutePgQuery(`
-    SELECT id, status, completion_deadline, payment_status, customer_confirmed, worker_marked_complete
-    FROM work_orders
-  `);
-  if (res && res.rows.length > 0) {
-    allOrders = res.rows;
-  } else {
-    allOrders = Array.from(memoryStore.workOrders.values());
-  }
-
   let totalActive = 0;
   let totalCompleted = 0;
 
-  for (const wo of allOrders) {
-    const isPendingOrActive = wo.status === 'assigned' || wo.status === 'in_progress';
-    const isOverdue = new Date(wo.completion_deadline) <= now;
-    const isFailedPayment = wo.payment_status === 'failed';
+  // Ultra-fast aggregate query avoids downloading thousands of work order rows over the network
+  const res = await safeExecutePgQuery(`
+    SELECT
+      COUNT(*) FILTER (WHERE status IN ('assigned', 'in_progress')) AS active_count,
+      COUNT(*) FILTER (WHERE status IN ('assigned', 'in_progress') AND completion_deadline <= NOW()) AS stuck_count,
+      COUNT(*) FILTER (WHERE status IN ('completed', 'paid')) AS completed_count,
+      COUNT(*) FILTER (WHERE payment_status = 'failed') AS failed_payments_count
+    FROM work_orders
+  `);
 
-    if (isPendingOrActive) {
-      totalActive++;
-      if (isOverdue) {
-        stuckCount++;
+  if (res && res.rows && res.rows.length > 0 && res.rows[0].active_count !== null) {
+    const row = res.rows[0];
+    totalActive = parseInt(row.active_count || '0', 10);
+    stuckCount = parseInt(row.stuck_count || '0', 10);
+    totalCompleted = parseInt(row.completed_count || '0', 10);
+    failedPayments = parseInt(row.failed_payments_count || '0', 10);
+  } else {
+    // Memory store fallback
+    const allOrders = Array.from(memoryStore.workOrders.values());
+    for (const wo of allOrders) {
+      const isPendingOrActive = wo.status === 'assigned' || wo.status === 'in_progress';
+      const isOverdue = new Date(wo.completion_deadline) <= now;
+      const isFailedPayment = wo.payment_status === 'failed';
+
+      if (isPendingOrActive) {
+        totalActive++;
+        if (isOverdue) stuckCount++;
       }
-    }
-
-    if (wo.status === 'completed' || wo.status === 'paid') {
-      totalCompleted++;
-    }
-
-    if (isFailedPayment) {
-      failedPayments++;
+      if (wo.status === 'completed' || wo.status === 'paid') totalCompleted++;
+      if (isFailedPayment) failedPayments++;
     }
   }
 
@@ -533,24 +547,32 @@ export async function checkWorkOrders(): Promise<WorkOrdersCheckResult> {
 export async function checkTransactions(): Promise<TransactionsCheckResult> {
   const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000);
 
-  let allTxs: any[] = [];
   let pendingOld = 0;
   let failedCount = 0;
+  let totalCount = 0;
 
-  const res = await safeExecutePgQuery(`SELECT id, status, created_at FROM transactions`);
-  if (res && res.rows.length > 0) {
-    allTxs = res.rows;
+  // Ultra-fast aggregate query avoids downloading entire transaction log
+  const res = await safeExecutePgQuery(`
+    SELECT
+      COUNT(*) FILTER (WHERE (status = 'pending' OR status = 'processing') AND created_at <= NOW() - INTERVAL '1 hour') AS pending_old,
+      COUNT(*) FILTER (WHERE status = 'failed') AS failed_count,
+      COUNT(*) AS total_count
+    FROM transactions
+  `);
+
+  if (res && res.rows && res.rows.length > 0 && res.rows[0].total_count !== null) {
+    const row = res.rows[0];
+    pendingOld = parseInt(row.pending_old || '0', 10);
+    failedCount = parseInt(row.failed_count || '0', 10);
+    totalCount = parseInt(row.total_count || '0', 10);
   } else {
-    allTxs = Array.from(memoryStore.transactions.values());
-  }
-
-  for (const tx of allTxs) {
-    const isOld = new Date(tx.created_at || Date.now()) <= oneHourAgo;
-    if ((tx.status === 'pending' || tx.status === 'processing') && isOld) {
-      pendingOld++;
-    }
-    if (tx.status === 'failed') {
-      failedCount++;
+    // Memory store fallback
+    const allTxs = Array.from(memoryStore.transactions.values());
+    totalCount = allTxs.length;
+    for (const tx of allTxs) {
+      const isOld = new Date(tx.created_at || Date.now()) <= oneHourAgo;
+      if ((tx.status === 'pending' || tx.status === 'processing') && isOld) pendingOld++;
+      if (tx.status === 'failed') failedCount++;
     }
   }
 
@@ -569,7 +591,7 @@ export async function checkTransactions(): Promise<TransactionsCheckResult> {
     status,
     pendingOld,
     failedCount,
-    totalCount: allTxs.length,
+    totalCount,
     message,
   };
 }
@@ -579,7 +601,7 @@ export async function checkTransactions(): Promise<TransactionsCheckResult> {
 // ----------------------------------------------------------------------------
 let cachedHealthResult: { result: FullHealthCheckResult; timestamp: number } | null = null;
 let inFlightHealthPromise: Promise<FullHealthCheckResult> | null = null;
-const HEALTH_CACHE_TTL_MS = 6000; // 6-second cache prevents external rate-limiting & timeout cascades
+const HEALTH_CACHE_TTL_MS = 20000; // 20-second cache prevents external rate-limiting, DB churn & timeout cascades
 
 export async function runFullHealthCheck(forceRefresh: boolean = false): Promise<FullHealthCheckResult> {
   const now = Date.now();

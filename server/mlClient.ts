@@ -300,6 +300,30 @@ class MLClient {
   }
 
   /**
+   * Record remediation feedback to reinforce the ML model
+   */
+  public async recordFeedback(feedback: {
+    prediction_id?: string;
+    actual_issue?: string;
+    remediation_worked?: boolean;
+    notes?: string;
+  }): Promise<void> {
+    try {
+      await insertMLFeedback({
+        prediction_id: feedback.prediction_id || `pred_${Date.now()}`,
+        predicted_label: feedback.actual_issue || 'healthy',
+        confidence: 0.95,
+        actual_label: feedback.actual_issue || 'healthy',
+        remediation_success: feedback.remediation_worked ?? true,
+        features: {},
+        timestamp: new Date().toISOString(),
+      });
+    } catch (err: any) {
+      console.warn('[MLClient] Error recording feedback:', err.message);
+    }
+  }
+
+  /**
    * Persist feedback and training sample to PostgreSQL
    */
   private async recordFeedbackAndTrainingSample(pred: MLPredictionResult, features: MLFeatures): Promise<void> {

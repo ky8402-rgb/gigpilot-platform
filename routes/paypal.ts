@@ -371,18 +371,28 @@ router.get('/transactions', async (req, res) => {
 });
 
 /**
- * GET /api/paypal/work-orders
- * Retrieve all work orders initialized via PayPal from PostgreSQL
+ * GET /api/paypal/work-orders or /api/work-orders
+ * Retrieve work orders initialized via PayPal from PostgreSQL (optimized with pagination and caching)
  */
 router.get('/work-orders', async (req, res) => {
   try {
+    const rawLimit = req.query.limit;
+    const limit = rawLimit === 'all' ? undefined : (rawLimit ? Math.min(Math.max(Number(rawLimit) || 50, 1), 500) : 50);
+
+    // Cache-Control headers for fast client and proxy caching
+    res.setHeader('Cache-Control', 'public, max-age=15, stale-while-revalidate=60');
+
     const workOrders = await prisma.workOrder.findMany({
-      orderBy: { createdAt: 'desc' }
+      orderBy: { createdAt: 'desc' },
+      ...(limit ? { take: limit } : {})
     }).catch(() => []);
 
     res.json({
       success: true,
-      workOrders
+      workOrders,
+      orders: workOrders,
+      count: workOrders.length,
+      limit: limit || 'all'
     });
   } catch (err: any) {
     res.status(500).json({ success: false, error: err.message });
