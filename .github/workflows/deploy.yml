@@ -191,7 +191,7 @@ jobs:
               echo "Reloading Nginx proxy..."
               sudo systemctl reload nginx 2>/dev/null || sudo systemctl restart nginx 2>/dev/null || true
               echo "✔ EC2 backend successfully deployed and running."
-  EOF
+EOF
             echo "✔ SSH deployment command finished successfully."
           else
             echo "SSH direct connection could not be established. Falling back to signed push webhook."
