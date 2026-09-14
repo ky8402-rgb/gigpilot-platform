@@ -3520,6 +3520,129 @@ export interface SystemHealthStatus {
   };
   mlAIOps?: MLServiceStatus;
   predictiveML?: MLPredictionResult;
+  autonomousLoop?: AutonomousLoopStatus;
+}
+
+export interface SyntheticProbeItem {
+  id: string;
+  name: string;
+  category: 'database' | 'queue' | 'gateway' | 'runtime' | 'ml';
+  status: 'PASSED' | 'FAILED' | 'DEGRADED';
+  latency_ms: number;
+  message: string;
+  details?: Record<string, any>;
+  timestamp: string;
+}
+
+export interface SyntheticTestSuiteResult {
+  passed: boolean;
+  total_probes: number;
+  passed_count: number;
+  failed_count: number;
+  avg_latency_ms: number;
+  timestamp: string;
+  probes: SyntheticProbeItem[];
+}
+
+export interface AutonomousLoopStage {
+  id: string;
+  name: string;
+  description: string;
+  status: 'HEALTHY' | 'ACTIVE' | 'OPTIMIZING' | 'DEGRADED';
+  last_action: string;
+  metric_readout: string;
+}
+
+export interface AutonomousLoopExecutionResult {
+  execution_id: string;
+  timestamp: string;
+  mode: 'autonomous' | 'supervised' | 'dry_run';
+  duration_total_ms: number;
+  stages: {
+    telemetry: {
+      status: 'success' | 'degraded';
+      snapshot: any;
+      latency_ms: number;
+    };
+    diagnosis: {
+      status: 'success';
+      classification: {
+        issue: string;
+        issue_type: string;
+        confidence: number;
+        details: string;
+      };
+      anomalies: {
+        is_anomaly: boolean;
+        anomaly_score: number;
+        drifted_metrics: Array<{ metric: string; value: number; baseline: number; z_score: number }>;
+      };
+      root_cause: string;
+      blast_radius: 'isolated' | 'subsystem' | 'system_wide';
+    };
+    prediction: {
+      status: 'success';
+      forecast: {
+        component: string;
+        failure_probability: number;
+        time_horizon: string;
+        risk_factors: string[];
+      };
+      mtbf_hours: number;
+      anomaly_risk_index: number;
+      ml_model_version: string;
+      confidence: number;
+    };
+    remediation: {
+      status: 'executed' | 'skipped_nominal' | 'simulated' | 'failed';
+      action_taken: string;
+      remediation_selector: {
+        recommended_action: string;
+        confidence: number;
+        expected_success: number;
+        alternative_actions: string[];
+      };
+      actions_executed: string[];
+      duration_ms: number;
+    };
+    testing: {
+      status: 'passed' | 'failed';
+      test_suite: SyntheticTestSuiteResult;
+      all_probes_passed: boolean;
+    };
+    optimization: {
+      status: 'optimized' | 'nominal';
+      learning_recorded: boolean;
+      incident_id?: string;
+      model_accuracy: number;
+      model_f1: number;
+      adaptive_adjustments: string[];
+    };
+    self_updating: {
+      status: 'stable' | 'candidate_evaluated' | 'promoted' | 'rollback_ready';
+      active_version: string;
+      canary_pass_rate: number;
+      safe_update_log: string[];
+    };
+  };
+  overall_status: 'healthy' | 'remediated_and_verified' | 'degraded_escalated';
+  reliability_score: number;
+  summary_message: string;
+}
+
+export interface AutonomousLoopStatus {
+  enabled: boolean;
+  mode: 'autonomous' | 'supervised' | 'dry_run';
+  last_execution: AutonomousLoopExecutionResult | null;
+  total_executions: number;
+  remediations_count: number;
+  remediations_success_rate: number;
+  synthetic_probes_health: 'PASSING' | 'DEGRADED';
+  active_model_version: string;
+  model_accuracy: number;
+  mtbf_hours: number;
+  reliability_score: number;
+  pipeline_stages: AutonomousLoopStage[];
 }
 
 export interface MLPredictionResult {
@@ -4268,6 +4391,138 @@ export async function fetchSystemHealth(): Promise<SystemHealthStatus | null> {
       }
     } catch (_) {}
     return null;
+  }
+}
+
+/**
+ * Fetches status of the Continuous Autonomous Reliability Loop
+ */
+export async function fetchAutonomousLoopStatus(): Promise<AutonomousLoopStatus | null> {
+  try {
+    const res = await fetch(apiUrl('/api/aiops/autonomous-loop/status'));
+    if (!res.ok) {
+      const localRes = await fetch('/api/aiops/autonomous-loop/status');
+      if (localRes.ok) {
+        const data = await localRes.json();
+        return data.status || null;
+      }
+      return null;
+    }
+    const data = await res.json();
+    return data.status || null;
+  } catch (err) {
+    console.warn('[AutonomousLoop] Fetch status failed:', err);
+    return null;
+  }
+}
+
+/**
+ * Triggers an immediate execution of the full 7-stage autonomous reliability cycle
+ */
+export async function triggerAutonomousLoopCycle(mode?: 'autonomous' | 'supervised' | 'dry_run'): Promise<{
+  success: boolean;
+  message?: string;
+  execution?: AutonomousLoopExecutionResult;
+  status?: AutonomousLoopStatus;
+  error?: string;
+}> {
+  try {
+    const res = await fetch(apiUrl('/api/aiops/autonomous-loop/trigger'), {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ mode }),
+    });
+    return await res.json();
+  } catch (err: any) {
+    return { success: false, error: err.message || 'Trigger loop cycle failed' };
+  }
+}
+
+/**
+ * Sets the execution mode of the autonomous reliability engine
+ */
+export async function setAutonomousLoopMode(mode: 'autonomous' | 'supervised' | 'dry_run'): Promise<{
+  success: boolean;
+  mode?: string;
+  status?: AutonomousLoopStatus;
+  error?: string;
+}> {
+  try {
+    const res = await fetch(apiUrl('/api/aiops/autonomous-loop/mode'), {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ mode }),
+    });
+    return await res.json();
+  } catch (err: any) {
+    return { success: false, error: err.message || 'Set mode failed' };
+  }
+}
+
+/**
+ * Toggles the autonomous reliability engine on/off
+ */
+export async function toggleAutonomousLoop(enabled: boolean): Promise<{
+  success: boolean;
+  enabled?: boolean;
+  status?: AutonomousLoopStatus;
+  error?: string;
+}> {
+  try {
+    const res = await fetch(apiUrl('/api/aiops/autonomous-loop/toggle'), {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ enabled }),
+    });
+    return await res.json();
+  } catch (err: any) {
+    return { success: false, error: err.message || 'Toggle loop failed' };
+  }
+}
+
+/**
+ * Runs the 5-point synthetic canary probe test suite
+ */
+export async function runAutonomousSyntheticProbes(): Promise<{
+  success: boolean;
+  suite?: SyntheticTestSuiteResult;
+  status?: string;
+  error?: string;
+}> {
+  try {
+    const res = await fetch(apiUrl('/api/aiops/autonomous-loop/probes'));
+    if (!res.ok) {
+      const localRes = await fetch('/api/aiops/autonomous-loop/probes');
+      if (localRes.ok) {
+        return await localRes.json();
+      }
+      throw new Error(`HTTP ${res.status}`);
+    }
+    return await res.json();
+  } catch (err: any) {
+    return { success: false, error: err.message || 'Synthetic probe execution failed' };
+  }
+}
+
+/**
+ * Fetches recent execution history for the autonomous loop
+ */
+export async function fetchAutonomousLoopHistory(limit: number = 15): Promise<AutonomousLoopExecutionResult[]> {
+  try {
+    const res = await fetch(apiUrl(`/api/aiops/autonomous-loop/history?limit=${limit}`));
+    if (!res.ok) {
+      const localRes = await fetch(`/api/aiops/autonomous-loop/history?limit=${limit}`);
+      if (localRes.ok) {
+        const data = await localRes.json();
+        return data.history || [];
+      }
+      return [];
+    }
+    const data = await res.json();
+    return data.history || [];
+  } catch (err) {
+    console.warn('[AutonomousLoop] Fetch history failed:', err);
+    return [];
   }
 }
 

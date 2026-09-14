@@ -102,6 +102,8 @@ import { mlClient } from "./server/mlClient.js";
 import { startMLWorker } from "./server/mlWorker.js";
 import { registerMLPredictor } from "./server/healthCheck.js";
 import { getMLModels, getMLFeedback, ensureBaselineMLModels, activateMLModelVersion } from "./server/pgDatabase.js";
+import { autonomousEngine } from "./server/aiops/autonomousLoop.js";
+import { runSyntheticProbes } from "./server/aiops/syntheticProbes.js";
 
 // Register ML predictor with health check engine
 registerMLPredictor(async (health) => {
@@ -789,6 +791,7 @@ app.get("/api/health", async (req, res) => {
       selfHealing: await selfHealer.checkHealth(),
       autoHealer: autoHealer.getStatus(),
       mlAIOps: mlClient.getStatus(),
+      autonomousLoop: autonomousEngine.getStatus(),
       predictiveML: fullCheck.predictiveML,
     };
 
@@ -1110,6 +1113,107 @@ app.get("/api/ml/metrics", async (req, res) => {
     return res.send(metricsText);
   } catch (err: any) {
     return res.status(500).send(`# Error generating ML metrics: ${err.message}`);
+  }
+});
+
+// =========================================================================
+// CONTINUOUS AUTONOMOUS RELIABILITY LOOP (AIOps, Self-Healing, Telemetry)
+// =========================================================================
+
+// Get unified autonomous loop status across all 7 continuous pillars
+app.get(["/api/aiops/autonomous-loop/status", "/api/health/autonomous-loop/status"], (_req, res) => {
+  try {
+    const status = autonomousEngine.getStatus();
+    return res.json({
+      success: true,
+      status,
+      timestamp: new Date().toISOString(),
+    });
+  } catch (err: any) {
+    return res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// Trigger full autonomous reliability cycle (telemetry -> diagnosis -> prediction -> remediation -> testing -> optimization -> self-updating)
+app.post(["/api/aiops/autonomous-loop/trigger", "/api/health/autonomous-loop/trigger"], async (req, res) => {
+  try {
+    const { mode } = req.body || {};
+    console.log(`🌀 [Autonomous Loop] Triggering cycle execution (Mode: ${mode || 'default'})...`);
+    const executionResult = await autonomousEngine.runFullLoop(mode);
+    return res.json({
+      success: true,
+      message: executionResult.summary_message,
+      execution: executionResult,
+      status: autonomousEngine.getStatus(),
+    });
+  } catch (err: any) {
+    console.error("❌ [Autonomous Loop] Trigger error:", err);
+    return res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// Configure autonomous loop operating mode: 'autonomous' | 'supervised' | 'dry_run'
+app.post("/api/aiops/autonomous-loop/mode", (req, res) => {
+  try {
+    const { mode } = req.body || {};
+    if (!mode || !['autonomous', 'supervised', 'dry_run'].includes(mode)) {
+      return res.status(400).json({ success: false, error: 'Valid mode required: autonomous | supervised | dry_run' });
+    }
+    autonomousEngine.setMode(mode);
+    return res.json({
+      success: true,
+      mode,
+      message: `Autonomous loop mode updated to ${mode}`,
+      status: autonomousEngine.getStatus(),
+    });
+  } catch (err: any) {
+    return res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// Toggle autonomous reliability loop enabled/disabled
+app.post("/api/aiops/autonomous-loop/toggle", (req, res) => {
+  try {
+    const { enabled } = req.body || {};
+    const updated = autonomousEngine.toggle(Boolean(enabled));
+    return res.json({
+      success: true,
+      enabled: updated,
+      message: `Autonomous loop ${updated ? 'enabled' : 'disabled'}`,
+      status: autonomousEngine.getStatus(),
+    });
+  } catch (err: any) {
+    return res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// Execute the 5 synthetic canary smoke probes across database, queues, gateway, heap, ML
+app.get(["/api/aiops/autonomous-loop/probes", "/api/health/canary-probes"], async (_req, res) => {
+  try {
+    const testSuite = await runSyntheticProbes();
+    return res.json({
+      success: true,
+      suite: testSuite,
+      status: testSuite.passed ? 'PASSING' : 'DEGRADED',
+      timestamp: new Date().toISOString(),
+    });
+  } catch (err: any) {
+    return res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// Retrieve execution history for the autonomous reliability loop
+app.get("/api/aiops/autonomous-loop/history", (req, res) => {
+  try {
+    const limit = Math.min(50, Math.max(1, Number(req.query.limit) || 15));
+    const history = autonomousEngine.getHistory(limit);
+    return res.json({
+      success: true,
+      count: history.length,
+      history,
+    });
+  } catch (err: any) {
+    return res.status(500).json({ success: false, error: err.message });
   }
 });
 

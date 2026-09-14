@@ -24,6 +24,7 @@
     "lint": "tsc --noEmit",
     "test": "tsc --noEmit",
     "test:aiops": "tsx scripts/test-aiops.ts",
+    "test:loop": "tsx scripts/test-autonomous-loop.ts",
     "test:phase7": "tsx scripts/validate-phase7-e2e.ts",
     "postinstall": "node scripts/postinstall.js"
   },
