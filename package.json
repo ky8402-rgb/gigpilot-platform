@@ -68,9 +68,11 @@
     "@types/react-dom": "^19.2.5",
     "autoprefixer": "^10.4.21",
     "esbuild": "^0.25.0",
+    "libsodium-wrappers": "^0.8.4",
     "prisma": "^6.4.1",
     "tailwindcss": "^4.1.14",
     "tsx": "^4.21.0",
+    "tweetsodium": "^0.0.6",
     "typescript": "~5.8.2",
     "vite": "^6.2.3"
   }
