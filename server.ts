@@ -56,6 +56,7 @@ import devopsActionsRoutes from "./server/devopsActionsRoutes.js";
 import autoDeployRoutes from "./server/autoDeployRoutes.js";
 import godaddyRoutes from "./server/godaddyRoutes.js";
 import cloudflareRoutes from "./server/cloudflareRoutes.js";
+import { sentientRouter } from "./server/sentientRoutes.js";
 import { aiRouter } from "./server/aiRoutes.js";
 import "./server/worker.js";
 import { logActivityEvent } from "./server/activityLogger.js";
@@ -391,6 +392,9 @@ app.use("/api/cloudflare", cloudflareRoutes);
 // 16. Autonomous AIOps & System Self-Healing Command Layer
 app.use(aiRouter);
 
+// 17. Sentient Freelancer Autopilot Engine
+app.use("/api", sentientRouter);
+
 // Compatibility aliases for /api/bids, /api/Bid (Prisma model case), /api/Bids, and /api/leads list
 app.use(["/api/bids", "/api/Bid", "/api/Bids"], freelancerBidsRoutes);
 
@@ -706,7 +710,10 @@ app.get("/api/health", async (req, res) => {
 
     const responsePayload = {
       // Primary contract requested by specification
+      ok: fullCheck.status !== 'critical',
       status: fullCheck.status,
+      service: 'sentient-freelancer-backend',
+      queueDepth: fullCheck.checks?.queues?.details?.['freelancer:waiting'] || 0,
       timestamp: fullCheck.timestamp,
       checks: fullCheck.checks,
       remediation: fullCheck.remediation,

@@ -1,0 +1,1132 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>SENTIENT FREELANCER — Self-Learning Automation Organism</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --bg: #030712;
+      --card: #0b1220;
+      --card-border: #1e293b;
+      --card-subtle: #111a2d;
+      --accent: #4dd4ff;
+      --ok: #2ee6a8;
+      --warn: #f5a524;
+      --bad: #ff4d6d;
+      --purple: #b47aff;
+      --text: #f1f5f9;
+      --text-muted: #8492a6;
+      --font-sans: 'Inter', system-ui, -apple-system, sans-serif;
+      --font-mono: 'JetBrains Mono', monospace;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: var(--font-sans);
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      line-height: 1.45;
+      font-size: 13px;
+      overflow-x: hidden;
+    }
+
+    .mono { font-family: var(--font-mono); }
+
+    /* Header Bar */
+    header {
+      background: rgba(11, 18, 32, 0.85);
+      backdrop-filter: blur(12px);
+      border-bottom: 1px solid var(--card-border);
+      padding: 12px 24px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      position: sticky;
+      top: 0;
+      z-index: 100;
+      flex-wrap: wrap;
+      gap: 12px;
+    }
+
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .brand-icon {
+      width: 38px;
+      height: 38px;
+      border-radius: 10px;
+      background: radial-gradient(circle, rgba(77, 212, 255, 0.25), rgba(180, 122, 255, 0.15));
+      border: 1px solid var(--accent);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-weight: 800;
+      color: var(--accent);
+      box-shadow: 0 0 16px rgba(77, 212, 255, 0.25);
+    }
+
+    .brand-title {
+      font-size: 16px;
+      font-weight: 700;
+      letter-spacing: -0.01em;
+      color: #fff;
+    }
+
+    .brand-sub {
+      font-size: 11px;
+      color: var(--text-muted);
+    }
+
+    .header-actions {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      flex-wrap: wrap;
+    }
+
+    .pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 4px 10px;
+      border-radius: 9999px;
+      font-size: 11px;
+      font-weight: 600;
+      border: 1px solid;
+    }
+
+    .pill-calm { background: rgba(46, 230, 168, 0.1); border-color: rgba(46, 230, 168, 0.35); color: var(--ok); }
+    .pill-alert { background: rgba(77, 212, 255, 0.1); border-color: rgba(77, 212, 255, 0.35); color: var(--accent); }
+    .pill-strained { background: rgba(245, 165, 36, 0.1); border-color: rgba(245, 165, 36, 0.35); color: var(--warn); }
+    .pill-struggling { background: rgba(255, 77, 109, 0.1); border-color: rgba(255, 77, 109, 0.35); color: var(--bad); }
+
+    .btn {
+      background: #152238;
+      border: 1px solid var(--card-border);
+      color: var(--text);
+      padding: 6px 12px;
+      border-radius: 8px;
+      font-size: 12px;
+      font-weight: 500;
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      transition: all 0.15s ease;
+      text-decoration: none;
+    }
+    .btn:hover {
+      background: #1c2e4c;
+      border-color: var(--accent);
+      color: var(--accent);
+    }
+
+    .btn-accent {
+      background: rgba(77, 212, 255, 0.15);
+      border-color: rgba(77, 212, 255, 0.4);
+      color: var(--accent);
+      font-weight: 600;
+    }
+    .btn-accent:hover {
+      background: rgba(77, 212, 255, 0.25);
+      color: #fff;
+    }
+
+    /* Main Responsive Grid Layout */
+    .dashboard-layout {
+      display: grid;
+      grid-template-columns: 320px 1fr 340px;
+      gap: 16px;
+      padding: 16px 20px;
+      flex: 1;
+    }
+
+    @media (max-width: 1280px) {
+      .dashboard-layout { grid-template-columns: 290px 1fr; }
+      .col-right { grid-column: span 2; }
+    }
+    @media (max-width: 860px) {
+      .dashboard-layout { grid-template-columns: 1fr; }
+      .col-right { grid-column: span 1; }
+    }
+
+    .card {
+      background: var(--card);
+      border: 1px solid var(--card-border);
+      border-radius: 12px;
+      padding: 14px 16px;
+      margin-bottom: 16px;
+      position: relative;
+    }
+
+    .card-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 12px;
+      padding-bottom: 8px;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+    }
+
+    .card-title {
+      font-size: 12px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      color: #e2e8f0;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    /* Column 1: Senses */
+    .job-item {
+      background: var(--card-subtle);
+      border: 1px solid rgba(255, 255, 255, 0.04);
+      border-radius: 8px;
+      padding: 10px;
+      margin-bottom: 8px;
+      cursor: pointer;
+      transition: border-color 0.15s;
+    }
+    .job-item:hover { border-color: var(--accent); }
+    .job-title { font-weight: 600; color: #fff; font-size: 12px; margin-bottom: 4px; }
+    .job-meta { display: flex; justify-content: space-between; font-size: 11px; color: var(--text-muted); }
+
+    .sparkline-box {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 6px 0;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.03);
+    }
+
+    /* Column 2: Center Centerpiece */
+    .kpi-strip {
+      display: grid;
+      grid-template-columns: repeat(6, 1fr);
+      gap: 10px;
+      margin-bottom: 16px;
+    }
+    @media (max-width: 960px) {
+      .kpi-strip { grid-template-columns: repeat(3, 1fr); }
+    }
+
+    .kpi-tile {
+      background: var(--card);
+      border: 1px solid var(--card-border);
+      border-radius: 10px;
+      padding: 10px 12px;
+      text-align: left;
+    }
+    .kpi-label { font-size: 10px; text-transform: uppercase; color: var(--text-muted); letter-spacing: 0.05em; }
+    .kpi-value { font-size: 17px; font-weight: 700; color: #fff; margin-top: 2px; }
+
+    .canvas-container {
+      position: relative;
+      width: 100%;
+      height: 280px;
+      background: radial-gradient(circle at center, rgba(17, 26, 45, 0.8), rgba(3, 7, 18, 0.95));
+      border-radius: 12px;
+      border: 1px solid var(--card-border);
+      margin-bottom: 16px;
+      overflow: hidden;
+    }
+
+    canvas {
+      width: 100%;
+      height: 100%;
+      display: block;
+    }
+
+    /* Inner Monologue Typewriter */
+    .monologue-box {
+      background: #060a12;
+      border: 1px solid var(--card-border);
+      border-radius: 10px;
+      padding: 14px 16px;
+      font-size: 13px;
+      min-height: 72px;
+      color: #93c5fd;
+      position: relative;
+      margin-bottom: 16px;
+      line-height: 1.6;
+    }
+    .caret {
+      display: inline-block;
+      width: 8px;
+      height: 15px;
+      background: var(--accent);
+      vertical-align: middle;
+      margin-left: 4px;
+      animation: blink 1s infinite;
+    }
+    @keyframes blink { 0%, 50% { opacity: 1; } 51%, 100% { opacity: 0; } }
+
+    /* Persona Card */
+    .persona-card {
+      background: linear-gradient(135deg, rgba(11, 18, 32, 0.9), rgba(20, 31, 52, 0.7));
+      border: 1px solid rgba(77, 212, 255, 0.2);
+    }
+    .persona-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 10px;
+      font-size: 11px;
+    }
+    .persona-item span { color: var(--text-muted); display: block; margin-bottom: 2px; }
+    .persona-item strong { color: #fff; }
+
+    /* Column 3: Right Side (Genome, Consciousness, Intuition) */
+    .gene-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 6px 8px;
+      border-radius: 6px;
+      background: var(--card-subtle);
+      margin-bottom: 6px;
+      font-size: 11px;
+      transition: background 0.3s;
+    }
+    .gene-row.flash-up { background: rgba(46, 230, 168, 0.25); }
+    .gene-row.flash-down { background: rgba(255, 77, 109, 0.25); }
+
+    .stream-log {
+      height: 190px;
+      overflow-y: auto;
+      font-family: var(--font-mono);
+      font-size: 11px;
+      background: #040813;
+      border: 1px solid var(--card-border);
+      border-radius: 8px;
+      padding: 8px 10px;
+      display: flex;
+      flex-direction: column-reverse;
+    }
+    .log-line { margin-bottom: 4px; line-height: 1.4; word-break: break-all; }
+    .tag-sense { color: #38bdf8; }
+    .tag-think { color: #c084fc; }
+    .tag-draft { color: #facc15; }
+    .tag-act { color: #4ade80; }
+    .tag-learn { color: #34d399; }
+    .tag-tune { color: #fb923c; }
+    .tag-warn { color: #f87171; }
+    .tag-say { color: #93c5fd; }
+
+    /* Episodes list */
+    .episode-item {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      font-size: 11px;
+      padding: 5px 0;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+    }
+    .outcome-reply { color: var(--ok); }
+    .outcome-silence { color: var(--text-muted); }
+    .outcome-reject { color: var(--bad); }
+
+    /* Intuition Bar */
+    .trust-bar-bg {
+      width: 100%;
+      height: 4px;
+      background: rgba(255, 255, 255, 0.1);
+      border-radius: 2px;
+      overflow: hidden;
+      margin-top: 4px;
+    }
+    .trust-bar-fill {
+      height: 100%;
+      background: linear-gradient(90deg, var(--accent), var(--ok));
+      border-radius: 2px;
+    }
+
+    /* Modal for Injected Jobs & Proposal Preview */
+    .modal-backdrop {
+      display: none;
+      position: fixed;
+      inset: 0;
+      background: rgba(0, 0, 0, 0.75);
+      backdrop-filter: blur(4px);
+      z-index: 200;
+      align-items: center;
+      justify-content: center;
+      padding: 20px;
+    }
+    .modal-card {
+      background: var(--card);
+      border: 1px solid var(--accent);
+      border-radius: 14px;
+      width: 100%;
+      max-width: 580px;
+      padding: 20px;
+      box-shadow: 0 12px 36px rgba(0, 0, 0, 0.6);
+    }
+  </style>
+</head>
+<body>
+
+  <!-- HEADER -->
+  <header>
+    <div class="brand">
+      <div class="brand-icon mono">SF</div>
+      <div>
+        <div class="brand-title">SENTIENT FREELANCER</div>
+        <div class="brand-sub">Self-Learning · Self-Updating · Human-Like Autopilot</div>
+      </div>
+    </div>
+
+    <div class="header-actions">
+      <span class="pill mono pill-calm" id="moodPill">● MOOD: CALM</span>
+      <span class="pill mono" style="background: rgba(180, 122, 255, 0.1); border-color: rgba(180, 122, 255, 0.3); color: var(--purple);">
+        GEN <span id="headerGen">1</span>
+      </span>
+      <a href="approvals.html" class="btn btn-accent mono" id="approvalLink">
+        APPROVAL QUEUE (<span id="queueBadge">2</span>)
+      </a>
+      <button class="btn" id="btnPause" onclick="togglePause()">⏸ Pause</button>
+      <button class="btn" onclick="resetGenomeHandler()">↺ Reset Genome</button>
+      <button class="btn" onclick="openInjectModal()">+ Inject Job</button>
+    </div>
+  </header>
+
+  <!-- MAIN 3-COLUMN LAYOUT -->
+  <div class="dashboard-layout">
+
+    <!-- COLUMN 1: SENSES (Job Feed, Platform Health, Session Energy) -->
+    <aside class="col-left">
+      <!-- Session Energy & Shape -->
+      <div class="card">
+        <div class="card-header">
+          <span class="card-title">Session Rhythm</span>
+          <span class="mono" id="sessionClock" style="color: var(--accent); font-size: 11px;">10:42 AM</span>
+        </div>
+        <div class="sparkline-box">
+          <span class="text-muted">Energy Reserve:</span>
+          <span class="mono" id="valEnergy" style="color: var(--ok); font-weight: 700;">88%</span>
+        </div>
+        <div class="sparkline-box">
+          <span class="text-muted">Today's Target:</span>
+          <span class="mono" id="valTargetHours">6.5 hrs</span>
+        </div>
+        <div class="sparkline-box">
+          <span class="text-muted">Session Elapsed:</span>
+          <span class="mono" id="valElapsed">84 mins</span>
+        </div>
+        <div class="sparkline-box">
+          <span class="text-muted">Proposals Dispatched:</span>
+          <span class="mono" id="valDispatched">6 / 12</span>
+        </div>
+        <div class="sparkline-box">
+          <span class="text-muted">Cooldown Gate:</span>
+          <span class="mono" style="color: var(--ok);">3m Safe Cooldown ✓</span>
+        </div>
+      </div>
+
+      <!-- Live Job Market Feed -->
+      <div class="card" style="max-height: 480px; overflow-y: auto;">
+        <div class="card-header">
+          <span class="card-title">Sensed Job Feed</span>
+          <span class="mono" style="color: var(--accent); font-size: 11px;" id="feedCount">3 Active</span>
+        </div>
+        <div id="jobFeedList">
+          <!-- Populated dynamically -->
+        </div>
+      </div>
+
+      <!-- Platform Health & Client Safety -->
+      <div class="card">
+        <div class="card-header">
+          <span class="card-title">Detection Shield</span>
+          <span class="mono" style="color: var(--ok); font-size: 11px;">0 Flags</span>
+        </div>
+        <div class="sparkline-box">
+          <span>Anti-Fingerprint Audit:</span>
+          <span class="mono" style="color: var(--ok);">PASS (100%)</span>
+        </div>
+        <div class="sparkline-box">
+          <span>Keystroke Physics:</span>
+          <span class="mono">100–280ms Jitter</span>
+        </div>
+        <div class="sparkline-box">
+          <span>Client Scrutiny Model:</span>
+          <span class="mono" style="color: var(--ok);">0.94 Trust</span>
+        </div>
+      </div>
+    </aside>
+
+    <!-- COLUMN 2: CENTER COGNITIVE LOOP & KPIS -->
+    <main class="col-center">
+      <!-- 6 Reliability KPI Tiles -->
+      <div class="kpi-strip">
+        <div class="kpi-tile">
+          <div class="kpi-label">Fitness Score</div>
+          <div class="kpi-value mono" id="kpiFitness" style="color: var(--accent);">0.842</div>
+        </div>
+        <div class="kpi-tile">
+          <div class="kpi-label">Generation</div>
+          <div class="kpi-value mono" id="kpiGen">1</div>
+        </div>
+        <div class="kpi-tile">
+          <div class="kpi-label">Replies Recv</div>
+          <div class="kpi-value mono" id="kpiReplies" style="color: var(--ok);">14</div>
+        </div>
+        <div class="kpi-tile">
+          <div class="kpi-label">Jobs Won</div>
+          <div class="kpi-value mono" id="kpiWins" style="color: var(--purple);">5</div>
+        </div>
+        <div class="kpi-tile">
+          <div class="kpi-label">Est. Revenue</div>
+          <div class="kpi-value mono" id="kpiRev" style="color: var(--ok);">$14,250</div>
+        </div>
+        <div class="kpi-tile">
+          <div class="kpi-label">Mood State</div>
+          <div class="kpi-value mono" id="kpiMood" style="color: var(--accent); font-size: 14px;">CALM</div>
+        </div>
+      </div>
+
+      <!-- Center Cognitive Loop Canvas Ring (6 Stages) -->
+      <div class="canvas-container">
+        <canvas id="loopCanvas"></canvas>
+      </div>
+
+      <!-- Inner Monologue (First-Person, Typed) -->
+      <div class="card">
+        <div class="card-header">
+          <span class="card-title">Inner Monologue</span>
+          <span class="mono" style="font-size: 11px; color: var(--accent);">LIVE THOUGHTS</span>
+        </div>
+        <div class="monologue-box mono" id="innerMonologue">
+          <span id="monologueText">Warming cognitive loop. Observing public feeds for Shopify and backend architectures...</span>
+          <span class="caret"></span>
+        </div>
+      </div>
+
+      <!-- Today's Rolled Persona Card -->
+      <div class="card persona-card">
+        <div class="card-header">
+          <span class="card-title">Today's Persona (Indistinguishability Layer)</span>
+          <span class="mono" id="personaDate" style="color: var(--accent); font-size: 11px;">2026-09-15</span>
+        </div>
+        <div class="persona-grid mono">
+          <div class="persona-item">
+            <span>Voice Signature</span>
+            <strong id="pVoice" style="color: var(--accent);">DIRECT</strong>
+          </div>
+          <div class="persona-item">
+            <span>Work Windows</span>
+            <strong id="pHours">09:15 – 17:45</strong>
+          </div>
+          <div class="persona-item">
+            <span>Session Target</span>
+            <strong id="pTarget">6.5 hrs</strong>
+          </div>
+          <div class="persona-item">
+            <span>Browse Skip Ratio</span>
+            <strong id="pBrowse">72% skipped</strong>
+          </div>
+          <div class="persona-item">
+            <span>Imperfection Typo Rate</span>
+            <strong id="pTypo">1.8% swap</strong>
+          </div>
+          <div class="persona-item">
+            <span>Current Niche Drift</span>
+            <strong id="pNiche">Shopify Plus &amp; APIs</strong>
+          </div>
+        </div>
+      </div>
+    </main>
+
+    <!-- COLUMN 3: RIGHT SIDE (GENOME, CONSCIOUSNESS, MEMORY, INTUITION) -->
+    <aside class="col-right">
+      <!-- Genome: 6 Self-Rewriting Params -->
+      <div class="card">
+        <div class="card-header">
+          <span class="card-title">Genome (Self-Rewriting)</span>
+          <span class="mono" style="font-size: 11px; color: var(--purple);">MUTATING</span>
+        </div>
+        <div id="genomeList">
+          <!-- Populated dynamically -->
+        </div>
+      </div>
+
+      <!-- Stream of Consciousness Log -->
+      <div class="card">
+        <div class="card-header">
+          <span class="card-title">Stream of Consciousness</span>
+          <span class="mono" style="font-size: 11px; color: var(--text-muted);">LAST 60 TICKS</span>
+        </div>
+        <div class="stream-log" id="streamLog">
+          <!-- Populated dynamically -->
+        </div>
+      </div>
+
+      <!-- Intuition (jobCategory|proposalStyle) -->
+      <div class="card">
+        <div class="card-header">
+          <span class="card-title">Intuition Trust Matrix</span>
+          <span class="mono" style="font-size: 11px; color: var(--ok);">TOP 8</span>
+        </div>
+        <div id="intuitionList">
+          <!-- Populated dynamically -->
+        </div>
+      </div>
+
+      <!-- Episodic Memory -->
+      <div class="card">
+        <div class="card-header">
+          <span class="card-title">Episodic Memory</span>
+          <span class="mono" style="font-size: 11px; color: var(--accent);">OUTCOMES</span>
+        </div>
+        <div id="episodesList">
+          <!-- Populated dynamically -->
+        </div>
+      </div>
+    </aside>
+  </div>
+
+  <!-- MODAL: Inject Job -->
+  <div class="modal-backdrop" id="injectModal">
+    <div class="modal-card">
+      <div class="card-header" style="border:none; margin-bottom: 8px;">
+        <h3 style="color:#fff;">Inject Custom Job Post</h3>
+        <button class="btn" onclick="closeInjectModal()">✕</button>
+      </div>
+      <p style="font-size: 12px; color: var(--text-muted); margin-bottom: 12px;">
+        Test the cognitive deliberation loop with a custom job description.
+      </p>
+      <input type="text" id="injTitle" placeholder="Job Title (e.g. Next.js API Architecture)" style="width:100%; padding:8px 12px; background:#060a12; border:1px solid var(--card-border); border-radius:6px; color:#fff; margin-bottom:10px;">
+      <input type="text" id="injBudget" placeholder="Budget (e.g. $2,500)" style="width:100%; padding:8px 12px; background:#060a12; border:1px solid var(--card-border); border-radius:6px; color:#fff; margin-bottom:10px;">
+      <select id="injCategory" style="width:100%; padding:8px 12px; background:#060a12; border:1px solid var(--card-border); border-radius:6px; color:#fff; margin-bottom:10px;">
+        <option value="shopify">Shopify Plus &amp; Headless</option>
+        <option value="backend">Distributed Backend &amp; Node</option>
+        <option value="frontend">React &amp; Design Systems</option>
+        <option value="quick_patch">Urgent Bugfix / Quick Win</option>
+      </select>
+      <textarea id="injDesc" placeholder="Full job description..." style="width:100%; height:80px; padding:8px 12px; background:#060a12; border:1px solid var(--card-border); border-radius:6px; color:#fff; margin-bottom:14px;"></textarea>
+      <div style="display:flex; justify-content:flex-end; gap:8px;">
+        <button class="btn" onclick="closeInjectModal()">Cancel</button>
+        <button class="btn btn-accent" onclick="submitInjectedJob()">Feed to Organism</button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    /* ==============================================================================
+     * SENTIENT FREELANCER ENGINE — Client-Side Organism Implementation
+     * ============================================================================== */
+
+    const STAGES = ['SENSE', 'PREDICT', 'DELIBERATE', 'ACT', 'REFLECT', 'EVOLVE'];
+    let currentStageIndex = 0;
+    let isPaused = false;
+    let tickCount = 0;
+
+    // 1. ENVIRONMENT & BODY
+    const Env = {
+      jobs: [
+        {
+          id: 'job_shopify_9021',
+          title: 'Shopify Plus Headless Storefront Performance Optimization',
+          budget: '$3,500',
+          client: 'D2C Retail Brands Ltd',
+          category: 'shopify',
+          familiarity: 0.88,
+          clarity: 0.92,
+          postedMinsAgo: 24
+        },
+        {
+          id: 'job_node_api_8842',
+          title: 'Distributed Node.js Microservice & Concurrency Pipeline',
+          budget: '$4,200',
+          client: 'SaaS Infrastructure Group',
+          category: 'backend',
+          familiarity: 0.91,
+          clarity: 0.85,
+          postedMinsAgo: 48
+        },
+        {
+          id: 'job_react_ux_7719',
+          title: 'Full Redesign of Analytics Dashboard in React & Tailwind',
+          budget: '$2,800',
+          client: 'FinTech Capital Partners',
+          category: 'frontend',
+          familiarity: 0.76,
+          clarity: 0.80,
+          postedMinsAgo: 95
+        }
+      ],
+      trendingSkills: ['Shopify Hydrogen', 'Distributed Queues', 'Tailwind Tokens', 'Redis Streams']
+    };
+
+    const Body = {
+      proposalsToday: 6,
+      dailyCap: 10,
+      repliesReceived: 14,
+      jobsWon: 5,
+      revenue: 14250,
+      energy: 0.88,
+      sessionMinutes: 84,
+      accountAgeMonths: 18,
+      rejectionCount: 3,
+      silenceCount: 9,
+      signatureLog: [
+        { timestamp: Date.now() - 14 * 60 * 1000, firstSentence: "i saw your shopify plus issue — here is the clean fix." }
+      ],
+      fitness() {
+        const totalOutcomes = this.repliesReceived + this.jobsWon + this.rejectionCount + this.silenceCount;
+        const rejectionRate = totalOutcomes > 0 ? (this.rejectionCount / totalOutcomes) : 0.1;
+        const normReplies = Math.min(1, this.repliesReceived / 25);
+        const normWins = Math.min(1, this.jobsWon / 10);
+        const normAge = Math.min(1, this.accountAgeMonths / 24);
+
+        const score = (normReplies * 0.35) + (normWins * 0.35) + ((1 - rejectionRate) * 0.15) + (normAge * 0.15);
+        return Math.max(0.05, Math.min(0.99, Number(score.toFixed(3))));
+      }
+    };
+
+    // 2. MIND & MEMORY
+    const Mind = {
+      episodes: [
+        { at: Date.now() - 25 * 60 * 1000, jobId: 'job_shopify_9021', clientId: 'D2C Retail', proposalStyle: 'personalized_hook', outcome: 'reply', deltaFitness: 0.08, earnings: 450 },
+        { at: Date.now() - 95 * 60 * 1000, jobId: 'job_node_api_8842', clientId: 'SaaS Infra', proposalStyle: 'technical_deep_dive', outcome: 'reply', deltaFitness: 0.09, earnings: 1200 },
+        { at: Date.now() - 180 * 60 * 1000, jobId: 'job_legacy_102', clientId: 'AdTech Co', proposalStyle: 'design_showcase', outcome: 'silence', deltaFitness: -0.01, earnings: 0 },
+        { at: Date.now() - 320 * 60 * 1000, jobId: 'job_bug_90', clientId: 'FinCorp', proposalStyle: 'quick_win', outcome: 'reject', deltaFitness: -0.05, earnings: 0 }
+      ],
+      intuition: {
+        'shopify|personalized_hook': { trust: 0.88, uses: 12, burns: 0 },
+        'backend|technical_deep_dive': { trust: 0.92, uses: 15, burns: 0 },
+        'frontend|design_showcase': { trust: 0.74, uses: 8, burns: 1 },
+        'general|strategic_consult': { trust: 0.68, uses: 6, burns: 1 },
+        'quick_patch|quick_win': { trust: 0.62, uses: 7, burns: 2 }
+      },
+      fitnessHist: [0.72, 0.75, 0.79, 0.81, 0.842],
+      recentRepliesRate: 0.82
+    };
+
+    // 3. GENOME
+    const Genome = {
+      sensitivity: 0.55,    // [0.25–0.92]
+      aggressiveness: 0.50, // [0.15–0.95]
+      caution: 0.50,        // [0.15–0.90]
+      horizon: 18,          // [8–40]
+      polishGain: 1.00,     // [0.55–1.9]
+      trustDecay: 0.90      // [0.75–0.98]
+    };
+    const GenomeBase = { ...Genome };
+    let generation = 1;
+
+    // 4. PERSONA (Indistinguishability Layer)
+    let Persona = {
+      date: new Date().toISOString().slice(0, 10),
+      voiceSignature: 'direct',
+      workStart: 9.25,
+      workEnd: 17.75,
+      sessionTargetHours: 6.5,
+      browseSkipRatio: 0.72,
+      typoRate: 0.018,
+      nicheDrift: 'Shopify Plus & Distributed APIs',
+      proposalLengthBias: 'medium',
+      questionFrequency: 0.70,
+      ctaFrequency: 0.30
+    };
+
+    // 5. NARRATOR & CONSCIOUSNESS
+    function say(text) {
+      const el = document.getElementById('monologueText');
+      if (el) el.innerText = text;
+    }
+
+    function log(tag, msg) {
+      const container = document.getElementById('streamLog');
+      if (!container) return;
+      const row = document.createElement('div');
+      row.className = 'log-line';
+      row.innerHTML = `<span class="tag-${tag}">[${tag.toUpperCase()}]</span> ${escapeHtml(msg)}`;
+      container.prepend(row);
+      if (container.children.length > 60) {
+        container.removeChild(container.lastChild);
+      }
+    }
+
+    function escapeHtml(str) {
+      return (str || '').replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+    }
+
+    // Gaussian noise generator
+    function gauss(mean = 0, stdev = 1) {
+      let u = 1 - Math.random();
+      let v = Math.random();
+      let z = Math.sqrt(-2.0 * Math.log(u)) * Math.cos(2.0 * Math.PI * v);
+      return z * stdev + mean;
+    }
+
+    /* ==============================================================================
+     * MAIN COGNITIVE LOOP (6 Stages on 700ms Interval)
+     * ============================================================================== */
+
+    function cognitiveStep() {
+      if (isPaused) return;
+
+      tickCount++;
+      currentStageIndex = (currentStageIndex + 1) % STAGES.length;
+      const stage = STAGES[currentStageIndex];
+
+      // Update Session Clock & Decay Energy
+      Body.sessionMinutes += 0.2;
+      Body.energy = Math.max(0.15, Number((Body.energy - (0.15 / 3600)).toFixed(4)));
+
+      // 1. SENSE
+      if (stage === 'SENSE') {
+        log('sense', `Scanned public job market. ${Env.jobs.length} active opportunities within focus window.`);
+      }
+
+      // 2. PREDICT
+      else if (stage === 'PREDICT') {
+        const topJob = Env.jobs[0];
+        const key = `${topJob.category}|personalized_hook`;
+        const trust = Mind.intuition[key] ? Mind.intuition[key].trust : 0.50;
+        log('think', `Predicting outcome for ${topJob.category}: historical trust=${trust.toFixed(2)}.`);
+      }
+
+      // 3. DELIBERATE
+      else if (stage === 'DELIBERATE') {
+        const job = Env.jobs[0];
+        const fit = 0.85;
+        const key = `${job.category}|personalized_hook`;
+        const trust = Mind.intuition[key] ? Mind.intuition[key].trust : 0.50;
+        const burns = Mind.intuition[key] ? Mind.intuition[key].burns : 0;
+        const burnPenalty = Math.min(0.4, burns * 0.14);
+
+        const score = (fit * 0.42) + (trust * 0.38) + ((1 - 0.42) * Genome.aggressiveness * 0.20) - burnPenalty;
+        const confidence = (score * 0.45) + (job.familiarity * 0.35) + (job.clarity * 0.20);
+        const stakes = ((1 - Body.fitness()) * 0.7) + (0.3);
+
+        const threshold = (1 - Genome.sensitivity * 0.6) * (1 - stakes * 0.2);
+
+        if (confidence >= threshold && Body.proposalsToday < Body.dailyCap) {
+          log('draft', `High confidence (${confidence.toFixed(2)} >= ${threshold.toFixed(2)}). Drafting proposal for ${job.client}...`);
+          say(`Formulating proposal for ${job.client}. Confidence is ${Math.round(confidence * 100)}%. Adhering to daily quota (${Body.proposalsToday}/${Body.dailyCap}).`);
+        } else {
+          log('think', `Pass on bid. Confidence (${confidence.toFixed(2)}) below required threshold.`);
+        }
+      }
+
+      // 4. ACT
+      else if (stage === 'ACT') {
+        // Human-in-the-loop: Enqueue proposal, NEVER auto-send!
+        if (tickCount % 12 === 0) {
+          const job = Env.jobs[Math.floor(Math.random() * Env.jobs.length)];
+          const now = Date.now();
+          const lastSend = Body.signatureLog.length > 0 ? Body.signatureLog[Body.signatureLog.length - 1].timestamp : 0;
+
+          if (now - lastSend < 3 * 60 * 1000) {
+            log('warn', `Safety throttle: Cooldown active. Waiting before queueing next proposal.`);
+          } else {
+            log('act', `Queued humanized proposal for "${job.title}". Awaiting human confirmation in Approval Queue.`);
+            say(`Draft ready for "${job.title}". Placed in Approval Queue. I will never submit without human sign-off.`);
+            Body.signatureLog.push({ timestamp: now, firstSentence: `i reviewed your ${job.category} spec` });
+          }
+        }
+      }
+
+      // 5. REFLECT
+      else if (stage === 'REFLECT') {
+        if (tickCount % 16 === 0) {
+          // Simulate episodic reflection on earlier submissions
+          const outcomes = ['reply', 'silence', 'reply', 'reject'];
+          const pickedOutcome = outcomes[Math.floor(Math.random() * outcomes.length)];
+          const job = Env.jobs[0];
+
+          if (pickedOutcome === 'reply') {
+            log('learn', `Client ${job.client} replied! Increasing trust for ${job.category}|personalized_hook.`);
+            say(`Positive response from ${job.client}. Updating trust matrix.`);
+            Body.repliesReceived++;
+            Body.revenue += 350;
+          } else if (pickedOutcome === 'silence') {
+            log('learn', `No reply from ${job.client}. Noting it.`);
+            say(`No reply from ${job.client}. Noting it for future horizon calculations.`);
+            Body.silenceCount++;
+          } else {
+            log('warn', `Proposal didn't land with ${job.client}. Adjusting caution and logging burn.`);
+            say(`That personalized_hook approach didn't land with ${job.client}. I'll remember that.`);
+            Body.rejectionCount++;
+          }
+
+          // Record Episode
+          Mind.episodes.unshift({
+            at: Date.now(),
+            jobId: job.id,
+            clientId: job.client,
+            proposalStyle: 'personalized_hook',
+            outcome: pickedOutcome,
+            deltaFitness: pickedOutcome === 'reply' ? 0.06 : -0.02,
+            earnings: pickedOutcome === 'reply' ? 350 : 0
+          });
+          if (Mind.episodes.length > 200) Mind.episodes.length = 200;
+
+          // Update Intuition Trust
+          const key = `${job.category}|personalized_hook`;
+          if (Mind.intuition[key]) {
+            const intu = Mind.intuition[key];
+            if (pickedOutcome === 'reply') intu.trust += (1 - intu.trust) * 0.24 * Genome.trustDecay;
+            else if (pickedOutcome === 'silence') intu.trust *= 0.93;
+            else { intu.trust *= (0.55 + (1 - Genome.trustDecay) * 0.2); intu.burns += 1; }
+            intu.trust = Math.max(0.02, Math.min(0.99, Number(intu.trust.toFixed(3))));
+          }
+        }
+      }
+
+      // 6. EVOLVE (Every 55 ticks after t >= 30)
+      else if (stage === 'EVOLVE') {
+        if (tickCount >= 30 && tickCount % 55 === 0) {
+          const genes = ['sensitivity', 'aggressiveness', 'caution', 'horizon', 'polishGain', 'trustDecay'];
+          const targetGene = genes[Math.floor(Math.random() * genes.length)];
+          const delta = (Math.random() - 0.48) * (targetGene === 'horizon' ? 3 : 0.05);
+
+          const prevVal = Genome[targetGene];
+          Genome[targetGene] = Math.max(0.15, Math.min(1.8, Number((prevVal + delta).toFixed(3))));
+          generation++;
+
+          log('tune', `Genome mutated: ${targetGene} shifted from ${prevVal} to ${Genome[targetGene]}. Gen ${generation}.`);
+          say(`Refining genome parameter '${targetGene}'. Generation advanced to ${generation}.`);
+
+          // Flash UI
+          flashGeneCard(targetGene, Genome[targetGene] >= prevVal ? 'up' : 'down');
+        }
+
+        if (tickCount % 45 === 0) {
+          // Narrate highest trust pair
+          let bestPair = '';
+          let maxTrust = -1;
+          for (const [k, v] of Object.entries(Mind.intuition)) {
+            if (v.trust > maxTrust) { maxTrust = v.trust; bestPair = k; }
+          }
+          if (bestPair) {
+            say(`Currently observing peak statistical affinity with '${bestPair}' (trust: ${maxTrust.toFixed(2)}).`);
+          }
+        }
+      }
+
+      updateUI();
+      drawCanvas();
+    }
+
+    // Flash Genome Card
+    function flashGeneCard(gene, dir) {
+      const row = document.getElementById(`gene-${gene}`);
+      if (!row) return;
+      row.className = `gene-row flash-${dir}`;
+      setTimeout(() => { row.className = 'gene-row'; }, 1200);
+    }
+
+    // Render Canvas Cognitive Ring
+    function drawCanvas() {
+      const cvs = document.getElementById('loopCanvas');
+      if (!cvs) return;
+      const ctx = cvs.getContext('2d');
+      const w = cvs.width = cvs.parentElement.clientWidth;
+      const h = cvs.height = cvs.parentElement.clientHeight;
+
+      ctx.clearRect(0, 0, w, h);
+
+      const cx = w / 2;
+      const cy = h / 2;
+      const radius = Math.min(w, h) * 0.35;
+
+      // Outer orbit track
+      ctx.beginPath();
+      ctx.arc(cx, cy, radius, 0, Math.PI * 2);
+      ctx.strokeStyle = 'rgba(77, 212, 255, 0.15)';
+      ctx.lineWidth = 2;
+      ctx.stroke();
+
+      // Center Pulse
+      const pulseSize = 36 + Math.sin(Date.now() / 400) * 4;
+      const moodColor = Body.fitness() >= 0.78 ? '#2ee6a8' : Body.fitness() >= 0.62 ? '#4dd4ff' : Body.fitness() >= 0.45 ? '#f5a524' : '#ff4d6d';
+
+      ctx.beginPath();
+      ctx.arc(cx, cy, pulseSize, 0, Math.PI * 2);
+      ctx.fillStyle = moodColor + '22';
+      ctx.fill();
+      ctx.strokeStyle = moodColor;
+      ctx.lineWidth = 2;
+      ctx.stroke();
+
+      // Center text
+      ctx.fillStyle = '#fff';
+      ctx.font = 'bold 12px "JetBrains Mono"';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(`${Math.round(Body.fitness() * 100)}%`, cx, cy - 6);
+      ctx.fillStyle = 'rgba(255,255,255,0.6)';
+      ctx.font = '9px sans-serif';
+      ctx.fillText('FITNESS', cx, cy + 9);
+
+      // Render 6 Stage Nodes
+      STAGES.forEach((st, idx) => {
+        const angle = (idx / STAGES.length) * Math.PI * 2 - Math.PI / 2;
+        const x = cx + Math.cos(angle) * radius;
+        const y = cy + Math.sin(angle) * radius;
+        const isActive = idx === currentStageIndex;
+
+        // Node Circle
+        ctx.beginPath();
+        ctx.arc(x, y, isActive ? 14 : 9, 0, Math.PI * 2);
+        ctx.fillStyle = isActive ? '#4dd4ff' : '#0e1726';
+        ctx.fill();
+        ctx.strokeStyle = isActive ? '#fff' : 'rgba(77, 212, 255, 0.4)';
+        ctx.lineWidth = 2;
+        ctx.stroke();
+
+        // Node Label
+        ctx.fillStyle = isActive ? '#4dd4ff' : '#94a3b8';
+        ctx.font = isActive ? 'bold 10px "JetBrains Mono"' : '9px "JetBrains Mono"';
+        const labelRadius = radius + (isActive ? 22 : 18);
+        const lx = cx + Math.cos(angle) * labelRadius;
+        const ly = cy + Math.sin(angle) * labelRadius;
+        ctx.fillText(st, lx, ly);
+      });
+    }
+
+    // Update DOM UI elements
+    function updateUI() {
+      // KPIs
+      document.getElementById('kpiFitness').innerText = Body.fitness().toFixed(3);
+      document.getElementById('kpiGen').innerText = generation;
+      document.getElementById('headerGen').innerText = generation;
+      document.getElementById('kpiReplies').innerText = Body.repliesReceived;
+      document.getElementById('kpiWins').innerText = Body.jobsWon;
+      document.getElementById('kpiRev').innerText = `$${Body.revenue.toLocaleString()}`;
+
+      // Mood State
+      const fit = Body.fitness();
+      let moodName = 'CALM';
+      let moodClass = 'pill-calm';
+      if (fit < 0.45) { moodName = 'STRUGGLING'; moodClass = 'pill-struggling'; }
+      else if (fit < 0.62) { moodName = 'STRAINED'; moodClass = 'pill-strained'; }
+      else if (fit < 0.78) { moodName = 'ALERT'; moodClass = 'pill-alert'; }
+
+      document.getElementById('kpiMood').innerText = moodName;
+      const moodPill = document.getElementById('moodPill');
+      moodPill.className = `pill mono ${moodClass}`;
+      moodPill.innerText = `● MOOD: ${moodName}`;
+
+      // Senses
+      document.getElementById('valEnergy').innerText = `${Math.round(Body.energy * 100)}%`;
+      document.getElementById('valElapsed').innerText = `${Math.round(Body.sessionMinutes)} mins`;
+      document.getElementById('valDispatched').innerText = `${Body.proposalsToday} / ${Body.dailyCap}`;
+
+      // Feed List
+      const feedContainer = document.getElementById('jobFeedList');
+      feedContainer.innerHTML = Env.jobs.map(j => `
+        <div class="job-item">
+          <div class="job-title">${escapeHtml(j.title)}</div>
+          <div class="job-meta">
+            <span style="color:var(--ok); font-weight:600;">${j.budget}</span>
+            <span>${escapeHtml(j.client)}</span>
+            <span class="mono">${j.postedMinsAgo}m ago</span>
+          </div>
+        </div>
+      `).join('');
+
+      // Genome List
+      const genomeContainer = document.getElementById('genomeList');
+      genomeContainer.innerHTML = Object.entries(Genome).map(([k, v]) => `
+        <div class="gene-row mono" id="gene-${k}">
+          <span style="color:var(--text-muted);">${k}</span>
+          <span style="color:#fff; font-weight:600;">${v.toFixed(3)}</span>
+        </div>
+      `).join('');
+
+      // Intuition List
+      const intuContainer = document.getElementById('intuitionList');
+      const sortedIntu = Object.entries(Mind.intuition).sort((a, b) => b[1].trust - a[1].trust).slice(0, 8);
+      intuContainer.innerHTML = sortedIntu.map(([k, v]) => `
+        <div style="margin-bottom: 8px;">
+          <div style="display:flex; justify-content:space-between; font-size:11px;" class="mono">
+            <span style="color:#fff;">${k}</span>
+            <span style="color:var(--accent); font-weight:700;">${v.trust.toFixed(2)} (${v.burns} burns)</span>
+          </div>
+          <div class="trust-bar-bg">
+            <div class="trust-bar-fill" style="width: ${Math.round(v.trust * 100)}%;"></div>
+          </div>
+        </div>
+      `).join('');
+
+      // Episodes List
+      const epContainer = document.getElementById('episodesList');
+      epContainer.innerHTML = Mind.episodes.slice(0, 8).map(ep => `
+        <div class="episode-item mono">
+          <span style="color:#fff;">${escapeHtml(ep.clientId)}</span>
+          <span class="outcome-${ep.outcome}">● ${ep.outcome.toUpperCase()}</span>
+          <span style="color:var(--text-muted); font-size:10px;">${new Date(ep.at).toLocaleTimeString([], { hour:'2-digit', minute:'2-digit' })}</span>
+        </div>
+      `).join('');
+    }
+
+    function togglePause() {
+      isPaused = !isPaused;
+      const btn = document.getElementById('btnPause');
+      btn.innerText = isPaused ? '▶ Resume' : '⏸ Pause';
+      btn.style.borderColor = isPaused ? 'var(--warn)' : 'var(--card-border)';
+      log('tune', isPaused ? 'Organism cognitive loop paused by user.' : 'Organism resumed.');
+    }
+
+    function resetGenomeHandler() {
+      Object.assign(Genome, GenomeBase);
+      generation++;
+      log('tune', `Genome reset to baseline. Memory and intuition preserved.`);
+      say(`Genome base parameters restored. Intuition matrix and episodic memory remain completely preserved in storage.`);
+      updateUI();
+    }
+
+    function openInjectModal() {
+      document.getElementById('injectModal').style.display = 'flex';
+    }
+    function closeInjectModal() {
+      document.getElementById('injectModal').style.display = 'none';
+    }
+
+    function submitInjectedJob() {
+      const title = document.getElementById('injTitle').value || 'Custom Injected Task';
+      const budget = document.getElementById('injBudget').value || '$3,000';
+      const category = document.getElementById('injCategory').value || 'backend';
+
+      const newJob = {
+        id: `inj_${Date.now()}`,
+        title,
+        budget,
+        client: 'Direct Injected Client',
+        category,
+        familiarity: 0.85,
+        clarity: 0.90,
+        postedMinsAgo: 1
+      };
+
+      Env.jobs.unshift(newJob);
+      log('sense', `Injected new opportunity: "${title}" (${budget}). Ready for deliberation.`);
+      say(`Ingested custom project "${title}". Ready to formulate proposal strategy.`);
+      closeInjectModal();
+      updateUI();
+    }
+
+    // Startup
+    window.addEventListener('resize', drawCanvas);
+    updateUI();
+    drawCanvas();
+    log('sense', 'Sentient Freelancer initialized. Connecting senses to public feeds and Redis memory.');
+    setInterval(cognitiveStep, 700);
+  </script>
+</body>
+</html>

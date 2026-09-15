@@ -1,0 +1,101 @@
+name: Deploy Backend (AWS EC2 & Docker)
+
+on:
+  push:
+    branches: [ main ]
+    paths:
+      - 'sentient-freelancer/backend/**'
+      - 'backend/**'
+
+jobs:
+  deploy-backend:
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+      contents: read
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_REGION || 'us-east-1' }}
+
+      - name: Login to Amazon ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Build, Tag, and Push Docker Image
+        env:
+          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+          ECR_REPOSITORY: sentient-backend
+          IMAGE_TAG: ${{ github.sha }}
+        run: |
+          echo "Building Docker image..."
+          docker build -t $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG -f sentient-freelancer/backend/Dockerfile sentient-freelancer/backend/
+          docker tag $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG $ECR_REGISTRY/$ECR_REPOSITORY:latest
+          docker push $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
+          docker push $ECR_REGISTRY/$ECR_REPOSITORY:latest
+
+      - name: Deploy to EC2 via SSM Session Manager
+        env:
+          INSTANCE_ID: ${{ secrets.EC2_INSTANCE_ID }}
+          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+          ECR_REPOSITORY: sentient-backend
+          IMAGE_TAG: ${{ github.sha }}
+        run: |
+          echo "Deploying update to EC2 instance: $INSTANCE_ID..."
+          COMMANDS="[
+            \"aws ecr get-login-password --region ${{ secrets.AWS_REGION || 'us-east-1' }} | docker login --username AWS --password-stdin $ECR_REGISTRY\",
+            \"docker pull $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG\",
+            \"cd /opt/sentient\",
+            \"docker stop sentient-backend || true\",
+            \"docker rm sentient-backend || true\",
+            \"docker run -d --name sentient-backend --restart always -p 8080:8080 --env-file /opt/sentient/.env -v /var/lib/sentient/chrome-profile:/var/lib/sentient/chrome-profile $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG\",
+            \"systemctl restart sentient-worker.service || true\"
+          ]"
+
+          COMMAND_ID=$(aws ssm send-command \
+            --instance-ids "$INSTANCE_ID" \
+            --document-name "AWS-RunShellScript" \
+            --parameters "commands=$COMMANDS" \
+            --output text --query "Command.CommandId")
+
+          echo "Sent SSM command $COMMAND_ID. Waiting for execution..."
+          aws ssm wait command-executed --command-id "$COMMAND_ID" --instance-id "$INSTANCE_ID"
+          echo "SSM command successfully finished."
+
+      - name: Run Production Health Check
+        env:
+          API_URL: ${{ secrets.API_URL }}
+        run: |
+          if [ -z "$API_URL" ]; then
+            echo "API_URL secret not defined. Skipping public health curl."
+            exit 0
+          fi
+
+          echo "Verifying health endpoint at $API_URL/api/health..."
+          ATTEMPTS=0
+          MAX_ATTEMPTS=10
+          SUCCESS=false
+
+          until [ $ATTEMPTS -ge $MAX_ATTEMPTS ]; do
+            STATUS=$(curl -s -o /dev/null -w "%{http_code}" "$API_URL/api/health" || echo "000")
+            if [ "$STATUS" = "200" ]; then
+              echo "Health check passed with HTTP 200!"
+              SUCCESS=true
+              break
+            fi
+            echo "Attempt $((ATTEMPTS+1)) failed with status $STATUS. Retrying in 10s..."
+            ATTEMPTS=$((ATTEMPTS+1))
+            sleep 10
+          done
+
+          if [ "$SUCCESS" = false ]; then
+            echo "Health check failed after $MAX_ATTEMPTS attempts. Check logs."
+            exit 1
+          fi

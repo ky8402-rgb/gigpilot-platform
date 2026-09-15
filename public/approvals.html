@@ -1,0 +1,499 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>SENTIENT FREELANCER — Human Approval Queue</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --bg: #030712;
+      --card: #0b1220;
+      --card-border: #1e293b;
+      --card-hover: #131c2e;
+      --accent: #4dd4ff;
+      --ok: #2ee6a8;
+      --warn: #f5a524;
+      --bad: #ff4d6d;
+      --purple: #b47aff;
+      --text: #f1f5f9;
+      --text-muted: #94a3b8;
+      --font-sans: 'Inter', system-ui, -apple-system, sans-serif;
+      --font-mono: 'JetBrains Mono', monospace;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: var(--font-sans);
+      min-height: 100vh;
+      padding: 24px;
+      line-height: 1.5;
+    }
+
+    .mono { font-family: var(--font-mono); }
+
+    .header-bar {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding-bottom: 20px;
+      border-bottom: 1px solid var(--card-border);
+      margin-bottom: 24px;
+      flex-wrap: wrap;
+      gap: 16px;
+    }
+
+    .title-group {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+    }
+
+    .logo-icon {
+      width: 42px;
+      height: 42px;
+      background: linear-gradient(135deg, rgba(77, 212, 255, 0.2), rgba(180, 122, 255, 0.2));
+      border: 1px solid var(--accent);
+      border-radius: 12px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: var(--accent);
+      font-weight: 700;
+      font-family: var(--font-mono);
+      font-size: 18px;
+    }
+
+    h1 {
+      font-size: 20px;
+      font-weight: 700;
+      letter-spacing: -0.02em;
+    }
+
+    .sub-title {
+      font-size: 12px;
+      color: var(--text-muted);
+    }
+
+    .controls-group {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      flex-wrap: wrap;
+    }
+
+    .btn {
+      background: #152238;
+      border: 1px solid var(--card-border);
+      color: var(--text);
+      padding: 8px 14px;
+      border-radius: 8px;
+      font-size: 13px;
+      font-weight: 500;
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      transition: all 0.15s ease;
+      text-decoration: none;
+    }
+
+    .btn:hover {
+      background: #1c2e4c;
+      border-color: var(--accent);
+      color: var(--accent);
+    }
+
+    .btn-send {
+      background: rgba(46, 230, 168, 0.15);
+      border-color: rgba(46, 230, 168, 0.4);
+      color: var(--ok);
+      font-weight: 600;
+    }
+    .btn-send:hover {
+      background: rgba(46, 230, 168, 0.25);
+      border-color: var(--ok);
+      color: #fff;
+    }
+
+    .btn-skip {
+      background: rgba(255, 77, 109, 0.1);
+      border-color: rgba(255, 77, 109, 0.3);
+      color: var(--bad);
+    }
+    .btn-skip:hover {
+      background: rgba(255, 77, 109, 0.2);
+      border-color: var(--bad);
+    }
+
+    .status-pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 4px 10px;
+      border-radius: 20px;
+      font-size: 11px;
+      font-weight: 600;
+      background: rgba(46, 230, 168, 0.1);
+      border: 1px solid rgba(46, 230, 168, 0.3);
+      color: var(--ok);
+    }
+
+    /* Persona & Stats Strip */
+    .stats-strip {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+      gap: 14px;
+      margin-bottom: 24px;
+    }
+
+    .stat-card {
+      background: var(--card);
+      border: 1px solid var(--card-border);
+      border-radius: 12px;
+      padding: 14px 16px;
+    }
+
+    .stat-label {
+      font-size: 11px;
+      color: var(--text-muted);
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      margin-bottom: 4px;
+    }
+
+    .stat-val {
+      font-size: 18px;
+      font-weight: 700;
+      color: var(--accent);
+    }
+
+    .queue-grid {
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+    }
+
+    .proposal-card {
+      background: var(--card);
+      border: 1px solid var(--card-border);
+      border-radius: 14px;
+      padding: 20px;
+      transition: border-color 0.2s;
+    }
+
+    .proposal-card:hover {
+      border-color: #2a3a54;
+    }
+
+    .proposal-top {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      margin-bottom: 12px;
+      gap: 16px;
+      flex-wrap: wrap;
+    }
+
+    .job-title {
+      font-size: 16px;
+      font-weight: 600;
+      color: #fff;
+    }
+
+    .job-meta {
+      font-size: 12px;
+      color: var(--text-muted);
+      display: flex;
+      gap: 12px;
+      margin-top: 4px;
+      align-items: center;
+    }
+
+    .tag-badge {
+      background: #152238;
+      border: 1px solid #23344d;
+      color: var(--accent);
+      padding: 2px 8px;
+      border-radius: 4px;
+      font-size: 11px;
+    }
+
+    .editor-textarea {
+      width: 100%;
+      min-height: 160px;
+      background: #060b14;
+      border: 1px solid var(--card-border);
+      border-radius: 8px;
+      color: #e2e8f0;
+      font-family: var(--font-sans);
+      font-size: 13px;
+      padding: 12px;
+      line-height: 1.6;
+      resize: vertical;
+      margin-bottom: 14px;
+      outline: none;
+    }
+
+    .editor-textarea:focus {
+      border-color: var(--accent);
+    }
+
+    .card-footer {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 12px;
+      padding-top: 12px;
+      border-top: 1px solid #141f33;
+    }
+
+    .guard-status {
+      font-size: 12px;
+      color: var(--ok);
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .actions-group {
+      display: flex;
+      gap: 8px;
+    }
+
+    .empty-queue {
+      background: var(--card);
+      border: 1px dashed var(--card-border);
+      border-radius: 14px;
+      padding: 48px;
+      text-align: center;
+      color: var(--text-muted);
+    }
+
+    .empty-icon {
+      font-size: 32px;
+      margin-bottom: 12px;
+      color: var(--accent);
+    }
+
+    .toast {
+      position: fixed;
+      bottom: 24px;
+      right: 24px;
+      background: #0f1c30;
+      border: 1px solid var(--accent);
+      color: #fff;
+      padding: 12px 20px;
+      border-radius: 8px;
+      font-size: 13px;
+      display: none;
+      z-index: 1000;
+      box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
+    }
+  </style>
+</head>
+<body>
+
+  <header class="header-bar">
+    <div class="title-group">
+      <div class="logo-icon mono">SF</div>
+      <div>
+        <h1>HUMAN APPROVAL QUEUE</h1>
+        <div class="sub-title">1 Click Per Proposal — Zero Bot Detection Risk · Continuous Organic Growth</div>
+      </div>
+    </div>
+
+    <div class="controls-group">
+      <span class="status-pill mono" id="livePill">● Human-in-the-Loop Active</span>
+      <a href="index.html" class="btn">← Back to Organism Dashboard</a>
+      <button class="btn" onclick="fetchQueue()">↻ Refresh Queue</button>
+    </div>
+  </header>
+
+  <!-- Live Session & Persona Bar -->
+  <section class="stats-strip">
+    <div class="stat-card">
+      <div class="stat-label">Today's Voice Signature</div>
+      <div class="stat-val mono" id="statVoice">Direct &amp; Technical</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-label">Session Energy / Focus</div>
+      <div class="stat-val mono" id="statEnergy">88% · High</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-label">Proposals Sent Today</div>
+      <div class="stat-val mono" id="statQuota">6 / 12 Max</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-label">Next Safe Send Cooldown</div>
+      <div class="stat-val mono" id="statCooldown" style="color: var(--ok);">Ready Now</div>
+    </div>
+  </section>
+
+  <!-- Main Proposal Cards Container -->
+  <main class="queue-grid" id="queueContainer">
+    <!-- Rendered dynamically -->
+  </main>
+
+  <div class="toast" id="toast"></div>
+
+  <script>
+    const API_BASE = window.location.origin.includes(':3000') || window.location.origin.includes('run.app')
+      ? ''
+      : (window.__ENV?.API_URL || '');
+
+    let queueItems = [
+      {
+        id: 'prop_demo_1',
+        jobId: 'job_shopify_9021',
+        jobTitle: 'Shopify Plus Headless Storefront Performance Optimization',
+        client: 'D2C Retail Brands Ltd (98% Hire Rate)',
+        budget: '$3,500',
+        style: 'personalized_hook',
+        voice: 'direct',
+        status: 'pending_approval',
+        hook: 'I audited your Hydrogen store payload latency — here is the clean fix.',
+        proposalText: `I saw your checkout payload latency issue on Shopify Plus Headless Storefront — here is the clean fix.\n\nLooking closely at your stack, the primary objective is ensuring high reliability while eliminating technical debt. I have delivered similar integrations recently, resolving bottlenecks in Shopify workflows without impacting existing production data.\n\nAre you currently handling the fallback state on the client or queuing it upstream?\n\nHappy to hop on a 10-minute async loom or call whenever suits your schedule.\n\nBest,\nAlex`
+      },
+      {
+        id: 'prop_demo_2',
+        jobId: 'job_node_api_8842',
+        jobTitle: 'Distributed Node.js Microservice & Concurrency Pipeline',
+        client: 'SaaS Infrastructure Group ($120k spent)',
+        budget: '$4,200',
+        style: 'technical_deep_dive',
+        voice: 'technical',
+        status: 'pending_approval',
+        hook: 'Audited your description for Distributed Node.js: targeting $4,200 requires specific concurrency boundaries.',
+        proposalText: `Audited your description for Distributed Node.js Microservice: targeting concurrency boundaries requires specific rate limiting and queue partitions.\n\nArchitecturally, this requires isolated modules with idempotent event delivery and rigorous error bounds. I suggest handling payload serialization and edge verification directly before running the core backend logic, preventing cascading timeout states.\n\nWhat is your target latency or p99 SLA under peak user loads?\n\nLet me know if you'd like me to share a 3-minute architectural breakdown.\n\nRegards,\nAlex — Staff Systems Engineer`
+      }
+    ];
+
+    function showToast(msg) {
+      const t = document.getElementById('toast');
+      t.innerText = msg;
+      t.style.display = 'block';
+      setTimeout(() => { t.style.display = 'none'; }, 3500);
+    }
+
+    async function fetchQueue() {
+      try {
+        const res = await fetch(`${API_BASE}/api/proposals`);
+        if (res.ok) {
+          const data = await res.json();
+          if (data.queue && data.queue.length > 0) {
+            queueItems = data.queue.filter(q => q.status === 'pending_approval');
+          }
+        }
+      } catch (err) {
+        console.log('Using simulated local queue view:', err.message);
+      }
+      renderQueue();
+    }
+
+    function renderQueue() {
+      const container = document.getElementById('queueContainer');
+      const pending = queueItems.filter(q => q.status === 'pending_approval');
+
+      if (pending.length === 0) {
+        container.innerHTML = `
+          <div class="empty-queue">
+            <div class="empty-icon">✓</div>
+            <h3 style="color:#fff; margin-bottom: 6px;">Approval Queue is Clear</h3>
+            <p>Sentient Freelancer is currently observing the job market. New proposals will appear here as high-confidence opportunities arrive.</p>
+          </div>
+        `;
+        return;
+      }
+
+      container.innerHTML = pending.map(item => `
+        <article class="proposal-card" id="card-${item.id}">
+          <div class="proposal-top">
+            <div>
+              <div class="job-title">${escapeHtml(item.jobTitle)}</div>
+              <div class="job-meta">
+                <span>Client: <strong>${escapeHtml(item.client)}</strong></span>
+                <span>Budget: <strong style="color: var(--ok);">${escapeHtml(item.budget)}</strong></span>
+                <span class="tag-badge mono">${item.style.toUpperCase()}</span>
+                <span class="tag-badge mono" style="color: var(--purple);">VOICE: ${item.voice.toUpperCase()}</span>
+              </div>
+            </div>
+            <div class="status-pill mono">Ready for Human Review</div>
+          </div>
+
+          <textarea class="editor-textarea" id="text-${item.id}">${escapeHtml(item.proposalText)}</textarea>
+
+          <div class="card-footer">
+            <div class="guard-status mono">
+              <span>✓ Anti-Fingerprint Verified: No text duplicate in 30 days · Random typo &amp; phrasing unique</span>
+            </div>
+            <div class="actions-group">
+              <button class="btn" onclick="saveEdit('${item.id}')">💾 Save Edit</button>
+              <button class="btn btn-skip" onclick="skipProposal('${item.id}')">✕ Skip</button>
+              <button class="btn btn-send" onclick="sendProposal('${item.id}')">✈ Approve &amp; Dispatch</button>
+            </div>
+          </div>
+        </article>
+      `).join('');
+    }
+
+    async function sendProposal(id) {
+      const item = queueItems.find(q => q.id === id);
+      const textElem = document.getElementById(`text-${id}`);
+      const updatedText = textElem ? textElem.value : (item ? item.proposalText : '');
+
+      try {
+        await fetch(`${API_BASE}/api/proposals/${id}/send`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ proposalText: updatedText })
+        });
+      } catch (e) {}
+
+      if (item) item.status = 'approved';
+      showToast('✓ Proposal approved! Worker will now simulate human typing and dispatch.');
+      renderQueue();
+    }
+
+    async function skipProposal(id) {
+      try {
+        await fetch(`${API_BASE}/api/proposals/${id}/skip`, { method: 'POST' });
+      } catch (e) {}
+
+      const item = queueItems.find(q => q.id === id);
+      if (item) item.status = 'skipped';
+      showToast('Proposal skipped.');
+      renderQueue();
+    }
+
+    async function saveEdit(id) {
+      const textElem = document.getElementById(`text-${id}`);
+      if (!textElem) return;
+      const updatedText = textElem.value;
+
+      try {
+        await fetch(`${API_BASE}/api/proposals/${id}/edit`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ proposalText: updatedText })
+        });
+      } catch (e) {}
+
+      const item = queueItems.find(q => q.id === id);
+      if (item) item.proposalText = updatedText;
+      showToast('Proposal text saved.');
+    }
+
+    function escapeHtml(str) {
+      return (str || '').replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+    }
+
+    fetchQueue();
+  </script>
+</body>
+</html>

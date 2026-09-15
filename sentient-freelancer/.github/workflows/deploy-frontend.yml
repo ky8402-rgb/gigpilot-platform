@@ -1,0 +1,28 @@
+name: Deploy Frontend (AWS Amplify)
+
+on:
+  push:
+    branches: [ main ]
+    paths:
+      - 'sentient-freelancer/frontend/**'
+      - 'frontend/**'
+      - 'public/**'
+
+jobs:
+  deploy-amplify:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Trigger AWS Amplify Webhook
+        env:
+          AMPLIFY_WEBHOOK_URL: ${{ secrets.AMPLIFY_WEBHOOK_URL }}
+        run: |
+          if [ -n "$AMPLIFY_WEBHOOK_URL" ]; then
+            echo "Invoking AWS Amplify deployment build webhook..."
+            curl -s -X POST -d '{}' -H "Content-Type: application/json" "$AMPLIFY_WEBHOOK_URL"
+            echo "Amplify build successfully requested."
+          else
+            echo "AMPLIFY_WEBHOOK_URL secret not set. Skipping webhook trigger."
+          fi
