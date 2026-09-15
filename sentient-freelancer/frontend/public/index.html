@@ -1122,11 +1122,47 @@
     }
 
     // Startup
+    const API_BASE = (window.location.origin.includes(':3000') || window.location.origin.includes('run.app'))
+      ? ''
+      : (window.__ENV?.API_URL || 'https://3-222-149-9.sslip.io');
+
+    async function syncLiveBackend() {
+      try {
+        const [memRes, impRes, perRes] = await Promise.all([
+          fetch(`${API_BASE}/api/memory`).then(r => r.ok ? r.json() : null).catch(() => null),
+          fetch(`${API_BASE}/api/improver/status`).then(r => r.ok ? r.json() : null).catch(() => null),
+          fetch(`${API_BASE}/api/persona`).then(r => r.ok ? r.json() : null).catch(() => null)
+        ]);
+
+        if (memRes && memRes.ok && memRes.genome) {
+          Object.assign(Genome, memRes.genome);
+          if (memRes.generation) generation = memRes.generation;
+          if (memRes.body) Object.assign(Body, memRes.body);
+        }
+
+        if (impRes && impRes.ok && impRes.status) {
+          if (impRes.generation) generation = impRes.generation;
+          if (impRes.currentGenome) Object.assign(Genome, impRes.currentGenome);
+        }
+
+        if (perRes && perRes.ok && perRes.persona) {
+          Object.assign(Persona, perRes.persona);
+        }
+
+        updateUI();
+        drawCanvas();
+      } catch (err) {
+        console.warn('Backend sync error:', err);
+      }
+    }
+
     window.addEventListener('resize', drawCanvas);
     updateUI();
     drawCanvas();
     log('sense', 'Sentient Freelancer initialized. Connecting senses to public feeds and Redis memory.');
+    syncLiveBackend();
     setInterval(cognitiveStep, 700);
+    setInterval(syncLiveBackend, 10000);
   </script>
 </body>
 </html>
