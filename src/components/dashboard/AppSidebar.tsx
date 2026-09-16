@@ -27,6 +27,7 @@ interface AppSidebarProps {
   onOpenEmailVerification: () => void;
   onOpenPasswordReset: () => void;
   onOpenPayPalConnect: () => void;
+  onOpenPayPalCheckout?: () => void;
   onOpenGitHubSettings: () => void;
   onOpenAutoDeploy: () => void;
   onOpenCredentialsModal: () => void;
@@ -42,6 +43,7 @@ export const AppSidebar: React.FC<AppSidebarProps> = ({
   onOpenEmailVerification,
   onOpenPasswordReset,
   onOpenPayPalConnect,
+  onOpenPayPalCheckout,
   onOpenGitHubSettings,
   onOpenAutoDeploy,
   onOpenCredentialsModal,
@@ -300,6 +302,18 @@ export const AppSidebar: React.FC<AppSidebarProps> = ({
             >
               <i className="fas fa-file-invoice-dollar w-4 text-center text-sm"></i>
               <span>Invoicing &amp; Contracts</span>
+            </button>
+
+            <button
+              id="sidebar-nav-paypal-checkout"
+              onClick={onOpenPayPalCheckout}
+              className="w-full flex items-center gap-3 px-3 py-2 rounded-xl text-xs font-semibold transition-all bg-[#0070ba]/10 text-[#00aaff] hover:bg-[#0070ba]/20 border border-[#0070ba]/30 cursor-pointer"
+            >
+              <i className="fab fa-paypal w-4 text-center text-sm text-[#ffc439]"></i>
+              <span>PayPal Checkout</span>
+              <span className="ml-auto text-[9px] font-mono px-1.5 py-0.5 rounded bg-[#ffc439]/20 text-[#ffc439] font-bold">
+                PAY
+              </span>
             </button>
 
             <button

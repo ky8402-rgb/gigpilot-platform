@@ -22,6 +22,7 @@ import {
   PaymentCollectionLinks,
   PaymentCollectionRecord
 } from '../services/api';
+import { PayPalSdkV6Button } from './PayPalSdkV6Button';
 
 interface ClientPaymentCollectionModalProps {
   isOpen: boolean;
@@ -332,6 +333,25 @@ export const ClientPaymentCollectionModal: React.FC<ClientPaymentCollectionModal
                       <span>Open Checkout Page</span>
                       <ExternalLink className="w-3 h-3" />
                     </a>
+                  </div>
+
+                  {/* Interactive In-App PayPal Checkout Button */}
+                  <div className="pt-2 border-t border-slate-800/80">
+                    <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block mb-1.5">
+                      Or Pay Directly with PayPal In-App:
+                    </span>
+                    <PayPalSdkV6Button
+                      amount={amountUsd}
+                      currency="USD"
+                      description={`Payment for Order #${orderId || 'Direct'}: ${projectTitle}`}
+                      clientName={name}
+                      onSuccess={(_orderId) => {
+                        handleCollectMoney();
+                      }}
+                      onError={(err) => {
+                        console.warn('[PayPal Modal] Notice:', err);
+                      }}
+                    />
                   </div>
                 </div>
               )}

@@ -14,6 +14,7 @@ interface AppMobileNavProps {
   onOpenPasswordReset: () => void;
   onOpenPayPalConnect: () => void;
   onOpenPayPalSettlement: () => void;
+  onOpenPayPalCheckout?: () => void;
   onOpenGitHubSettings: () => void;
   onOpenAutoDeploy: () => void;
   onOpenCredentialsModal: () => void;
@@ -34,6 +35,7 @@ export const AppMobileNav: React.FC<AppMobileNavProps> = ({
   onOpenPasswordReset,
   onOpenPayPalConnect,
   onOpenPayPalSettlement,
+  onOpenPayPalCheckout,
   onOpenGitHubSettings,
   onOpenAutoDeploy,
   onOpenCredentialsModal,
@@ -205,6 +207,17 @@ export const AppMobileNav: React.FC<AppMobileNavProps> = ({
 
             {/* Quick Gateways in Drawer */}
             <div className="pt-2 border-t border-slate-800 space-y-1.5">
+              <button
+                onClick={() => {
+                  setIsMobileMenuOpen(false);
+                  onOpenPayPalCheckout?.();
+                }}
+                className="w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs font-semibold text-white bg-[#0070ba] hover:bg-[#003087] cursor-pointer shadow-sm border border-[#00aaff]/40"
+              >
+                <i className="fab fa-paypal text-[#ffc439]"></i>
+                <span>PayPal In-App Checkout</span>
+              </button>
+
               <button
                 onClick={() => {
                   setIsMobileMenuOpen(false);

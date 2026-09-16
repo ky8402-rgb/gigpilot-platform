@@ -6,6 +6,7 @@ import {
   createPayPalCheckoutOrder,
   PayPalLiveBalanceResult
 } from '../services/api';
+import { PayPalSdkV6Button } from './PayPalSdkV6Button';
 
 interface PayPalSettlementModalProps {
   isOpen: boolean;
@@ -556,6 +557,22 @@ export const PayPalSettlementModal: React.FC<PayPalSettlementModalProps> = ({
                       : `Open Live PayPal Checkout ($${parseFloat(testAmount || '0').toFixed(2)} USD)`}
                   </span>
                 </button>
+
+                <div className="pt-3 border-t border-[#2a3147]">
+                  <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider block mb-2">
+                    Or Execute In-App Payment (Web SDK v6):
+                  </span>
+                  <PayPalSdkV6Button
+                    amount={parseFloat(testAmount) || 1.00}
+                    currency="USD"
+                    description={`Test Settlement Verification ($${testAmount} USD)`}
+                    onSuccess={(orderId) => {
+                      if (showToast) showToast(`✅ Test Deposit Order ${orderId} Captured!`, 'success');
+                      loadTransactions();
+                      loadLiveBalance();
+                    }}
+                  />
+                </div>
               </div>
 
               {testApproveUrl && (

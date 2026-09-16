@@ -52,6 +52,7 @@ const EmailVerificationModal = lazy(() => import('./components/EmailVerification
 const GitHubSettingsModal = lazy(() => import('./components/GitHubSettingsModal').then(m => ({ default: m.GitHubSettingsModal })));
 const AutoDeployPipelineTool = lazy(() => import('./components/AutoDeployPipelineTool').then(m => ({ default: m.AutoDeployPipelineTool })));
 const BackendConnectionModal = lazy(() => import('./components/BackendConnectionModal').then(m => ({ default: m.BackendConnectionModal })));
+const PayPalCheckoutModal = lazy(() => import('./components/PayPalCheckoutModal').then(m => ({ default: m.PayPalCheckoutModal })));
 
 // Dynamic helper for celebratory confetti without bloating the main bundle
 const triggerConfetti = (opts: any) => {
@@ -210,6 +211,19 @@ export default function App() {
   const [selectedPayPalInvoice, setSelectedPayPalInvoice] = useState<Invoice | null>(null);
   const [isPayPalModalOpen, setIsPayPalModalOpen] = useState<boolean>(false);
   const [isPayPalSettlementModalOpen, setIsPayPalSettlementModalOpen] = useState<boolean>(false);
+  const [isPayPalCheckoutOpen, setIsPayPalCheckoutOpen] = useState<boolean>(false);
+  const [payPalCheckoutParams, setPayPalCheckoutParams] = useState<{
+    amount: number;
+    title: string;
+    clientName: string;
+    clientEmail: string;
+    orderId?: string | number;
+  }>({
+    amount: 150,
+    title: 'Freelance Engineering Deliverable Milestone',
+    clientName: 'Valued Client',
+    clientEmail: 'client@example.com'
+  });
   const [livePayPalBalance, setLivePayPalBalance] = useState<PayPalLiveBalanceResult | null>(null);
   const [isPayPalConnectOpen, setIsPayPalConnectOpen] = useState<boolean>(false);
   const [isBackendModalOpen, setIsBackendModalOpen] = useState<boolean>(false);
@@ -1133,6 +1147,7 @@ export default function App() {
         onOpenEmailVerification={() => setIsEmailVerificationOpen(true)}
         onOpenPasswordReset={() => setIsPasswordResetOpen(true)}
         onOpenPayPalConnect={() => setIsPayPalConnectOpen(true)}
+        onOpenPayPalCheckout={() => setIsPayPalCheckoutOpen(true)}
         onOpenGitHubSettings={() => setIsGitHubSettingsOpen(true)}
         onOpenAutoDeploy={() => setIsAutoDeployModalOpen(true)}
         onOpenCredentialsModal={() => setIsCredentialsModalOpen(true)}
@@ -1155,6 +1170,7 @@ export default function App() {
         onOpenEmailVerification={() => setIsEmailVerificationOpen(true)}
         onOpenPasswordReset={() => setIsPasswordResetOpen(true)}
         onOpenPayPalConnect={() => setIsPayPalConnectOpen(true)}
+        onOpenPayPalCheckout={() => setIsPayPalCheckoutOpen(true)}
         onOpenPayPalSettlement={() => setIsPayPalSettlementModalOpen(true)}
         onOpenGitHubSettings={() => setIsGitHubSettingsOpen(true)}
         onOpenAutoDeploy={() => setIsAutoDeployModalOpen(true)}
@@ -1203,6 +1219,7 @@ export default function App() {
             }
           }}
           onOpenPayPalSettlement={() => setIsPayPalSettlementModalOpen(true)}
+          onOpenPayPalCheckout={() => setIsPayPalCheckoutOpen(true)}
           onOpenBackendModal={() => setIsBackendModalOpen(true)}
           onOpenCredentialsModal={() => setIsCredentialsModalOpen(true)}
           onOpenGitHubSettings={() => setIsGitHubSettingsOpen(true)}
@@ -2488,6 +2505,47 @@ export default function App() {
         <PayPalConnectModal
           isOpen={isPayPalConnectOpen}
           onClose={() => setIsPayPalConnectOpen(false)}
+          showToast={showToast}
+        />
+      </Suspense>
+
+      {/* ===== PAYPAL LIVE CHECKOUT TERMINAL MODAL ===== */}
+      <Suspense fallback={null}>
+        <PayPalCheckoutModal
+          isOpen={isPayPalCheckoutOpen}
+          onClose={() => setIsPayPalCheckoutOpen(false)}
+          initialAmount={payPalCheckoutParams.amount}
+          initialTitle={payPalCheckoutParams.title}
+          initialClientName={payPalCheckoutParams.clientName}
+          initialClientEmail={payPalCheckoutParams.clientEmail}
+          initialOrderId={payPalCheckoutParams.orderId}
+          onPaymentSuccess={(orderId, captureResult) => {
+            triggerConfetti({ particleCount: 80, spread: 70 });
+            const capturedAmount = captureResult?.amount || payPalCheckoutParams.amount || 150;
+            setWalletBalance(curr => curr + capturedAmount);
+            setTodayEarnings(curr => curr + capturedAmount);
+            setCompletedOrders(curr => curr + 1);
+
+            const newTx: Transaction = {
+              id: makeUniqueId('tx_paypal_live'),
+              name: `💳 PayPal Direct Payment: ${payPalCheckoutParams.clientName} (${orderId})`,
+              date: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) + ' Today',
+              amount: capturedAmount,
+              type: 'credit',
+              method: 'PayPal',
+              referenceId: orderId,
+            };
+            setTransactions(t => [newTx, ...t]);
+
+            // If an associated work order exists, update it to completed
+            if (payPalCheckoutParams.orderId) {
+              setWorkOrders(prev =>
+                prev.map(o => String(o.id) === String(payPalCheckoutParams.orderId) ? { ...o, status: 'completed' } : o)
+              );
+            }
+
+            showToast(`🎉 PayPal Payment Captured: $${capturedAmount} USD credited to ledger!`, 'success');
+          }}
           showToast={showToast}
         />
       </Suspense>

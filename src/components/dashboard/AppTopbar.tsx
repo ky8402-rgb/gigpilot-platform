@@ -13,6 +13,7 @@ interface AppTopbarProps {
   isBackendLoading: boolean;
   onSyncTelemetry: () => void;
   onOpenPayPalSettlement: () => void;
+  onOpenPayPalCheckout?: () => void;
   onOpenBackendModal: () => void;
   onOpenCredentialsModal: () => void;
   onOpenGitHubSettings: () => void;
@@ -49,6 +50,7 @@ export const AppTopbar: React.FC<AppTopbarProps> = ({
   isBackendLoading,
   onSyncTelemetry,
   onOpenPayPalSettlement,
+  onOpenPayPalCheckout,
   onOpenBackendModal,
   onOpenCredentialsModal,
   onOpenGitHubSettings,
@@ -278,6 +280,17 @@ export const AppTopbar: React.FC<AppTopbarProps> = ({
             <span className="hidden md:inline font-mono">Tool 1: Software Solver</span>
           </button>
 
+          {/* Primary Action: PayPal Live Checkout */}
+          <button
+            id="topbar-btn-paypal-checkout"
+            onClick={onOpenPayPalCheckout}
+            className="flex items-center gap-2 bg-[#0070ba] hover:bg-[#003087] text-white font-semibold px-3.5 py-1.5 rounded-xl text-xs shadow-md shadow-blue-500/20 transition-all cursor-pointer border border-[#00aaff]/40"
+            title="Open Interactive PayPal Checkout"
+          >
+            <i className="fab fa-paypal text-[#ffc439] text-xs"></i>
+            <span>PayPal Checkout</span>
+          </button>
+
           {/* Primary Action: PayPal Settlement Hub */}
           <button
             id="topbar-btn-paypal-settlement"
@@ -327,6 +340,24 @@ export const AppTopbar: React.FC<AppTopbarProps> = ({
                   <div>
                     <div className="font-semibold text-white">Tool 1: Software Solver</div>
                     <div className="text-[10px] text-slate-400">Auto-execute, walkthrough &amp; learn</div>
+                  </div>
+                </button>
+
+                {/* PayPal Direct Checkout */}
+                <button
+                  id="topbar-menu-paypal-checkout"
+                  onClick={() => {
+                    setIsToolsMenuOpen(false);
+                    onOpenPayPalCheckout?.();
+                  }}
+                  className="w-full flex items-center gap-3 px-3 py-2 rounded-xl text-xs hover:bg-slate-800/80 transition-colors text-left cursor-pointer"
+                >
+                  <div className="w-6 h-6 rounded-lg bg-[#0070ba]/20 text-[#ffc439] flex items-center justify-center text-xs">
+                    <i className="fab fa-paypal"></i>
+                  </div>
+                  <div>
+                    <div className="font-semibold text-white">PayPal Checkout Terminal</div>
+                    <div className="text-[10px] text-slate-400">Smart Buttons &amp; Live Order Capture</div>
                   </div>
                 </button>
 
