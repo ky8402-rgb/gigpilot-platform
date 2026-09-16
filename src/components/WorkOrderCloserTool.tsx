@@ -1,0 +1,981 @@
+import React, { useState, useEffect } from 'react';
+import {
+  ShieldCheck,
+  Zap,
+  Code2,
+  DollarSign,
+  ArrowRight,
+  CheckCircle2,
+  Copy,
+  Check,
+  Download,
+  ExternalLink,
+  Terminal,
+  Clock,
+  Sparkles,
+  Lock,
+  Layers,
+  FileCheck,
+  Send,
+  Loader2,
+  RefreshCw,
+  Building2,
+  AlertCircle,
+  Hash,
+  ChevronRight,
+  CreditCard,
+  FileCode
+} from 'lucide-react';
+import {
+  closeWorkOrderAndReleaseEscrowApi,
+  fetchEscrowReleasesApi,
+  generateSeniorEngineerCloseEndpointApi,
+  fetchSettlementAccountsApi,
+  EscrowReleaseRecord,
+  SeniorEngineerApiGenResult,
+  SettlementAccountsData,
+  WorkExecutionDeliverable
+} from '../services/api';
+
+interface WorkOrderCloserToolProps {
+  liveOrders: any[];
+  handedOverOrderId?: string | number | null;
+  onNavigateToTool1?: () => void;
+  showToast: (msg: string, type?: 'info' | 'success' | 'warning' | 'error') => void;
+  className?: string;
+}
+
+export const WorkOrderCloserTool: React.FC<WorkOrderCloserToolProps> = ({
+  liveOrders,
+  handedOverOrderId,
+  onNavigateToTool1,
+  showToast,
+  className = '',
+}) => {
+  // Navigation sub-tabs within Tool 2
+  const [activeTab, setActiveTab] = useState<'senior_engineer' | 'escrow_release' | 'settlement_ledger' | 'accounts_config'>('senior_engineer');
+
+  // Selected order for closing
+  const completedOrders = liveOrders.filter(o => o.status === 'completed');
+  const allAvailableOrders = liveOrders;
+
+  const [selectedOrderId, setSelectedOrderId] = useState<string>(() => {
+    if (handedOverOrderId) return String(handedOverOrderId);
+    if (completedOrders.length > 0) return String(completedOrders[0].id);
+    return liveOrders[0]?.id ? String(liveOrders[0].id) : 'live-order-1';
+  });
+
+  // Keep in sync when handedOverOrderId changes from Tool 1
+  useEffect(() => {
+    if (handedOverOrderId) {
+      setSelectedOrderId(String(handedOverOrderId));
+      showToast(`Work Order #${handedOverOrderId} handed over from Tool 1`, 'success');
+    }
+  }, [handedOverOrderId]);
+
+  const selectedOrder = liveOrders.find(o => String(o.id) === String(selectedOrderId)) || {
+    id: selectedOrderId,
+    title: 'Full-Stack React & Node.js Platform Engineering',
+    clientName: 'Apex Cloud Solutions',
+    amount: 450,
+    status: 'completed',
+    platform: 'Upwork',
+    category: 'Full Stack Development',
+    tags: ['React', 'Node.js', 'Express', 'Fintech']
+  };
+
+  // Accounts state
+  const [accounts, setAccounts] = useState<SettlementAccountsData | null>(null);
+  const [isLoadingAccounts, setIsLoadingAccounts] = useState<boolean>(true);
+
+  // Senior Engineer Generator state
+  const [framework, setFramework] = useState<'express_ts' | 'nextjs_app_router' | 'fastapi_python' | 'go_gin'>('express_ts');
+  const [customInstructions, setCustomInstructions] = useState<string>('');
+  const [isGeneratingEndpoint, setIsGeneratingEndpoint] = useState<boolean>(false);
+  const [seniorEngineerResult, setSeniorEngineerResult] = useState<SeniorEngineerApiGenResult | null>(null);
+  const [copiedCode, setCopiedCode] = useState<boolean>(false);
+  const [copiedCurl, setCopiedCurl] = useState<boolean>(false);
+
+  // Escrow Release Execution state
+  const [payoutMethod, setPayoutMethod] = useState<'paypal' | 'upi' | 'bank_wire'>('paypal');
+  const [clientNotes, setClientNotes] = useState<string>('Milestone deliverables fully verified and accepted by client.');
+  const [isReleasingEscrow, setIsReleasingEscrow] = useState<boolean>(false);
+  const [lastRelease, setLastRelease] = useState<EscrowReleaseRecord | null>(null);
+
+  // Settlement Ledger state
+  const [releases, setReleases] = useState<EscrowReleaseRecord[]>([]);
+  const [isLoadingReleases, setIsLoadingReleases] = useState<boolean>(false);
+
+  // Load Accounts and Releases on mount
+  useEffect(() => {
+    loadAccounts();
+    loadReleases();
+  }, []);
+
+  const loadAccounts = async () => {
+    setIsLoadingAccounts(true);
+    try {
+      const res = await fetchSettlementAccountsApi();
+      if (res.success) {
+        setAccounts(res.accounts);
+      }
+    } catch (err) {
+      console.warn('Could not load settlement accounts:', err);
+    } finally {
+      setIsLoadingAccounts(false);
+    }
+  };
+
+  const loadReleases = async () => {
+    setIsLoadingReleases(true);
+    try {
+      const res = await fetchEscrowReleasesApi();
+      if (res.success) {
+        setReleases(res.releases);
+      }
+    } catch (err) {
+      console.warn('Could not load releases:', err);
+    } finally {
+      setIsLoadingReleases(false);
+    }
+  };
+
+  // Trigger Senior Engineer Endpoint Generation
+  const handleGenerateSeniorEngineerEndpoint = async () => {
+    setIsGeneratingEndpoint(true);
+    try {
+      const res = await generateSeniorEngineerCloseEndpointApi({
+        orderId: selectedOrder.id,
+        jobTitle: selectedOrder.title,
+        clientName: selectedOrder.clientName || 'Direct Client',
+        amountUsd: Number(selectedOrder.amount || 350),
+        framework,
+        customInstructions: customInstructions.trim() || undefined,
+        includeWebhookVerification: true,
+      });
+
+      setSeniorEngineerResult(res);
+      showToast('Senior Software Engineer API endpoint successfully created!', 'success');
+    } catch (err: any) {
+      console.error('Failed to generate senior engineer endpoint:', err);
+      showToast(err.message || 'Failed to generate endpoint', 'error');
+    } finally {
+      setIsGeneratingEndpoint(false);
+    }
+  };
+
+  // Generate automatically on initial order selection if not generated
+  useEffect(() => {
+    if (!seniorEngineerResult && selectedOrder) {
+      handleGenerateSeniorEngineerEndpoint();
+    }
+  }, [selectedOrderId]);
+
+  // Execute actual Escrow Release
+  const handleExecuteEscrowRelease = async () => {
+    if (!selectedOrder) return;
+    setIsReleasingEscrow(true);
+    try {
+      const res = await closeWorkOrderAndReleaseEscrowApi({
+        orderId: selectedOrder.id,
+        payoutMethod,
+        clientNotes,
+        idempotencyKey: `rel_exec_${Date.now()}_${selectedOrder.id}`,
+      });
+
+      setLastRelease(res.release);
+      setReleases(prev => [res.release, ...prev.filter(r => r.releaseId !== res.release.releaseId)]);
+      showToast(res.message, 'success');
+    } catch (err: any) {
+      console.error('Escrow release failed:', err);
+      showToast(err.message || 'Escrow payout failed', 'error');
+    } finally {
+      setIsReleasingEscrow(false);
+    }
+  };
+
+  const handleCopyCode = () => {
+    if (!seniorEngineerResult?.endpointCode) return;
+    navigator.clipboard.writeText(seniorEngineerResult.endpointCode);
+    setCopiedCode(true);
+    showToast('Senior Engineer endpoint code copied to clipboard', 'info');
+    setTimeout(() => setCopiedCode(false), 2000);
+  };
+
+  const handleCopyCurl = () => {
+    if (!seniorEngineerResult?.mockCurlCommand) return;
+    navigator.clipboard.writeText(seniorEngineerResult.mockCurlCommand);
+    setCopiedCurl(true);
+    showToast('cURL verification command copied', 'info');
+    setTimeout(() => setCopiedCurl(false), 2000);
+  };
+
+  const handleDownloadCode = () => {
+    if (!seniorEngineerResult?.endpointCode) return;
+    const ext = framework === 'fastapi_python' ? 'py' : framework === 'go_gin' ? 'go' : 'ts';
+    const blob = new Blob([seniorEngineerResult.endpointCode], { type: 'text/plain;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `close_work_order_${selectedOrderId}.${ext}`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+    showToast(`Downloaded close_work_order_${selectedOrderId}.${ext}`, 'success');
+  };
+
+  const usdAmount = Number(selectedOrder.amount || 350);
+  const inrAmount = Math.round(usdAmount * (accounts?.indianBank?.usdToInrRate || 86.85));
+
+  return (
+    <div id="tool-2-closer-container" className={`space-y-6 ${className}`}>
+      {/* Top Banner: Tool 1 ➔ Tool 2 Handover Integration Pipeline */}
+      <div className="rounded-3xl border border-indigo-500/30 bg-gradient-to-r from-[#0d1226] via-[#101735] to-[#0c1022] p-6 shadow-2xl relative overflow-hidden">
+        <div className="absolute top-0 right-0 w-96 h-96 bg-indigo-500/10 rounded-full blur-3xl pointer-events-none -mr-20 -mt-20"></div>
+
+        <div className="relative z-10 flex flex-col lg:flex-row lg:items-center justify-between gap-6">
+          <div className="space-y-2.5">
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="px-2.5 py-1 rounded-full bg-indigo-500/20 text-indigo-300 border border-indigo-500/40 text-[11px] font-bold font-mono uppercase tracking-wider flex items-center gap-1.5 shadow-sm">
+                <ShieldCheck className="w-3.5 h-3.5 text-indigo-400" />
+                Tool 2: Work Order Closer &amp; Escrow Release
+              </span>
+
+              {/* Handover Bridge Indicator */}
+              <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-emerald-500/15 text-emerald-300 border border-emerald-500/30 text-[11px] font-mono font-medium">
+                <span>Tool 1 (Autonomous Builder)</span>
+                <ArrowRight className="w-3 h-3 text-emerald-400" />
+                <span className="font-bold">Tool 2 (Closer &amp; Escrow)</span>
+              </div>
+            </div>
+
+            <h2 className="text-xl sm:text-2xl font-black text-white tracking-tight flex items-center gap-2.5">
+              Senior Software Engineer Escrow Closer Engine
+            </h2>
+            <p className="text-xs sm:text-sm text-slate-300 max-w-2xl leading-relaxed">
+              Accepts completed work orders handed over from Tool 1, writes enterprise-grade API endpoint functions
+              as a Senior Software Engineer to close the order, verify cryptographic checksums, and disburse escrow
+              funds directly into your configured collection accounts.
+            </p>
+          </div>
+
+          {/* Quick Stats & Jump to Tool 1 */}
+          <div className="flex flex-wrap items-center gap-3 shrink-0">
+            {onNavigateToTool1 && (
+              <button
+                onClick={onNavigateToTool1}
+                className="px-4 py-2.5 rounded-xl bg-slate-900/90 hover:bg-slate-800 text-slate-200 hover:text-white border border-slate-700/80 text-xs font-mono font-medium transition-all shadow-md flex items-center gap-2 cursor-pointer"
+                title="Return to Tool 1: Autonomous Software Job Solver"
+              >
+                <Zap className="w-3.5 h-3.5 text-blue-400" />
+                <span>Switch to Tool 1 (Builder)</span>
+              </button>
+            )}
+
+            <div className="px-4 py-2.5 rounded-xl bg-indigo-950/60 border border-indigo-800/80 text-right">
+              <div className="text-[10px] uppercase font-mono text-indigo-300 font-bold">Settlement Pipeline</div>
+              <div className="text-sm font-bold text-white font-mono flex items-center gap-1 justify-end">
+                <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
+                <span>Ready for Disbursement</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Order Handover Selector Bar */}
+      <div className="rounded-2xl border border-slate-800 bg-[#090d19] p-4 flex flex-col md:flex-row md:items-center justify-between gap-4 shadow-lg">
+        <div className="flex items-center gap-3">
+          <div className="w-10 h-10 rounded-xl bg-indigo-600/20 border border-indigo-500/30 text-indigo-400 flex items-center justify-center font-bold shrink-0">
+            <FileCheck className="w-5 h-5" />
+          </div>
+          <div>
+            <div className="flex items-center gap-2">
+              <span className="text-[11px] font-mono text-slate-400 uppercase font-bold">Active Handover Job:</span>
+              <span className="px-2 py-0.5 rounded bg-blue-950/80 text-blue-300 border border-blue-800/80 text-[10px] font-mono font-bold">
+                #{selectedOrder.id}
+              </span>
+              <span className={`px-2 py-0.5 rounded text-[10px] font-mono font-bold uppercase ${
+                selectedOrder.status === 'completed'
+                  ? 'bg-emerald-950/80 text-emerald-400 border border-emerald-800/80'
+                  : 'bg-amber-950/80 text-amber-400 border border-amber-800/80'
+              }`}>
+                {selectedOrder.status}
+              </span>
+            </div>
+            <div className="text-sm font-bold text-white truncate max-w-md">
+              {selectedOrder.title}
+            </div>
+          </div>
+        </div>
+
+        {/* Order Selector Dropdown */}
+        <div className="flex items-center gap-2">
+          <label className="text-xs font-mono text-slate-400 shrink-0">Select Work Order:</label>
+          <select
+            value={selectedOrderId}
+            onChange={(e) => setSelectedOrderId(e.target.value)}
+            className="bg-slate-900 border border-slate-700/80 rounded-xl px-3 py-2 text-xs text-white font-mono focus:outline-none focus:border-indigo-500 cursor-pointer min-w-[200px]"
+          >
+            {allAvailableOrders.map((ord) => (
+              <option key={ord.id} value={ord.id}>
+                #{ord.id} - {ord.title.slice(0, 32)}... (${ord.amount || 250}) [{ord.status}]
+              </option>
+            ))}
+          </select>
+        </div>
+      </div>
+
+      {/* Sub-Navigation Tabs */}
+      <div className="flex items-center gap-2 border-b border-slate-800 pb-2 overflow-x-auto">
+        <button
+          onClick={() => setActiveTab('senior_engineer')}
+          className={`px-4 py-2.5 rounded-xl text-xs font-mono font-bold transition-all flex items-center gap-2 cursor-pointer ${
+            activeTab === 'senior_engineer'
+              ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-600/20'
+              : 'bg-slate-900 hover:bg-slate-800 text-slate-400 hover:text-slate-200 border border-slate-800'
+          }`}
+        >
+          <Code2 className="w-4 h-4 text-indigo-300" />
+          <span>1. Senior Engineer API Generator</span>
+        </button>
+
+        <button
+          onClick={() => setActiveTab('escrow_release')}
+          className={`px-4 py-2.5 rounded-xl text-xs font-mono font-bold transition-all flex items-center gap-2 cursor-pointer ${
+            activeTab === 'escrow_release'
+              ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-600/20'
+              : 'bg-slate-900 hover:bg-slate-800 text-slate-400 hover:text-slate-200 border border-slate-800'
+          }`}
+        >
+          <DollarSign className="w-4 h-4 text-emerald-400" />
+          <span>2. Close Order &amp; Release Escrow</span>
+          {selectedOrder && (
+            <span className="ml-1 px-1.5 py-0.5 rounded bg-emerald-500/20 text-emerald-300 text-[10px]">
+              ${usdAmount}
+            </span>
+          )}
+        </button>
+
+        <button
+          onClick={() => setActiveTab('settlement_ledger')}
+          className={`px-4 py-2.5 rounded-xl text-xs font-mono font-bold transition-all flex items-center gap-2 cursor-pointer ${
+            activeTab === 'settlement_ledger'
+              ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-600/20'
+              : 'bg-slate-900 hover:bg-slate-800 text-slate-400 hover:text-slate-200 border border-slate-800'
+          }`}
+        >
+          <Layers className="w-4 h-4 text-cyan-400" />
+          <span>3. Settled Escrow Ledger</span>
+          {releases.length > 0 && (
+            <span className="ml-1 px-1.5 py-0.5 rounded bg-slate-800 text-slate-300 text-[10px]">
+              {releases.length}
+            </span>
+          )}
+        </button>
+
+        <button
+          onClick={() => setActiveTab('accounts_config')}
+          className={`px-4 py-2.5 rounded-xl text-xs font-mono font-bold transition-all flex items-center gap-2 cursor-pointer ${
+            activeTab === 'accounts_config'
+              ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-600/20'
+              : 'bg-slate-900 hover:bg-slate-800 text-slate-400 hover:text-slate-200 border border-slate-800'
+          }`}
+        >
+          <CreditCard className="w-4 h-4 text-amber-400" />
+          <span>4. Payment Accounts Context</span>
+        </button>
+      </div>
+
+      {/* ========================================================================= */}
+      {/* TAB 1: SENIOR SOFTWARE ENGINEER API ENDPOINT GENERATOR */}
+      {/* ========================================================================= */}
+      {activeTab === 'senior_engineer' && (
+        <div className="space-y-6">
+          {/* Controls Card */}
+          <div className="rounded-3xl bg-slate-900/80 border border-slate-800 p-6 space-y-5">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+              <div>
+                <h3 className="text-base font-bold text-white flex items-center gap-2">
+                  <Sparkles className="w-4 h-4 text-indigo-400" />
+                  Act as Senior Software Engineer: Write API Endpoint Function
+                </h3>
+                <p className="text-xs text-slate-400 mt-1">
+                  Generates an enterprise-ready controller endpoint function with timing-safe checksums,
+                  idempotency checks, and automated payout disbursement to your configured accounts.
+                </p>
+              </div>
+
+              {/* Framework Selector */}
+              <div className="flex items-center gap-2">
+                <span className="text-xs font-mono text-slate-400">Framework:</span>
+                <div className="inline-flex rounded-xl bg-slate-950 p-1 border border-slate-800">
+                  <button
+                    onClick={() => setFramework('express_ts')}
+                    className={`px-3 py-1 rounded-lg text-xs font-mono font-medium transition-colors cursor-pointer ${
+                      framework === 'express_ts' ? 'bg-indigo-600 text-white' : 'text-slate-400 hover:text-slate-200'
+                    }`}
+                  >
+                    Express (TS)
+                  </button>
+                  <button
+                    onClick={() => setFramework('fastapi_python')}
+                    className={`px-3 py-1 rounded-lg text-xs font-mono font-medium transition-colors cursor-pointer ${
+                      framework === 'fastapi_python' ? 'bg-indigo-600 text-white' : 'text-slate-400 hover:text-slate-200'
+                    }`}
+                  >
+                    FastAPI (Py)
+                  </button>
+                  <button
+                    onClick={() => setFramework('nextjs_app_router')}
+                    className={`px-3 py-1 rounded-lg text-xs font-mono font-medium transition-colors cursor-pointer ${
+                      framework === 'nextjs_app_router' ? 'bg-indigo-600 text-white' : 'text-slate-400 hover:text-slate-200'
+                    }`}
+                  >
+                    Next.js
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            {/* Custom Instructions Bar */}
+            <div className="flex flex-col sm:flex-row gap-3">
+              <input
+                type="text"
+                value={customInstructions}
+                onChange={(e) => setCustomInstructions(e.target.value)}
+                placeholder="Optional senior engineer instructions (e.g. 'Use Redis for distributed locking', 'Add Prometheus latency metrics')..."
+                className="flex-1 bg-[#060911] border border-slate-700/80 rounded-xl px-4 py-2.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500 font-mono"
+              />
+
+              <button
+                onClick={handleGenerateSeniorEngineerEndpoint}
+                disabled={isGeneratingEndpoint}
+                className="px-5 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold font-mono transition-all shadow-lg shadow-indigo-600/25 flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50 shrink-0"
+              >
+                {isGeneratingEndpoint ? (
+                  <>
+                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                    <span>Architecting API Endpoint...</span>
+                  </>
+                ) : (
+                  <>
+                    <Code2 className="w-3.5 h-3.5" />
+                    <span>Regenerate Endpoint</span>
+                  </>
+                )}
+              </button>
+            </div>
+
+            {/* Account Mapping Badge */}
+            <div className="rounded-2xl bg-[#060913] border border-slate-800/80 p-3.5 flex flex-wrap items-center justify-between gap-3 text-xs font-mono">
+              <div className="flex items-center gap-2 text-slate-400">
+                <CreditCard className="w-4 h-4 text-emerald-400 shrink-0" />
+                <span>Embedded Payout Accounts:</span>
+                <span className="text-white font-bold">PayPal (kundank4@icloud.com / paypal.me/ky8402)</span>
+                <span className="text-slate-600">•</span>
+                <span className="text-white font-bold">UPI (chandimay@ybl)</span>
+              </div>
+              <div className="text-emerald-400 font-bold">
+                Rate: ₹{accounts?.indianBank?.usdToInrRate || 86.85}/USD
+              </div>
+            </div>
+          </div>
+
+          {/* Generated Endpoint Code & Architecture Display */}
+          {seniorEngineerResult && (
+            <div className="space-y-5">
+              {/* Architecture & Security Summary */}
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div className="md:col-span-2 rounded-2xl bg-slate-900/90 border border-slate-800 p-5 space-y-2.5">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-bold text-white uppercase tracking-wider font-mono flex items-center gap-1.5">
+                      <Terminal className="w-4 h-4 text-indigo-400" />
+                      Senior Staff Architecture Summary
+                    </span>
+                    <span className="px-2 py-0.5 rounded bg-indigo-950 text-indigo-300 border border-indigo-800 text-[10px] font-mono">
+                      {seniorEngineerResult.httpMethod} {seniorEngineerResult.routePath}
+                    </span>
+                  </div>
+                  <p className="text-xs text-slate-300 leading-relaxed font-sans">
+                    {seniorEngineerResult.architectureSummary}
+                  </p>
+                  <div className="text-[11px] text-slate-400 pt-1 font-mono">
+                    <strong className="text-slate-300">Payment Pipeline:</strong> {seniorEngineerResult.paymentFlowExplanation}
+                  </div>
+                </div>
+
+                {/* Security Guards List */}
+                <div className="rounded-2xl bg-slate-900/90 border border-slate-800 p-5 space-y-2.5">
+                  <span className="text-xs font-bold text-white uppercase tracking-wider font-mono flex items-center gap-1.5">
+                    <Lock className="w-4 h-4 text-emerald-400" />
+                    Security &amp; Idempotency Guards
+                  </span>
+                  <ul className="space-y-1.5 text-xs">
+                    {seniorEngineerResult.securityGuards.map((guard, gIdx) => (
+                      <li key={gIdx} className="text-slate-300 flex items-start gap-1.5">
+                        <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400 shrink-0 mt-0.5" />
+                        <span className="text-[11px] font-sans">{guard}</span>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              </div>
+
+              {/* Code Box */}
+              <div className="rounded-2xl border border-slate-800 bg-[#050811] shadow-2xl overflow-hidden">
+                <div className="px-4 py-3 bg-slate-900/90 border-b border-slate-800 flex items-center justify-between gap-3">
+                  <div className="flex items-center gap-2 font-mono text-xs text-slate-300">
+                    <FileCode className="w-4 h-4 text-indigo-400" />
+                    <span className="text-white font-bold">
+                      {framework === 'fastapi_python' ? 'work_order_closer.py' : framework === 'go_gin' ? 'work_order_closer.go' : 'workOrderCloserController.ts'}
+                    </span>
+                    <span className="px-1.5 py-0.5 rounded bg-slate-800 text-[10px] text-slate-400 uppercase">
+                      {framework}
+                    </span>
+                  </div>
+
+                  <div className="flex items-center gap-2">
+                    <button
+                      onClick={handleCopyCode}
+                      className="px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white text-xs font-mono transition-colors flex items-center gap-1.5 cursor-pointer border border-slate-700/80"
+                    >
+                      {copiedCode ? <Check className="w-3 h-3 text-emerald-400" /> : <Copy className="w-3 h-3" />}
+                      <span>{copiedCode ? 'Copied' : 'Copy Code'}</span>
+                    </button>
+
+                    <button
+                      onClick={handleDownloadCode}
+                      className="px-2.5 py-1 rounded-lg bg-indigo-600/80 hover:bg-indigo-600 text-white text-xs font-mono transition-colors flex items-center gap-1.5 cursor-pointer"
+                    >
+                      <Download className="w-3 h-3" />
+                      <span>Download</span>
+                    </button>
+                  </div>
+                </div>
+
+                <div className="p-4 overflow-x-auto max-h-[500px]">
+                  <pre className="font-mono text-[12px] leading-relaxed text-slate-200">
+                    <code>{seniorEngineerResult.endpointCode}</code>
+                  </pre>
+                </div>
+              </div>
+
+              {/* Verification cURL command */}
+              {seniorEngineerResult.mockCurlCommand && (
+                <div className="rounded-2xl bg-slate-900/80 border border-slate-800 p-4 space-y-2">
+                  <div className="flex items-center justify-between text-xs font-mono">
+                    <span className="text-slate-300 font-bold flex items-center gap-1.5">
+                      <Terminal className="w-3.5 h-3.5 text-cyan-400" />
+                      Verification cURL Command (With Idempotency Header)
+                    </span>
+                    <button
+                      onClick={handleCopyCurl}
+                      className="text-[11px] text-indigo-400 hover:text-indigo-300 flex items-center gap-1 cursor-pointer"
+                    >
+                      {copiedCurl ? <Check className="w-3 h-3 text-emerald-400" /> : <Copy className="w-3 h-3" />}
+                      <span>{copiedCurl ? 'Copied cURL' : 'Copy cURL'}</span>
+                    </button>
+                  </div>
+                  <pre className="p-3 rounded-xl bg-[#04060c] border border-slate-800/80 font-mono text-[11px] text-emerald-300 overflow-x-auto">
+                    <code>{seniorEngineerResult.mockCurlCommand}</code>
+                  </pre>
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* ========================================================================= */}
+      {/* TAB 2: INTERACTIVE CLOSE ORDER & RELEASE ESCROW ENGINE */}
+      {/* ========================================================================= */}
+      {activeTab === 'escrow_release' && (
+        <div className="space-y-6">
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+            {/* Escrow Release Dispatch Form */}
+            <div className="lg:col-span-2 rounded-3xl bg-slate-900/80 border border-slate-800 p-6 space-y-6">
+              <div>
+                <h3 className="text-base font-bold text-white flex items-center gap-2">
+                  <DollarSign className="w-5 h-5 text-emerald-400" />
+                  Execute Escrow Release for Order #{selectedOrder.id}
+                </h3>
+                <p className="text-xs text-slate-400 mt-1">
+                  Releases funds held in escrow directly to your registered destination account upon completion.
+                </p>
+              </div>
+
+              {/* Order Details Summary Box */}
+              <div className="rounded-2xl bg-[#060913] border border-slate-800 p-4 space-y-3">
+                <div className="flex items-center justify-between border-b border-slate-800/80 pb-2">
+                  <span className="text-xs font-mono text-slate-400">Work Order Title:</span>
+                  <span className="text-xs font-bold text-white">{selectedOrder.title}</span>
+                </div>
+                <div className="flex items-center justify-between border-b border-slate-800/80 pb-2">
+                  <span className="text-xs font-mono text-slate-400">Client / Platform:</span>
+                  <span className="text-xs text-slate-200">{selectedOrder.clientName || 'Direct Client'} ({selectedOrder.platform || 'System'})</span>
+                </div>
+                <div className="flex items-center justify-between border-b border-slate-800/80 pb-2">
+                  <span className="text-xs font-mono text-slate-400">Escrow Value:</span>
+                  <div className="text-right">
+                    <span className="text-base font-bold text-emerald-400 font-mono">${usdAmount.toFixed(2)} USD</span>
+                    <span className="text-xs text-slate-400 font-mono ml-2">(₹{inrAmount.toLocaleString('en-IN')})</span>
+                  </div>
+                </div>
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-mono text-slate-400">Completion Status:</span>
+                  <span className="px-2 py-0.5 rounded bg-emerald-950 text-emerald-400 border border-emerald-800 text-[10px] font-mono font-bold uppercase">
+                    {selectedOrder.status === 'completed' ? 'Verified by Tool 1' : 'Pending Close'}
+                  </span>
+                </div>
+              </div>
+
+              {/* Payout Destination Selection */}
+              <div className="space-y-3">
+                <label className="text-xs font-mono text-slate-300 font-bold block">
+                  Select Payout Settlement Destination:
+                </label>
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                  <div
+                    onClick={() => setPayoutMethod('paypal')}
+                    className={`p-4 rounded-2xl border transition-all cursor-pointer space-y-2 ${
+                      payoutMethod === 'paypal'
+                        ? 'bg-blue-600/15 border-blue-500 shadow-md shadow-blue-500/10'
+                        : 'bg-slate-950/60 border-slate-800 hover:border-slate-700'
+                    }`}
+                  >
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs font-bold text-white font-mono">PayPal (USD)</span>
+                      <div className={`w-4 h-4 rounded-full border flex items-center justify-center ${
+                        payoutMethod === 'paypal' ? 'border-blue-400 bg-blue-500' : 'border-slate-600'
+                      }`}>
+                        {payoutMethod === 'paypal' && <Check className="w-2.5 h-2.5 text-white" />}
+                      </div>
+                    </div>
+                    <div className="text-[11px] text-slate-400 font-mono break-all">
+                      {accounts?.paypal.receiverEmail || 'kundank4@icloud.com'}
+                    </div>
+                    <div className="text-[10px] text-blue-400 font-mono">
+                      paypal.me/{accounts?.paypal.username || 'ky8402'}
+                    </div>
+                  </div>
+
+                  <div
+                    onClick={() => setPayoutMethod('upi')}
+                    className={`p-4 rounded-2xl border transition-all cursor-pointer space-y-2 ${
+                      payoutMethod === 'upi'
+                        ? 'bg-emerald-600/15 border-emerald-500 shadow-md shadow-emerald-500/10'
+                        : 'bg-slate-950/60 border-slate-800 hover:border-slate-700'
+                    }`}
+                  >
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs font-bold text-white font-mono">UPI Instant (INR)</span>
+                      <div className={`w-4 h-4 rounded-full border flex items-center justify-center ${
+                        payoutMethod === 'upi' ? 'border-emerald-400 bg-emerald-500' : 'border-slate-600'
+                      }`}>
+                        {payoutMethod === 'upi' && <Check className="w-2.5 h-2.5 text-white" />}
+                      </div>
+                    </div>
+                    <div className="text-[11px] text-slate-400 font-mono">
+                      {accounts?.indianBank.upiId || 'chandimay@ybl'}
+                    </div>
+                    <div className="text-[10px] text-emerald-400 font-mono">
+                      ₹{inrAmount.toLocaleString('en-IN')} (Federal Bank)
+                    </div>
+                  </div>
+
+                  <div
+                    onClick={() => setPayoutMethod('bank_wire')}
+                    className={`p-4 rounded-2xl border transition-all cursor-pointer space-y-2 ${
+                      payoutMethod === 'bank_wire'
+                        ? 'bg-indigo-600/15 border-indigo-500 shadow-md shadow-indigo-500/10'
+                        : 'bg-slate-950/60 border-slate-800 hover:border-slate-700'
+                    }`}
+                  >
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs font-bold text-white font-mono">Bank Wire (NEFT)</span>
+                      <div className={`w-4 h-4 rounded-full border flex items-center justify-center ${
+                        payoutMethod === 'bank_wire' ? 'border-indigo-400 bg-indigo-500' : 'border-slate-600'
+                      }`}>
+                        {payoutMethod === 'bank_wire' && <Check className="w-2.5 h-2.5 text-white" />}
+                      </div>
+                    </div>
+                    <div className="text-[11px] text-slate-400 font-mono">
+                      {accounts?.indianBank.bankName || 'Federal Bank'}
+                    </div>
+                    <div className="text-[10px] text-indigo-400 font-mono">
+                      IFSC: {accounts?.indianBank.ifsc || 'FDRL0001447'}
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Settlement Notes */}
+              <div className="space-y-2">
+                <label className="text-xs font-mono text-slate-400">Release Receipt Notes:</label>
+                <input
+                  type="text"
+                  value={clientNotes}
+                  onChange={(e) => setClientNotes(e.target.value)}
+                  className="w-full bg-[#060911] border border-slate-700/80 rounded-xl px-4 py-2.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500 font-mono"
+                />
+              </div>
+
+              {/* Release Execution CTA */}
+              <button
+                onClick={handleExecuteEscrowRelease}
+                disabled={isReleasingEscrow}
+                className="w-full py-3.5 rounded-2xl bg-emerald-600 hover:bg-emerald-500 text-white font-mono font-bold text-sm transition-all shadow-xl shadow-emerald-600/25 flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50"
+              >
+                {isReleasingEscrow ? (
+                  <>
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                    <span>Disbursing Escrow &amp; Settling Order...</span>
+                  </>
+                ) : (
+                  <>
+                    <CheckCircle2 className="w-4 h-4" />
+                    <span>Close Order &amp; Release Escrow (${usdAmount.toFixed(2)} USD)</span>
+                  </>
+                )}
+              </button>
+            </div>
+
+            {/* Live Settlement Confirmation Receipt */}
+            <div className="space-y-4">
+              <div className="rounded-3xl bg-slate-900/80 border border-slate-800 p-5 space-y-4">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-bold text-white font-mono uppercase flex items-center gap-1.5">
+                    <FileCheck className="w-4 h-4 text-emerald-400" />
+                    Settlement Receipt
+                  </span>
+                  <span className="text-[10px] font-mono text-slate-400">
+                    {lastRelease ? 'Verified &amp; Settled' : 'Awaiting Release'}
+                  </span>
+                </div>
+
+                {lastRelease ? (
+                  <div className="rounded-2xl bg-[#060914] border border-emerald-500/30 p-4 space-y-3 font-mono text-xs">
+                    <div className="flex items-center justify-between text-emerald-400 font-bold pb-2 border-b border-emerald-500/20">
+                      <span>STATUS: {lastRelease.status}</span>
+                      <span>#{lastRelease.releaseId.slice(0, 12)}</span>
+                    </div>
+
+                    <div className="space-y-1.5 text-[11px] text-slate-300">
+                      <div><strong className="text-slate-400">Order ID:</strong> #{lastRelease.orderId}</div>
+                      <div><strong className="text-slate-400">Amount USD:</strong> ${lastRelease.escrowAmountUsd.toFixed(2)}</div>
+                      <div><strong className="text-slate-400">Amount INR:</strong> ₹{lastRelease.escrowAmountInr.toLocaleString('en-IN')}</div>
+                      <div><strong className="text-slate-400">Method:</strong> {lastRelease.payoutMethod.toUpperCase()}</div>
+                      <div><strong className="text-slate-400">Destination:</strong> {lastRelease.payoutDestination}</div>
+                      <div className="break-all"><strong className="text-slate-400">Tx Hash:</strong> {lastRelease.transactionHash.slice(0, 24)}...</div>
+                      <div><strong className="text-slate-400">Settled At:</strong> {new Date(lastRelease.releasedAt).toLocaleTimeString()}</div>
+                    </div>
+
+                    <div className="pt-2 border-t border-slate-800 text-[10px] text-emerald-400 flex items-center gap-1">
+                      <CheckCircle2 className="w-3 h-3" />
+                      <span>Funds disbursed to verified beneficiary</span>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="rounded-2xl bg-[#060914] border border-dashed border-slate-800 p-6 text-center space-y-2">
+                    <Clock className="w-6 h-6 text-slate-600 mx-auto" />
+                    <p className="text-xs text-slate-400">
+                      Click "Close Order &amp; Release Escrow" to disburse funds. The cryptographic transaction receipt will appear here.
+                    </p>
+                  </div>
+                )}
+
+                {/* Handover summary */}
+                <div className="p-3.5 rounded-2xl bg-indigo-950/40 border border-indigo-900/60 text-xs space-y-2">
+                  <div className="font-bold text-indigo-300 flex items-center gap-1.5">
+                    <ShieldCheck className="w-4 h-4" />
+                    Tool 1 Handover Status
+                  </div>
+                  <p className="text-[11px] text-slate-300">
+                    Order #{selectedOrder.id} was processed by Tool 1's Autonomous Solver. Checksums and code deliverables are cryptographic proof of delivery.
+                  </p>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ========================================================================= */}
+      {/* TAB 3: SETTLED ESCROW LEDGER */}
+      {/* ========================================================================= */}
+      {activeTab === 'settlement_ledger' && (
+        <div className="rounded-3xl bg-slate-900/80 border border-slate-800 p-6 space-y-4">
+          <div className="flex items-center justify-between">
+            <div>
+              <h3 className="text-base font-bold text-white flex items-center gap-2">
+                <Layers className="w-4 h-4 text-cyan-400" />
+                Settled Escrow Payout Ledger
+              </h3>
+              <p className="text-xs text-slate-400 mt-0.5">
+                Cryptographic audit trail of all closed work orders and disbursed escrow payments.
+              </p>
+            </div>
+            <button
+              onClick={loadReleases}
+              disabled={isLoadingReleases}
+              className="p-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-mono transition-colors cursor-pointer"
+              title="Refresh ledger"
+            >
+              <RefreshCw className={`w-3.5 h-3.5 ${isLoadingReleases ? 'animate-spin' : ''}`} />
+            </button>
+          </div>
+
+          {releases.length === 0 ? (
+            <div className="rounded-2xl border border-dashed border-slate-800 p-8 text-center space-y-2 text-slate-400">
+              <DollarSign className="w-8 h-8 text-slate-600 mx-auto" />
+              <p className="text-xs">No escrow releases have been executed yet.</p>
+              <button
+                onClick={() => setActiveTab('escrow_release')}
+                className="px-3 py-1.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-mono cursor-pointer"
+              >
+                Release First Escrow Payout
+              </button>
+            </div>
+          ) : (
+            <div className="divide-y divide-slate-800/80 overflow-x-auto">
+              <table className="w-full text-left font-mono text-xs">
+                <thead>
+                  <tr className="text-slate-400 border-b border-slate-800">
+                    <th className="py-2.5 px-3">Release ID</th>
+                    <th className="py-2.5 px-3">Order</th>
+                    <th className="py-2.5 px-3">Amount (USD/INR)</th>
+                    <th className="py-2.5 px-3">Method</th>
+                    <th className="py-2.5 px-3">Destination</th>
+                    <th className="py-2.5 px-3">Tx Hash</th>
+                    <th className="py-2.5 px-3">Status</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-800/60">
+                  {releases.map((rel) => (
+                    <tr key={rel.releaseId} className="hover:bg-slate-800/40 transition-colors">
+                      <td className="py-3 px-3 text-indigo-300 font-bold">{rel.releaseId.slice(0, 12)}</td>
+                      <td className="py-3 px-3 text-white max-w-xs truncate">{rel.orderTitle}</td>
+                      <td className="py-3 px-3 text-emerald-400 font-bold">
+                        ${rel.escrowAmountUsd} / ₹{rel.escrowAmountInr.toLocaleString('en-IN')}
+                      </td>
+                      <td className="py-3 px-3 uppercase text-slate-300">{rel.payoutMethod}</td>
+                      <td className="py-3 px-3 text-slate-400 max-w-xs truncate">{rel.payoutDestination}</td>
+                      <td className="py-3 px-3 text-slate-500 text-[10px]">{rel.transactionHash.slice(0, 16)}...</td>
+                      <td className="py-3 px-3">
+                        <span className="px-2 py-0.5 rounded bg-emerald-950 text-emerald-400 border border-emerald-800 text-[10px] font-bold">
+                          {rel.status}
+                        </span>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* ========================================================================= */}
+      {/* TAB 4: PAYMENT ACCOUNTS CONTEXT INSPECTOR */}
+      {/* ========================================================================= */}
+      {activeTab === 'accounts_config' && (
+        <div className="rounded-3xl bg-slate-900/80 border border-slate-800 p-6 space-y-6">
+          <div>
+            <h3 className="text-base font-bold text-white flex items-center gap-2">
+              <CreditCard className="w-4 h-4 text-amber-400" />
+              Configured Settlement Beneficiary Accounts
+            </h3>
+            <p className="text-xs text-slate-400 mt-0.5">
+              These account details are pre-configured in your web application and automatically injected into
+              the Senior Software Engineer endpoint generator and escrow release pipeline.
+            </p>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            {/* PayPal Account */}
+            <div className="rounded-2xl border border-blue-500/30 bg-[#060a16] p-5 space-y-3">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-bold text-blue-400 font-mono uppercase flex items-center gap-1.5">
+                  <DollarSign className="w-4 h-4" />
+                  Primary PayPal Account
+                </span>
+                <span className="px-2 py-0.5 rounded bg-blue-950 text-blue-300 border border-blue-800 text-[10px] font-mono">
+                  USD Active
+                </span>
+              </div>
+
+              <div className="space-y-2 text-xs font-mono text-slate-300">
+                <div className="flex justify-between border-b border-slate-800/80 pb-1.5">
+                  <span className="text-slate-500">Receiver Email:</span>
+                  <span className="text-white font-bold">{accounts?.paypal.receiverEmail || 'kundank4@icloud.com'}</span>
+                </div>
+                <div className="flex justify-between border-b border-slate-800/80 pb-1.5">
+                  <span className="text-slate-500">Account User:</span>
+                  <span className="text-slate-300">{accounts?.paypal.userEmail || 'ky8402@gmail.com'}</span>
+                </div>
+                <div className="flex justify-between border-b border-slate-800/80 pb-1.5">
+                  <span className="text-slate-500">PayPal.Me Handle:</span>
+                  <span className="text-blue-400 font-bold">@{accounts?.paypal.username || 'ky8402'}</span>
+                </div>
+                <div className="flex justify-between items-center pt-1">
+                  <span className="text-slate-500">Settlement URL:</span>
+                  <a
+                    href={accounts?.paypal.url || 'https://paypal.me/ky8402'}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="text-indigo-400 hover:text-indigo-300 flex items-center gap-1 text-[11px]"
+                  >
+                    <span>paypal.me/{accounts?.paypal.username || 'ky8402'}</span>
+                    <ExternalLink className="w-3 h-3" />
+                  </a>
+                </div>
+              </div>
+            </div>
+
+            {/* Indian Bank & UPI */}
+            <div className="rounded-2xl border border-emerald-500/30 bg-[#060e12] p-5 space-y-3">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-bold text-emerald-400 font-mono uppercase flex items-center gap-1.5">
+                  <Building2 className="w-4 h-4" />
+                  Indian Bank &amp; UPI
+                </span>
+                <span className="px-2 py-0.5 rounded bg-emerald-950 text-emerald-300 border border-emerald-800 text-[10px] font-mono">
+                  INR Active
+                </span>
+              </div>
+
+              <div className="space-y-2 text-xs font-mono text-slate-300">
+                <div className="flex justify-between border-b border-slate-800/80 pb-1.5">
+                  <span className="text-slate-500">Beneficiary:</span>
+                  <span className="text-white font-bold">{accounts?.indianBank.accountHolder || 'Kundan Kumar'}</span>
+                </div>
+                <div className="flex justify-between border-b border-slate-800/80 pb-1.5">
+                  <span className="text-slate-500">Bank Name:</span>
+                  <span className="text-slate-300">{accounts?.indianBank.bankName || 'Federal Bank'}</span>
+                </div>
+                <div className="flex justify-between border-b border-slate-800/80 pb-1.5">
+                  <span className="text-slate-500">Account (Masked):</span>
+                  <span className="text-white font-bold">{accounts?.indianBank.accountNumberMasked || '•••• 8763'}</span>
+                </div>
+                <div className="flex justify-between border-b border-slate-800/80 pb-1.5">
+                  <span className="text-slate-500">IFSC Code:</span>
+                  <span className="text-amber-400 font-bold">{accounts?.indianBank.ifsc || 'FDRL0001447'}</span>
+                </div>
+                <div className="flex justify-between border-b border-slate-800/80 pb-1.5">
+                  <span className="text-slate-500">Primary UPI ID:</span>
+                  <span className="text-emerald-400 font-bold">{accounts?.indianBank.upiId || 'chandimay@ybl'}</span>
+                </div>
+                <div className="flex justify-between items-center pt-1">
+                  <span className="text-slate-500">USD/INR Rate:</span>
+                  <span className="text-emerald-400 font-bold">1 USD = ₹{accounts?.indianBank.usdToInrRate || 86.85}</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+};

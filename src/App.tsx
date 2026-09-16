@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef, useCallback, Suspense, lazy } from 
 import type { RemoteOKJobItem } from './components/RemoteOKJobsBoard';
 import { SEOHead } from './components/SEOHead';
 import { FreelanceJob, GeneratedProposal, ActiveContract, defaultProfile, defaultRules, defaultActiveContracts } from './types';
-import { AppSidebar } from './components/dashboard/AppSidebar';
+import { AppSidebar, type DashboardTab } from './components/dashboard/AppSidebar';
 import { AppTopbar } from './components/dashboard/AppTopbar';
 import { AppMobileNav } from './components/dashboard/AppMobileNav';
 import { DashboardMetricsCards } from './components/dashboard/DashboardMetricsCards';
@@ -20,6 +20,14 @@ import { SystemHealthConnectivityCard } from './components/SystemHealthConnectiv
 import { HealthDashboard } from './components/HealthDashboard';
 import { WorkOrderTimeline } from './components/WorkOrderTimeline';
 import { AutonomousRevenuePanel } from './components/dashboard/AutonomousRevenuePanel';
+import { WorkExecutionModal } from './components/WorkExecutionModal';
+import { ClientCommunicationsHub } from './components/ClientCommunicationsHub';
+import { ClientPaymentCollectionModal } from './components/ClientPaymentCollectionModal';
+
+// Tool 1: Autonomous Software Job Solver
+const SoftwareJobAutonomousTool = lazy(() => import('./components/SoftwareJobAutonomousTool').then(m => ({ default: m.SoftwareJobAutonomousTool })));
+// Tool 2: Work Order Closer & Escrow Release (Senior Engineer API Endpoint)
+const WorkOrderCloserTool = lazy(() => import('./components/WorkOrderCloserTool').then(m => ({ default: m.WorkOrderCloserTool })));
 
 // Lazy-load heavy non-critical dashboard components to reduce initial JavaScript bundle
 const FreelancerMetricsSection = lazy(() => import('./components/FreelancerMetricsSection').then(m => ({ default: m.FreelancerMetricsSection })));
@@ -81,7 +89,9 @@ import {
   HighPriorityGigEvent,
   fetchPayPalLiveBalance,
   fetchPayPalTransactions,
-  PayPalLiveBalanceResult
+  PayPalLiveBalanceResult,
+  fetchWorkerMonitorStatus,
+  triggerWorkerHeal,
 } from './services/api';
 import { PayPalSettlementModal } from './components/PayPalSettlementModal';
 
@@ -145,7 +155,18 @@ const makeUniqueId = (prefix: string = 'id') => `${prefix}_${Date.now()}_${Math.
 
 export default function App() {
   // Navigation State (Default to dynamic live backend dashboard)
-  const [activeTab, setActiveTab] = useState<'dashboard' | 'income' | 'remoteok' | 'orders' | 'invoicing' | 'paypal' | 'bank' | 'analytics' | 'notifications' | 'leads' | 'logs' | 'snapshots' | 'health'>('dashboard');
+  const [activeTab, setActiveTab] = useState<DashboardTab>('dashboard');
+
+  // Autonomous Work Execution & Payment States
+  const [isWorkExecutionModalOpen, setIsWorkExecutionModalOpen] = useState<boolean>(false);
+  const [selectedWorkOrderForExecution, setSelectedWorkOrderForExecution] = useState<any>(null);
+  const [isPaymentCollectionModalOpen, setIsPaymentCollectionModalOpen] = useState<boolean>(false);
+  const [paymentCollectionParams, setPaymentCollectionParams] = useState<{
+    orderId?: string | number;
+    amount?: number;
+    clientName?: string;
+    title?: string;
+  }>({});
 
   // AI Proposal Studio & Job Analysis State
   const [selectedProposalJob, setSelectedProposalJob] = useState<FreelanceJob | null>(null);
@@ -218,6 +239,7 @@ export default function App() {
   const [editingOrderId, setEditingOrderId] = useState<number | string | null>(null);
   const [editingAmountValue, setEditingAmountValue] = useState<string>('');
   const [autopilot, setAutopilot] = useState<boolean>(true);
+  const [handedOverOrderIdForTool2, setHandedOverOrderIdForTool2] = useState<string | number | null>(null);
 
   // Authentication, Security & Mobile Navigation States
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState<boolean>(false);
@@ -248,6 +270,41 @@ export default function App() {
   const [watchdogLastCheck, setWatchdogLastCheck] = useState<Date | null>(null);
   const [watchdogLastRestart, setWatchdogLastRestart] = useState<Date | null>(null);
   const [isWatchdogRestarting, setIsWatchdogRestarting] = useState<boolean>(false);
+
+  // Background Worker.js Process Activity Monitor State
+  const [workerMonitorStatus, setWorkerMonitorStatus] = useState<{
+    status: 'healthy' | 'restarted' | 'unresponsive' | 'stopped';
+    isResponsive: boolean;
+    pid: number | null;
+    heartbeatAgeSeconds: number;
+    totalRestarts: number;
+  } | null>(null);
+
+  // Periodic polling for worker background monitor (/api/heal)
+  useEffect(() => {
+    let isMounted = true;
+    async function syncWorkerStatus() {
+      try {
+        const data = await fetchWorkerMonitorStatus();
+        if (isMounted && data) {
+          setWorkerMonitorStatus({
+            status: data.workerStatus,
+            isResponsive: data.isResponsive,
+            pid: data.workerPid,
+            heartbeatAgeSeconds: data.heartbeatAgeSeconds,
+            totalRestarts: data.totalRestarts,
+          });
+        }
+      } catch (_) {}
+    }
+
+    syncWorkerStatus();
+    const interval = setInterval(syncWorkerStatus, 30000);
+    return () => {
+      isMounted = false;
+      clearInterval(interval);
+    };
+  }, []);
 
   // Dedicated 60-second auto-refresh polling effect for backend stats API (https://3-222-149-9.sslip.io/api/bids/stats)
   useEffect(() => {
@@ -998,6 +1055,11 @@ export default function App() {
           section: 'Lead Notifications & Speed Radar',
           description: 'Instant Telegram & Email push notifications for high-value leads. Headless Playwright scraper bypasses webhook approval delays with sub-second lead dispatching.'
         };
+      case 'tool1':
+        return {
+          section: 'Tool 1: Software Job Solver',
+          description: 'Autonomous software work order engine: auto-ingests, solves, explains code & architectural choices, fulfills client requests, and auto-delivers with verified SHA-256 signatures.'
+        };
       case 'leads':
         return {
           section: 'Real Lead Scoring & Tier Paywalls',
@@ -1017,6 +1079,11 @@ export default function App() {
         return {
           section: 'Automated Work Orders',
           description: 'Autonomous work orders queue and execution status. Track deliverables, milestone submissions, and client verification.'
+        };
+      case 'clients':
+        return {
+          section: 'Client Communications Hub',
+          description: 'Autonomous client messaging, Gemini auto-reply representative, milestone payment links, and deliverable handovers.'
         };
       case 'invoicing':
         return {
@@ -1152,6 +1219,30 @@ export default function App() {
           paypalMeHandle={PRIMARY_PAYPAL_ME}
           upiId={PRIMARY_UPI_ID}
           fmt={fmt}
+          workerMonitorStatus={workerMonitorStatus}
+          onHealWorker={async () => {
+            showToast('Triggering worker verification & healing...', 'info');
+            try {
+              const res = await triggerWorkerHeal('topbar_click');
+              if (res.ok) {
+                showToast(res.worker.message || 'Worker healthy', res.restarted ? 'warning' : 'success');
+                if (res.monitor) {
+                  setWorkerMonitorStatus({
+                    status: res.monitor.workerStatus,
+                    isResponsive: res.monitor.isResponsive,
+                    pid: res.monitor.workerPid,
+                    heartbeatAgeSeconds: res.monitor.heartbeatAgeSeconds,
+                    totalRestarts: res.monitor.totalRestarts,
+                  });
+                }
+              } else {
+                showToast(res.error || 'Failed to heal worker', 'error');
+              }
+            } catch (err: any) {
+              showToast(`Healing error: ${err.message}`, 'error');
+            }
+          }}
+          onSelectTab={setActiveTab}
         />
 
         {/* Backend Unreachable & Watchdog Alert Banner */}
@@ -1843,6 +1934,54 @@ export default function App() {
           </div>
         )}
 
+        {/* ===== TAB: TOOL 1 - AUTONOMOUS SOFTWARE WORK ORDER SOLVER ===== */}
+        {activeTab === 'tool1' && (
+          <div className="space-y-6">
+            <Suspense fallback={<LazyFallback label="Loading Tool 1 Autonomous Software Solver..." />}>
+              <SoftwareJobAutonomousTool
+                liveOrders={workOrders}
+                onOpenPaymentCollection={(orderId, amount, clientName, title) => {
+                  setPaymentCollectionParams({
+                    orderId,
+                    amount,
+                    clientName,
+                    title
+                  });
+                  setIsPaymentCollectionModalOpen(true);
+                }}
+                onOpenClientChat={(clientName, topic, initialMessage) => {
+                  setActiveTab('clients');
+                  showToast(`Redirected to client communication hub for ${clientName}`, 'info');
+                }}
+                onHandoverToTool2={(orderId) => {
+                  setHandedOverOrderIdForTool2(orderId);
+                  setActiveTab('tool2');
+                  showToast(`Handed over Order #${orderId} to Tool 2 for Escrow Release & Senior API Gen!`, 'success');
+                }}
+                onOpenTool2={() => {
+                  setActiveTab('tool2');
+                }}
+                showToast={showToast}
+                onRefreshOrders={syncRemoteOKJobs}
+              />
+            </Suspense>
+          </div>
+        )}
+
+        {/* ===== TAB: TOOL 2 - WORK ORDER CLOSER & ESCROW RELEASE ===== */}
+        {activeTab === 'tool2' && (
+          <div className="space-y-6">
+            <Suspense fallback={<LazyFallback label="Loading Tool 2 Work Order Closer & Escrow Release..." />}>
+              <WorkOrderCloserTool
+                liveOrders={workOrders}
+                handedOverOrderId={handedOverOrderIdForTool2}
+                onNavigateToTool1={() => setActiveTab('tool1')}
+                showToast={showToast}
+              />
+            </Suspense>
+          </div>
+        )}
+
         {/* ===== TAB: REMOTE OK LIVE JOBS (ZERO AUTH) ===== */}
         {activeTab === 'remoteok' && (
           <div className="space-y-6">
@@ -1906,6 +2045,11 @@ export default function App() {
               isSyncingRemoteOK={isSyncingRemoteOK}
               onSyncRemoteOK={syncRemoteOKJobs}
               onExploreRemoteOK={() => setActiveTab('remoteok')}
+              onOpenTool1={() => setActiveTab('tool1')}
+              onOpenTool2={(orderId) => {
+                if (orderId) setHandedOverOrderIdForTool2(orderId);
+                setActiveTab('tool2');
+              }}
               onNewCustomOrder={() => {
                 setActiveTab('dashboard');
                 setTimeout(() => {
@@ -1924,10 +2068,43 @@ export default function App() {
                 setSelectedAnalysisJob(job);
                 setIsAnalysisModalOpen(true);
               }}
+              onExecuteWork={(order) => {
+                setSelectedWorkOrderForExecution(order);
+                setIsWorkExecutionModalOpen(true);
+              }}
+              onTalkToClient={(order) => {
+                setActiveTab('clients');
+              }}
+              onCollectMoney={(order) => {
+                setPaymentCollectionParams({
+                  orderId: order.id,
+                  amount: order.amount || 250,
+                  clientName: order.clientName || 'Client',
+                  title: order.title,
+                });
+                setIsPaymentCollectionModalOpen(true);
+              }}
               toFreelanceJob={toFreelanceJob}
               fmt={fmt}
             />
           </Suspense>
+        )}
+
+        {/* ===== TAB: CLIENT COMMUNICATIONS HUB ===== */}
+        {activeTab === 'clients' && (
+          <ClientCommunicationsHub
+            onOpenPaymentCollection={(orderId, amount, clientName, title) => {
+              setPaymentCollectionParams({
+                orderId,
+                amount,
+                clientName,
+                title,
+              });
+              setIsPaymentCollectionModalOpen(true);
+            }}
+            onNavigateToTab={(tab: string) => setActiveTab(tab as any)}
+            showToast={showToast}
+          />
         )}
 
         {/* ===== TAB 3: INVOICING ===== */}
@@ -2358,6 +2535,53 @@ export default function App() {
           onClose={() => setIsBackendModalOpen(false)}
         />
       </Suspense>
+
+      {/* ===== AUTONOMOUS WORK EXECUTION MODAL ===== */}
+      <WorkExecutionModal
+        isOpen={isWorkExecutionModalOpen}
+        onClose={() => setIsWorkExecutionModalOpen(false)}
+        order={selectedWorkOrderForExecution}
+        onWorkCompleted={(orderId, deliverable) => {
+          showToast(`Autonomous deliverables generated for "${deliverable.jobTitle}"!`, 'success');
+          setWorkOrders(prev =>
+            prev.map(o => String(o.id) === String(orderId) ? { ...o, status: 'in-progress' } : o)
+          );
+        }}
+        onOpenPaymentCollection={(orderId, amount, clientName, title) => {
+          setPaymentCollectionParams({ orderId, amount, clientName, title });
+          setIsPaymentCollectionModalOpen(true);
+        }}
+        onOpenClientChat={(_clientName, _projectTitle, _deliverableNote) => {
+          setActiveTab('clients');
+        }}
+        showToast={showToast}
+      />
+
+      {/* ===== CLIENT PAYMENT COLLECTION MODAL ===== */}
+      <ClientPaymentCollectionModal
+        isOpen={isPaymentCollectionModalOpen}
+        onClose={() => setIsPaymentCollectionModalOpen(false)}
+        orderId={paymentCollectionParams.orderId}
+        initialAmount={paymentCollectionParams.amount || 250}
+        clientName={paymentCollectionParams.clientName || 'Valued Client'}
+        projectTitle={paymentCollectionParams.title || 'Freelance Engineering Deliverable'}
+        onPaymentSuccess={(payment) => {
+          triggerConfetti({ particleCount: 70, spread: 60 });
+          setWalletBalance(curr => curr + payment.amountUsd);
+          setTodayEarnings(curr => curr + payment.amountUsd);
+          const newTx: Transaction = {
+            id: makeUniqueId('tx_client_pay'),
+            name: `💰 Client Payment Collected: ${payment.clientName} (${payment.paymentMethod.toUpperCase()})`,
+            date: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) + ' Today',
+            amount: payment.amountUsd,
+            type: 'credit',
+            method: payment.paymentMethod === 'upi' ? 'UPI' : 'PayPal',
+            referenceId: payment.invoiceNumber,
+          };
+          setTransactions(t => [newTx, ...t]);
+        }}
+        showToast={showToast}
+      />
 
       {/* ===== FLOATING TOAST NOTIFICATION ===== */}
       <div

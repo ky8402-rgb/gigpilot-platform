@@ -26,6 +26,15 @@ interface AppTopbarProps {
   paypalMeHandle: string;
   upiId: string;
   fmt: (n: number) => string;
+  workerMonitorStatus?: {
+    status: 'healthy' | 'restarted' | 'unresponsive' | 'stopped';
+    isResponsive: boolean;
+    pid: number | null;
+    heartbeatAgeSeconds: number;
+    totalRestarts: number;
+  } | null;
+  onHealWorker?: () => void;
+  onSelectTab?: (tab: DashboardTab) => void;
 }
 
 export const AppTopbar: React.FC<AppTopbarProps> = ({
@@ -53,6 +62,9 @@ export const AppTopbar: React.FC<AppTopbarProps> = ({
   paypalMeHandle,
   upiId,
   fmt,
+  workerMonitorStatus,
+  onHealWorker,
+  onSelectTab,
 }) => {
   const [isToolsMenuOpen, setIsToolsMenuOpen] = useState<boolean>(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
@@ -211,6 +223,35 @@ export const AppTopbar: React.FC<AppTopbarProps> = ({
             )}
           </div>
 
+          {/* Worker Background Monitor Indicator */}
+          <div
+            onClick={onHealWorker}
+            className={`hidden lg:flex items-center gap-1.5 px-3 py-1.5 rounded-xl border text-xs font-mono transition-all cursor-pointer ${
+              workerMonitorStatus?.status === 'healthy' || !workerMonitorStatus
+                ? 'border-cyan-500/30 bg-cyan-950/20 text-cyan-300 hover:border-cyan-400/60'
+                : workerMonitorStatus?.status === 'restarted'
+                ? 'border-amber-500/40 bg-amber-950/20 text-amber-300 animate-pulse'
+                : 'border-rose-500/30 bg-rose-950/20 text-rose-300'
+            }`}
+            title={`Worker Background Monitor: ${
+              workerMonitorStatus?.status || 'active'
+            }. Click to verify worker process activity & trigger /api/heal.`}
+          >
+            <span
+              className={`w-2 h-2 rounded-full ${
+                workerMonitorStatus?.status === 'healthy' || !workerMonitorStatus
+                  ? 'bg-cyan-400 animate-pulse'
+                  : workerMonitorStatus?.status === 'restarted'
+                  ? 'bg-amber-400 animate-ping'
+                  : 'bg-rose-400'
+              }`}
+            />
+            <span className="font-semibold">Worker:</span>
+            <span className="text-[11px] text-slate-300">
+              {workerMonitorStatus?.pid ? `PID ${workerMonitorStatus.pid}` : 'Active'}
+            </span>
+          </div>
+
           {/* Telemetry Refresh Button */}
           <button
             id="topbar-btn-refresh-telemetry"
@@ -220,6 +261,21 @@ export const AppTopbar: React.FC<AppTopbarProps> = ({
             title="Sync latest live backend telemetry"
           >
             <i className={`fas fa-sync-alt text-xs ${isBackendLoading ? 'animate-spin text-blue-400' : ''}`}></i>
+          </button>
+
+          {/* Tool 1 Software Solver Button */}
+          <button
+            id="topbar-btn-tool1-solver"
+            onClick={() => onSelectTab?.('tool1')}
+            className={`flex items-center gap-2 px-3 py-1.5 rounded-xl text-xs font-semibold transition-all cursor-pointer border ${
+              activeTab === 'tool1'
+                ? 'bg-blue-600 text-white border-blue-400 shadow-md shadow-blue-500/25'
+                : 'bg-slate-900 hover:bg-slate-800 text-cyan-300 border-cyan-500/30'
+            }`}
+            title="Open Tool 1: Autonomous Software Job Solver & Explainer"
+          >
+            <i className="fas fa-brain text-xs text-cyan-400"></i>
+            <span className="hidden md:inline font-mono">Tool 1: Software Solver</span>
           </button>
 
           {/* Primary Action: PayPal Settlement Hub */}
@@ -252,9 +308,27 @@ export const AppTopbar: React.FC<AppTopbarProps> = ({
             {isToolsMenuOpen && (
               <div className="absolute right-0 mt-2 w-72 bg-[#0e131d] border border-slate-800 rounded-2xl shadow-2xl p-2 z-50 text-slate-200 animate-fadeIn space-y-1">
                 <div className="px-3 py-2 border-b border-slate-800 text-[10px] font-bold uppercase tracking-wider text-slate-400 font-mono flex items-center justify-between">
-                  <span>DevOps &amp; Infrastructure</span>
-                  <span className="text-emerald-400">Online</span>
+                  <span>Autonomous Tools &amp; Gateways</span>
+                  <span className="text-emerald-400">Ready</span>
                 </div>
+
+                {/* Tool 1 Software Solver */}
+                <button
+                  id="topbar-menu-tool1"
+                  onClick={() => {
+                    setIsToolsMenuOpen(false);
+                    onSelectTab?.('tool1');
+                  }}
+                  className="w-full flex items-center gap-3 px-3 py-2 rounded-xl text-xs hover:bg-slate-800/80 transition-colors text-left cursor-pointer"
+                >
+                  <div className="w-6 h-6 rounded-lg bg-blue-500/20 text-cyan-400 flex items-center justify-center text-xs">
+                    <i className="fas fa-brain"></i>
+                  </div>
+                  <div>
+                    <div className="font-semibold text-white">Tool 1: Software Solver</div>
+                    <div className="text-[10px] text-slate-400">Auto-execute, walkthrough &amp; learn</div>
+                  </div>
+                </button>
 
                 {/* Gateway */}
                 <button

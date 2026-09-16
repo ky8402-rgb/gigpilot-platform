@@ -1,0 +1,240 @@
+{
+  "version": "2.4.0",
+  "lastSelfUpdate": "2026-09-16T09:08:09.026Z",
+  "totalOrdersSolved": 54,
+  "totalLOCGenerated": 14551,
+  "avgCompletionSeconds": 15.08,
+  "overallSatisfactionRate": 98.4,
+  "skills": [
+    {
+      "id": "skill_react_modular",
+      "category": "Frontend Engineering",
+      "skillName": "Modern React & TypeScript Architecture",
+      "description": "Zero-runtime-overhead modular React components, typed props, Tailwind styling, and error boundary wrappers.",
+      "recommendedLibraries": [
+        "React 18",
+        "Tailwind CSS",
+        "lucide-react",
+        "Zustand"
+      ],
+      "bestPractices": [
+        "Single responsibility per component",
+        "Strict TypeScript interfaces for state and props",
+        "Accessible color contrast and keyboard navigation",
+        "Graceful loading and error states"
+      ],
+      "confidenceScore": 99,
+      "timesApplied": 24,
+      "lastUpdated": "2026-09-16T08:53:38.921Z"
+    },
+    {
+      "id": "skill_fastapi_python",
+      "category": "Backend & APIs",
+      "skillName": "Async Python FastAPI & Pydantic V2 Services",
+      "description": "High-throughput async endpoints, Pydantic type safety, automated OpenAPI specs, and defensive exception filters.",
+      "recommendedLibraries": [
+        "FastAPI",
+        "Pydantic v2",
+        "uvicorn",
+        "httpx",
+        "pytest"
+      ],
+      "bestPractices": [
+        "Use dependency injection for config and database sessions",
+        "Validate request & response schemas strictly with Pydantic",
+        "Implement structured logging and correlation IDs",
+        "Handle connection retries with exponential backoff"
+      ],
+      "confidenceScore": 98,
+      "timesApplied": 18,
+      "lastUpdated": "2026-09-16T08:53:38.921Z"
+    },
+    {
+      "id": "skill_db_postgres_pg",
+      "category": "Database & Storage",
+      "skillName": "PostgreSQL Relational Schema & Migration Engineering",
+      "description": "Normalized database design, indexed foreign keys, transactional integrity, and idempotency.",
+      "recommendedLibraries": [
+        "PostgreSQL",
+        "Drizzle ORM / Prisma",
+        "pg-pool"
+      ],
+      "bestPractices": [
+        "Always index lookup columns and foreign key references",
+        "Wrap multi-row mutations in ACID transactions",
+        "Use timestamp with time zone (TIMESTAMPTZ) for all audit fields",
+        "Implement soft-deletes with active boolean flags where applicable"
+      ],
+      "confidenceScore": 97,
+      "timesApplied": 15,
+      "lastUpdated": "2026-09-16T08:53:38.921Z"
+    },
+    {
+      "id": "skill_api_auth_security",
+      "category": "Security & DevOps",
+      "skillName": "Defensive API Security & Authentication",
+      "description": "Cryptographic JWT tokens, refresh token rotation, CORS headers, and rate limiting.",
+      "recommendedLibraries": [
+        "jsonwebtoken",
+        "bcrypt",
+        "express-rate-limit",
+        "helmet"
+      ],
+      "bestPractices": [
+        "Hash passwords with minimum 12 bcrypt salt rounds",
+        "Store sensitive tokens in httpOnly secure cookies or bearer auth headers",
+        "Validate input payloads against strict regex and schema checkers",
+        "Sanitize all user-provided strings against XSS injection"
+      ],
+      "confidenceScore": 99,
+      "timesApplied": 21,
+      "lastUpdated": "2026-09-16T08:53:38.921Z"
+    },
+    {
+      "id": "skill_automation_scraping",
+      "category": "Automation & Data Engineering",
+      "skillName": "Resilient Web Scraping & Batch Data Pipelines",
+      "description": "Headless browser control, rotating user agents, rate-limited queueing, and structured CSV/JSON extractors.",
+      "recommendedLibraries": [
+        "BeautifulSoup4",
+        "Playwright / Puppeteer",
+        "asyncio",
+        "pandas"
+      ],
+      "bestPractices": [
+        "Respect robots.txt and apply ethical jitter intervals",
+        "Employ resilient CSS/XPath selectors that tolerate UI changes",
+        "Cache raw HTML responses to avoid duplicate outbound hits",
+        "Provide automated health checks and schema verification"
+      ],
+      "confidenceScore": 96,
+      "timesApplied": 14,
+      "lastUpdated": "2026-09-16T08:53:38.921Z"
+    }
+  ],
+  "archetypes": [
+    {
+      "id": "arch_fullstack_dashboard",
+      "patternName": "Full-Stack Analytical Dashboard",
+      "keywords": [
+        "dashboard",
+        "analytics",
+        "charts",
+        "admin",
+        "metrics",
+        "reporting"
+      ],
+      "architectureSummary": "Modular client-side dashboard with live REST polling, responsive bento grids, and server-side aggregation.",
+      "keyDesignDecisions": [
+        "Divided view into telemetry topbar, responsive sidebar, and data cards",
+        "Extracted API clients into centralized services module for seamless mock/live toggling",
+        "Used Lucide iconography for universal clarity"
+      ],
+      "whyPickJustification": "Picked React + Tailwind CSS with TypeScript because it ensures sub-100ms UI responsiveness, zero render lag, strict compile-time type safety, and effortless maintainability for future developers.",
+      "successRate": 99.1,
+      "timesUsed": 19
+    },
+    {
+      "id": "arch_rest_microservice",
+      "patternName": "High-Concurrency REST Microservice",
+      "keywords": [
+        "api",
+        "rest",
+        "service",
+        "crud",
+        "endpoints",
+        "backend",
+        "microservice"
+      ],
+      "architectureSummary": "Decoupled layered service architecture: Router -> Controller -> Service -> Repository.",
+      "keyDesignDecisions": [
+        "Separated HTTP transport logic from business domains",
+        "Centralized global error and rejection handling middleware",
+        "Built automated health check and metrics endpoints"
+      ],
+      "whyPickJustification": "Picked Node.js/Express with TypeScript because of its lightweight memory footprint, instantaneous cold-start, non-blocking I/O event loop, and vast ecosystem compatibility.",
+      "successRate": 98.6,
+      "timesUsed": 16
+    },
+    {
+      "id": "arch_data_scraper",
+      "patternName": "Fault-Tolerant ETL / Scraper Pipeline",
+      "keywords": [
+        "scraper",
+        "etl",
+        "pipeline",
+        "crawler",
+        "extract",
+        "parse",
+        "automation"
+      ],
+      "architectureSummary": "Producer-Consumer pipeline with bounded concurrency, retry queues, and idempotent storage.",
+      "keyDesignDecisions": [
+        "Async concurrent workers with semaphore throttling",
+        "Exponential backoff with jitter on network timeouts",
+        "Strict schema validation before writing to persistent destination"
+      ],
+      "whyPickJustification": "Picked Python with asyncio and Pydantic because Python excels in robust HTML parsing, structured data manipulation, and rapid prototyping while retaining bulletproof type assertions.",
+      "successRate": 97.8,
+      "timesUsed": 13
+    }
+  ],
+  "recentLearnings": [
+    {
+      "id": "learn_1789549689026",
+      "orderTitle": "React Payment Form",
+      "category": "Software Development",
+      "learning": "Successfully applied architecture pattern: I chose Stripe Elements to offload PCI compliance and sensitive data handling to Stripe's secure infrastructure. React Hook Form was selecte",
+      "timestamp": "2026-09-16T09:08:09.026Z"
+    },
+    {
+      "id": "learn_1789549601365",
+      "orderTitle": "Senior Search Backend Engineer (m/f/x)",
+      "category": "Engineering & Technology",
+      "learning": "Successfully applied architecture pattern: Used a layered architecture (Controller-Service-Repository) to ensure separation of concerns. Express was chosen for its minimal overhead an",
+      "timestamp": "2026-09-16T09:06:41.365Z"
+    },
+    {
+      "id": "learn_1789549546052",
+      "orderTitle": "Senior CRM Manager (F/M/D)",
+      "category": "Engineering & Technology",
+      "learning": "Successfully applied architecture pattern: I utilized a Strategy Pattern for multi-channel delivery (Push, Email, SMS) to ensure extensibility. Pydantic was chosen for data validation",
+      "timestamp": "2026-09-16T09:05:46.052Z"
+    },
+    {
+      "id": "learn_1789549399400",
+      "orderTitle": "Senior Search Backend Engineer (m/f/x)",
+      "category": "Engineering & Technology",
+      "learning": "Successfully applied architecture pattern: Used a layered architecture (Controller/Service/Repository) to ensure separation of concerns. Elasticsearch was chosen for its distributed s",
+      "timestamp": "2026-09-16T09:03:19.400Z"
+    },
+    {
+      "id": "learn_1789549351518",
+      "orderTitle": "Senior CRM Manager (F/M/D)",
+      "category": "Engineering & Technology",
+      "learning": "Successfully applied architecture pattern: I utilized the Strategy Pattern for communication channels (Email, Push, SMS) to ensure extensibility. Pydantic was chosen for data validati",
+      "timestamp": "2026-09-16T09:02:31.518Z"
+    },
+    {
+      "id": "learn_1789549222927",
+      "orderTitle": "Senior Search Backend Engineer (m/f/x)",
+      "category": "Engineering & Technology",
+      "learning": "Successfully applied architecture pattern: Used Node.js/Express for non-blocking I/O and low latency. Implemented a Repository pattern to decouple business logic from data access. Typ",
+      "timestamp": "2026-09-16T09:00:22.927Z"
+    },
+    {
+      "id": "learn_1",
+      "orderTitle": "E-commerce Checkout & Webhook Integration",
+      "category": "Payment Systems",
+      "learning": "Always verify raw webhook signatures before JSON parsing to prevent cryptographic replay vulnerabilities.",
+      "timestamp": "2026-09-16T03:53:38.921Z"
+    },
+    {
+      "id": "learn_2",
+      "orderTitle": "Live Telemetry & Server-Sent Events",
+      "category": "Real-time Streaming",
+      "learning": "Flush headers immediately and handle client disconnects cleanly to avoid leaking open TCP sockets.",
+      "timestamp": "2026-09-15T20:53:38.921Z"
+    }
+  ]
+}

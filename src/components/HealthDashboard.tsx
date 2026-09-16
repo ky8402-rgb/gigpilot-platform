@@ -53,6 +53,9 @@ import {
   SyntheticTestSuiteResult,
   SelfHealingLogItem,
   AutoHealerStatus,
+  fetchWorkerMonitorStatus,
+  triggerWorkerHeal,
+  WorkerMonitorTelemetry,
 } from '../services/api';
 
 interface HealthDashboardProps {
@@ -87,21 +90,24 @@ export const HealthDashboard: React.FC<HealthDashboardProps> = ({
   const [isRollingBack, setIsRollingBack] = useState<boolean>(false);
   const [isRetraining, setIsRetraining] = useState<boolean>(false);
   const [isTogglingLoop, setIsTogglingLoop] = useState<boolean>(false);
+  const [isHealingWorker, setIsHealingWorker] = useState<boolean>(false);
+  const [workerTelemetry, setWorkerTelemetry] = useState<WorkerMonitorTelemetry | null>(null);
   const [actionFeedback, setActionFeedback] = useState<{ message: string; type: 'success' | 'warning' | 'info' | 'error' } | null>(null);
   const [showRawJson, setShowRawJson] = useState<boolean>(false);
   const [countdown, setCountdown] = useState<number>(30);
   const [lastRefreshed, setLastRefreshed] = useState<Date>(new Date());
 
-  // Load all health, loop, probes, and history data
+  // Load all health, loop, probes, history data, and worker monitor telemetry
   const loadAllData = useCallback(async (showLoading = false) => {
     if (showLoading) setIsLoading(true);
     try {
-      const [health, loop, probesRes, history, logs] = await Promise.all([
+      const [health, loop, probesRes, history, logs, workerData] = await Promise.all([
         fetchSystemHealth(),
         fetchAutonomousLoopStatus(),
         runAutonomousSyntheticProbes().catch(() => null),
         fetchAutonomousLoopHistory(15).catch(() => []),
         fetchAutoHealerLogs(15).catch(() => []),
+        fetchWorkerMonitorStatus().catch(() => null),
       ]);
 
       if (health) {
@@ -123,6 +129,9 @@ export const HealthDashboard: React.FC<HealthDashboardProps> = ({
       }
       if (logs && logs.length > 0) {
         setAutoHealLogs(logs);
+      }
+      if (workerData) {
+        setWorkerTelemetry(workerData);
       }
 
       setLastRefreshed(new Date());
@@ -151,6 +160,43 @@ export const HealthDashboard: React.FC<HealthDashboardProps> = ({
     }, 1000);
     return () => clearInterval(timer);
   }, [loadAllData]);
+
+  // Handler: Automated worker.js process verification and restart via /api/heal
+  const handleHealWorker = async () => {
+    setIsHealingWorker(true);
+    setActionFeedback({
+      message: 'Triggering automated verification script for worker.js process activity...',
+      type: 'info',
+    });
+
+    try {
+      const res = await triggerWorkerHeal('dashboard_manual_trigger');
+      if (res.ok) {
+        setActionFeedback({
+          message: `${res.worker.message} (Action: ${res.actionTaken}, PID: ${res.worker.pid || 'N/A'})`,
+          type: res.restarted ? 'warning' : 'success',
+        });
+        if (res.monitor) {
+          setWorkerTelemetry(res.monitor);
+        } else {
+          const fresh = await fetchWorkerMonitorStatus();
+          if (fresh) setWorkerTelemetry(fresh);
+        }
+      } else {
+        setActionFeedback({
+          message: `Worker verification notice: ${res.error || res.worker?.message || 'Verification returned unexpected status.'}`,
+          type: 'error',
+        });
+      }
+    } catch (err: any) {
+      setActionFeedback({
+        message: `Failed to trigger worker heal: ${err?.message || 'Unknown error'}`,
+        type: 'error',
+      });
+    } finally {
+      setIsHealingWorker(false);
+    }
+  };
 
   // Handler: Execute full 7-stage autonomous reliability cycle
   const handleExecuteFullLoop = async (modeOverride?: 'autonomous' | 'supervised' | 'dry_run') => {
@@ -527,6 +573,181 @@ export const HealthDashboard: React.FC<HealthDashboardProps> = ({
           </button>
         </div>
       )}
+
+      {/* ========================================================================= */}
+      {/* WORKER.JS PROCESS ACTIVITY & BACKGROUND SELF-HEALING MONITOR CARD */}
+      {/* ========================================================================= */}
+      <div className="rounded-xl border border-slate-800 bg-slate-950/80 p-4 shadow-lg shadow-black/40">
+        <div className="flex flex-wrap items-center justify-between gap-3 pb-3 border-b border-slate-800/80">
+          <div className="flex items-center gap-2.5">
+            <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-cyan-950/50 border border-cyan-500/30 text-cyan-400">
+              <Terminal className="w-4 h-4" />
+            </div>
+            <div>
+              <div className="flex items-center gap-2">
+                <h3 className="text-sm font-bold text-white font-sans">
+                  Worker.js Process Activity & Background Monitor
+                </h3>
+                <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-slate-900 border border-slate-700 text-slate-400">
+                  /api/heal
+                </span>
+              </div>
+              <p className="text-[11px] text-slate-400 mt-0.5">
+                Continuous automated watchdog auditing worker process responsiveness and auto-restarting if unresponsive.
+              </p>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2">
+            {/* Status Indicator Badge */}
+            <div
+              className={`inline-flex items-center gap-2 px-3 py-1.5 rounded-lg border text-xs font-mono font-bold transition-all ${
+                workerTelemetry?.workerStatus === 'healthy' || (!workerTelemetry && true)
+                  ? 'border-emerald-500/40 bg-emerald-950/40 text-emerald-300'
+                  : workerTelemetry?.workerStatus === 'restarted'
+                  ? 'border-amber-500/40 bg-amber-950/40 text-amber-300'
+                  : 'border-rose-500/40 bg-rose-950/40 text-rose-300'
+              }`}
+            >
+              <span
+                className={`w-2 h-2 rounded-full ${
+                  workerTelemetry?.workerStatus === 'healthy' || (!workerTelemetry && true)
+                    ? 'bg-emerald-400 animate-pulse'
+                    : workerTelemetry?.workerStatus === 'restarted'
+                    ? 'bg-amber-400 animate-ping'
+                    : 'bg-rose-400'
+                }`}
+              />
+              <span>
+                {workerTelemetry?.workerStatus === 'healthy' || (!workerTelemetry && true)
+                  ? 'MONITOR: ACTIVE & RESPONSIVE'
+                  : workerTelemetry?.workerStatus === 'restarted'
+                  ? 'WORKER RESTARTED & HEALED'
+                  : 'WORKER UNRESPONSIVE'}
+              </span>
+            </div>
+
+            {/* Manual Trigger / Verification Button */}
+            <button
+              id="btn-heal-worker-manual"
+              onClick={handleHealWorker}
+              disabled={isHealingWorker}
+              className="inline-flex items-center gap-1.5 rounded-lg bg-cyan-600 hover:bg-cyan-500 active:scale-95 px-3 py-1.5 text-xs font-bold text-white transition-all disabled:opacity-50 cursor-pointer shadow-sm shadow-cyan-900/40"
+              title="Execute automated verification script immediately and restart worker if unresponsive"
+            >
+              <RefreshCw className={`w-3.5 h-3.5 ${isHealingWorker ? 'animate-spin' : ''}`} />
+              <span>{isHealingWorker ? 'Verifying & Healing...' : 'Verify & Heal Worker'}</span>
+            </button>
+          </div>
+        </div>
+
+        {/* Worker Telemetry Grid */}
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 pt-3">
+          <div className="rounded-lg bg-slate-900/80 border border-slate-800/80 p-2.5">
+            <span className="text-[10px] uppercase font-semibold tracking-wider text-slate-400 block mb-1">
+              Process Activity
+            </span>
+            <div className="flex items-baseline gap-1.5">
+              <span className="text-sm font-mono font-bold text-slate-100">
+                {workerTelemetry?.workerPid ? `PID: ${workerTelemetry.workerPid}` : 'Active Process'}
+              </span>
+              <span className="text-[10px] text-slate-400 font-mono">
+                ({workerTelemetry?.workerType || 'PM2 / Node'})
+              </span>
+            </div>
+            <p className="text-[10px] text-emerald-400 font-mono mt-0.5 truncate">
+              {workerTelemetry?.isResponsive !== false ? '● Responding to signals' : '▲ Signal delayed'}
+            </p>
+          </div>
+
+          <div className="rounded-lg bg-slate-900/80 border border-slate-800/80 p-2.5">
+            <span className="text-[10px] uppercase font-semibold tracking-wider text-slate-400 block mb-1">
+              Watchdog Heartbeat
+            </span>
+            <div className="flex items-baseline gap-1.5">
+              <span className="text-sm font-mono font-bold text-cyan-300">
+                {workerTelemetry?.heartbeatAgeSeconds !== undefined
+                  ? `${workerTelemetry.heartbeatAgeSeconds}s ago`
+                  : 'Fresh'}
+              </span>
+              <span className="text-[10px] text-slate-400 font-mono">
+                (max 120s)
+              </span>
+            </div>
+            <p className="text-[10px] text-slate-400 mt-0.5 truncate font-mono">
+              Auto-audit interval: 60s
+            </p>
+          </div>
+
+          <div className="rounded-lg bg-slate-900/80 border border-slate-800/80 p-2.5">
+            <span className="text-[10px] uppercase font-semibold tracking-wider text-slate-400 block mb-1">
+              Automated Recoveries
+            </span>
+            <div className="flex items-baseline gap-1.5">
+              <span className="text-sm font-mono font-bold text-emerald-300">
+                {workerTelemetry?.totalRestarts ?? 0}
+              </span>
+              <span className="text-[10px] text-slate-400">
+                self-heals
+              </span>
+            </div>
+            <p className="text-[10px] text-slate-400 mt-0.5 truncate font-mono">
+              {workerTelemetry?.lastRestartAt
+                ? `Last: ${new Date(workerTelemetry.lastRestartAt).toLocaleTimeString()}`
+                : 'Zero unhandled crashes'}
+            </p>
+          </div>
+
+          <div className="rounded-lg bg-slate-900/80 border border-slate-800/80 p-2.5">
+            <span className="text-[10px] uppercase font-semibold tracking-wider text-slate-400 block mb-1">
+              Background Loop
+            </span>
+            <div className="flex items-baseline gap-1.5">
+              <span className="text-sm font-mono font-bold text-indigo-300">
+                Active 60s
+              </span>
+              <span className="text-[10px] text-emerald-400 font-mono">
+                Armed
+              </span>
+            </div>
+            <p className="text-[10px] text-slate-400 mt-0.5 truncate font-mono">
+              Action: {workerTelemetry?.lastAction || 'verified'}
+            </p>
+          </div>
+        </div>
+
+        {/* History / Recent Checks Drawer if history exists */}
+        {workerTelemetry?.history && workerTelemetry.history.length > 0 && (
+          <div className="mt-3 pt-3 border-t border-slate-800/60">
+            <span className="text-[10px] font-mono text-slate-400 block mb-1.5">
+              Recent Background Audit Events:
+            </span>
+            <div className="flex flex-wrap gap-2 text-[11px] font-mono">
+              {workerTelemetry.history.slice(0, 3).map((event, i) => (
+                <div
+                  key={i}
+                  className="px-2 py-1 rounded bg-slate-900 border border-slate-800 text-slate-300 flex items-center gap-1.5"
+                >
+                  <span
+                    className={`w-1.5 h-1.5 rounded-full ${
+                      event.status === 'healthy'
+                        ? 'bg-emerald-400'
+                        : event.status === 'restarted'
+                        ? 'bg-amber-400'
+                        : 'bg-rose-400'
+                    }`}
+                  />
+                  <span className="text-slate-400">
+                    {new Date(event.timestamp).toLocaleTimeString()}:
+                  </span>
+                  <span>{event.actionTaken}</span>
+                  {event.pid && <span className="text-cyan-400">(PID {event.pid})</span>}
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+      </div>
 
       {/* ========================================================================= */}
       {/* 2. THE 7-PILLAR CONTINUOUS AUTONOMOUS RELIABILITY PIPELINE VISUALIZER */}

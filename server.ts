@@ -58,6 +58,25 @@ import godaddyRoutes from "./server/godaddyRoutes.js";
 import cloudflareRoutes from "./server/cloudflareRoutes.js";
 import { sentientRouter } from "./server/sentientRoutes.js";
 import { aiRouter } from "./server/aiRoutes.js";
+import { workerMonitor } from "./server/workerMonitor.js";
+import {
+  executeWorkOrderDeliverable,
+  getOrderDeliverable,
+  getAllDeliverables,
+  explainOrWalkthroughCode,
+  refineDeliverableWithInstructions,
+  autoSolvePendingSoftwareQueue,
+  deliverWorkOrderToClient
+} from "./server/workExecutionEngine.js";
+import { getLearningKnowledgeBase, resetLearningsToBaseline } from "./server/workLearningMemory.js";
+import { getAllConversations, getConversationById, addMessageToConversation, generateClientReply, createConversation, toggleAutoResponder } from "./server/clientMessagingEngine.js";
+import { getPaymentCollectionLinks, recordCollectedPayment, getPaymentSummary } from "./server/paymentCollectionService.js";
+import {
+  closeWorkOrderAndReleaseEscrow,
+  getAllEscrowReleases,
+  generateSeniorEngineerCloseEndpoint,
+  SETTLEMENT_PAYMENT_ACCOUNTS
+} from "./server/workOrderCloserService.js";
 import "./server/worker.js";
 import { logActivityEvent } from "./server/activityLogger.js";
 import { verifyWebhookSignature } from "./server/webhookSecurity.js";
@@ -114,6 +133,9 @@ registerMLPredictor(async (health) => {
 
 // Start self-updating ML background retraining & drift monitoring worker
 startMLWorker();
+
+// Start automated background monitor to verify worker.js process activity and self-heal
+workerMonitor.startMonitor();
 
 const app = express();
 const PORT = process.env.PORT ? parseInt(process.env.PORT, 10) : 3000;
@@ -716,6 +738,7 @@ app.get("/api/health", async (req, res) => {
       queueDepth: fullCheck.checks?.queues?.details?.['freelancer:waiting'] || 0,
       timestamp: fullCheck.timestamp,
       checks: fullCheck.checks,
+      workerMonitor: workerMonitor.getStatus(),
       remediation: fullCheck.remediation,
 
       // Enhanced telemetry for deep observability & existing dashboard cards
@@ -839,6 +862,69 @@ app.post("/api/health/remediate", async (req, res) => {
     return res.status(500).json({
       success: false,
       error: err.message || 'Failed to execute self-healing remediation',
+    });
+  }
+});
+
+// ==============================================================================
+// Automated Worker Process Activity & Self-Healing Endpoint (/api/heal)
+// Triggers an automated script to verify worker.js process activity and restarts it if unresponsive.
+// ==============================================================================
+app.post(["/api/heal", "/api/heal/trigger", "/api/worker/heal"], async (req, res) => {
+  const triggerSource = req.body?.source || req.query?.source || 'api_trigger';
+  console.log(`🛠️ [/api/heal] Executing automated worker verification & healing script (source: ${triggerSource})...`);
+
+  try {
+    const healResult = await workerMonitor.verifyAndHealWorker(String(triggerSource));
+    const monitorStatus = workerMonitor.getStatus();
+
+    return res.json({
+      ok: healResult.ok,
+      status: healResult.status,
+      actionTaken: healResult.actionTaken,
+      restarted: healResult.restarted,
+      worker: healResult.worker,
+      monitor: monitorStatus,
+      timestamp: healResult.timestamp,
+    });
+  } catch (err: any) {
+    console.error("❌ [/api/heal] Worker healing execution failed:", err);
+    return res.status(500).json({
+      ok: false,
+      status: 'error',
+      error: err?.message || 'Failed to trigger worker healing',
+      timestamp: new Date().toISOString(),
+    });
+  }
+});
+
+// GET /api/heal: Retrieve real-time worker process activity, heartbeat, and background monitor status
+app.get(["/api/heal", "/api/heal/status", "/api/worker/status"], (req, res) => {
+  try {
+    const monitorStatus = workerMonitor.getStatus();
+    return res.json({
+      ok: true,
+      status: monitorStatus.workerStatus,
+      isResponsive: monitorStatus.isResponsive,
+      actionTaken: monitorStatus.lastAction,
+      monitor: monitorStatus,
+      worker: {
+        running: Boolean(monitorStatus.workerPid),
+        pid: monitorStatus.workerPid,
+        type: monitorStatus.workerType,
+        isResponsive: monitorStatus.isResponsive,
+        heartbeatAgeSeconds: monitorStatus.heartbeatAgeSeconds,
+        totalRestarts: monitorStatus.totalRestarts,
+        lastRestartAt: monitorStatus.lastRestartAt,
+        message: monitorStatus.message,
+      },
+      timestamp: new Date().toISOString(),
+    });
+  } catch (err: any) {
+    return res.status(500).json({
+      ok: false,
+      error: err?.message || 'Failed to retrieve worker monitor status',
+      timestamp: new Date().toISOString(),
     });
   }
 });
@@ -983,6 +1069,41 @@ app.post("/api/health/auto-heal/reset", (req, res) => {
       success: true,
       message: 'Auto-healer failure counters reset to healthy baseline.',
       status: updatedStatus,
+    });
+  } catch (err: any) {
+    return res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// =========================================================================
+// AUTOMATED WORKER HEAL & MONITOR ENDPOINTS (/api/heal)
+// =========================================================================
+app.all(["/api/heal", "/api/heal/trigger"], async (req, res) => {
+  try {
+    const triggerSource = req.body?.source || req.query?.source || 'api_trigger';
+    const result = await workerMonitor.verifyAndHealWorker(String(triggerSource));
+    return res.status(result.ok ? 200 : 500).json({
+      success: result.ok,
+      ...result,
+      monitorStatus: workerMonitor.getStatus()
+    });
+  } catch (err: any) {
+    console.error("❌ [/api/heal] Failed to verify and heal worker:", err);
+    return res.status(500).json({
+      success: false,
+      error: err?.message || 'Failed to verify worker activity and heal',
+      timestamp: new Date().toISOString()
+    });
+  }
+});
+
+app.get("/api/heal/status", (req, res) => {
+  try {
+    const status = workerMonitor.getStatus();
+    return res.json({
+      success: true,
+      status,
+      timestamp: new Date().toISOString()
     });
   } catch (err: any) {
     return res.status(500).json({ success: false, error: err.message });
@@ -1878,6 +1999,395 @@ app.post("/api/work-orders/complete", (req, res) => {
       });
     }
     res.status(404).json({ success: false, error: "Order not found" });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// =========================================================================
+// WORK EXECUTION ENGINE ENDPOINTS (Actually do the work)
+// =========================================================================
+app.post("/api/work-orders/execute", async (req, res) => {
+  try {
+    const { orderId, title, description, category, tags, budget, requirements } = req.body || {};
+    if (!orderId && !title) {
+      return res.status(400).json({ success: false, error: "Either orderId or title is required" });
+    }
+
+    // If orderId is provided, look up title & description from live orders
+    let jobTitle = title;
+    let jobDesc = description;
+    let jobCategory = category;
+    let jobTags = tags || [];
+    let jobBudget = budget;
+
+    if (orderId) {
+      const allOrders = getAllLiveOrders();
+      const target = allOrders.find(o => String(o.id) === String(orderId));
+      if (target) {
+        jobTitle = jobTitle || target.title;
+        jobDesc = jobDesc || target.description;
+        jobCategory = jobCategory || target.category;
+        jobTags = (jobTags.length ? jobTags : (target as any).tags) || [];
+        jobBudget = jobBudget || target.amount;
+      }
+    }
+
+    const deliverable = await executeWorkOrderDeliverable({
+      orderId: orderId || `exec_${Date.now()}`,
+      title: jobTitle,
+      description: jobDesc,
+      category: jobCategory,
+      tags: jobTags,
+      budget: jobBudget,
+      requirements,
+    });
+
+    res.json({
+      success: true,
+      deliverable,
+      message: `Work executed successfully for "${deliverable.jobTitle}". ${deliverable.files.length} files generated (${deliverable.linesOfCode} LOC).`,
+    });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+app.get("/api/work-orders/:orderId/deliverables", (req, res) => {
+  try {
+    const deliverable = getOrderDeliverable(req.params.orderId);
+    if (!deliverable) {
+      return res.status(404).json({ success: false, error: "No deliverable found for this work order" });
+    }
+    res.json({ success: true, deliverable });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+app.get("/api/work-orders/deliverables/all", (req, res) => {
+  try {
+    const deliverables = getAllDeliverables();
+    res.json({ success: true, deliverables, count: deliverables.length });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// Tool 1: Interactive Code Explainer, Walkthrough & Architecture Justification
+app.post("/api/work-orders/code-walkthrough", async (req, res) => {
+  try {
+    const { orderId, deliverable, targetFile, targetFunction, mode, clientPrompt, chatHistory } = req.body || {};
+    const result = await explainOrWalkthroughCode({
+      orderId,
+      deliverable,
+      targetFile,
+      targetFunction,
+      mode: mode || 'walkthrough',
+      clientPrompt,
+      chatHistory,
+    });
+    res.json(result);
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// Tool 1: Client Instructions / Code Refinement ("Can do anything to complete the user request")
+app.post("/api/work-orders/refine", async (req, res) => {
+  try {
+    const { orderId, instructions, currentDeliverable } = req.body || {};
+    if (!orderId || !instructions) {
+      return res.status(400).json({ success: false, error: "orderId and instructions are required" });
+    }
+    const updated = await refineDeliverableWithInstructions({
+      orderId,
+      instructions,
+      currentDeliverable,
+    });
+    res.json({
+      success: true,
+      deliverable: updated,
+      message: `Deliverables refined and updated per client request: "${instructions.slice(0, 60)}..."`
+    });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// Tool 1: Autonomous Software Work Order Queue Solver (with Tool 2 Escrow Auto-Closer)
+app.post("/api/work-orders/auto-solve-queue", async (req, res) => {
+  try {
+    const { orders, autoDeliver, autoReleaseEscrow, payoutMethod, maxJobs, categoryFilter } = req.body || {};
+    const result = await autoSolvePendingSoftwareQueue({
+      orders,
+      autoDeliver: Boolean(autoDeliver),
+      autoReleaseEscrow: autoReleaseEscrow !== false,
+      payoutMethod: payoutMethod || 'paypal',
+      maxJobs: maxJobs ? Number(maxJobs) : 5,
+      categoryFilter,
+    });
+    res.json(result);
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// Tool 1: Deliver Work Order to Client (Automatic or Manual)
+app.post("/api/work-orders/:orderId/deliver", async (req, res) => {
+  try {
+    const { clientName, customNote, requestPayment } = req.body || {};
+    const result = await deliverWorkOrderToClient({
+      orderId: req.params.orderId,
+      clientName,
+      customNote,
+      requestPayment: requestPayment !== false,
+    });
+    res.json(result);
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// Tool 1: Autonomous Learning & Self-Updating Knowledge Base
+app.get("/api/work-orders/learning-memory", (_req, res) => {
+  try {
+    const knowledgeBase = getLearningKnowledgeBase();
+    res.json({ success: true, knowledgeBase });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+app.post("/api/work-orders/learning-memory/reset", (_req, res) => {
+  try {
+    const reset = resetLearningsToBaseline();
+    res.json({ success: true, message: "Learning memory reset to certified production baseline.", knowledgeBase: reset });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// =========================================================================
+// TOOL 2: WORK ORDER CLOSER & ESCROW PAYMENT RELEASE ENGINE
+// =========================================================================
+// Close order and release escrow directly to verified accounts
+app.post("/api/work-orders/close-and-release", async (req, res) => {
+  try {
+    const { orderId, payoutMethod, idempotencyKey, clientNotes, verifiedChecksum } = req.body || {};
+    if (!orderId) {
+      return res.status(400).json({ success: false, error: "orderId is required" });
+    }
+
+    const release = await closeWorkOrderAndReleaseEscrow({
+      orderId,
+      payoutMethod: payoutMethod || 'paypal',
+      idempotencyKey,
+      clientNotes,
+      verifiedChecksum,
+    });
+
+    res.json({
+      success: true,
+      release,
+      message: `Work order #${orderId} successfully closed and escrow payout of $${release.escrowAmountUsd} USD (₹${release.escrowAmountInr.toLocaleString('en-IN')}) released to ${release.payoutDestination}.`
+    });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// Fetch all escrow release records
+app.get("/api/work-orders/escrow-releases", (_req, res) => {
+  try {
+    const releases = getAllEscrowReleases();
+    res.json({ success: true, releases });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// Feature: Act as a Senior Software Engineer and write an API endpoint function to close a work order & release escrow
+app.post("/api/work-orders/senior-engineer-endpoint", async (req, res) => {
+  try {
+    const { orderId, jobTitle, clientName, amountUsd, framework, customInstructions, includeWebhookVerification } = req.body || {};
+    const result = await generateSeniorEngineerCloseEndpoint({
+      orderId,
+      jobTitle,
+      clientName,
+      amountUsd: amountUsd ? Number(amountUsd) : undefined,
+      framework,
+      customInstructions,
+      includeWebhookVerification,
+    });
+
+    res.json(result);
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// Configured payment collection settlement accounts
+app.get("/api/work-orders/settlement-accounts", (_req, res) => {
+  res.json({
+    success: true,
+    accounts: SETTLEMENT_PAYMENT_ACCOUNTS
+  });
+});
+
+// =========================================================================
+// CLIENT COMMUNICATIONS & AUTONOMOUS CHAT ENDPOINTS (Talk to clients)
+// =========================================================================
+app.get("/api/clients/conversations", (req, res) => {
+  try {
+    const convs = getAllConversations();
+    res.json({ success: true, conversations: convs, totalUnread: convs.reduce((sum, c) => sum + c.unreadCount, 0) });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+app.get("/api/clients/conversations/:id", (req, res) => {
+  try {
+    const conv = getConversationById(req.params.id);
+    if (!conv) {
+      return res.status(404).json({ success: false, error: "Conversation not found" });
+    }
+    res.json({ success: true, conversation: conv });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+app.post("/api/clients/messages", (req, res) => {
+  try {
+    const { convId, sender, senderName, text, actionPayload } = req.body || {};
+    if (!convId || !text) {
+      return res.status(400).json({ success: false, error: "convId and text are required" });
+    }
+    const message = addMessageToConversation(convId, {
+      sender: sender || 'freelancer',
+      senderName: senderName || 'Kundan (Freelancer)',
+      text,
+      actionPayload,
+    });
+    res.json({ success: true, message });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+app.post("/api/clients/auto-reply", async (req, res) => {
+  try {
+    const { convId, userPrompt, tone, goal, sendDirectly } = req.body || {};
+    if (!convId) {
+      return res.status(400).json({ success: false, error: "convId is required" });
+    }
+
+    const { replyText, suggestedAction } = await generateClientReply({
+      convId,
+      userPrompt,
+      tone,
+      goal,
+    });
+
+    let sentMessage = null;
+    if (sendDirectly) {
+      sentMessage = addMessageToConversation(convId, {
+        sender: 'ai_assistant',
+        senderName: 'Kundan (AI Autopilot Rep)',
+        text: replyText,
+        actionPayload: suggestedAction,
+      });
+    }
+
+    res.json({
+      success: true,
+      replyText,
+      suggestedAction,
+      sentMessage,
+    });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+app.post("/api/clients/conversations", (req, res) => {
+  try {
+    const { clientName, projectTitle, clientCompany, platform, projectBudget, initialMessage } = req.body || {};
+    if (!clientName || !projectTitle) {
+      return res.status(400).json({ success: false, error: "clientName and projectTitle are required" });
+    }
+    const conv = createConversation({
+      clientName,
+      projectTitle,
+      clientCompany,
+      platform,
+      projectBudget: projectBudget ? Number(projectBudget) : undefined,
+      initialMessage,
+    });
+    res.json({ success: true, conversation: conv });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+app.post("/api/clients/conversations/:id/toggle-auto", (req, res) => {
+  try {
+    const active = toggleAutoResponder(req.params.id, req.body?.enabled);
+    res.json({ success: true, autoResponderActive: active });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// =========================================================================
+// REAL PAYMENT COLLECTION ENDPOINTS (Collect money from clients)
+// =========================================================================
+app.get("/api/payments/links", (req, res) => {
+  try {
+    const amountUsd = Number(req.query.amountUsd) || 100;
+    const clientName = req.query.clientName as string | undefined;
+    const invoiceRef = req.query.invoiceRef as string | undefined;
+    const memo = req.query.memo as string | undefined;
+
+    const links = getPaymentCollectionLinks({ amountUsd, clientName, invoiceRef, memo });
+    res.json({ success: true, links });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+app.post("/api/payments/collect", (req, res) => {
+  try {
+    const { orderId, clientName, clientEmail, description, amountUsd, paymentMethod } = req.body || {};
+    if (!clientName || !amountUsd) {
+      return res.status(400).json({ success: false, error: "clientName and amountUsd are required" });
+    }
+
+    const record = recordCollectedPayment({
+      orderId,
+      clientName,
+      clientEmail,
+      description: description || `Freelance deliverable payment`,
+      amountUsd: Number(amountUsd),
+      paymentMethod: paymentMethod || 'paypal',
+    });
+
+    res.json({
+      success: true,
+      payment: record,
+      message: `Successfully collected $${record.amountUsd.toFixed(2)} USD from ${record.clientName} via ${record.paymentMethod.toUpperCase()}`,
+    });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+app.get("/api/payments/summary", (req, res) => {
+  try {
+    const summary = getPaymentSummary();
+    res.json({ success: true, ...summary });
   } catch (err: any) {
     res.status(500).json({ success: false, error: err.message });
   }

@@ -2,9 +2,12 @@ import React from 'react';
 
 export type DashboardTab =
   | 'dashboard'
+  | 'tool1'
+  | 'tool2'
   | 'income'
   | 'remoteok'
   | 'orders'
+  | 'clients'
   | 'invoicing'
   | 'paypal'
   | 'bank'
@@ -138,6 +141,38 @@ export const AppSidebar: React.FC<AppSidebarProps> = ({
             </button>
 
             <button
+              id="sidebar-nav-tool1"
+              onClick={() => setActiveTab('tool1')}
+              className={`w-full flex items-center gap-3 px-3 py-2 rounded-xl text-xs font-semibold transition-all cursor-pointer ${
+                activeTab === 'tool1'
+                  ? 'bg-gradient-to-r from-blue-600 to-indigo-600 text-white shadow-md shadow-blue-600/30'
+                  : 'text-slate-400 hover:text-slate-100 hover:bg-slate-900/60'
+              }`}
+            >
+              <i className="fas fa-brain w-4 text-center text-sm text-cyan-400"></i>
+              <span>Tool 1: Software Solver</span>
+              <span className="ml-auto text-[9px] font-mono px-1.5 py-0.5 rounded bg-cyan-500/15 text-cyan-300 border border-cyan-500/30 font-bold">
+                Autopilot
+              </span>
+            </button>
+
+            <button
+              id="sidebar-nav-tool2"
+              onClick={() => setActiveTab('tool2')}
+              className={`w-full flex items-center gap-3 px-3 py-2 rounded-xl text-xs font-semibold transition-all cursor-pointer ${
+                activeTab === 'tool2'
+                  ? 'bg-gradient-to-r from-purple-600 to-indigo-600 text-white shadow-md shadow-purple-600/30'
+                  : 'text-slate-400 hover:text-slate-100 hover:bg-slate-900/60'
+              }`}
+            >
+              <i className="fas fa-shield-alt w-4 text-center text-sm text-purple-400"></i>
+              <span>Tool 2: Escrow Closer</span>
+              <span className="ml-auto text-[9px] font-mono px-1.5 py-0.5 rounded bg-purple-500/15 text-purple-300 border border-purple-500/30 font-bold">
+                Senior API
+              </span>
+            </button>
+
+            <button
               onClick={() => setActiveTab('orders')}
               className={`w-full flex items-center gap-3 px-3 py-2 rounded-xl text-xs font-semibold transition-all cursor-pointer ${
                 activeTab === 'orders'
@@ -152,6 +187,21 @@ export const AppSidebar: React.FC<AppSidebarProps> = ({
                   {activeOrdersCount}
                 </span>
               )}
+            </button>
+
+            <button
+              onClick={() => setActiveTab('clients')}
+              className={`w-full flex items-center gap-3 px-3 py-2 rounded-xl text-xs font-semibold transition-all cursor-pointer ${
+                activeTab === 'clients'
+                  ? 'bg-blue-600 text-white shadow-md shadow-blue-600/20'
+                  : 'text-slate-400 hover:text-slate-100 hover:bg-slate-900/60'
+              }`}
+            >
+              <i className="fas fa-comments w-4 text-center text-sm"></i>
+              <span>Client Messages</span>
+              <span className="ml-auto text-[10px] font-mono px-1.5 py-0.5 rounded bg-blue-500/10 text-blue-400 border border-blue-500/20">
+                AI Rep
+              </span>
             </button>
 
             <button

@@ -10,11 +10,16 @@ interface WorkOrdersViewProps {
   onExploreRemoteOK: () => void;
   onNewCustomOrder: () => void;
   onOpenSettings: () => void;
+  onOpenTool1?: () => void;
+  onOpenTool2?: (orderId?: string | number) => void;
   onAcceptOrder: (id: number | string) => void;
   onCompleteOrder: (id: number | string) => void;
   onSaveCustomAmount: (id: number | string, amount: number) => void;
   onOpenProposalStudio: (job: FreelanceJob) => void;
   onOpenAnalysisModal: (job: FreelanceJob) => void;
+  onExecuteWork?: (order: WorkOrder) => void;
+  onTalkToClient?: (order: WorkOrder) => void;
+  onCollectMoney?: (order: WorkOrder) => void;
   toFreelanceJob: (order: WorkOrder) => FreelanceJob;
   fmt: (n: number) => string;
 }
@@ -45,11 +50,16 @@ export const WorkOrdersView: React.FC<WorkOrdersViewProps> = ({
   onExploreRemoteOK,
   onNewCustomOrder,
   onOpenSettings,
+  onOpenTool1,
+  onOpenTool2,
   onAcceptOrder,
   onCompleteOrder,
   onSaveCustomAmount,
   onOpenProposalStudio,
   onOpenAnalysisModal,
+  onExecuteWork,
+  onTalkToClient,
+  onCollectMoney,
   toFreelanceJob,
   fmt,
 }) => {
@@ -104,6 +114,30 @@ export const WorkOrdersView: React.FC<WorkOrdersViewProps> = ({
           </div>
 
           <div className="flex flex-wrap items-center gap-2.5">
+            {onOpenTool1 && (
+              <button
+                id="workorders-btn-tool1"
+                onClick={onOpenTool1}
+                className="bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white px-3.5 py-2 rounded-full text-xs font-semibold flex items-center gap-1.5 transition-all shadow-md shadow-blue-500/20 cursor-pointer"
+                title="Open Tool 1 Autonomous Software Solver"
+              >
+                <i className="fas fa-brain text-[11px] text-cyan-300"></i>
+                <span>⚡ Tool 1: Software Solver</span>
+              </button>
+            )}
+
+            {onOpenTool2 && (
+              <button
+                id="workorders-btn-tool2"
+                onClick={() => onOpenTool2()}
+                className="bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white px-3.5 py-2 rounded-full text-xs font-semibold flex items-center gap-1.5 transition-all shadow-md shadow-purple-500/20 cursor-pointer"
+                title="Open Tool 2 Escrow Closer & Senior API Generator"
+              >
+                <i className="fas fa-shield-alt text-[11px] text-purple-300"></i>
+                <span>🔒 Tool 2: Escrow Closer</span>
+              </button>
+            )}
+
             <button
               onClick={onExploreRemoteOK}
               className="bg-[#1e1730] hover:bg-[#281e42] border border-purple-500/40 text-purple-300 px-3.5 py-2 rounded-full text-xs font-semibold flex items-center gap-1.5 transition-all shadow-sm cursor-pointer"
@@ -329,6 +363,39 @@ export const WorkOrdersView: React.FC<WorkOrdersViewProps> = ({
                     )}
                     
                     {/* Interactive AI Tools */}
+                    {onExecuteWork && (
+                      <button
+                        onClick={() => onExecuteWork(order)}
+                        className="bg-blue-600/20 hover:bg-blue-600 text-blue-300 hover:text-white border border-blue-500/40 px-3 py-1.5 rounded-full text-xs font-bold transition-all flex items-center gap-1.5 shadow-sm cursor-pointer"
+                        title="Autonomously execute work and generate production deliverable files"
+                      >
+                        <i className="fas fa-terminal text-[10px]"></i>
+                        <span>Do Work</span>
+                      </button>
+                    )}
+
+                    {onTalkToClient && (
+                      <button
+                        onClick={() => onTalkToClient(order)}
+                        className="bg-purple-600/20 hover:bg-purple-600 text-purple-300 hover:text-white border border-purple-500/40 px-2.5 py-1.5 rounded-full text-xs font-semibold transition-all flex items-center gap-1 cursor-pointer"
+                        title="Open client chat thread with AI auto-replies"
+                      >
+                        <i className="fas fa-comments text-[10px]"></i>
+                        <span className="hidden sm:inline">Chat</span>
+                      </button>
+                    )}
+
+                    {onCollectMoney && (
+                      <button
+                        onClick={() => onCollectMoney(order)}
+                        className="bg-emerald-600/20 hover:bg-emerald-600 text-emerald-300 hover:text-white border border-emerald-500/40 px-2.5 py-1.5 rounded-full text-xs font-bold transition-all flex items-center gap-1 cursor-pointer"
+                        title="Collect payment via PayPal or UPI QR code"
+                      >
+                        <i className="fas fa-dollar-sign text-[10px]"></i>
+                        <span className="hidden sm:inline">Collect</span>
+                      </button>
+                    )}
+
                     <button
                       onClick={() => {
                         const freelanceJob = toFreelanceJob(order);
@@ -375,6 +442,17 @@ export const WorkOrdersView: React.FC<WorkOrdersViewProps> = ({
                       <span className="text-xs text-[#2ecc71] font-medium flex items-center gap-1.5 bg-emerald-950/40 border border-emerald-500/30 px-3 py-1.5 rounded-full">
                         <i className="fas fa-check-circle text-[#2ecc71]"></i> Completed &amp; Paid
                       </span>
+                    )}
+
+                    {onOpenTool2 && (
+                      <button
+                        onClick={() => onOpenTool2(order.id)}
+                        className="bg-purple-600/20 hover:bg-purple-600 text-purple-300 hover:text-white px-3 py-1.5 rounded-full text-xs font-bold transition-all flex items-center gap-1 border border-purple-500/30 cursor-pointer"
+                        title="Close Work Order & Release Escrow in Tool 2"
+                      >
+                        <i className="fas fa-shield-alt text-[10px]"></i>
+                        <span>Tool 2 Escrow</span>
+                      </button>
                     )}
                   </div>
 

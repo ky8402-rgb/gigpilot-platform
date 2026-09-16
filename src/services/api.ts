@@ -6117,6 +6117,674 @@ export type {
   CSRFStateValidationResult
 } from './freelancer-oauth.service';
 
+// ----------------------------------------------------------------------------
+// Worker Monitor & /api/heal Telemetry Service
+// ----------------------------------------------------------------------------
+export interface WorkerMonitorTelemetry {
+  isMonitorActive: boolean;
+  intervalSeconds: number;
+  lastCheckAt: string | null;
+  workerStatus: 'healthy' | 'restarted' | 'unresponsive' | 'stopped';
+  isResponsive: boolean;
+  workerPid: number | null;
+  workerType: string;
+  lastHeartbeatAt: string | null;
+  heartbeatAgeSeconds: number;
+  totalRestarts: number;
+  lastRestartAt: string | null;
+  lastAction: string;
+  message: string;
+  history?: Array<{
+    timestamp: string;
+    status: string;
+    actionTaken: string;
+    pid: number | null;
+    heartbeatAgeSeconds: number;
+    triggerSource: string;
+    message: string;
+  }>;
+}
+
+export interface WorkerHealResponse {
+  ok: boolean;
+  status: 'healthy' | 'restarted' | 'unresponsive' | 'stopped';
+  actionTaken: string;
+  restarted: boolean;
+  worker: {
+    running: boolean;
+    pid: number | null;
+    type: string;
+    isResponsive: boolean;
+    heartbeatAgeSeconds: number;
+    message: string;
+  };
+  monitor?: WorkerMonitorTelemetry;
+  timestamp: string;
+  error?: string;
+}
+
+/**
+ * Fetch current worker.js process activity and background monitor status from /api/heal
+ */
+export async function fetchWorkerMonitorStatus(): Promise<WorkerMonitorTelemetry | null> {
+  const baseUrl = getApiBaseUrl();
+  const url = `${baseUrl}/api/heal`;
+
+  try {
+    const res = await fetch(url, {
+      method: 'GET',
+      headers: {
+        'Accept': 'application/json',
+      },
+      signal: AbortSignal.timeout(8000),
+    });
+
+    if (!res.ok) {
+      console.warn(`[WorkerMonitor] /api/heal returned HTTP ${res.status}`);
+      return null;
+    }
+
+    const data = await res.json();
+    return data.monitor || data.worker ? {
+      isMonitorActive: data.monitor?.isMonitorActive ?? true,
+      intervalSeconds: data.monitor?.intervalSeconds ?? 60,
+      lastCheckAt: data.monitor?.lastCheckAt ?? data.timestamp,
+      workerStatus: data.monitor?.workerStatus || data.status || 'healthy',
+      isResponsive: data.monitor?.isResponsive ?? data.worker?.isResponsive ?? true,
+      workerPid: data.monitor?.workerPid ?? data.worker?.pid ?? null,
+      workerType: data.monitor?.workerType ?? data.worker?.type ?? 'standalone',
+      lastHeartbeatAt: data.monitor?.lastHeartbeatAt ?? null,
+      heartbeatAgeSeconds: data.monitor?.heartbeatAgeSeconds ?? data.worker?.heartbeatAgeSeconds ?? 0,
+      totalRestarts: data.monitor?.totalRestarts ?? data.worker?.totalRestarts ?? 0,
+      lastRestartAt: data.monitor?.lastRestartAt ?? null,
+      lastAction: data.monitor?.lastAction ?? data.actionTaken ?? 'verified',
+      message: data.monitor?.message ?? data.worker?.message ?? 'Worker active and responsive.',
+      history: data.monitor?.history ?? [],
+    } : null;
+  } catch (err: any) {
+    console.warn('[WorkerMonitor] Failed to fetch /api/heal status:', err.message);
+    return null;
+  }
+}
+
+/**
+ * Trigger automated worker.js process health check and restart if unresponsive via POST /api/heal
+ */
+export async function triggerWorkerHeal(source = 'dashboard_manual'): Promise<WorkerHealResponse> {
+  const baseUrl = getApiBaseUrl();
+  const url = `${baseUrl}/api/heal`;
+
+  try {
+    const res = await fetch(url, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Accept': 'application/json',
+      },
+      body: JSON.stringify({ source }),
+      signal: AbortSignal.timeout(15000),
+    });
+
+    const data = await res.json();
+    return data;
+  } catch (err: any) {
+    console.error('[WorkerMonitor] Failed to trigger /api/heal:', err);
+    return {
+      ok: false,
+      status: 'unresponsive',
+      actionTaken: 'error',
+      restarted: false,
+      worker: {
+        running: false,
+        pid: null,
+        type: 'unknown',
+        isResponsive: false,
+        heartbeatAgeSeconds: 999,
+        message: err.message || 'Network error triggering /api/heal',
+      },
+      timestamp: new Date().toISOString(),
+      error: err.message,
+    };
+  }
+}
+
+// =========================================================================
+// 1. WORK EXECUTION API (Do the Work with AI)
+// =========================================================================
+export interface DeliverableFile {
+  filename: string;
+  language: string;
+  content: string;
+  description: string;
+}
+
+export interface WorkExecutionDeliverable {
+  orderId: string | number;
+  jobTitle: string;
+  status: 'completed' | 'in-progress' | 'failed';
+  executedAt: string;
+  executionTimeMs: number;
+  files: DeliverableFile[];
+  summary: string;
+  architectureNotes: string;
+  verificationChecklist: string[];
+  clientHandoverNote: string;
+  linesOfCode: number;
+  modelUsed: string;
+  checksum: string;
+}
+
+export async function executeWorkOrder(params: {
+  orderId?: string | number;
+  title: string;
+  description?: string;
+  category?: string;
+  tags?: string[];
+  budget?: number;
+  requirements?: string;
+}): Promise<{ success: boolean; deliverable: WorkExecutionDeliverable; message?: string }> {
+  const baseUrl = getApiBaseUrl();
+  const res = await fetch(`${baseUrl}/api/work-orders/execute`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(params),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.error || `Failed to execute work order: ${res.statusText}`);
+  }
+  return res.json();
+}
+
+export async function fetchWorkDeliverables(orderId: string | number): Promise<WorkExecutionDeliverable | null> {
+  const baseUrl = getApiBaseUrl();
+  try {
+    const res = await fetch(`${baseUrl}/api/work-orders/${orderId}/deliverables`);
+    if (!res.ok) return null;
+    const data = await res.json();
+    return data.deliverable || null;
+  } catch {
+    return null;
+  }
+}
+
+export interface CodeWalkthroughResponse {
+  success: boolean;
+  explanation: string;
+  codeSnippet?: string;
+  keyTakeaways: string[];
+  suggestedFollowUps: string[];
+  mode: string;
+}
+
+export async function explainOrWalkthroughCodeApi(params: {
+  orderId?: string | number;
+  deliverable?: WorkExecutionDeliverable;
+  targetFile?: string;
+  targetFunction?: string;
+  mode: 'walkthrough' | 'explain_function' | 'why_pick' | 'custom_instruction' | 'code_chat';
+  clientPrompt?: string;
+  chatHistory?: Array<{ role: 'user' | 'assistant'; text: string }>;
+}): Promise<CodeWalkthroughResponse> {
+  const baseUrl = getApiBaseUrl();
+  const res = await fetch(`${baseUrl}/api/work-orders/code-walkthrough`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(params),
+  });
+  if (!res.ok) throw new Error('Failed to generate code walkthrough');
+  return res.json();
+}
+
+export async function refineDeliverableApi(params: {
+  orderId: string | number;
+  instructions: string;
+  currentDeliverable?: WorkExecutionDeliverable;
+}): Promise<{ success: boolean; deliverable: WorkExecutionDeliverable; message: string }> {
+  const baseUrl = getApiBaseUrl();
+  const res = await fetch(`${baseUrl}/api/work-orders/refine`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(params),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.error || 'Failed to refine deliverable');
+  }
+  return res.json();
+}
+
+export async function autoSolveSoftwareQueueApi(params: {
+  orders?: any[];
+  autoDeliver?: boolean;
+  autoReleaseEscrow?: boolean;
+  payoutMethod?: 'paypal' | 'upi' | 'bank_wire';
+  maxJobs?: number;
+  categoryFilter?: string;
+}): Promise<{
+  success: boolean;
+  processedCount: number;
+  deliveredCount: number;
+  escrowReleasedCount: number;
+  results: Array<{
+    orderId: string | number;
+    title: string;
+    filesCount: number;
+    delivered: boolean;
+    escrowReleased: boolean;
+    releaseId?: string;
+    payoutDestination?: string;
+    amountUsd?: number;
+    amountInr?: number;
+  }>;
+}> {
+  const baseUrl = getApiBaseUrl();
+  const res = await fetch(`${baseUrl}/api/work-orders/auto-solve-queue`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(params),
+  });
+  if (!res.ok) throw new Error('Failed to auto-solve queue');
+  return res.json();
+}
+
+export async function deliverWorkOrderToClientApi(params: {
+  orderId: string | number;
+  clientName?: string;
+  customNote?: string;
+  requestPayment?: boolean;
+}): Promise<{
+  success: boolean;
+  message: string;
+  conversationId?: string;
+  deliverable: WorkExecutionDeliverable;
+}> {
+  const baseUrl = getApiBaseUrl();
+  const res = await fetch(`${baseUrl}/api/work-orders/${params.orderId}/deliver`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(params),
+  });
+  if (!res.ok) throw new Error('Failed to deliver work order to client');
+  return res.json();
+}
+
+export interface LearningKnowledgeBase {
+  version: string;
+  lastSelfUpdate: string;
+  totalOrdersSolved: number;
+  totalLOCGenerated: number;
+  avgCompletionSeconds: number;
+  overallSatisfactionRate: number;
+  skills: Array<{
+    id: string;
+    category: string;
+    skillName: string;
+    description: string;
+    recommendedLibraries: string[];
+    bestPractices: string[];
+    confidenceScore: number;
+    timesApplied: number;
+    lastUpdated: string;
+  }>;
+  archetypes: Array<{
+    id: string;
+    patternName: string;
+    keywords: string[];
+    architectureSummary: string;
+    keyDesignDecisions: string[];
+    whyPickJustification: string;
+    successRate: number;
+    timesUsed: number;
+  }>;
+  recentLearnings: Array<{
+    id: string;
+    orderTitle: string;
+    category: string;
+    learning: string;
+    timestamp: string;
+  }>;
+}
+
+export async function fetchLearningMemoryApi(): Promise<LearningKnowledgeBase> {
+  const baseUrl = getApiBaseUrl();
+  const res = await fetch(`${baseUrl}/api/work-orders/learning-memory`);
+  if (!res.ok) throw new Error('Failed to fetch learning memory');
+  const data = await res.json();
+  return data.knowledgeBase;
+}
+
+export async function resetLearningMemoryApi(): Promise<LearningKnowledgeBase> {
+  const baseUrl = getApiBaseUrl();
+  const res = await fetch(`${baseUrl}/api/work-orders/learning-memory/reset`, {
+    method: 'POST',
+  });
+  if (!res.ok) throw new Error('Failed to reset learning memory');
+  const data = await res.json();
+  return data.knowledgeBase;
+}
+
+// =========================================================================
+// 2. CLIENT COMMUNICATIONS API (Talk to Clients)
+// =========================================================================
+export interface ClientMessage {
+  id: string;
+  sender: 'client' | 'freelancer' | 'ai_assistant';
+  senderName: string;
+  text: string;
+  timestamp: string;
+  actionPayload?: {
+    type: 'payment_request' | 'deliverable_link' | 'proposal' | 'milestone_release';
+    amount?: number;
+    link?: string;
+    label?: string;
+  };
+}
+
+export interface ClientConversation {
+  id: string;
+  clientId: string;
+  clientName: string;
+  clientAvatar?: string;
+  clientCompany?: string;
+  platform: 'Freelancer' | 'RemoteOK' | 'Direct' | 'Upwork';
+  projectTitle: string;
+  projectBudget?: number;
+  unreadCount: number;
+  lastMessageAt: string;
+  status: 'active' | 'in_negotiation' | 'work_in_progress' | 'completed';
+  autoResponderActive: boolean;
+  messages: ClientMessage[];
+}
+
+export async function fetchClientConversations(): Promise<{
+  success: boolean;
+  conversations: ClientConversation[];
+  totalUnread: number;
+}> {
+  const baseUrl = getApiBaseUrl();
+  const res = await fetch(`${baseUrl}/api/clients/conversations`);
+  if (!res.ok) throw new Error('Failed to fetch client conversations');
+  return res.json();
+}
+
+export async function sendClientMessage(params: {
+  convId: string;
+  text: string;
+  sender?: 'client' | 'freelancer' | 'ai_assistant';
+  senderName?: string;
+  actionPayload?: ClientMessage['actionPayload'];
+}): Promise<{ success: boolean; message: ClientMessage }> {
+  const baseUrl = getApiBaseUrl();
+  const res = await fetch(`${baseUrl}/api/clients/messages`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(params),
+  });
+  if (!res.ok) throw new Error('Failed to send message');
+  return res.json();
+}
+
+export async function generateClientAutoReply(params: {
+  convId: string;
+  userPrompt?: string;
+  tone?: 'professional' | 'persuasive' | 'concise' | 'technical';
+  goal?: 'answer_questions' | 'request_payment' | 'deliver_work' | 'negotiate_rate' | 'close_deal';
+  sendDirectly?: boolean;
+}): Promise<{
+  success: boolean;
+  replyText: string;
+  suggestedAction?: ClientMessage['actionPayload'];
+  sentMessage?: ClientMessage;
+}> {
+  const baseUrl = getApiBaseUrl();
+  const res = await fetch(`${baseUrl}/api/clients/auto-reply`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(params),
+  });
+  if (!res.ok) throw new Error('Failed to generate auto-reply');
+  return res.json();
+}
+
+export async function createClientConversation(params: {
+  clientName: string;
+  projectTitle: string;
+  clientCompany?: string;
+  platform?: 'Freelancer' | 'RemoteOK' | 'Direct' | 'Upwork';
+  projectBudget?: number;
+  initialMessage?: string;
+}): Promise<{ success: boolean; conversation: ClientConversation }> {
+  const baseUrl = getApiBaseUrl();
+  const res = await fetch(`${baseUrl}/api/clients/conversations`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(params),
+  });
+  if (!res.ok) throw new Error('Failed to create client conversation');
+  return res.json();
+}
+
+export async function toggleClientAutoResponder(convId: string, enabled?: boolean): Promise<{
+  success: boolean;
+  autoResponderActive: boolean;
+}> {
+  const baseUrl = getApiBaseUrl();
+  const res = await fetch(`${baseUrl}/api/clients/conversations/${convId}/toggle-auto`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ enabled }),
+  });
+  if (!res.ok) throw new Error('Failed to toggle auto responder');
+  return res.json();
+}
+
+// =========================================================================
+// 3. PAYMENT COLLECTION API (Collect Money)
+// =========================================================================
+export interface PaymentCollectionLinks {
+  amountUsd: number;
+  amountInr: number;
+  paypalUrl: string;
+  upiUri: string;
+  qrCodeUrl: string;
+  paypalHandle: string;
+  upiId: string;
+  formattedUsd: string;
+  formattedInr: string;
+}
+
+export interface PaymentCollectionRecord {
+  id: string;
+  invoiceNumber: string;
+  orderId?: string | number;
+  clientName: string;
+  clientEmail?: string;
+  description: string;
+  amountUsd: number;
+  amountInr: number;
+  paymentMethod: 'paypal' | 'upi' | 'card' | 'instant_escrow';
+  status: 'PAID' | 'PENDING' | 'FAILED';
+  paidAt: string;
+  transactionHash: string;
+  payoutDestination: string;
+}
+
+export async function fetchPaymentCollectionLinks(params: {
+  amountUsd: number;
+  clientName?: string;
+  invoiceRef?: string;
+  memo?: string;
+}): Promise<PaymentCollectionLinks> {
+  const baseUrl = getApiBaseUrl();
+  const query = new URLSearchParams({
+    amountUsd: String(params.amountUsd),
+    ...(params.clientName ? { clientName: params.clientName } : {}),
+    ...(params.invoiceRef ? { invoiceRef: params.invoiceRef } : {}),
+    ...(params.memo ? { memo: params.memo } : {}),
+  });
+  const res = await fetch(`${baseUrl}/api/payments/links?${query.toString()}`);
+  if (!res.ok) throw new Error('Failed to generate payment links');
+  const data = await res.json();
+  return data.links;
+}
+
+export async function recordClientPayment(params: {
+  orderId?: string | number;
+  clientName: string;
+  clientEmail?: string;
+  description?: string;
+  amountUsd: number;
+  paymentMethod?: 'paypal' | 'upi' | 'card' | 'instant_escrow';
+}): Promise<{ success: boolean; payment: PaymentCollectionRecord; message: string }> {
+  const baseUrl = getApiBaseUrl();
+  const res = await fetch(`${baseUrl}/api/payments/collect`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(params),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.error || 'Failed to collect payment');
+  }
+  return res.json();
+}
+
+export async function fetchPaymentSummary(): Promise<{
+  totalCollectedUsd: number;
+  totalCollectedInr: number;
+  transactionCount: number;
+  recentPayments: PaymentCollectionRecord[];
+  destinations: {
+    paypal: string;
+    paypalEmail: string;
+    upi: string;
+    usdToInrRate: number;
+  };
+}> {
+  const baseUrl = getApiBaseUrl();
+  const res = await fetch(`${baseUrl}/api/payments/summary`);
+  if (!res.ok) throw new Error('Failed to fetch payment summary');
+  return res.json();
+}
+
+// =========================================================================
+// TOOL 2: WORK ORDER CLOSER & ESCROW PAYOUT TYPES & APIS
+// =========================================================================
+export interface EscrowReleaseRecord {
+  releaseId: string;
+  orderId: string | number;
+  orderTitle: string;
+  clientName: string;
+  escrowAmountUsd: number;
+  escrowAmountInr: number;
+  status: 'SETTLED' | 'RELEASED';
+  releasedAt: string;
+  payoutMethod: 'paypal' | 'upi' | 'bank_wire';
+  payoutDestination: string;
+  transactionHash: string;
+  idempotencyKey: string;
+  deliverableChecksum?: string;
+  auditSignature: string;
+  executionLatencyMs: number;
+  receiptNotes: string;
+}
+
+export interface SeniorEngineerApiGenResult {
+  success: boolean;
+  endpointCode: string;
+  framework: string;
+  httpMethod: string;
+  routePath: string;
+  architectureSummary: string;
+  securityGuards: string[];
+  paymentFlowExplanation: string;
+  verificationInstructions: string[];
+  mockCurlCommand: string;
+  accountsUsed: {
+    paypal: string;
+    upi: string;
+    bank: string;
+  };
+}
+
+export interface SettlementAccountsData {
+  paypal: {
+    receiverEmail: string;
+    userEmail: string;
+    username: string;
+    url: string;
+    currency: string;
+  };
+  indianBank: {
+    bankName: string;
+    accountHolder: string;
+    accountNumberMasked: string;
+    ifsc: string;
+    upiId: string;
+    fallbackUpiId: string;
+    currency: string;
+    usdToInrRate: number;
+  };
+}
+
+export async function closeWorkOrderAndReleaseEscrowApi(params: {
+  orderId: string | number;
+  payoutMethod?: 'paypal' | 'upi' | 'bank_wire';
+  idempotencyKey?: string;
+  clientNotes?: string;
+  verifiedChecksum?: string;
+}): Promise<{ success: boolean; release: EscrowReleaseRecord; message: string }> {
+  const baseUrl = getApiBaseUrl();
+  const res = await fetch(`${baseUrl}/api/work-orders/close-and-release`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(params),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.error || 'Failed to close work order and release escrow');
+  }
+  return res.json();
+}
+
+export async function fetchEscrowReleasesApi(): Promise<{ success: boolean; releases: EscrowReleaseRecord[] }> {
+  const baseUrl = getApiBaseUrl();
+  const res = await fetch(`${baseUrl}/api/work-orders/escrow-releases`);
+  if (!res.ok) throw new Error('Failed to fetch escrow release records');
+  return res.json();
+}
+
+export async function generateSeniorEngineerCloseEndpointApi(params: {
+  orderId?: string | number;
+  jobTitle?: string;
+  clientName?: string;
+  amountUsd?: number;
+  framework?: 'express_ts' | 'nextjs_app_router' | 'fastapi_python' | 'go_gin';
+  customInstructions?: string;
+  includeWebhookVerification?: boolean;
+}): Promise<SeniorEngineerApiGenResult> {
+  const baseUrl = getApiBaseUrl();
+  const res = await fetch(`${baseUrl}/api/work-orders/senior-engineer-endpoint`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(params),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.error || 'Failed to generate senior engineer endpoint');
+  }
+  return res.json();
+}
+
+export async function fetchSettlementAccountsApi(): Promise<{ success: boolean; accounts: SettlementAccountsData }> {
+  const baseUrl = getApiBaseUrl();
+  const res = await fetch(`${baseUrl}/api/work-orders/settlement-accounts`);
+  if (!res.ok) throw new Error('Failed to fetch settlement accounts');
+  return res.json();
+}
+
+
 
 
 
