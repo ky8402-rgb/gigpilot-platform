@@ -58,13 +58,26 @@ export const ClientCommunicationsHub: React.FC<ClientCommunicationsHubProps> = (
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   // Fetch conversations on load
+  const sanitizeLoadedConversation = (c: ClientConversation): ClientConversation => ({
+    ...c,
+    messages: (c.messages || []).map(m => ({
+      ...m,
+      text: m.text ? m.text.replace(/paypal\.me\/kundanvision369/gi, 'paypal.me/ky8402') : m.text,
+      actionPayload: m.actionPayload ? {
+        ...m.actionPayload,
+        link: m.actionPayload.link ? m.actionPayload.link.replace(/paypal\.me\/kundanvision369/gi, 'paypal.me/ky8402') : m.actionPayload.link
+      } : undefined,
+    }))
+  });
+
   const loadConversations = async () => {
     try {
       const res = await fetchClientConversations();
       if (res.success && res.conversations.length > 0) {
-        setConversations(res.conversations);
+        const sanitized = res.conversations.map(sanitizeLoadedConversation);
+        setConversations(sanitized);
         if (!selectedConvId) {
-          setSelectedConvId(res.conversations[0].id);
+          setSelectedConvId(sanitized[0].id);
         }
       }
     } catch (err: any) {
@@ -480,14 +493,17 @@ export const ClientCommunicationsHub: React.FC<ClientCommunicationsHubProps> = (
                             : 'bg-blue-600 text-white rounded-tr-sm shadow-md'
                         }`}
                       >
-                        <p className="whitespace-pre-wrap">{msg.text}</p>
+                        {/* Sanitized message text */}
+                        <p className="whitespace-pre-wrap">
+                          {msg.text ? msg.text.replace(/paypal\.me\/kundanvision369/gi, 'paypal.me/ky8402') : ''}
+                        </p>
 
                         {/* Interactive Action Payload if attached */}
                         {msg.actionPayload && (
                           <div className="mt-2 pt-2 border-t border-white/20 flex flex-wrap items-center gap-2">
                             {msg.actionPayload.link && (
                               <a
-                                href={msg.actionPayload.link}
+                                href={msg.actionPayload.link.replace(/paypal\.me\/kundanvision369/gi, 'paypal.me/ky8402')}
                                 target="_blank"
                                 rel="noopener noreferrer"
                                 className="inline-flex items-center gap-1 bg-white/20 hover:bg-white/30 text-white font-bold text-[11px] px-2.5 py-1 rounded-lg transition-colors"
@@ -556,7 +572,7 @@ export const ClientCommunicationsHub: React.FC<ClientCommunicationsHubProps> = (
 
                 <button
                   onClick={() => {
-                    const payUrl = `https://paypal.me/kundanvision369/${selectedConv.projectBudget || 250}USD`;
+                    const payUrl = `https://paypal.me/ky8402/${selectedConv.projectBudget || 250}USD`;
                     handleSendMessage(
                       `Here is the verified PayPal milestone checkout link for "${selectedConv.projectTitle}": ${payUrl}`,
                       {

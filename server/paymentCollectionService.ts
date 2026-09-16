@@ -33,7 +33,7 @@ const paymentLedger: PaymentCollectionRecord[] = [
     status: 'PAID',
     paidAt: new Date(Date.now() - 1000 * 60 * 60 * 24).toISOString(),
     transactionHash: '0x9f8c2b7e1a3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f',
-    payoutDestination: 'PayPal (ky8402@gmail.com)',
+    payoutDestination: 'PayPal (kundank4@icloud.com / paypal.me/ky8402)',
   },
   {
     id: 'pay_init_2',
@@ -48,13 +48,13 @@ const paymentLedger: PaymentCollectionRecord[] = [
     status: 'PAID',
     paidAt: new Date(Date.now() - 1000 * 60 * 60 * 12).toISOString(),
     transactionHash: '0x4a5b6c7d8e9f0a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b',
-    payoutDestination: 'UPI (kundanvision369@okhdfcbank)',
+    payoutDestination: 'UPI (chandimay@ybl)',
   },
 ];
 
-const PAYPAL_HANDLE = 'kundanvision369';
-const UPI_ID = 'kundanvision369@okhdfcbank';
-const USD_TO_INR_RATE = 83.25;
+const PAYPAL_HANDLE = 'ky8402';
+const UPI_ID = 'chandimay@ybl';
+const USD_TO_INR_RATE = 86.85;
 
 /**
  * Generate direct payment collection links

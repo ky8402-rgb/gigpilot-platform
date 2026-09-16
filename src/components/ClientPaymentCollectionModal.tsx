@@ -322,7 +322,7 @@ export const ClientPaymentCollectionModal: React.FC<ClientPaymentCollectionModal
                   </div>
 
                   <div className="flex items-center justify-between text-xs text-slate-400 pt-1">
-                    <span>Destination: <strong>PayPal.me/kundanvision369</strong></span>
+                    <span>Destination: <strong>PayPal.me/ky8402</strong> <span className="text-slate-500">(kundank4@icloud.com)</span></span>
                     <a
                       href={paymentLinks.paypalUrl}
                       target="_blank"

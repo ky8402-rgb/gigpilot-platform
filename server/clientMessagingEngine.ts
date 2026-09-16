@@ -140,13 +140,47 @@ function initializeDefaultConversations() {
 initializeDefaultConversations();
 
 /**
+ * Sanitize client messages to ensure verified PayPal & payment links are used
+ */
+function sanitizeMessage(msg: ClientMessage): ClientMessage {
+  let updatedText = msg.text;
+  if (updatedText) {
+    updatedText = updatedText
+      .replace(/paypal\.me\/kundanvision369/gi, 'paypal.me/ky8402')
+      .replace(/kundanvision369@okhdfcbank/gi, 'chandimay@ybl');
+  }
+  let actionPayload = msg.actionPayload;
+  if (actionPayload) {
+    let link = actionPayload.link;
+    if (link) {
+      link = link.replace(/paypal\.me\/kundanvision369/gi, 'paypal.me/ky8402');
+    }
+    actionPayload = { ...actionPayload, link };
+  }
+  return {
+    ...msg,
+    text: updatedText,
+    actionPayload,
+  };
+}
+
+function sanitizeConversation(conv: ClientConversation): ClientConversation {
+  return {
+    ...conv,
+    messages: conv.messages.map(sanitizeMessage),
+  };
+}
+
+/**
  * Get all conversations
  */
 export function getAllConversations(): ClientConversation[] {
   initializeDefaultConversations();
-  return Array.from(conversations.values()).sort(
-    (a, b) => new Date(b.lastMessageAt).getTime() - new Date(a.lastMessageAt).getTime()
-  );
+  return Array.from(conversations.values())
+    .map(sanitizeConversation)
+    .sort(
+      (a, b) => new Date(b.lastMessageAt).getTime() - new Date(a.lastMessageAt).getTime()
+    );
 }
 
 /**
@@ -154,7 +188,8 @@ export function getAllConversations(): ClientConversation[] {
  */
 export function getConversationById(id: string): ClientConversation | null {
   initializeDefaultConversations();
-  return conversations.get(id) || null;
+  const conv = conversations.get(id);
+  return conv ? sanitizeConversation(conv) : null;
 }
 
 /**
@@ -175,18 +210,17 @@ export function addMessageToConversation(
     throw new Error(`Conversation ${convId} not found`);
   }
 
-  const now = new Date().toISOString();
-  const newMsg: ClientMessage = {
+  const sanitized = sanitizeMessage({
     id: `msg_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
     sender: message.sender,
     senderName: message.senderName,
     text: message.text,
-    timestamp: now,
+    timestamp: new Date().toISOString(),
     actionPayload: message.actionPayload,
-  };
+  });
 
-  conv.messages.push(newMsg);
-  conv.lastMessageAt = now;
+  conv.messages.push(sanitized);
+  conv.lastMessageAt = sanitized.timestamp;
   if (message.sender === 'client') {
     conv.unreadCount += 1;
   } else {
@@ -197,11 +231,11 @@ export function addMessageToConversation(
     source: 'ClientMessaging',
     type: 'CLIENT_MESSAGE_SENT',
     status: 'success',
-    summary: `${message.senderName} (${message.sender}) sent message in "${conv.projectTitle}"`,
+    summary: `${sanitized.senderName} (${sanitized.sender}) sent message in "${conv.projectTitle}"`,
     tags: ['client_chat', conv.platform.toLowerCase()],
   });
 
-  return newMsg;
+  return sanitized;
 }
 
 /**
@@ -281,6 +315,7 @@ Tone: ${params.tone || 'professional, confident, clear, and action-oriented'}
 ${params.userPrompt ? `Special instructions from freelancer: "${params.userPrompt}"` : ''}
 
 Draft the reply. Be polite, technically competent, reassuring, and guide the client toward next steps (milestone approval, review, or payment release).
+If referencing PayPal or sending an invoice/payment link, always use Kundan's verified PayPal handle: https://paypal.me/ky8402/${conv.projectBudget || 250}USD (receiver email: kundank4@icloud.com). Never invent another handle.
 Keep the reply under 120 words. No robotic phrasing. Return ONLY the message text without quotes.`;
 
       const result = await generateContentResilient({
@@ -303,7 +338,7 @@ Keep the reply under 120 words. No robotic phrasing. Return ONLY the message tex
   let fallbackReply = `Hi ${conv.clientName}, thank you for checking in! Everything is proceeding right on schedule for "${conv.projectTitle}". I am finalizing the implementation and test verification. I will share the deliverable bundle shortly for your review!`;
 
   if (params.goal === 'request_payment') {
-    fallbackReply = `Hi ${conv.clientName}, the deliverables for "${conv.projectTitle}" are ready and fully verified. You can review the work and release the milestone payment directly here: https://paypal.me/kundanvision369/${conv.projectBudget || 250}USD. Thank you!`;
+    fallbackReply = `Hi ${conv.clientName}, the deliverables for "${conv.projectTitle}" are ready and fully verified. You can review the work and release the milestone payment directly here: https://paypal.me/ky8402/${conv.projectBudget || 250}USD. Thank you!`;
   } else if (params.goal === 'deliver_work') {
     fallbackReply = `Hi ${conv.clientName}, I am pleased to deliver the complete source code, automated test suite, and setup documentation for "${conv.projectTitle}". All requirements have been satisfied. Looking forward to your feedback!`;
   }
