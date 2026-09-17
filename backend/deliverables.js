@@ -28,13 +28,20 @@ const __dirname = path.dirname(__filename);
 const S3_BUCKET = process.env.S3_BUCKET_NAME || 'kundanvision-deliverables';
 const AWS_REGION = process.env.AWS_REGION || 'us-east-1';
 
-const s3Client = new S3Client({
-  region: AWS_REGION,
-  credentials: process.env.AWS_ACCESS_KEY_ID ? {
-    accessKeyId: process.env.AWS_ACCESS_KEY_ID,
-    secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY
-  } : undefined
-});
+let s3Client = null;
+if (process.env.AWS_ACCESS_KEY_ID) {
+  try {
+    s3Client = new S3Client({
+      region: AWS_REGION,
+      credentials: {
+        accessKeyId: process.env.AWS_ACCESS_KEY_ID,
+        secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY || ''
+      }
+    });
+  } catch (err) {
+    console.warn('[Deliverables] S3Client initialization deferred:', err.message);
+  }
+}
 
 // Storage directory for local deliverables
 const LOCAL_DELIVERABLES_DIR = path.resolve(__dirname, '../data/deliverables');
@@ -189,7 +196,7 @@ async function uploadDeliverableFile(jobId, fileName, contentBuffer, contentType
   // Attempt S3 upload if AWS credentials configured
   const s3Key = `deliverables/${jobId}/${fileName}`;
   try {
-    if (process.env.AWS_ACCESS_KEY_ID && process.env.S3_BUCKET_NAME) {
+    if (s3Client && process.env.AWS_ACCESS_KEY_ID && process.env.S3_BUCKET_NAME) {
       await s3Client.send(new PutObjectCommand({
         Bucket: S3_BUCKET,
         Key: s3Key,

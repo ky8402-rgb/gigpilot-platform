@@ -138,7 +138,7 @@ startMLWorker();
 workerMonitor.startMonitor();
 
 const app = express();
-const PORT = process.env.PORT ? parseInt(process.env.PORT, 10) : 3000;
+const PORT = 3000;
 
 // HTTP Response Compression Middleware (Brotli / Gzip)
 app.use(compression({ level: 6 }));
