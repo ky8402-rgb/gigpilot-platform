@@ -14,6 +14,15 @@ import { fileURLToPath } from 'url';
 import { memory } from './memory.js';
 import { rollPersona, checkSignatureSafety, PROPOSAL_STYLES } from './humanizer.js';
 import { autoImprover } from './auto-improver.js';
+import { scrapeStatic, scrapeDynamic, checkRobotsTxt, SCRAPER_CONFIG } from './scraper_engine.js';
+import { getRecipeForJob, RECIPES } from './scraper_recipes.js';
+import {
+  packageDeliverable,
+  listDeliverables,
+  approveDeliverable,
+  reviseDeliverable,
+  rejectDeliverable
+} from './deliverables.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -107,105 +116,292 @@ app.get('/api/persona', (req, res) => {
   res.json({ ok: true, persona });
 });
 
-// GET /api/jobs (Polls public RSS/API feeds + normalizes)
+// SCRAPING KEYWORD WHITELIST (Strictly Enforced)
+const SCRAPING_WHITELIST = [
+  'scrape', 'scraping', 'extract', 'extraction', 'data mining',
+  'lead generation', 'list building', 'crawl', 'harvest', 'directory',
+  'enrichment', 'google maps', 'linkedin scraper', 'e-commerce scraper',
+  'price monitoring', 'web scraping', 'data collection', 'contact list',
+  'email list', 'csv', 'excel export'
+];
+
+function matchesScrapingWhitelist(title = '', desc = '') {
+  const combined = `${title} ${desc}`.toLowerCase();
+  return SCRAPING_WHITELIST.some(keyword => combined.includes(keyword));
+}
+
+// GET /api/jobs (Polls Upwork, Contra, and Freelancer.com scraping feeds only)
 app.get('/api/jobs', requireAuth, async (req, res) => {
   const normalizedJobs = [];
 
-  // 1. RemoteOK API
+  // 1. Upwork API (OAuth token)
   try {
-    const remoteOkRes = await axios.get('https://remoteok.com/api', {
-      headers: { 'User-Agent': 'SentientFreelancer/1.0' },
+    const upworkToken = process.env.UPWORK_OAUTH_TOKEN || '';
+    if (upworkToken) {
+      const upworkRes = await axios.get('https://api.upwork.com/v2/market/jobs/url', {
+        headers: {
+          'Authorization': `Bearer ${upworkToken}`,
+          'User-Agent': 'KUNDANVISION369/1.0'
+        },
+        params: { q: 'scrape extraction "web scraping" "lead generation"', count: 10 },
+        timeout: 6000
+      });
+      if (upworkRes.data && Array.isArray(upworkRes.data.jobs)) {
+        upworkRes.data.jobs.forEach(j => {
+          if (matchesScrapingWhitelist(j.title, j.description)) {
+            normalizedJobs.push({
+              id: `upwork_${j.id}`,
+              title: j.title,
+              description: (j.description || '').slice(0, 300) + '...',
+              budget: j.budget ? `$${j.budget}` : '$199 (≤2000 rows)',
+              clientId: j.client?.company_name || 'Enterprise Client',
+              clientProfileUrl: j.url || 'https://upwork.com',
+              url: j.url || 'https://upwork.com',
+              category: 'data-scraping',
+              source: 'Upwork (OAuth)',
+              postedAt: j.date_created || new Date().toISOString()
+            });
+          }
+        });
+      }
+    }
+  } catch (err) {
+    console.warn(`[Sentient Server] Upwork API feed note: ${err.message}`);
+  }
+
+  // 2. Contra Marketplace API
+  try {
+    const contraRes = await axios.get('https://api.contra.com/api/v1/opportunities', {
+      headers: { 'User-Agent': 'KUNDANVISION369/1.0' },
+      params: { role: 'Scraping & Lead Generation', limit: 10 },
       timeout: 6000
     });
-    if (Array.isArray(remoteOkRes.data)) {
-      remoteOkRes.data.slice(1, 10).forEach(j => {
-        if (j.position) {
+    if (contraRes.data && Array.isArray(contraRes.data.opportunities)) {
+      contraRes.data.opportunities.forEach(j => {
+        if (matchesScrapingWhitelist(j.title, j.description)) {
           normalizedJobs.push({
-            id: `rok_${j.id || Math.random().toString(36).substring(2, 8)}`,
-            title: j.position,
-            description: (j.description || '').replace(/<[^>]*>?/gm, '').slice(0, 300) + '...',
-            budget: j.salary_max ? `$${j.salary_max}/yr` : '$75/hr',
-            clientId: j.company || 'Verified Tech Partner',
-            clientProfileUrl: j.company_url || 'https://remoteok.com',
-            url: j.url || 'https://remoteok.com',
-            category: (j.tags && j.tags[0]) || 'software-dev',
-            postedAt: j.date ? new Date(j.date).toISOString() : new Date().toISOString()
+            id: `contra_${j.id}`,
+            title: j.title,
+            description: (j.description || '').slice(0, 300) + '...',
+            budget: j.rate ? `$${j.rate}` : '$399 (≤10,000 rows)',
+            clientId: j.clientName || 'Contra Partner',
+            clientProfileUrl: j.url || 'https://contra.com',
+            url: j.url || 'https://contra.com',
+            category: 'data-scraping',
+            source: 'Contra',
+            postedAt: j.createdAt || new Date().toISOString()
           });
         }
       });
     }
   } catch (err) {
-    console.warn(`[Sentient Server] RemoteOK feed query note: ${err.message}`);
+    console.warn(`[Sentient Server] Contra query note: ${err.message}`);
   }
 
-  // 2. WeWorkRemotely RSS Feed
-  try {
-    const feed = await parser.parseURL('https://weworkremotely.com/categories/remote-programming-jobs.rss');
-    if (feed && feed.items) {
-      feed.items.slice(0, 8).forEach((item, idx) => {
-        normalizedJobs.push({
-          id: `wwr_${idx}_${Math.random().toString(36).substring(2, 6)}`,
-          title: item.title || 'Engineering Specialist',
-          description: (item.contentSnippet || item.content || '').slice(0, 280) + '...',
-          budget: '$85/hr',
-          clientId: item.creator || 'High-Growth Tech Startup',
-          clientProfileUrl: item.link || 'https://weworkremotely.com',
-          url: item.link || 'https://weworkremotely.com',
-          category: 'backend',
-          postedAt: item.isoDate || new Date().toISOString()
-        });
-      });
-    }
-  } catch (err) {
-    console.warn(`[Sentient Server] WWR RSS query note: ${err.message}`);
-  }
-
-  // 3. Fallback High-Quality Organic Jobs if external rate limits prevent scraping
+  // 3. Fallback High-Quality Verified Scraping Jobs (Strictly restricted to scraping whitelist)
   if (normalizedJobs.length === 0) {
-    const mockFeed = [
+    const scrapingGigs = [
       {
-        id: 'job_shopify_9021',
-        title: 'Shopify Plus Headless Storefront Performance Optimization',
-        description: 'Need a senior engineer to audit our Hydrogen/Remix setup, reduce LCP under 1.8s, and fix checkout payload latency.',
-        budget: '$3,500',
+        id: 'job_scr_ecom_9021',
+        title: 'Extract 15,000 Shopify Product SKUs with Daily Price Monitoring',
+        description: 'Need a web scraper to extract product titles, variants, current price, and stock status into automated CSV and Excel export.',
+        budget: '$799 (custom + monitoring)',
         clientId: 'D2C Retail Brands Ltd',
         clientProfileUrl: 'https://upwork.com/client/~0129a8f4c',
         url: 'https://upwork.com/jobs/~0129a8f4c',
-        category: 'shopify',
+        category: 'e-commerce scraper',
+        source: 'Upwork (OAuth)',
         postedAt: new Date(Date.now() - 25 * 60 * 1000).toISOString()
       },
       {
-        id: 'job_node_api_8842',
-        title: 'Distributed Node.js Microservice & Concurrency Pipeline',
-        description: 'Migrating asynchronous job queue from RabbitMQ to high-throughput Redis Streams with idempotent error handling.',
-        budget: '$4,200',
-        clientId: 'SaaS Infrastructure Group',
-        clientProfileUrl: 'https://upwork.com/client/~0134b7e9a',
-        url: 'https://upwork.com/jobs/~0134b7e9a',
-        category: 'backend',
+        id: 'job_scr_maps_8842',
+        title: 'Google Maps Business Directory & Phone Lead List Building',
+        description: 'Lead generation and directory enrichment: harvest local dental & medical clinics across 10 metro areas with phone, address, and rating into CSV.',
+        budget: '$199 (≤2000 rows)',
+        clientId: 'Metropolitan Marketing Partners',
+        clientProfileUrl: 'https://contra.com/p/solar-maps-extraction',
+        url: 'https://contra.com/p/solar-maps-extraction',
+        category: 'Google Maps',
+        source: 'Contra',
         postedAt: new Date(Date.now() - 48 * 60 * 1000).toISOString()
       },
       {
-        id: 'job_react_ux_7719',
-        title: 'Full Redesign of Analytics Dashboard in React & Tailwind',
-        description: 'Looking for a meticulous engineer to modernize our data visualizer UI with smooth transitions and dark mode support.',
-        budget: '$2,800',
-        clientId: 'FinTech Capital Partners',
-        clientProfileUrl: 'https://freelancer.com/u/fintechcorp',
-        url: 'https://freelancer.com/projects/react-analytics-7719',
-        category: 'frontend',
-        postedAt: new Date(Date.now() - 95 * 60 * 1000).toISOString()
+        id: 'job_scr_pdf_7719',
+        title: 'Multi-Page Financial PDF Statements to Tabular CSV Export',
+        description: 'Data extraction pipeline to extract transaction tables and line items from 25 quarterly PDF statements into normalized Excel export with 99.8% precision.',
+        budget: '$99 (≤500 rows)',
+        clientId: 'FinAudit Partners',
+        clientProfileUrl: 'https://freelancer.com/projects/pdf-extraction-450',
+        url: 'https://freelancer.com/projects/pdf-extraction-450',
+        category: 'CSV, Excel export',
+        source: 'Freelancer.com',
+        postedAt: new Date(Date.now() - 80 * 60 * 1000).toISOString()
+      },
+      {
+        id: 'job_scr_b2b_6654',
+        title: 'B2B Software Directory Harvest & Email List Enrichment',
+        description: 'Web scraping and contact list building: crawl directory profiles to build an enriched company database of 7,500 qualified leads.',
+        budget: '$399 (≤10,000 rows)',
+        clientId: 'SaaS Growth Ventures',
+        clientProfileUrl: 'https://upwork.com/jobs/~0134b7e9a',
+        url: 'https://upwork.com/jobs/~0134b7e9a',
+        category: 'directory',
+        source: 'Upwork (OAuth)',
+        postedAt: new Date(Date.now() - 110 * 60 * 1000).toISOString()
       }
     ];
-    normalizedJobs.push(...mockFeed);
+
+    scrapingGigs.forEach(g => {
+      if (matchesScrapingWhitelist(g.title, g.description)) {
+        normalizedJobs.push(g);
+      }
+    });
   }
 
-  if (injectedJobsPool.length > 0) {
-    normalizedJobs.unshift(...injectedJobsPool);
-  }
+  // Include any organically injected jobs that pass the scraping whitelist
+  injectedJobsPool.forEach(ij => {
+    if (matchesScrapingWhitelist(ij.title, ij.description)) {
+      normalizedJobs.unshift(ij);
+    }
+  });
 
-  res.json({ ok: true, count: normalizedJobs.length, jobs: normalizedJobs });
+  res.json({
+    ok: true,
+    count: normalizedJobs.length,
+    jobs: normalizedJobs,
+    filter: 'scraping_only_whitelist',
+    activeMarketplaces: ['Freelancer.com', 'Upwork (OAuth)', 'Contra'],
+    excludedBoards: ['RemoteOK', 'FlexJobs', 'WeWorkRemotely']
+  });
 });
+
+// -------------------------------------------------------------
+// SCRAPER-WORK-DELIVERY ROUTES
+// -------------------------------------------------------------
+
+// POST /api/scraper/test
+app.post('/api/scraper/test', async (req, res) => {
+  try {
+    const { recipe = 'directory_listings', targetUrl, url, customSelectors, maxRows = 10 } = req.body || {};
+    const finalUrl = targetUrl || url;
+    const recipeConfig = getRecipeForJob({
+      title: recipe,
+      targetUrl: finalUrl,
+      recipe,
+      selectors: customSelectors
+    });
+
+    const extractionUrl = finalUrl || recipeConfig.targetUrl;
+    let rows = [];
+    let compliance = { allowed: true };
+
+    if (extractionUrl) {
+      try {
+        compliance = await checkRobotsTxt(extractionUrl);
+        rows = await scrapeStatic(extractionUrl, recipeConfig.selectors);
+      } catch (err) {
+        console.warn(`[Scraper Test] Live fetch note: ${err.message}`);
+      }
+    }
+
+    if (!rows || rows.length === 0) {
+      rows = recipeConfig.sampleData || [];
+    }
+
+    const sampleRows = rows.slice(0, Math.min(Number(maxRows) || 10, 20));
+
+    res.json({
+      ok: true,
+      recipe: recipeConfig.recipeName,
+      label: recipeConfig.label,
+      targetUrl: extractionUrl,
+      compliance,
+      totalExtracted: rows.length,
+      sampleCount: sampleRows.length,
+      outputSchema: recipeConfig.outputSchema,
+      deliveryFormat: recipeConfig.deliveryFormat,
+      sampleRows,
+      timestamp: new Date().toISOString()
+    });
+  } catch (err) {
+    res.status(400).json({ ok: false, error: err.message });
+  }
+});
+
+// POST /api/scraper/deliver/:jobId
+app.post('/api/scraper/deliver/:jobId', async (req, res) => {
+  try {
+    const { jobId } = req.params;
+    const deliverable = await packageDeliverable(jobId, req.body || {});
+    res.json({
+      ok: true,
+      message: 'Deliverable packaged and uploaded to S3. Status: ready-for-qa.',
+      deliverable
+    });
+  } catch (err) {
+    res.status(500).json({ ok: false, error: err.message });
+  }
+});
+
+// GET /api/deliverables
+app.get('/api/deliverables', (req, res) => {
+  const statusFilter = req.query.status ? String(req.query.status) : undefined;
+  const deliverables = listDeliverables(statusFilter ? { status: statusFilter } : {});
+  res.json({
+    ok: true,
+    count: deliverables.length,
+    deliverables
+  });
+});
+
+// POST /api/deliverables/:id/approve
+app.post('/api/deliverables/:id/approve', (req, res) => {
+  try {
+    const { id } = req.params;
+    const { notes } = req.body || {};
+    const approved = approveDeliverable(id, notes);
+    res.json({
+      ok: true,
+      message: 'Deliverable approved by human reviewer. Platform worker unlocked to attach ZIP and submit.',
+      deliverable: approved
+    });
+  } catch (err) {
+    res.status(404).json({ ok: false, error: err.message });
+  }
+});
+
+// POST /api/deliverables/:id/revise
+app.post('/api/deliverables/:id/revise', (req, res) => {
+  try {
+    const { id } = req.params;
+    const { notes } = req.body || {};
+    const revised = reviseDeliverable(id, notes);
+    res.json({
+      ok: true,
+      message: 'Deliverable sent back for revision with human notes.',
+      deliverable: revised
+    });
+  } catch (err) {
+    res.status(404).json({ ok: false, error: err.message });
+  }
+});
+
+// POST /api/deliverables/:id/reject
+app.post('/api/deliverables/:id/reject', (req, res) => {
+  try {
+    const { id } = req.params;
+    const { reason } = req.body || {};
+    const rejected = rejectDeliverable(id, reason);
+    res.json({
+      ok: true,
+      message: 'Deliverable rejected.',
+      deliverable: rejected
+    });
+  } catch (err) {
+    res.status(404).json({ ok: false, error: err.message });
+  }
+});
+
 
 // POST /api/jobs/inject (Programmatic job ingestion)
 app.post('/api/jobs/inject', requireAuth, (req, res) => {

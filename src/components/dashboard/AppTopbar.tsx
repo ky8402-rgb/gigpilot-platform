@@ -25,7 +25,6 @@ interface AppTopbarProps {
   isEmailVerified: boolean;
   paypalMeUrl: string;
   paypalMeHandle: string;
-  upiId: string;
   fmt: (n: number) => string;
   workerMonitorStatus?: {
     status: 'healthy' | 'restarted' | 'unresponsive' | 'stopped';
@@ -62,7 +61,6 @@ export const AppTopbar: React.FC<AppTopbarProps> = ({
   isEmailVerified,
   paypalMeUrl,
   paypalMeHandle,
-  upiId,
   fmt,
   workerMonitorStatus,
   onHealWorker,
@@ -98,7 +96,7 @@ export const AppTopbar: React.FC<AppTopbarProps> = ({
       case 'remoteok':
         return { category: 'Public Stream', title: 'RemoteOK Live Feed', desc: 'Real-time unauthenticated remote gig indexing stream' };
       case 'income':
-        return { category: 'Finance', title: 'Real Income & Checkout', desc: 'Monetize freelance skills with PayPal REST and UPI payment flows' };
+        return { category: 'Finance', title: 'Real Income & Checkout', desc: 'Monetize freelance skills with Payoneer and PayPal payment flows' };
       case 'paypal':
         return { category: 'Finance', title: 'PayPal REST Terminal', desc: 'Global currency settlement, virtual terminal, and QR checkout' };
       case 'invoicing':
@@ -476,8 +474,8 @@ export const AppTopbar: React.FC<AppTopbarProps> = ({
                   }}
                   className="w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs hover:bg-slate-800/80 transition-colors text-left cursor-pointer"
                 >
-                  <i className="fas fa-university text-emerald-400 text-xs"></i>
-                  <span>Indian Bank &amp; UPI Setup</span>
+                  <i className="fas fa-university text-cyan-400 text-xs"></i>
+                  <span>Payoneer &amp; Wire Setup</span>
                 </button>
 
                 {/* Legal / ToS */}

@@ -1,65 +1,40 @@
 import time
 import logging
-import requests
 from typing import Dict, Any, List
 from freelancer_client import FreelancerClient
 import bid_engine
 import database
+from scraper import scrape_external_leads
 
 logger = logging.getLogger("cron")
 
-def scrape_remoteok_leads(limit: int = 10) -> List[Dict[str, Any]]:
+def sync_scraping_leads(limit: int = 10) -> List[Dict[str, Any]]:
     """
-    Scrapes high-quality remote leads from RemoteOK API.
+    Syncs verified scraping freelance leads from Upwork (OAuth) and Contra.
+    RemoteOK, FlexJobs, and WeWorkRemotely are strictly excluded.
     """
-    url = "https://remoteok.com/api"
-    headers = {
-        "User-Agent": "GigPilot-Autonomous-Bot/1.0 (Mozilla/5.0)"
-    }
-    leads_saved = []
-    try:
-        resp = requests.get(url, headers=headers, timeout=12)
-        if resp.status_code == 200:
-            data = resp.json()
-            # RemoteOK returns metadata in first element
-            jobs = [j for j in data if isinstance(j, dict) and j.get("id")]
-            for job in jobs[:limit]:
-                title = job.get("position") or "Remote Developer"
-                company = job.get("company") or "Remote Team"
-                source_url = job.get("url") or f"https://remoteok.com/l/{job.get('id')}"
-                tags = " ".join(job.get("tags", []))
-                pkg_key = bid_engine.match_package(title, tags)
-                lead_id = f"lead_rok_{job.get('id')}"
-
-                lead_record = {
-                    "id": lead_id,
-                    "job_title": title,
-                    "company": company,
-                    "source": "RemoteOK",
-                    "url": source_url,
-                    "matched_package": pkg_key,
-                    "similarity_score": 0.92
-                }
-                database.save_lead(lead_record)
-                leads_saved.append(lead_record)
-    except Exception as e:
-        logger.error(f"Error scraping RemoteOK leads: {e}")
-
-    return leads_saved
+    leads = scrape_external_leads()
+    return leads[:limit]
 
 def find_and_bid() -> Dict[str, Any]:
     """
-    Searches Freelancer.com active projects and auto-dispatches proposals.
-    Also syncs scored leads.
+    Searches Freelancer.com active scraping projects and auto-dispatches proposals.
+    Strictly restricted to scraping whitelist and tiered pricing.
     """
-    logger.info("Executing find_and_bid cron job...")
+    logger.info("Executing find_and_bid cron job for data-scraping jobs only...")
     fl_client = FreelancerClient()
     
-    # 1. Search projects across target niches
-    niches = ["fullstack python react", "fastapi backend", "ai agent bot", "stripe payment integration"]
+    # Strictly scraping/extraction niches
+    scraping_niches = [
+        "web scraping",
+        "data extraction",
+        "lead generation",
+        "google maps scraper",
+        "product catalog scraper csv"
+    ]
     placed_bids = []
 
-    for query in niches:
+    for query in scraping_niches:
         projects = fl_client.search_projects(query, limit=3)
         for proj in projects:
             record = bid_engine.process_and_place_bid(proj, fl_client)
@@ -67,8 +42,8 @@ def find_and_bid() -> Dict[str, Any]:
                 placed_bids.append(record)
         time.sleep(1)
 
-    # 2. Sync fresh leads for pipeline
-    saved_leads = scrape_remoteok_leads(limit=5)
+    # Sync fresh verified scraping leads from Upwork & Contra
+    saved_leads = sync_scraping_leads(limit=5)
 
     return {
         "success": True,

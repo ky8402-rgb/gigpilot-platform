@@ -10,7 +10,7 @@ export interface PaymentCollectionRecord {
   description: string;
   amountUsd: number;
   amountInr: number;
-  paymentMethod: 'payoneer' | 'paypal' | 'upi' | 'card' | 'instant_escrow';
+  paymentMethod: 'payoneer' | 'paypal' | 'card' | 'instant_escrow';
   status: 'PAID' | 'PENDING' | 'FAILED';
   paidAt: string;
   transactionHash: string;
@@ -84,7 +84,6 @@ const paymentLedger: PaymentCollectionRecord[] = [
 ];
 
 const PAYPAL_HANDLE = 'ky8402';
-const UPI_ID = 'chandimay@ybl';
 const USD_TO_INR_RATE = 86.85;
 
 /**
@@ -101,8 +100,6 @@ export function getPaymentCollectionLinks(params: {
   const memo = params.memo || params.invoiceRef || `Freelance Deliverable Payment`;
 
   const paypalUrl = `https://paypal.me/${PAYPAL_HANDLE}/${usd}USD`;
-  const upiUri = `upi://pay?pa=${UPI_ID}&pn=Kundan&am=${inr}&cu=INR&tn=${encodeURIComponent(memo)}`;
-  const qrCodeUrl = `https://api.qrserver.com/v1/create-qr-code/?size=250x250&data=${encodeURIComponent(upiUri)}&margin=10`;
 
   return {
     primaryMethod: 'payoneer',
@@ -110,11 +107,8 @@ export function getPaymentCollectionLinks(params: {
     amountInr: inr,
     payoneer: PRIMARY_PAYONEER_ACCOUNT,
     paypalUrl,
-    upiUri,
-    qrCodeUrl,
     paypalHandle: PAYPAL_HANDLE,
-    upiId: UPI_ID,
-    formattedUsd: `$${usd.toFixed(2)} USD`,
+    formattedUsd: `${usd.toFixed(2)} USD`,
     formattedInr: `₹${inr.toLocaleString('en-IN')}`,
   };
 }
@@ -128,7 +122,7 @@ export function recordCollectedPayment(data: {
   clientEmail?: string;
   description: string;
   amountUsd: number;
-  paymentMethod?: 'payoneer' | 'paypal' | 'upi' | 'card' | 'instant_escrow';
+  paymentMethod?: 'payoneer' | 'paypal' | 'card' | 'instant_escrow';
 }): PaymentCollectionRecord {
   const amountUsd = Math.max(1, data.amountUsd);
   const amountInr = Math.round(amountUsd * USD_TO_INR_RATE);
@@ -140,8 +134,6 @@ export function recordCollectedPayment(data: {
   let payoutDestination = 'Payoneer USD Checking (Citibank, Acc: 70589110002638744, Routing: 031100209)';
   if (paymentMethod === 'paypal') {
     payoutDestination = 'PayPal (Auto-Swept to Payoneer Citibank)';
-  } else if (paymentMethod === 'upi') {
-    payoutDestination = `UPI (${UPI_ID})`;
   } else if (paymentMethod === 'instant_escrow') {
     payoutDestination = 'Platform Escrow Direct Release (Payoneer Wire)';
   }
@@ -193,7 +185,6 @@ export function getPaymentSummary() {
       payoneer: PRIMARY_PAYONEER_ACCOUNT,
       paypal: PAYPAL_HANDLE,
       paypalEmail: 'ky8402@gmail.com',
-      upi: UPI_ID,
       usdToInrRate: USD_TO_INR_RATE,
     },
   };

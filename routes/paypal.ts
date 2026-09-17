@@ -11,8 +11,23 @@ import {
   getPayPalLiveTransactions,
   createLivePayPalInvoice
 } from '../server/paypal.js';
+import {
+  verifyBootCredentials,
+  getBalance as getPayPalV2Balance,
+  verifyWebhook as verifyPayPalV2Webhook
+} from '../backend/paypal.js';
+import {
+  createAndSend as createAndSendInvoice,
+  markPaid as markInvoicePaid,
+  cancel as cancelInvoice,
+  remind as remindInvoice,
+  getAllInvoices
+} from '../backend/invoices.js';
 import { logActivityEvent } from '../server/activityLogger.js';
 import { prisma, initializeWorkOrderFromPayPal } from '../server/db.js';
+
+// Verify boot-time credentials
+verifyBootCredentials();
 
 const router = express.Router();
 
@@ -122,10 +137,10 @@ router.get('/status', async (req, res) => {
  */
 router.get('/balance', async (req, res) => {
   try {
-    const bal = await getPayPalLiveBalance();
+    const bal = await getPayPalV2Balance();
     res.json(bal);
   } catch (err: any) {
-    res.status(500).json({ success: false, error: err.message });
+    res.status(500).json({ ok: false, error: err.message });
   }
 });
 
@@ -449,19 +464,102 @@ router.post('/payout', async (req, res) => {
 });
 
 /**
+ * POST /api/paypal/invoice
+ * Create and send an official PayPal Business v2 invoice with automatic fee & net INR calculations
+ */
+router.post('/invoice', async (req, res) => {
+  try {
+    const invoice = await createAndSendInvoice(req.body);
+    res.status(201).json({
+      ok: true,
+      message: 'PayPal Business invoice created and dispatched successfully',
+      invoice
+    });
+  } catch (err: any) {
+    res.status(500).json({ ok: false, error: err.message });
+  }
+});
+
+/**
+ * GET /api/paypal/invoices
+ * Returns ledger of all invoices with gross USD and net INR totals after ~4.4% fees
+ */
+router.get('/invoices', (req, res) => {
+  try {
+    const data = getAllInvoices();
+    res.json(data);
+  } catch (err: any) {
+    res.status(500).json({ ok: false, error: err.message });
+  }
+});
+
+/**
+ * POST /api/paypal/invoice/:id/remind
+ * Dispatches Day 3/7/14 reminder via SES & PayPal
+ */
+router.post('/invoice/:id/remind', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { day = 3 } = req.body || {};
+    const result = await remindInvoice(id, day);
+    res.json(result);
+  } catch (err: any) {
+    res.status(500).json({ ok: false, error: err.message });
+  }
+});
+
+/**
+ * POST /api/paypal/invoice/:id/cancel
+ * Cancels active invoice
+ */
+router.post('/invoice/:id/cancel', (req, res) => {
+  try {
+    const { id } = req.params;
+    const { reason = 'Cancelled by administrator' } = req.body || {};
+    const invoice = cancelInvoice(id, reason);
+    res.json({
+      ok: true,
+      message: 'Invoice cancelled successfully',
+      invoice
+    });
+  } catch (err: any) {
+    res.status(500).json({ ok: false, error: err.message });
+  }
+});
+
+/**
  * POST /api/paypal/webhook
- * PayPal Webhook Listener for real-time payment notifications & automatic Work Order ingestion
+ * PayPal Webhook Listener with strict cryptographic signature verification
  */
 router.post('/webhook', async (req, res) => {
   try {
+    // 1. Mandatory signature verification — reject unsigned requests with HTTP 401
+    const isValid = await verifyPayPalV2Webhook(req.headers, req.body);
+    if (!isValid) {
+      console.warn('[PayPal Webhook] Unauthorized: Signature verification failed or headers missing');
+      return res.status(401).json({
+        ok: false,
+        error: 'Unauthorized: Missing or invalid PayPal webhook signature headers'
+      });
+    }
+
     const event = req.body;
     const eventType = event?.event_type || 'CHECKOUT.ORDER.APPROVED';
     const resource = event?.resource || {};
     const amount = parseFloat(resource?.amount?.value || resource?.gross_amount?.value || '0');
     const orderId = resource?.id || resource?.supplementary_data?.related_ids?.order_id || `ORD-${Date.now()}`;
     const captureId = resource?.id?.startsWith('CAP-') ? resource.id : undefined;
+    const invoiceId = resource?.id || resource?.parent_payment || resource?.invoice_id;
 
-    if (eventType === 'PAYMENT.CAPTURE.COMPLETED' || eventType === 'CHECKOUT.ORDER.APPROVED') {
+    if (eventType === 'INVOICING.INVOICE.PAID' || eventType === 'PAYMENT.SALE.COMPLETED') {
+      if (invoiceId) {
+        markInvoicePaid(invoiceId, { transactionId: resource.transaction_id || resource.id });
+      }
+    } else if (eventType === 'INVOICING.INVOICE.CANCELLED') {
+      if (invoiceId) {
+        cancelInvoice(invoiceId, 'Cancelled via PayPal event');
+      }
+    } else if (eventType === 'PAYMENT.CAPTURE.COMPLETED' || eventType === 'CHECKOUT.ORDER.APPROVED') {
       await initializeWorkOrderFromPayPal({
         orderId,
         captureId,
@@ -486,7 +584,7 @@ router.post('/webhook', async (req, res) => {
       tags: ['paypal', 'webhook', eventType.toLowerCase()]
     });
 
-    res.json({ status: 'success', received: true });
+    res.json({ status: 'success', received: true, eventType });
   } catch (err: any) {
     console.error('PayPal webhook error:', err);
     res.status(500).json({ error: err.message });

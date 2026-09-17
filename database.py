@@ -39,7 +39,7 @@ def init_db():
         id TEXT PRIMARY KEY,
         job_title TEXT NOT NULL,
         company TEXT,
-        source TEXT DEFAULT 'RemoteOK',
+        source TEXT DEFAULT 'Upwork (OAuth)',
         url TEXT,
         matched_package TEXT NOT NULL,
         similarity_score REAL DEFAULT 0.85,
@@ -75,11 +75,11 @@ def seed_sample_data(conn):
     """, sample_bids)
 
     sample_leads = [
-        ("lead_201", "Senior Full-Stack Architect (FastAPI / React)", "TechVentures global", "RemoteOK", "https://remoteok.com/l/201", "fullstack", 0.94, now),
-        ("lead_202", "AI Agent & Voice Interface Developer", "SynthAI Inc", "RemoteOK", "https://remoteok.com/l/202", "ai_agent", 0.91, now),
-        ("lead_203", "Payment Infrastructure Engineer (Stripe / Razorpay)", "FinGlobal LLC", "RemoteOK", "https://remoteok.com/l/203", "payment_gateway", 0.88, now),
-        ("lead_204", "Full-Stack Security & Code Quality Auditor", "SafeGuard Code", "RemoteOK", "https://remoteok.com/l/204", "code_audit", 0.86, now),
-        ("lead_205", "React & Chart.js Frontend Consultant", "DataMetrics Studio", "RemoteOK", "https://remoteok.com/l/205", "fullstack", 0.89, now),
+        ("lead_201", "E-Commerce Product Catalog & Price Extractor", "D2C Retail Brands Ltd", "Upwork (OAuth)", "https://upwork.com/jobs/~0129a8f4c", "Custom Scraper & Monitoring (>10,000 rows)", 0.98, now),
+        ("lead_202", "Google Maps Business Directory Lead Generation", "Metropolitan Marketing Partners", "Contra", "https://contra.com/p/solar-maps-extraction", "Standard Scrape (≤2000 rows)", 0.95, now),
+        ("lead_203", "Financial Statement PDF Table Extractor", "FinAudit Partners", "Freelancer.com", "https://freelancer.com/projects/pdf-extraction-450", "Micro Scrape (≤500 rows)", 0.99, now),
+        ("lead_204", "B2B Software Directory & Email List Enrichment", "SaaS Growth Ventures", "Upwork (OAuth)", "https://upwork.com/jobs/~0134b7e9a", "Volume Scrape (≤10,000 rows)", 0.96, now),
+        ("lead_205", "Real Estate Property Listings Web Scraping & CSV Export", "PropTech Analytics", "Contra", "https://contra.com/p/real-estate-scraper", "Standard Scrape (≤2000 rows)", 0.94, now),
     ]
 
     cursor.executemany("""
@@ -208,7 +208,7 @@ def save_lead(lead_dict: Dict[str, Any]) -> bool:
             lead_dict.get("id"),
             lead_dict.get("job_title"),
             lead_dict.get("company", "Verified Employer"),
-            lead_dict.get("source", "RemoteOK"),
+            lead_dict.get("source", "Upwork (OAuth)"),
             lead_dict.get("url", ""),
             lead_dict.get("matched_package", "fullstack"),
             float(lead_dict.get("similarity_score", 0.85)),

@@ -225,7 +225,7 @@ export const AutonomousRevenuePanel: React.FC = () => {
 
       {/* Main Content Area based on tab */}
       {activeTab === 'kpis' && (
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
           {/* Metric 1: Win Rate */}
           <div className="bg-[#141b2d] border border-slate-800/80 rounded-xl p-4">
             <div className="flex items-center justify-between text-xs text-slate-400 mb-1.5">
@@ -268,39 +268,21 @@ export const AutonomousRevenuePanel: React.FC = () => {
             </div>
           </div>
 
-          {/* Metric 3: Projected Monthly Revenue */}
-          <div className="bg-[#141b2d] border border-slate-800/80 rounded-xl p-4">
-            <div className="flex items-center justify-between text-xs text-slate-400 mb-1.5">
-              <span className="font-mono uppercase font-bold text-[10px] text-purple-400">Projected Monthly Revenue</span>
-              <i className="fas fa-chart-line text-purple-400"></i>
+          {/* Metric 3: Projected Monthly Revenue (Segregated Guardrail: Lower Visual Weight) */}
+          <div className="bg-[#0f1422]/70 border border-slate-800/50 rounded-xl p-4 opacity-80">
+            <div className="flex items-center justify-between text-xs text-slate-500 mb-1.5">
+              <span className="font-mono uppercase font-semibold text-[10px] text-purple-400/80">Projected Run-Rate (Forecast)</span>
+              <i className="fas fa-chart-line text-purple-400/80"></i>
             </div>
-            <div className="text-2xl font-bold font-mono text-white tracking-tight">
-              ${summary.projectedMonthlyRevenue.toLocaleString()} <span className="text-xs font-normal text-slate-400 font-sans">/mo</span>
+            <div className="text-xl font-semibold font-mono text-slate-300 tracking-tight">
+              ${summary.projectedMonthlyRevenue.toLocaleString()} <span className="text-xs font-normal text-slate-500 font-sans">/mo</span>
             </div>
-            <div className="mt-2 flex items-center justify-between text-[11px] text-slate-400">
-              <span>Pipeline run-rate forecast</span>
-              <span className="text-purple-400 font-semibold font-mono">30-day model</span>
+            <div className="mt-2 flex items-center justify-between text-[11px] text-slate-500">
+              <span>Unsettled Pipeline Estimate</span>
+              <span className="text-purple-400/70 font-mono text-[10px]">Forecast Only</span>
             </div>
-            <div className="w-full bg-slate-800 h-1.5 rounded-full mt-2 overflow-hidden">
-              <div className="bg-purple-400 h-full rounded-full w-4/5"></div>
-            </div>
-          </div>
-
-          {/* Metric 4: Total Realized Revenue */}
-          <div className="bg-[#141b2d] border border-slate-800/80 rounded-xl p-4">
-            <div className="flex items-center justify-between text-xs text-slate-400 mb-1.5">
-              <span className="font-mono uppercase font-bold text-[10px] text-amber-400">Total Settled (Escrow)</span>
-              <i className="fab fa-paypal text-amber-400"></i>
-            </div>
-            <div className="text-2xl font-bold font-mono text-white tracking-tight">
-              ${summary.totalRealizedRevenue.toLocaleString()} <span className="text-xs font-normal text-slate-400 font-sans">USD</span>
-            </div>
-            <div className="mt-2 flex items-center justify-between text-[11px] text-slate-400">
-              <span>Automated PayPal transfers</span>
-              <span className="text-emerald-400 font-semibold">100% verified</span>
-            </div>
-            <div className="w-full bg-slate-800 h-1.5 rounded-full mt-2 overflow-hidden">
-              <div className="bg-amber-400 h-full rounded-full w-full"></div>
+            <div className="w-full bg-slate-800/80 h-1 rounded-full mt-2 overflow-hidden">
+              <div className="bg-purple-400/60 h-full rounded-full w-3/4"></div>
             </div>
           </div>
         </div>
@@ -430,35 +412,44 @@ export const AutonomousRevenuePanel: React.FC = () => {
         </div>
       )}
 
-      {/* Tab: Autonomous Cash-Out Engine */}
+      {/* Tab: Real Platform Payout Mechanics */}
       {activeTab === 'payouts' && (
         <div className="space-y-3">
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs">
             <div className="bg-[#141b2d] border border-slate-800 p-3 rounded-xl">
               <div className="flex items-center justify-between mb-1">
-                <span className="font-bold text-emerald-400">Band 1: &lt; $100</span>
-                <span className="px-1.5 py-0.5 rounded bg-emerald-500/20 text-emerald-300 text-[10px] font-mono">INSTANT</span>
+                <span className="font-bold text-emerald-400">Freelancer.com</span>
+                <span className="px-1.5 py-0.5 rounded bg-emerald-500/20 text-emerald-300 text-[10px] font-mono">ESCROW</span>
               </div>
-              <p className="text-slate-400 text-[11px]">
-                Immediate automated PayPal transfer without manual approval upon milestone trigger.
+              <p className="text-slate-300 font-medium text-[11px] mb-1">
+                Payoneer USD (Min $50) or Bank Wire
+              </p>
+              <p className="text-slate-400 text-[10px]">
+                Settles to Payoneer Citibank NY checking account (min $50) or direct international wire.
               </p>
             </div>
             <div className="bg-[#141b2d] border border-slate-800 p-3 rounded-xl">
               <div className="flex items-center justify-between mb-1">
-                <span className="font-bold text-indigo-400">Band 2: $100 - $500</span>
-                <span className="px-1.5 py-0.5 rounded bg-indigo-500/20 text-indigo-300 text-[10px] font-mono">AUTOMATED</span>
+                <span className="font-bold text-amber-400">Upwork India</span>
+                <span className="px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-300 text-[10px] font-mono">RESTRICTION</span>
               </div>
-              <p className="text-slate-400 text-[11px]">
-                Standard automated escrow settlement and PayPal payout batch execution.
+              <p className="text-slate-300 font-medium text-[11px] mb-1">
+                Wise or USD Wire (No PayPal/Payoneer)
+              </p>
+              <p className="text-slate-400 text-[10px]">
+                PayPal & Payoneer blocked for India on Upwork. Settles via Wise direct to local INR bank.
               </p>
             </div>
             <div className="bg-[#141b2d] border border-slate-800 p-3 rounded-xl">
               <div className="flex items-center justify-between mb-1">
-                <span className="font-bold text-amber-400">Band 3: &gt; $500</span>
-                <span className="px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-300 text-[10px] font-mono">TELEGRAM REVIEW</span>
+                <span className="font-bold text-blue-400">Direct Clients</span>
+                <span className="px-1.5 py-0.5 rounded bg-blue-500/20 text-blue-300 text-[10px] font-mono">AUTO-SWEEP</span>
               </div>
-              <p className="text-slate-400 text-[11px]">
-                High-value outlier flagged; automated Telegram alert dispatched for quick Yes/No chat approval.
+              <p className="text-slate-300 font-medium text-[11px] mb-1">
+                PayPal Invoice (~4.4%) or Skydo
+              </p>
+              <p className="text-slate-400 text-[10px]">
+                PayPal India auto-sweeps to INR bank within 24-48h per RBI rules. Skydo flat $19-$29.
               </p>
             </div>
           </div>

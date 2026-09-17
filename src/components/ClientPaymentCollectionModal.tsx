@@ -50,7 +50,7 @@ export const ClientPaymentCollectionModal: React.FC<ClientPaymentCollectionModal
   const [amountUsd, setAmountUsd] = useState<number>(initialAmount);
   const [name, setName] = useState<string>(clientName);
   const [email, setEmail] = useState<string>('');
-  const [selectedMethod, setSelectedMethod] = useState<'payoneer' | 'paypal' | 'upi' | 'card' | 'instant_escrow'>('payoneer');
+  const [selectedMethod, setSelectedMethod] = useState<'payoneer' | 'paypal' | 'instant_escrow'>('payoneer');
   const [paymentLinks, setPaymentLinks] = useState<PaymentCollectionLinks | null>(null);
   const [copiedLink, setCopiedLink] = useState<boolean>(false);
   const [isProcessing, setIsProcessing] = useState<boolean>(false);
@@ -280,7 +280,7 @@ export const ClientPaymentCollectionModal: React.FC<ClientPaymentCollectionModal
                 <label className="block text-xs font-semibold text-slate-300 mb-2">
                   Select Collection Channel:
                 </label>
-                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
                   <button
                     type="button"
                     onClick={() => setSelectedMethod('payoneer')}
@@ -309,20 +309,6 @@ export const ClientPaymentCollectionModal: React.FC<ClientPaymentCollectionModal
                     <span className="text-[9px] text-slate-400 uppercase tracking-wider block mb-1">Instant</span>
                     <span className="text-xs font-bold block">PayPal.me</span>
                     <span className="text-[10px] text-blue-400 font-mono">Auto-Swept</span>
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={() => setSelectedMethod('upi')}
-                    className={`p-3 rounded-2xl border text-center transition-all cursor-pointer ${
-                      selectedMethod === 'upi'
-                        ? 'bg-emerald-600/20 border-emerald-500 text-white shadow-md'
-                        : 'bg-slate-900/60 border-slate-800 text-slate-400 hover:text-white'
-                    }`}
-                  >
-                    <span className="text-[9px] text-slate-400 uppercase tracking-wider block mb-1">Domestic</span>
-                    <span className="text-xs font-bold block">UPI QR Code</span>
-                    <span className="text-[10px] text-emerald-400 font-mono">GPay / PhonePe</span>
                   </button>
 
                   <button
@@ -472,36 +458,6 @@ export const ClientPaymentCollectionModal: React.FC<ClientPaymentCollectionModal
                         console.warn('[PayPal Modal] Notice:', err);
                       }}
                     />
-                  </div>
-                </div>
-              )}
-
-              {selectedMethod === 'upi' && paymentLinks && (
-                <div className="rounded-2xl border border-emerald-500/30 bg-emerald-950/15 p-4 space-y-3 text-center">
-                  <div className="flex items-center justify-between text-left">
-                    <span className="text-xs font-bold text-white flex items-center gap-1.5">
-                      <QrCode className="w-4 h-4 text-emerald-400" />
-                      <span>Dynamic UPI Instant QR Code</span>
-                    </span>
-                    <span className="text-xs font-mono font-bold text-emerald-400">
-                      {paymentLinks.formattedInr}
-                    </span>
-                  </div>
-
-                  <div className="py-2 flex flex-col items-center">
-                    <div className="bg-white p-3 rounded-2xl shadow-lg border border-slate-200 inline-block">
-                      <img
-                        src={paymentLinks.qrCodeUrl}
-                        alt="UPI Payment QR Code"
-                        className="w-40 h-40 object-contain"
-                      />
-                    </div>
-                    <span className="text-xs font-mono font-bold text-slate-300 mt-2">
-                      {paymentLinks.upiId}
-                    </span>
-                    <span className="text-[11px] text-slate-400">
-                      Scan with Google Pay, PhonePe, Paytm, or BHIM to pay instantly
-                    </span>
                   </div>
                 </div>
               )}

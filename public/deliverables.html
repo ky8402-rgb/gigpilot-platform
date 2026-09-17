@@ -1,0 +1,495 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Deliverables QA Review — KUNDANVISION369</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          colors: {
+            brand: {
+              50: '#f0f9ff',
+              500: '#0284c7',
+              600: '#0369a1',
+              900: '#0c4a6e'
+            }
+          }
+        }
+      }
+    }
+  </script>
+  <style>
+    body {
+      background-color: #0b0f19;
+      color: #f1f5f9;
+      font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    }
+    .custom-scrollbar::-webkit-scrollbar {
+      height: 6px;
+      width: 6px;
+    }
+    .custom-scrollbar::-webkit-scrollbar-track {
+      background: #0f172a;
+    }
+    .custom-scrollbar::-webkit-scrollbar-thumb {
+      background: #334155;
+      border-radius: 3px;
+    }
+  </style>
+</head>
+<body class="min-h-screen antialiased selection:bg-cyan-500 selection:text-white pb-20">
+
+  <!-- TOP NAVIGATION / HEADER -->
+  <header class="border-b border-slate-800 bg-[#0f172a]/90 backdrop-blur sticky top-0 z-40">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
+      <div class="flex items-center space-x-3">
+        <div class="w-9 h-9 rounded-lg bg-gradient-to-tr from-cyan-600 to-blue-500 flex items-center justify-center font-bold text-white shadow-lg shadow-cyan-500/20 text-sm">
+          KV
+        </div>
+        <div>
+          <div class="flex items-center space-x-2">
+            <span class="font-bold text-white tracking-tight">KUNDANVISION369</span>
+            <span class="px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider bg-cyan-950 text-cyan-400 border border-cyan-800/60 rounded">Scraper Delivery</span>
+          </div>
+          <p class="text-xs text-slate-400">Autonomous Extraction • Human QA Review Gate</p>
+        </div>
+      </div>
+
+      <!-- Live Guardrail Status Chips -->
+      <div class="hidden md:flex items-center space-x-2 text-xs">
+        <span class="inline-flex items-center px-2.5 py-1 rounded-full bg-emerald-950/80 text-emerald-400 border border-emerald-800/60">
+          <span class="w-1.5 h-1.5 rounded-full bg-emerald-400 mr-1.5 animate-pulse"></span>
+          QA Gate Active
+        </span>
+        <span class="inline-flex items-center px-2.5 py-1 rounded-full bg-slate-800 text-slate-300 border border-slate-700">
+          1 req/s Jitter Limit
+        </span>
+        <span class="inline-flex items-center px-2.5 py-1 rounded-full bg-slate-800 text-slate-300 border border-slate-700">
+          Max 50k Cap
+        </span>
+        <a href="leads.html" class="ml-2 px-3 py-1.5 rounded-md bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 text-xs font-medium transition">
+          View Leads →
+        </a>
+      </div>
+    </div>
+  </header>
+
+  <!-- MAIN CONTAINER -->
+  <main class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-8">
+
+    <!-- HERO / BANNER -->
+    <div class="bg-gradient-to-r from-slate-900 via-slate-800 to-slate-900 border border-slate-800 rounded-xl p-6 mb-8 shadow-xl relative overflow-hidden">
+      <div class="relative z-10 flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+        <div>
+          <h1 class="text-2xl font-bold text-white tracking-tight flex items-center gap-2">
+            Deliverables QA Review Pipeline
+            <span id="pendingBadge" class="text-xs font-semibold px-2.5 py-0.5 rounded-full bg-amber-500/20 text-amber-300 border border-amber-500/30">
+              Loading...
+            </span>
+          </h1>
+          <p class="text-slate-400 text-sm mt-1 max-w-2xl">
+            When a freelance scraping gig is won, the agent executes the recipe, exports <code class="text-cyan-300 font-mono text-xs">CSV + XLSX + README</code> to S3, and holds for QA. Human must review the first 20 rows and approve before submission.
+          </p>
+        </div>
+
+        <div class="flex items-center gap-2">
+          <button onclick="openTestModal()" class="px-4 py-2 bg-cyan-600 hover:bg-cyan-500 text-white rounded-lg text-xs font-semibold tracking-wide transition shadow-lg shadow-cyan-600/20 flex items-center gap-1.5">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z"></path><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+            Run Live Scraper Test
+          </button>
+          <button onclick="fetchDeliverables()" class="px-3 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-lg text-xs font-medium border border-slate-700 transition">
+            ↻ Refresh
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- FILTER TABS -->
+    <div class="flex items-center space-x-2 border-b border-slate-800 pb-3 mb-6 overflow-x-auto custom-scrollbar">
+      <button onclick="setFilter('all')" id="tab-all" class="px-3.5 py-1.5 rounded-lg text-xs font-semibold bg-cyan-600 text-white transition">
+        All Packages (<span id="count-all">0</span>)
+      </button>
+      <button onclick="setFilter('ready-for-qa')" id="tab-ready-for-qa" class="px-3.5 py-1.5 rounded-lg text-xs font-medium text-slate-400 hover:text-slate-200 transition">
+        Pending QA (<span id="count-ready-for-qa">0</span>)
+      </button>
+      <button onclick="setFilter('approved')" id="tab-approved" class="px-3.5 py-1.5 rounded-lg text-xs font-medium text-slate-400 hover:text-slate-200 transition">
+        Approved & Ready (<span id="count-approved">0</span>)
+      </button>
+      <button onclick="setFilter('revising')" id="tab-revising" class="px-3.5 py-1.5 rounded-lg text-xs font-medium text-slate-400 hover:text-slate-200 transition">
+        In Revision (<span id="count-revising">0</span>)
+      </button>
+    </div>
+
+    <!-- DELIVERABLES LIST -->
+    <div id="deliverablesContainer" class="space-y-6">
+      <div class="text-center py-12 text-slate-500 text-sm">Loading deliverables from pipeline...</div>
+    </div>
+
+  </main>
+
+  <!-- TEST SCRAPER MODAL -->
+  <div id="testModal" class="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 hidden flex items-center justify-center p-4">
+    <div class="bg-[#0f172a] border border-slate-800 rounded-xl max-w-2xl w-full p-6 shadow-2xl space-y-4">
+      <div class="flex items-center justify-between border-b border-slate-800 pb-3">
+        <h3 class="font-bold text-white text-base flex items-center gap-2">
+          <span>⚡</span> Live Scraper Recipe Tester (10 Sample Rows)
+        </h3>
+        <button onclick="closeTestModal()" class="text-slate-400 hover:text-white text-lg font-bold">&times;</button>
+      </div>
+
+      <div class="space-y-3 text-xs">
+        <div>
+          <label class="block font-medium text-slate-300 mb-1">Select Scraping Recipe</label>
+          <select id="modalRecipeSelect" class="w-full bg-slate-900 border border-slate-700 rounded-lg p-2 text-slate-200 focus:outline-none focus:border-cyan-500">
+            <option value="ecommerce_products">ecommerce_products (Shopify, Catalog, Pricing)</option>
+            <option value="google_maps_leads">google_maps_leads (Local Business, Phone, Geo)</option>
+            <option value="directory_listings">directory_listings (B2B Directory, Contacts)</option>
+            <option value="pdf_to_csv">pdf_to_csv (Financial Statement, Invoices)</option>
+            <option value="price_monitor">price_monitor (Competitor Delta, SKUs)</option>
+            <option value="linkedin_public_profiles">linkedin_public_profiles (Public Read-Only)</option>
+          </select>
+        </div>
+
+        <div>
+          <label class="block font-medium text-slate-300 mb-1">Target URL (Public Domain)</label>
+          <input type="url" id="modalUrlInput" placeholder="https://news.ycombinator.com" value="https://news.ycombinator.com" class="w-full bg-slate-900 border border-slate-700 rounded-lg p-2 text-slate-200 focus:outline-none focus:border-cyan-500">
+          <p class="text-[11px] text-slate-500 mt-1">Guarded: robots.txt is verified, login forms are rejected, rate-limited to 1 req/sec.</p>
+        </div>
+
+        <div id="testResultArea" class="hidden mt-4 pt-4 border-t border-slate-800">
+          <div class="flex items-center justify-between mb-2">
+            <span class="font-semibold text-emerald-400 text-xs">Extraction Successful</span>
+            <span id="testRowCount" class="text-slate-400 text-[11px]"></span>
+          </div>
+          <div class="overflow-x-auto custom-scrollbar border border-slate-800 rounded-lg max-h-56 bg-slate-950">
+            <table id="testTable" class="w-full text-[11px] text-left text-slate-300">
+              <!-- populated dynamically -->
+            </table>
+          </div>
+        </div>
+      </div>
+
+      <div class="flex justify-end gap-2 pt-2 border-t border-slate-800">
+        <button onclick="closeTestModal()" class="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-lg text-xs font-medium">Close</button>
+        <button id="runTestBtn" onclick="runScraperTest()" class="px-4 py-2 bg-cyan-600 hover:bg-cyan-500 text-white rounded-lg text-xs font-semibold shadow-md">Run Test Scrape</button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    let currentFilter = 'all';
+    let allDeliverables = [];
+
+    async function fetchDeliverables() {
+      try {
+        const res = await fetch('/api/deliverables');
+        const data = await res.json();
+        if (data.ok) {
+          allDeliverables = data.deliverables || [];
+          renderDeliverables();
+          updateCounters();
+        }
+      } catch (err) {
+        document.getElementById('deliverablesContainer').innerHTML = `
+          <div class="bg-red-950/40 border border-red-800 rounded-xl p-6 text-center text-red-300 text-xs">
+            Failed to connect to /api/deliverables: ${err.message}
+          </div>
+        `;
+      }
+    }
+
+    function updateCounters() {
+      const counts = {
+        all: allDeliverables.length,
+        'ready-for-qa': allDeliverables.filter(d => d.status === 'ready-for-qa').length,
+        approved: allDeliverables.filter(d => d.status === 'approved').length,
+        revising: allDeliverables.filter(d => d.status === 'revising').length
+      };
+
+      document.getElementById('count-all').innerText = counts.all;
+      document.getElementById('count-ready-for-qa').innerText = counts['ready-for-qa'];
+      document.getElementById('count-approved').innerText = counts.approved;
+      document.getElementById('count-revising').innerText = counts.revising;
+
+      const pendingBadge = document.getElementById('pendingBadge');
+      if (counts['ready-for-qa'] > 0) {
+        pendingBadge.className = 'text-xs font-semibold px-2.5 py-0.5 rounded-full bg-amber-500/20 text-amber-300 border border-amber-500/30';
+        pendingBadge.innerText = `${counts['ready-for-qa']} Pending QA`;
+      } else {
+        pendingBadge.className = 'text-xs font-semibold px-2.5 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/30';
+        pendingBadge.innerText = `All Cleared`;
+      }
+    }
+
+    function setFilter(filter) {
+      currentFilter = filter;
+      ['all', 'ready-for-qa', 'approved', 'revising'].forEach(f => {
+        const btn = document.getElementById(`tab-${f}`);
+        if (btn) {
+          if (f === filter) {
+            btn.className = 'px-3.5 py-1.5 rounded-lg text-xs font-semibold bg-cyan-600 text-white transition';
+          } else {
+            btn.className = 'px-3.5 py-1.5 rounded-lg text-xs font-medium text-slate-400 hover:text-slate-200 transition';
+          }
+        }
+      });
+      renderDeliverables();
+    }
+
+    function renderDeliverables() {
+      const container = document.getElementById('deliverablesContainer');
+      const filtered = currentFilter === 'all'
+        ? allDeliverables
+        : allDeliverables.filter(d => d.status === currentFilter);
+
+      if (filtered.length === 0) {
+        container.innerHTML = `
+          <div class="bg-slate-900/50 border border-slate-800 rounded-xl p-12 text-center text-slate-500 text-sm">
+            No deliverables found matching filter: <strong class="text-slate-400">${currentFilter}</strong>
+          </div>
+        `;
+        return;
+      }
+
+      container.innerHTML = filtered.map(d => renderCard(d)).join('');
+    }
+
+    function renderCard(d) {
+      const statusBadges = {
+        'ready-for-qa': '<span class="px-2.5 py-1 text-xs font-semibold rounded-full bg-amber-950/80 text-amber-400 border border-amber-800/80">Ready for QA</span>',
+        'approved': '<span class="px-2.5 py-1 text-xs font-semibold rounded-full bg-emerald-950/80 text-emerald-400 border border-emerald-800/80">Approved (Worker Unlocked)</span>',
+        'revising': '<span class="px-2.5 py-1 text-xs font-semibold rounded-full bg-blue-950/80 text-blue-400 border border-blue-800/80">Revising</span>',
+        'rejected': '<span class="px-2.5 py-1 text-xs font-semibold rounded-full bg-rose-950/80 text-rose-400 border border-rose-800/80">Rejected</span>'
+      };
+
+      const rows = d.sampleRows || [];
+      const headers = rows.length > 0 ? Object.keys(rows[0]) : [];
+
+      let tableHtml = '';
+      if (headers.length > 0) {
+        tableHtml = `
+          <div class="overflow-x-auto custom-scrollbar border border-slate-800/80 rounded-lg bg-slate-950/80 mt-4 max-h-64">
+            <table class="w-full text-left text-xs text-slate-300">
+              <thead class="text-[11px] uppercase tracking-wider bg-slate-900/90 text-slate-400 sticky top-0 border-b border-slate-800">
+                <tr>
+                  <th class="py-2.5 px-3">#</th>
+                  ${headers.map(h => `<th class="py-2.5 px-3 font-semibold whitespace-nowrap">${escapeHtml(h)}</th>`).join('')}
+                </tr>
+              </thead>
+              <tbody class="divide-y divide-slate-800/60 font-mono text-[11px]">
+                ${rows.slice(0, 10).map((r, i) => `
+                  <tr class="hover:bg-slate-800/30 transition">
+                    <td class="py-2 px-3 text-slate-500">${i + 1}</td>
+                    ${headers.map(h => `<td class="py-2 px-3 whitespace-nowrap max-w-xs truncate text-slate-300" title="${escapeHtml(r[h] || '')}">${escapeHtml(r[h] || '')}</td>`).join('')}
+                  </tr>
+                `).join('')}
+              </tbody>
+            </table>
+          </div>
+        `;
+      }
+
+      return `
+        <div class="bg-[#0f172a] border border-slate-800 rounded-xl p-6 shadow-xl space-y-4 transition hover:border-slate-700">
+          <div class="flex flex-col md:flex-row md:items-start justify-between gap-4 border-b border-slate-800/70 pb-4">
+            <div>
+              <div class="flex items-center gap-2 mb-1">
+                <span class="px-2 py-0.5 rounded text-[10px] font-bold bg-slate-800 text-cyan-400 uppercase tracking-wider">${escapeHtml(d.platform || 'Freelancer.com')}</span>
+                <span class="text-xs text-slate-400 font-medium">Client: <strong class="text-slate-200">${escapeHtml(d.client || 'Client')}</strong></span>
+                <span class="text-xs text-slate-500">• Job ID: ${escapeHtml(d.jobId)}</span>
+              </div>
+              <h2 class="text-lg font-bold text-white tracking-tight">${escapeHtml(d.jobTitle)}</h2>
+              <p class="text-xs text-slate-400 mt-1 flex items-center gap-1.5">
+                <span class="text-slate-500">Target URL:</span>
+                <a href="${escapeHtml(d.targetUrl || '#')}" target="_blank" rel="noopener noreferrer" class="text-cyan-400 hover:underline max-w-lg truncate">
+                  ${escapeHtml(d.targetUrl || 'N/A')}
+                </a>
+              </p>
+            </div>
+
+            <div class="flex flex-col md:items-end gap-1.5">
+              ${statusBadges[d.status] || `<span class="text-xs text-slate-400">${d.status}</span>`}
+              <div class="text-xs text-slate-400">
+                <strong class="text-emerald-400 font-mono text-sm">${(d.rowCount || 0).toLocaleString()}</strong> rows extracted
+              </div>
+              <div class="text-[11px] text-slate-500">Recipe: <code class="text-cyan-300">${escapeHtml(d.recipeUsed)}</code></div>
+            </div>
+          </div>
+
+          <!-- Files & S3 Artifact Details -->
+          <div class="flex flex-wrap items-center justify-between text-xs text-slate-400 gap-2 bg-slate-900/60 p-3 rounded-lg border border-slate-800">
+            <div class="flex items-center space-x-3">
+              <span class="font-semibold text-slate-300">Package Files:</span>
+              <span class="px-2 py-0.5 rounded bg-slate-800 text-emerald-400 font-mono text-[11px]">data.csv</span>
+              <span class="px-2 py-0.5 rounded bg-slate-800 text-cyan-400 font-mono text-[11px]">data.xlsx</span>
+              <span class="px-2 py-0.5 rounded bg-slate-800 text-amber-400 font-mono text-[11px]">README.md</span>
+            </div>
+            <div class="text-[11px] text-slate-500 font-mono truncate max-w-md">
+              ${escapeHtml(d.s3Prefix || '')}
+            </div>
+          </div>
+
+          <!-- Table Preview of First 10-20 Rows -->
+          <div>
+            <div class="flex items-center justify-between">
+              <h4 class="text-xs font-semibold text-slate-300 uppercase tracking-wider">First 10 Rows QA Inspection</h4>
+              <span class="text-[11px] text-slate-500">Verify schema and value normalization before sign-off</span>
+            </div>
+            ${tableHtml}
+          </div>
+
+          <!-- Notes / Action Buttons -->
+          <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pt-2">
+            <div class="text-xs text-slate-400 italic truncate max-w-md">
+              QA Note: ${escapeHtml(d.qaNotes || 'Pending initial review')}
+            </div>
+
+            <div class="flex items-center gap-2">
+              <button onclick="handleReject('${d.id}')" class="px-3 py-1.5 bg-slate-800 hover:bg-rose-950 text-slate-400 hover:text-rose-300 border border-slate-700 hover:border-rose-800 rounded-lg text-xs font-medium transition">
+                Reject
+              </button>
+              <button onclick="handleRevise('${d.id}')" class="px-3.5 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 rounded-lg text-xs font-medium transition">
+                Request Revision
+              </button>
+              <button onclick="handleApprove('${d.id}')" class="px-4 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg text-xs font-semibold shadow-md shadow-emerald-600/20 transition flex items-center gap-1">
+                <span>✓</span> Approve & Package
+              </button>
+            </div>
+          </div>
+        </div>
+      `;
+    }
+
+    async function handleApprove(id) {
+      if (!confirm('Approve this deliverable? This unlocks the platform worker to attach the ZIP package and submit to the client.')) return;
+      try {
+        const res = await fetch(`/api/deliverables/${id}/approve`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ notes: 'Verified first 20 rows. Approved for platform submission.' })
+        });
+        const data = await res.json();
+        if (data.ok) {
+          alert('✓ Deliverable Approved! Platform worker unlocked.');
+          fetchDeliverables();
+        } else {
+          alert(`Error: ${data.error}`);
+        }
+      } catch (err) {
+        alert(`Request failed: ${err.message}`);
+      }
+    }
+
+    async function handleRevise(id) {
+      const notes = prompt('Enter revision instructions for re-scraping:');
+      if (!notes) return;
+      try {
+        const res = await fetch(`/api/deliverables/${id}/revise`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ notes })
+        });
+        const data = await res.json();
+        if (data.ok) {
+          alert('Deliverable marked for revision with notes.');
+          fetchDeliverables();
+        } else {
+          alert(`Error: ${data.error}`);
+        }
+      } catch (err) {
+        alert(`Request failed: ${err.message}`);
+      }
+    }
+
+    async function handleReject(id) {
+      const reason = prompt('Reason for rejection:');
+      if (!reason) return;
+      try {
+        const res = await fetch(`/api/deliverables/${id}/reject`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ reason })
+        });
+        const data = await res.json();
+        if (data.ok) {
+          fetchDeliverables();
+        }
+      } catch (err) {
+        alert(`Request failed: ${err.message}`);
+      }
+    }
+
+    function openTestModal() {
+      document.getElementById('testModal').classList.remove('hidden');
+    }
+
+    function closeTestModal() {
+      document.getElementById('testModal').classList.add('hidden');
+    }
+
+    async function runScraperTest() {
+      const recipe = document.getElementById('modalRecipeSelect').value;
+      const url = document.getElementById('modalUrlInput').value;
+      const btn = document.getElementById('runTestBtn');
+      btn.innerText = 'Extracting...';
+      btn.disabled = true;
+
+      try {
+        const res = await fetch('/api/scraper/test', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ recipe, url, maxRows: 10 })
+        });
+        const data = await res.json();
+        if (data.ok) {
+          document.getElementById('testResultArea').classList.remove('hidden');
+          document.getElementById('testRowCount').innerText = `${data.sampleCount} rows extracted • ${data.deliveryFormat}`;
+
+          const rows = data.sampleRows || [];
+          const headers = rows.length > 0 ? Object.keys(rows[0]) : [];
+          const table = document.getElementById('testTable');
+
+          table.innerHTML = `
+            <thead class="bg-slate-900 text-slate-400 sticky top-0">
+              <tr>
+                ${headers.map(h => `<th class="p-2 whitespace-nowrap">${escapeHtml(h)}</th>`).join('')}
+              </tr>
+            </thead>
+            <tbody class="divide-y divide-slate-800 font-mono">
+              ${rows.map(r => `
+                <tr>
+                  ${headers.map(h => `<td class="p-2 whitespace-nowrap max-w-xs truncate">${escapeHtml(r[h] || '')}</td>`).join('')}
+                </tr>
+              `).join('')}
+            </tbody>
+          `;
+        } else {
+          alert(`Test Scrape Failed: ${data.error}`);
+        }
+      } catch (err) {
+        alert(`Request failed: ${err.message}`);
+      } finally {
+        btn.innerText = 'Run Test Scrape';
+        btn.disabled = false;
+      }
+    }
+
+    function escapeHtml(str) {
+      if (!str) return '';
+      return String(str)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#039;');
+    }
+
+    // Initial load
+    fetchDeliverables();
+  </script>
+</body>
+</html>

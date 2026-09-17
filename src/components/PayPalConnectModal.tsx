@@ -5,7 +5,6 @@ import {
   ExternalLink, 
   ShieldCheck, 
   Zap, 
-  QrCode, 
   Building2, 
   ArrowRight,
   RefreshCw,
@@ -27,7 +26,7 @@ export const PayPalConnectModal: React.FC<PayPalConnectModalProps> = ({
   onClose,
   showToast
 }) => {
-  const [activeTab, setActiveTab] = useState<'paypal' | 'upi' | 'wire'>('paypal');
+  const [activeTab, setActiveTab] = useState<'wire' | 'paypal'>('wire');
   const [copiedField, setCopiedField] = useState<string | null>(null);
   const [customAmount, setCustomAmount] = useState<string>('150');
   const [isVerifying, setIsVerifying] = useState<boolean>(false);
@@ -36,7 +35,6 @@ export const PayPalConnectModal: React.FC<PayPalConnectModalProps> = ({
 
   const PAYPAL_EMAIL = 'kundank4@icloud.com';
   const PAYPAL_HANDLE = 'ky8402';
-  const UPI_ID = 'chandimay@ybl';
   const ACCOUNT_HOLDER = 'Kundan Kumar';
   const BANK_NAME = 'Citibank';
   const BANK_ADDRESS = '111 Wall Street New York, NY 10043 USA';
@@ -61,7 +59,6 @@ export const PayPalConnectModal: React.FC<PayPalConnectModalProps> = ({
   };
 
   const amountNum = parseFloat(customAmount) || 50;
-  const inrEquivalent = Math.round(amountNum * 86.85);
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/85 p-4 backdrop-blur-md overflow-y-auto">
@@ -97,7 +94,19 @@ export const PayPalConnectModal: React.FC<PayPalConnectModalProps> = ({
         </div>
 
         {/* Gateway Select Tabs */}
-        <div className="grid grid-cols-3 gap-2 text-xs">
+        <div className="grid grid-cols-2 gap-2 text-xs">
+          <button
+            onClick={() => setActiveTab('wire')}
+            className={`py-2.5 px-3 rounded-xl font-bold border transition-all flex items-center justify-center gap-1.5 ${
+              activeTab === 'wire'
+                ? 'bg-gradient-to-r from-cyan-600 to-blue-600 text-white border-cyan-500 shadow-md shadow-cyan-900/40'
+                : 'bg-slate-900 text-slate-400 border-slate-800 hover:border-slate-700'
+            }`}
+          >
+            <span className="text-[9px] bg-emerald-500/25 text-emerald-300 font-bold px-1 rounded border border-emerald-500/30">PRIMARY</span>
+            <span>🏦 Payoneer Citibank (USD)</span>
+          </button>
+
           <button
             onClick={() => setActiveTab('paypal')}
             className={`py-2.5 px-3 rounded-xl font-bold border transition-all flex items-center justify-center gap-1.5 ${
@@ -107,28 +116,6 @@ export const PayPalConnectModal: React.FC<PayPalConnectModalProps> = ({
             }`}
           >
             <span>💳 PayPal (Global USD)</span>
-          </button>
-
-          <button
-            onClick={() => setActiveTab('upi')}
-            className={`py-2.5 px-3 rounded-xl font-bold border transition-all flex items-center justify-center gap-1.5 ${
-              activeTab === 'upi'
-                ? 'bg-gradient-to-r from-emerald-600 to-teal-600 text-white border-emerald-500 shadow-md shadow-emerald-900/40'
-                : 'bg-slate-900 text-slate-400 border-slate-800 hover:border-slate-700'
-            }`}
-          >
-            <span>🇮🇳 Indian UPI QR</span>
-          </button>
-
-          <button
-            onClick={() => setActiveTab('wire')}
-            className={`py-2.5 px-3 rounded-xl font-bold border transition-all flex items-center justify-center gap-1.5 ${
-              activeTab === 'wire'
-                ? 'bg-gradient-to-r from-cyan-600 to-blue-600 text-white border-cyan-500 shadow-md shadow-cyan-900/40'
-                : 'bg-slate-900 text-slate-400 border-slate-800 hover:border-slate-700'
-            }`}
-          >
-            <span>🏦 Bank Wire (SWIFT/IFSC)</span>
           </button>
         </div>
 
@@ -194,51 +181,7 @@ export const PayPalConnectModal: React.FC<PayPalConnectModalProps> = ({
           </div>
         )}
 
-        {/* TAB 2: UPI QR CODE */}
-        {activeTab === 'upi' && (
-          <div className="space-y-4 rounded-2xl bg-slate-950 p-5 border border-slate-800 text-center">
-            <div className="space-y-1">
-              <span className="text-emerald-400 font-bold uppercase tracking-wider text-[10px]">
-                Instant 0% Fee Settlement via NPCI UPI
-              </span>
-              <h3 className="text-sm font-bold text-white">
-                Scan with Google Pay, PhonePe, Paytm, BHIM, or any Banking App
-              </h3>
-              <div className="text-xs text-slate-400 font-mono">
-                VPA: <strong className="text-emerald-400">{UPI_ID}</strong> (Name: {ACCOUNT_HOLDER})
-              </div>
-            </div>
-
-            <div className="flex justify-center my-1">
-              <div className="p-3 bg-white rounded-2xl shadow-xl inline-block">
-                <img
-                  src={`https://api.qrserver.com/v1/create-qr-code/?size=180x180&data=${encodeURIComponent(`upi://pay?pa=${UPI_ID}&pn=${encodeURIComponent(ACCOUNT_HOLDER)}&cu=INR&am=${inrEquivalent}`)}`}
-                  alt="UPI QR Code"
-                  className="w-40 h-40 object-contain"
-                />
-              </div>
-            </div>
-
-            <div className="flex flex-wrap items-center justify-center gap-3 text-xs">
-              <button
-                onClick={() => handleCopy(UPI_ID, 'UPI VPA')}
-                className="flex items-center gap-1.5 rounded-lg bg-slate-900 border border-slate-800 px-3 py-1.5 text-slate-300 hover:text-white"
-              >
-                {copiedField === 'UPI VPA' ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
-                <span>Copy UPI ID ({UPI_ID})</span>
-              </button>
-
-              <a
-                href={`upi://pay?pa=${UPI_ID}&pn=${encodeURIComponent(ACCOUNT_HOLDER)}&cu=INR&am=${inrEquivalent}`}
-                className="flex items-center gap-1.5 rounded-lg bg-emerald-500/20 border border-emerald-500/30 text-emerald-300 px-3 py-1.5 font-bold hover:bg-emerald-500/30"
-              >
-                <span>Launch UPI App on Mobile Phone ↗</span>
-              </a>
-            </div>
-          </div>
-        )}
-
-        {/* TAB 3: PAYONEER USD CHECKING (CITIBANK NY) */}
+        {/* TAB 2: PAYONEER USD CHECKING (CITIBANK NY) - PRIMARY */}
         {activeTab === 'wire' && (
           <div className="space-y-4 rounded-2xl bg-slate-950 p-5 border border-slate-800 text-xs">
             <div className="flex items-center justify-between border-b border-slate-800 pb-2">

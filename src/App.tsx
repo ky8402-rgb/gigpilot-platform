@@ -110,7 +110,6 @@ const PRIMARY_PAYONEER_SWIFT = 'CITIUS33';
 const PRIMARY_PAYONEER_ACCOUNT_NUM = '70589110002638744';
 const PRIMARY_PAYONEER_ACCOUNT_TYPE = 'CHECKING';
 const PRIMARY_PAYONEER_BENEFICIARY = 'Kundan Kumar';
-const PRIMARY_UPI_ID = 'chandimay@ybl';
 const USD_TO_INR_RATE = 86.85;
 
 export interface WorkOrder {
@@ -1086,7 +1085,7 @@ export default function App() {
       case 'income':
         return {
           section: 'Real Income & Client Checkout Hub',
-          description: 'Monetize development & AI skills with real client services, instant PayPal receiving links (paypal.me/ky8402), domestic Indian UPI QR checkouts, and custom milestone payment requests.'
+          description: 'Monetize development & AI skills with real client services, instant PayPal receiving links (paypal.me/ky8402), Payoneer USD Citibank wire settlements, and custom milestone payment requests.'
         };
       case 'remoteok':
         return {
@@ -1238,7 +1237,6 @@ export default function App() {
           isEmailVerified={isEmailVerified}
           paypalMeUrl={PRIMARY_PAYPAL_ME_URL}
           paypalMeHandle={PRIMARY_PAYPAL_ME}
-          upiId={PRIMARY_UPI_ID}
           fmt={fmt}
           workerMonitorStatus={workerMonitorStatus}
           onHealWorker={async () => {
@@ -1862,14 +1860,14 @@ export default function App() {
 
                   <div className="flex items-center justify-between flex-wrap gap-2">
                     <div className="flex items-center gap-1.5">
-                      <i className="fas fa-university text-emerald-400"></i>
-                      <span>Bank / UPI:</span>
-                      <span className="text-emerald-400 font-mono font-bold">{PRIMARY_UPI_ID}</span>
+                      <i className="fas fa-university text-sky-400"></i>
+                      <span>Payoneer Acct:</span>
+                      <span className="text-sky-400 font-mono font-bold">{PRIMARY_PAYONEER_ACCOUNT_NUM}</span>
                     </div>
                     <button
                       onClick={() => {
-                        navigator.clipboard?.writeText(PRIMARY_UPI_ID);
-                        showToast(`📋 Copied UPI ID: ${PRIMARY_UPI_ID}`, 'success');
+                        navigator.clipboard?.writeText(PRIMARY_PAYONEER_ACCOUNT_NUM);
+                        showToast(`📋 Copied Payoneer Acct: ${PRIMARY_PAYONEER_ACCOUNT_NUM}`, 'success');
                       }}
                       className="bg-[#11141f] hover:bg-[#1f253a] text-slate-300 text-[10px] px-2 py-0.5 rounded border border-[#2a3147] transition-all"
                     >
@@ -1886,11 +1884,11 @@ export default function App() {
                       PayPal Portal →
                     </button>
                     <button
-                      onClick={() => setActiveTab('bank')}
-                      className="text-emerald-400 hover:underline font-medium flex items-center gap-1"
+                      onClick={() => setActiveTab('income')}
+                      className="text-sky-400 hover:underline font-medium flex items-center gap-1"
                     >
                       <i className="fas fa-university text-[9px]"></i>
-                      Indian Bank Portal →
+                      Payoneer &amp; Payouts →
                     </button>
                   </div>
                 </div>
@@ -2673,7 +2671,7 @@ export default function App() {
             date: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) + ' Today',
             amount: payment.amountUsd,
             type: 'credit',
-            method: payment.paymentMethod === 'upi' ? 'UPI' : 'PayPal',
+            method: payment.paymentMethod === 'payoneer' ? 'Direct' : 'PayPal',
             referenceId: payment.invoiceNumber,
           };
           setTransactions(t => [newTx, ...t]);

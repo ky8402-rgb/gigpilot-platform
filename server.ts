@@ -1478,9 +1478,9 @@ app.get("/api/support/actions", async (req, res) => {
     },
     {
       id: "syncLiveFeeds",
-      name: "Resynchronize Live Remote Job Feeds",
+      name: "Resynchronize Live Scraping Feeds",
       category: "Scrapers & Feeds",
-      description: "Polls RemoteOK, WeWorkRemotely, and FlexJobs feeds and ingests fresh listings into PostgreSQL.",
+      description: "Polls Upwork (OAuth), Contra, and Freelancer.com feeds and ingests fresh data-scraping contracts.",
       icon: "Globe",
       recommendedFor: ["Empty Job Radar", "Stale Job Postings", "Feed Scraper Backoff"]
     },

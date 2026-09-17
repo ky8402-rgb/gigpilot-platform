@@ -1,6 +1,6 @@
 {
   "name": "kundanvision369",
-  "description": "Autonomous freelance autopilot featuring Tool 1 Autonomous Software Job Solver and Tool 2 Work Order Closer & Escrow Release (Senior Engineer API generator & PayPal/UPI settlement), client communications hub, and real-time job ingestion.",
+  "description": "Autonomous freelance autopilot featuring Tool 1 Autonomous Software Job Solver and Tool 2 Work Order Closer & Escrow Release (Senior Engineer API generator & Payoneer/PayPal settlement), client communications hub, and real-time job ingestion.",
   "requestFramePermissions": [],
   "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
 }

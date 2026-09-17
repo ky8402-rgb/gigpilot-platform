@@ -234,10 +234,10 @@ export const AppMobileNav: React.FC<AppMobileNavProps> = ({
                   setIsMobileMenuOpen(false);
                   onOpenPayPalConnect();
                 }}
-                className="w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs font-semibold text-emerald-400 bg-slate-900 border border-slate-800 cursor-pointer"
+                className="w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs font-semibold text-cyan-400 bg-slate-900 border border-slate-800 cursor-pointer"
               >
                 <i className="fas fa-university"></i>
-                <span>Bank &amp; UPI Setup</span>
+                <span>Payoneer &amp; Wire Setup</span>
               </button>
 
               <button

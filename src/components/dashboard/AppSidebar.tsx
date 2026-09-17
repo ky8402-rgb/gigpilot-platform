@@ -321,10 +321,10 @@ export const AppSidebar: React.FC<AppSidebarProps> = ({
               onClick={onOpenPayPalConnect}
               className="w-full flex items-center gap-3 px-3 py-2 rounded-xl text-xs font-semibold transition-all text-slate-400 hover:text-slate-100 hover:bg-slate-900/60 cursor-pointer"
             >
-              <i className="fas fa-university w-4 text-center text-sm text-emerald-400"></i>
-              <span>Bank &amp; UPI Setup</span>
-              <span className="ml-auto text-[10px] font-mono px-1.5 py-0.5 rounded bg-slate-800 text-slate-400 border border-slate-700">
-                INR
+              <i className="fas fa-university w-4 text-center text-sm text-cyan-400"></i>
+              <span>Payoneer &amp; Wire Setup</span>
+              <span className="ml-auto text-[10px] font-mono px-1.5 py-0.5 rounded bg-emerald-500/15 text-emerald-400 border border-emerald-500/30 font-bold">
+                PRIMARY
               </span>
             </button>
 

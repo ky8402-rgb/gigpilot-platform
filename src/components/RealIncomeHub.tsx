@@ -126,7 +126,7 @@ export const RealIncomeHub: React.FC<RealIncomeHubProps> = ({
   const [activeSubTab, setActiveSubTab] = useState<'packages' | 'custom_link' | 'live_jobs' | 'playbook'>('packages');
   const [selectedPackage, setSelectedPackage] = useState<ServicePackage | null>(null);
   const [checkoutModalOpen, setCheckoutModalOpen] = useState(false);
-  const [checkoutPaymentMethod, setCheckoutPaymentMethod] = useState<'paypal' | 'upi' | 'wire'>('paypal');
+  const [checkoutPaymentMethod, setCheckoutPaymentMethod] = useState<'wire' | 'paypal'>('wire');
 
   // Custom Payment Link Generator Form State
   const [clientName, setClientName] = useState('');
@@ -141,7 +141,6 @@ export const RealIncomeHub: React.FC<RealIncomeHubProps> = ({
   // Constants
   const PAYPAL_HANDLE = 'ky8402';
   const PAYPAL_EMAIL = 'kundank4@icloud.com';
-  const UPI_ID = 'chandimay@ybl';
   const ACCOUNT_HOLDER = 'Kundan Kumar';
   const BANK_NAME = 'Citibank';
   const BANK_ADDRESS = '111 Wall Street New York, NY 10043 USA';
@@ -208,16 +207,6 @@ Thank you for your business!`;
     return `https://paypal.me/${PAYPAL_HANDLE}/${usdAmount}USD`;
   };
 
-  // Helper for UPI URI
-  const getUpiUri = (inrAmount: number, desc: string) => {
-    return `upi://pay?pa=${UPI_ID}&pn=${encodeURIComponent(ACCOUNT_HOLDER)}&am=${inrAmount}&cu=INR&tn=${encodeURIComponent(desc)}`;
-  };
-
-  // Helper for dynamic QR code image URL
-  const getQrCodeUrl = (data: string) => {
-    return `https://api.qrserver.com/v1/create-qr-code/?size=250x250&data=${encodeURIComponent(data)}&margin=10`;
-  };
-
   return (
     <div className="space-y-6 max-w-7xl mx-auto pb-12">
       
@@ -233,7 +222,7 @@ Thank you for your business!`;
               Monetize Your Skills &amp; Collect Real Income
             </h2>
             <p className="text-sm text-slate-300 leading-relaxed">
-              Accept live payments from international and domestic clients directly into your verified <strong className="text-emerald-400">PayPal ({PAYPAL_EMAIL})</strong> and <strong className="text-emerald-400">{BANK_NAME} Account ({ACCOUNT_NUMBER})</strong> via instant PayPal links, UPI QR codes, and smart milestone invoicing.
+              Accept live payments from international and domestic clients directly into your verified <strong className="text-cyan-400">Payoneer {BANK_NAME} Account ({ACCOUNT_NUMBER})</strong> and <strong className="text-blue-400">PayPal ({PAYPAL_EMAIL})</strong> via direct wire, ACH, and smart milestone invoicing.
             </p>
           </div>
 
@@ -254,9 +243,9 @@ Thank you for your business!`;
             </div>
             <div className="flex items-center justify-between border-b border-slate-800/80 pb-2">
               <span className="text-slate-400 flex items-center gap-1.5 font-sans">
-                <QrCode className="w-3.5 h-3.5 text-emerald-400" /> Domestic UPI:
+                <Building className="w-3.5 h-3.5 text-cyan-400" /> Payoneer Routing:
               </span>
-              <span className="text-emerald-400 font-bold">{UPI_ID}</span>
+              <span className="text-cyan-400 font-bold">{ROUTING_ABA}</span>
             </div>
             <div className="flex items-center justify-between">
               <span className="text-slate-400 flex items-center gap-1.5 font-sans">
@@ -325,7 +314,7 @@ Thank you for your business!`;
           <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
             <div>
               <h3 className="text-lg font-bold text-white">Pre-Packaged Client Offerings</h3>
-              <p className="text-xs text-slate-400">Fixed-price engineering packages clients can buy with 1 click via PayPal or UPI.</p>
+              <p className="text-xs text-slate-400">Fixed-price engineering packages clients can buy with 1 click via Payoneer Wire or PayPal.</p>
             </div>
             <button
               onClick={() => setActiveSubTab('custom_link')}
@@ -433,7 +422,7 @@ Thank you for your business!`;
                 <span>Create Client Payment Request</span>
               </h3>
               <p className="text-xs text-slate-400 mt-1">
-                Enter your client's details and custom milestone fee to generate direct PayPal &amp; UPI payment links.
+                Enter your client's details and custom milestone fee to generate direct PayPal &amp; Payoneer payment requests.
               </p>
             </div>
 
@@ -480,7 +469,7 @@ Thank you for your business!`;
                     className="w-full rounded-xl border border-slate-800 bg-slate-950 px-3.5 py-2.5 text-slate-100 focus:border-emerald-500 focus:outline-none"
                   >
                     <option value="USD">USD ($) - Global PayPal &amp; SWIFT</option>
-                    <option value="INR">INR (₹) - Indian UPI &amp; IMPS</option>
+                    <option value="INR">INR (₹) - Currency Equivalent</option>
                   </select>
                 </div>
               </div>
@@ -614,7 +603,7 @@ Thank you for your business!`;
                 <span className="text-emerald-400 font-mono">100% Retained</span>
               </div>
               <p className="text-xs text-slate-300">
-                Bill private clients directly via your custom PayPal.me link or Indian Bank UPI with 0% platform intermediary commission.
+                Bill private clients directly via your verified Payoneer Citibank wire or custom PayPal.me link with 0% platform intermediary commission.
               </p>
               <button
                 onClick={() => setActiveSubTab('custom_link')}
@@ -657,7 +646,7 @@ Thank you for your business!`;
                 <span>Send Direct Payment Links</span>
               </div>
               <p className="text-xs text-slate-300 leading-relaxed">
-                When you agree on a milestone with a client, generate an instant <strong>PayPal.me link</strong> (<code className="text-blue-300">paypal.me/{PAYPAL_HANDLE}/[Amount]</code>) or <strong>UPI QR code</strong>. When they pay, the money arrives immediately in your actual bank account.
+                When you agree on a milestone with a client, generate an instant <strong>PayPal.me link</strong> (<code className="text-blue-300">paypal.me/{PAYPAL_HANDLE}/[Amount]</code>) or <strong>Payoneer Wire invoice</strong>. When they pay, the money arrives immediately in your actual bank account.
               </p>
             </div>
 
@@ -701,7 +690,18 @@ Thank you for your business!`;
             </div>
 
             {/* Payment Method Switcher */}
-            <div className="grid grid-cols-3 gap-2 text-xs">
+            <div className="grid grid-cols-2 gap-2 text-xs">
+              <button
+                onClick={() => setCheckoutPaymentMethod('wire')}
+                className={`py-2 px-3 rounded-xl font-bold border transition-all ${
+                  checkoutPaymentMethod === 'wire'
+                    ? 'bg-gradient-to-r from-cyan-600 to-blue-600 text-white border-cyan-500 shadow-md'
+                    : 'bg-slate-950 text-slate-400 border-slate-800 hover:border-slate-700'
+                }`}
+              >
+                🏦 Payoneer Citibank (USD)
+              </button>
+
               <button
                 onClick={() => setCheckoutPaymentMethod('paypal')}
                 className={`py-2 px-3 rounded-xl font-bold border transition-all ${
@@ -711,28 +711,6 @@ Thank you for your business!`;
                 }`}
               >
                 💳 PayPal (USD)
-              </button>
-
-              <button
-                onClick={() => setCheckoutPaymentMethod('upi')}
-                className={`py-2 px-3 rounded-xl font-bold border transition-all ${
-                  checkoutPaymentMethod === 'upi'
-                    ? 'bg-emerald-600 text-white border-emerald-500 shadow-md'
-                    : 'bg-slate-950 text-slate-400 border-slate-800 hover:border-slate-700'
-                }`}
-              >
-                🇮🇳 UPI QR (INR)
-              </button>
-
-              <button
-                onClick={() => setCheckoutPaymentMethod('wire')}
-                className={`py-2 px-3 rounded-xl font-bold border transition-all ${
-                  checkoutPaymentMethod === 'wire'
-                    ? 'bg-teal-600 text-white border-teal-500 shadow-md'
-                    : 'bg-slate-950 text-slate-400 border-slate-800 hover:border-slate-700'
-                }`}
-              >
-                🏦 Bank Wire
               </button>
             </div>
 
@@ -772,38 +750,6 @@ Thank you for your business!`;
                     }}
                   />
                 </div>
-              </div>
-            )}
-
-            {checkoutPaymentMethod === 'upi' && (
-              <div className="space-y-4 rounded-2xl bg-slate-950 p-5 border border-slate-800 text-center">
-                <div className="space-y-1 text-xs">
-                  <span className="text-emerald-400 font-bold uppercase tracking-wider text-[10px]">
-                    Scan with any Indian UPI App (GPay / PhonePe / Paytm / BHIM)
-                  </span>
-                  <div className="text-base font-extrabold text-white font-mono">
-                    ₹{selectedPackage.priceInr.toLocaleString('en-IN')} INR
-                  </div>
-                  <div className="text-slate-400 font-mono text-xs">VPA: {UPI_ID}</div>
-                </div>
-
-                {/* Scannable QR Code */}
-                <div className="flex justify-center my-2">
-                  <div className="p-3 bg-white rounded-2xl shadow-xl inline-block">
-                    <img
-                      src={getQrCodeUrl(getUpiUri(selectedPackage.priceInr, selectedPackage.title))}
-                      alt="UPI QR Code"
-                      className="w-44 h-44 object-contain"
-                    />
-                  </div>
-                </div>
-
-                <a
-                  href={getUpiUri(selectedPackage.priceInr, selectedPackage.title)}
-                  className="inline-flex items-center justify-center gap-1.5 text-xs font-bold text-emerald-400 hover:text-emerald-300 underline"
-                >
-                  <span>Open UPI App on Mobile Phone ↗</span>
-                </a>
               </div>
             )}
 

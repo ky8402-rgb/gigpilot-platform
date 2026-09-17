@@ -97,7 +97,7 @@ export const WorkOrderCloserTool: React.FC<WorkOrderCloserToolProps> = ({
   const [copiedCurl, setCopiedCurl] = useState<boolean>(false);
 
   // Escrow Release Execution state
-  const [payoutMethod, setPayoutMethod] = useState<'paypal' | 'upi' | 'bank_wire'>('bank_wire');
+  const [payoutMethod, setPayoutMethod] = useState<'paypal' | 'bank_wire'>('bank_wire');
   const [clientNotes, setClientNotes] = useState<string>('Milestone deliverables fully verified and accepted by client.');
   const [isReleasingEscrow, setIsReleasingEscrow] = useState<boolean>(false);
   const [lastRelease, setLastRelease] = useState<EscrowReleaseRecord | null>(null);
@@ -636,7 +636,7 @@ export const WorkOrderCloserTool: React.FC<WorkOrderCloserToolProps> = ({
                 <label className="text-xs font-mono text-slate-300 font-bold block">
                   Select Payout Settlement Destination:
                 </label>
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   <div
                     onClick={() => setPayoutMethod('bank_wire')}
                     className={`p-4 rounded-2xl border transition-all cursor-pointer space-y-2 relative overflow-hidden ${
@@ -687,30 +687,6 @@ export const WorkOrderCloserTool: React.FC<WorkOrderCloserToolProps> = ({
                     </div>
                     <div className="text-[10px] text-blue-400 font-mono">
                       Auto-Sweeps to Payoneer
-                    </div>
-                  </div>
-
-                  <div
-                    onClick={() => setPayoutMethod('upi')}
-                    className={`p-4 rounded-2xl border transition-all cursor-pointer space-y-2 ${
-                      payoutMethod === 'upi'
-                        ? 'bg-purple-600/15 border-purple-500 shadow-md shadow-purple-500/10'
-                        : 'bg-slate-950/60 border-slate-800 hover:border-slate-700'
-                    }`}
-                  >
-                    <div className="flex items-center justify-between">
-                      <span className="text-xs font-bold text-white font-mono">UPI Instant (INR)</span>
-                      <div className={`w-4 h-4 rounded-full border flex items-center justify-center ${
-                        payoutMethod === 'upi' ? 'border-purple-400 bg-purple-500' : 'border-slate-600'
-                      }`}>
-                        {payoutMethod === 'upi' && <Check className="w-2.5 h-2.5 text-white" />}
-                      </div>
-                    </div>
-                    <div className="text-[11px] text-slate-400 font-mono">
-                      {accounts?.indianBank.upiId || 'chandimay@ybl'}
-                    </div>
-                    <div className="text-[10px] text-purple-400 font-mono">
-                      ₹{inrAmount.toLocaleString('en-IN')} (Instant UPI)
                     </div>
                   </div>
                 </div>
