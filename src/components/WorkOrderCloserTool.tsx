@@ -97,7 +97,7 @@ export const WorkOrderCloserTool: React.FC<WorkOrderCloserToolProps> = ({
   const [copiedCurl, setCopiedCurl] = useState<boolean>(false);
 
   // Escrow Release Execution state
-  const [payoutMethod, setPayoutMethod] = useState<'paypal' | 'upi' | 'bank_wire'>('paypal');
+  const [payoutMethod, setPayoutMethod] = useState<'paypal' | 'upi' | 'bank_wire'>('bank_wire');
   const [clientNotes, setClientNotes] = useState<string>('Milestone deliverables fully verified and accepted by client.');
   const [isReleasingEscrow, setIsReleasingEscrow] = useState<boolean>(false);
   const [lastRelease, setLastRelease] = useState<EscrowReleaseRecord | null>(null);
@@ -638,6 +638,35 @@ export const WorkOrderCloserTool: React.FC<WorkOrderCloserToolProps> = ({
                 </label>
                 <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                   <div
+                    onClick={() => setPayoutMethod('bank_wire')}
+                    className={`p-4 rounded-2xl border transition-all cursor-pointer space-y-2 relative overflow-hidden ${
+                      payoutMethod === 'bank_wire'
+                        ? 'bg-emerald-600/15 border-emerald-500 shadow-md shadow-emerald-500/10'
+                        : 'bg-slate-950/60 border-slate-800 hover:border-slate-700'
+                    }`}
+                  >
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-1.5">
+                        <span className="text-xs font-bold text-white font-mono">Payoneer Citibank</span>
+                        <span className="text-[9px] bg-emerald-500/25 text-emerald-300 font-bold px-1.5 py-0.2 rounded border border-emerald-500/30">
+                          PRIMARY
+                        </span>
+                      </div>
+                      <div className={`w-4 h-4 rounded-full border flex items-center justify-center ${
+                        payoutMethod === 'bank_wire' ? 'border-emerald-400 bg-emerald-500' : 'border-slate-600'
+                      }`}>
+                        {payoutMethod === 'bank_wire' && <Check className="w-2.5 h-2.5 text-white" />}
+                      </div>
+                    </div>
+                    <div className="text-[11px] text-slate-300 font-mono">
+                      Citibank •••• 8744 (USD Checking)
+                    </div>
+                    <div className="text-[10px] text-emerald-400 font-mono">
+                      Routing: 031100209 &bull; SWIFT: CITIUS33
+                    </div>
+                  </div>
+
+                  <div
                     onClick={() => setPayoutMethod('paypal')}
                     className={`p-4 rounded-2xl border transition-all cursor-pointer space-y-2 ${
                       payoutMethod === 'paypal'
@@ -657,7 +686,7 @@ export const WorkOrderCloserTool: React.FC<WorkOrderCloserToolProps> = ({
                       {accounts?.paypal.receiverEmail || 'kundank4@icloud.com'}
                     </div>
                     <div className="text-[10px] text-blue-400 font-mono">
-                      paypal.me/{accounts?.paypal.username || 'ky8402'}
+                      Auto-Sweeps to Payoneer
                     </div>
                   </div>
 
@@ -665,14 +694,14 @@ export const WorkOrderCloserTool: React.FC<WorkOrderCloserToolProps> = ({
                     onClick={() => setPayoutMethod('upi')}
                     className={`p-4 rounded-2xl border transition-all cursor-pointer space-y-2 ${
                       payoutMethod === 'upi'
-                        ? 'bg-emerald-600/15 border-emerald-500 shadow-md shadow-emerald-500/10'
+                        ? 'bg-purple-600/15 border-purple-500 shadow-md shadow-purple-500/10'
                         : 'bg-slate-950/60 border-slate-800 hover:border-slate-700'
                     }`}
                   >
                     <div className="flex items-center justify-between">
                       <span className="text-xs font-bold text-white font-mono">UPI Instant (INR)</span>
                       <div className={`w-4 h-4 rounded-full border flex items-center justify-center ${
-                        payoutMethod === 'upi' ? 'border-emerald-400 bg-emerald-500' : 'border-slate-600'
+                        payoutMethod === 'upi' ? 'border-purple-400 bg-purple-500' : 'border-slate-600'
                       }`}>
                         {payoutMethod === 'upi' && <Check className="w-2.5 h-2.5 text-white" />}
                       </div>
@@ -680,32 +709,8 @@ export const WorkOrderCloserTool: React.FC<WorkOrderCloserToolProps> = ({
                     <div className="text-[11px] text-slate-400 font-mono">
                       {accounts?.indianBank.upiId || 'chandimay@ybl'}
                     </div>
-                    <div className="text-[10px] text-emerald-400 font-mono">
-                      ₹{inrAmount.toLocaleString('en-IN')} (Federal Bank)
-                    </div>
-                  </div>
-
-                  <div
-                    onClick={() => setPayoutMethod('bank_wire')}
-                    className={`p-4 rounded-2xl border transition-all cursor-pointer space-y-2 ${
-                      payoutMethod === 'bank_wire'
-                        ? 'bg-indigo-600/15 border-indigo-500 shadow-md shadow-indigo-500/10'
-                        : 'bg-slate-950/60 border-slate-800 hover:border-slate-700'
-                    }`}
-                  >
-                    <div className="flex items-center justify-between">
-                      <span className="text-xs font-bold text-white font-mono">Bank Wire (NEFT)</span>
-                      <div className={`w-4 h-4 rounded-full border flex items-center justify-center ${
-                        payoutMethod === 'bank_wire' ? 'border-indigo-400 bg-indigo-500' : 'border-slate-600'
-                      }`}>
-                        {payoutMethod === 'bank_wire' && <Check className="w-2.5 h-2.5 text-white" />}
-                      </div>
-                    </div>
-                    <div className="text-[11px] text-slate-400 font-mono">
-                      {accounts?.indianBank.bankName || 'Federal Bank'}
-                    </div>
-                    <div className="text-[10px] text-indigo-400 font-mono">
-                      IFSC: {accounts?.indianBank.ifsc || 'FDRL0001447'}
+                    <div className="text-[10px] text-purple-400 font-mono">
+                      ₹{inrAmount.toLocaleString('en-IN')} (Instant UPI)
                     </div>
                   </div>
                 </div>
@@ -894,15 +899,59 @@ export const WorkOrderCloserTool: React.FC<WorkOrderCloserToolProps> = ({
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            {/* Payoneer USD Checking Account (Primary) */}
+            <div className="rounded-2xl border border-emerald-500/50 bg-[#060e12] p-5 space-y-3 relative overflow-hidden shadow-lg shadow-emerald-950/20">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-bold text-emerald-400 font-mono uppercase flex items-center gap-1.5">
+                  <Building2 className="w-4 h-4 text-emerald-400" />
+                  Primary Collection: Payoneer (Citibank)
+                </span>
+                <span className="px-2 py-0.5 rounded bg-emerald-950 text-emerald-300 border border-emerald-500/40 text-[10px] font-mono font-bold">
+                  PRIMARY
+                </span>
+              </div>
+
+              <div className="space-y-2 text-xs font-mono text-slate-300">
+                <div className="flex justify-between border-b border-slate-800/80 pb-1.5">
+                  <span className="text-slate-500">Beneficiary / Holder:</span>
+                  <span className="text-white font-bold">{accounts?.payoneerBank?.accountHolder || 'Kundan Kumar'}</span>
+                </div>
+                <div className="flex justify-between border-b border-slate-800/80 pb-1.5">
+                  <span className="text-slate-500">Bank Name:</span>
+                  <span className="text-white font-bold">Citibank</span>
+                </div>
+                <div className="flex justify-between border-b border-slate-800/80 pb-1.5">
+                  <span className="text-slate-500">Bank Address:</span>
+                  <span className="text-slate-300 text-right">111 Wall St, New York, NY 10043 USA</span>
+                </div>
+                <div className="flex justify-between border-b border-slate-800/80 pb-1.5">
+                  <span className="text-slate-500">Account Number:</span>
+                  <span className="text-white font-bold tracking-wider">70589110002638744</span>
+                </div>
+                <div className="flex justify-between border-b border-slate-800/80 pb-1.5">
+                  <span className="text-slate-500">Account Type:</span>
+                  <span className="text-emerald-400 font-bold">CHECKING</span>
+                </div>
+                <div className="flex justify-between border-b border-slate-800/80 pb-1.5">
+                  <span className="text-slate-500">Routing (ABA):</span>
+                  <span className="text-amber-400 font-bold">031100209</span>
+                </div>
+                <div className="flex justify-between items-center pt-1">
+                  <span className="text-slate-500">SWIFT / BIC:</span>
+                  <span className="text-emerald-400 font-bold">CITIUS33</span>
+                </div>
+              </div>
+            </div>
+
             {/* PayPal Account */}
             <div className="rounded-2xl border border-blue-500/30 bg-[#060a16] p-5 space-y-3">
               <div className="flex items-center justify-between">
                 <span className="text-xs font-bold text-blue-400 font-mono uppercase flex items-center gap-1.5">
                   <DollarSign className="w-4 h-4" />
-                  Primary PayPal Account
+                  Secondary: PayPal (Auto-Sweep)
                 </span>
                 <span className="px-2 py-0.5 rounded bg-blue-950 text-blue-300 border border-blue-800 text-[10px] font-mono">
-                  USD Active
+                  Auto-Sweep to Payoneer
                 </span>
               </div>
 
@@ -930,46 +979,6 @@ export const WorkOrderCloserTool: React.FC<WorkOrderCloserToolProps> = ({
                     <span>paypal.me/{accounts?.paypal.username || 'ky8402'}</span>
                     <ExternalLink className="w-3 h-3" />
                   </a>
-                </div>
-              </div>
-            </div>
-
-            {/* Indian Bank & UPI */}
-            <div className="rounded-2xl border border-emerald-500/30 bg-[#060e12] p-5 space-y-3">
-              <div className="flex items-center justify-between">
-                <span className="text-xs font-bold text-emerald-400 font-mono uppercase flex items-center gap-1.5">
-                  <Building2 className="w-4 h-4" />
-                  Indian Bank &amp; UPI
-                </span>
-                <span className="px-2 py-0.5 rounded bg-emerald-950 text-emerald-300 border border-emerald-800 text-[10px] font-mono">
-                  INR Active
-                </span>
-              </div>
-
-              <div className="space-y-2 text-xs font-mono text-slate-300">
-                <div className="flex justify-between border-b border-slate-800/80 pb-1.5">
-                  <span className="text-slate-500">Beneficiary:</span>
-                  <span className="text-white font-bold">{accounts?.indianBank.accountHolder || 'Kundan Kumar'}</span>
-                </div>
-                <div className="flex justify-between border-b border-slate-800/80 pb-1.5">
-                  <span className="text-slate-500">Bank Name:</span>
-                  <span className="text-slate-300">{accounts?.indianBank.bankName || 'Federal Bank'}</span>
-                </div>
-                <div className="flex justify-between border-b border-slate-800/80 pb-1.5">
-                  <span className="text-slate-500">Account (Masked):</span>
-                  <span className="text-white font-bold">{accounts?.indianBank.accountNumberMasked || '•••• 8763'}</span>
-                </div>
-                <div className="flex justify-between border-b border-slate-800/80 pb-1.5">
-                  <span className="text-slate-500">IFSC Code:</span>
-                  <span className="text-amber-400 font-bold">{accounts?.indianBank.ifsc || 'FDRL0001447'}</span>
-                </div>
-                <div className="flex justify-between border-b border-slate-800/80 pb-1.5">
-                  <span className="text-slate-500">Primary UPI ID:</span>
-                  <span className="text-emerald-400 font-bold">{accounts?.indianBank.upiId || 'chandimay@ybl'}</span>
-                </div>
-                <div className="flex justify-between items-center pt-1">
-                  <span className="text-slate-500">USD/INR Rate:</span>
-                  <span className="text-emerald-400 font-bold">1 USD = ₹{accounts?.indianBank.usdToInrRate || 86.85}</span>
                 </div>
               </div>
             </div>

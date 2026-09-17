@@ -374,7 +374,7 @@ export async function createPayPalPayout(params: {
       console.warn('PayPal Payouts REST API error:', errData || err.message);
       if (errData?.name === 'PAYOUT_NOT_AVAILABLE') {
         throw new Error(
-          'PAYOUT_NOT_AVAILABLE: PayPal India accounts are restricted by RBI regulations to Inward Remittances only. Outbound API payouts are prohibited. All foreign client revenue received via PayPal Checkout, Invoicing, or PayPal.Me is automatically settled directly into your linked Indian bank account (Federal Bank FDRL0001447) within 24-48 hours.'
+          'PAYOUT_NOT_AVAILABLE: PayPal merchant accounts with auto-sweep enabled automatically deposit all foreign client revenue received via PayPal Checkout, Invoicing, or PayPal.Me directly into your linked Payoneer Citibank checking account (Acc: 70589110002638744 / Routing: 031100209) within 24-48 hours.'
         );
       }
       throw new Error(errData?.message || err.message || 'PayPal Payout request failed');
@@ -432,8 +432,8 @@ export async function getPayPalLiveBalance(): Promise<{
         currency: primaryBalance?.currency || 'USD',
         asOfTime: res.data?.as_of_time || new Date().toISOString(),
         isLiveRest: true,
-        autoSweepStatus: 'Active - Daily RBI Automated Settlement to Linked Indian Bank',
-        linkedBank: 'Federal Bank (••••8763 / IFSC: FDRL0001447)'
+        autoSweepStatus: 'Active - Daily Automated Settlement to Linked Payoneer Citibank Account',
+        linkedBank: 'Citibank NY (Payoneer Checking ••••8744 / Routing: 031100209 / SWIFT: CITIUS33)'
       };
     } catch (err: any) {
       console.warn('PayPal live balance query notice:', err?.response?.data || err.message);
@@ -452,8 +452,8 @@ export async function getPayPalLiveBalance(): Promise<{
     currency: 'USD',
     asOfTime: new Date().toISOString(),
     isLiveRest: false,
-    autoSweepStatus: 'Active - Daily RBI Automated Settlement to Linked Indian Bank',
-    linkedBank: 'Federal Bank (••••8763 / IFSC: FDRL0001447)'
+    autoSweepStatus: 'Active - Daily Automated Settlement to Linked Payoneer Citibank Account',
+    linkedBank: 'Citibank NY (Payoneer Checking ••••8744 / Routing: 031100209 / SWIFT: CITIUS33)'
   };
 }
 
@@ -575,13 +575,31 @@ export async function createLivePayPalInvoice(params: {
         console.warn('Could not generate next invoice number, using timestamp:', numErr);
       }
 
-      // 2. Build invoice payload
+      // 2. Build invoice payload with Payoneer Citibank Payment Instructions
+      const paymentInstructions = [
+        'PAYMENT INSTRUCTIONS:',
+        'Payoneer USD Checking Account (Citibank NY):',
+        '• Bank Name: Citibank',
+        '• Bank Address: 111 Wall Street New York, NY 10043 USA',
+        '• Beneficiary: Kundan Kumar',
+        '• Account Number: 70589110002638744',
+        '• Account Type: CHECKING',
+        '• Routing (ABA): 031100209',
+        '• SWIFT / BIC: CITIUS33',
+        '• Currency: USD',
+        '• PayPal Direct Link: https://paypal.me/ky8402'
+      ].join('\n');
+
       const invoicePayload = {
         detail: {
           invoice_number: invoiceNumber,
           invoice_date: new Date().toISOString().split('T')[0],
           currency_code: currency,
-          note: params.note || 'Milestone deliverable payment for freelance engineering services.'
+          note: params.note ? `${params.note}\n\n${paymentInstructions}` : `Milestone deliverable payment for freelance engineering services.\n\n${paymentInstructions}`,
+          terms_and_conditions: paymentInstructions,
+          payment_term: {
+            term_type: 'DUE_ON_RECEIPT'
+          }
         },
         invoicer: {
           business_name: 'Kundan Kumar',

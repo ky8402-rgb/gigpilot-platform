@@ -23,6 +23,7 @@ import { AutonomousRevenuePanel } from './components/dashboard/AutonomousRevenue
 import { WorkExecutionModal } from './components/WorkExecutionModal';
 import { ClientCommunicationsHub } from './components/ClientCommunicationsHub';
 import { ClientPaymentCollectionModal } from './components/ClientPaymentCollectionModal';
+import { printOrSaveInvoicePdf } from './utils/invoicePdfGenerator';
 
 // Tool 1: Autonomous Software Job Solver
 const SoftwareJobAutonomousTool = lazy(() => import('./components/SoftwareJobAutonomousTool').then(m => ({ default: m.SoftwareJobAutonomousTool })));
@@ -52,6 +53,7 @@ const EmailVerificationModal = lazy(() => import('./components/EmailVerification
 const GitHubSettingsModal = lazy(() => import('./components/GitHubSettingsModal').then(m => ({ default: m.GitHubSettingsModal })));
 const AutoDeployPipelineTool = lazy(() => import('./components/AutoDeployPipelineTool').then(m => ({ default: m.AutoDeployPipelineTool })));
 const BackendConnectionModal = lazy(() => import('./components/BackendConnectionModal').then(m => ({ default: m.BackendConnectionModal })));
+const PayPalCheckoutModal = lazy(() => import('./components/PayPalCheckoutModal').then(m => ({ default: m.PayPalCheckoutModal })));
 
 // Dynamic helper for celebratory confetti without bloating the main bundle
 const triggerConfetti = (opts: any) => {
@@ -100,11 +102,14 @@ const PRIMARY_PAYPAL_EMAIL = 'kundank4@icloud.com';
 const PRIMARY_PAYPAL_ME = 'ky8402';
 const PRIMARY_PAYPAL_ME_URL = 'https://paypal.me/ky8402';
 
-// Primary Indian Bank & UPI Configuration
-const PRIMARY_INDIAN_BANK_NAME = 'Federal Bank';
-const PRIMARY_INDIAN_BANK_HOLDER = 'Kundan Kumar';
-const PRIMARY_INDIAN_BANK_ACC = '•••• 8763';
-const PRIMARY_INDIAN_BANK_IFSC = 'FDRL0001447';
+// Primary Payoneer USD Checking Account Configuration
+const PRIMARY_PAYONEER_BANK_NAME = 'Citibank';
+const PRIMARY_PAYONEER_BANK_ADDRESS = '111 Wall Street New York, NY 10043 USA';
+const PRIMARY_PAYONEER_ROUTING_ABA = '031100209';
+const PRIMARY_PAYONEER_SWIFT = 'CITIUS33';
+const PRIMARY_PAYONEER_ACCOUNT_NUM = '70589110002638744';
+const PRIMARY_PAYONEER_ACCOUNT_TYPE = 'CHECKING';
+const PRIMARY_PAYONEER_BENEFICIARY = 'Kundan Kumar';
 const PRIMARY_UPI_ID = 'chandimay@ybl';
 const USD_TO_INR_RATE = 86.85;
 
@@ -210,6 +215,19 @@ export default function App() {
   const [selectedPayPalInvoice, setSelectedPayPalInvoice] = useState<Invoice | null>(null);
   const [isPayPalModalOpen, setIsPayPalModalOpen] = useState<boolean>(false);
   const [isPayPalSettlementModalOpen, setIsPayPalSettlementModalOpen] = useState<boolean>(false);
+  const [isPayPalCheckoutOpen, setIsPayPalCheckoutOpen] = useState<boolean>(false);
+  const [payPalCheckoutParams, setPayPalCheckoutParams] = useState<{
+    amount: number;
+    title: string;
+    clientName: string;
+    clientEmail: string;
+    orderId?: string | number;
+  }>({
+    amount: 150,
+    title: 'Freelance Engineering Deliverable Milestone',
+    clientName: 'Valued Client',
+    clientEmail: 'client@example.com'
+  });
   const [livePayPalBalance, setLivePayPalBalance] = useState<PayPalLiveBalanceResult | null>(null);
   const [isPayPalConnectOpen, setIsPayPalConnectOpen] = useState<boolean>(false);
   const [isBackendModalOpen, setIsBackendModalOpen] = useState<boolean>(false);
@@ -864,7 +882,7 @@ export default function App() {
   const withdrawToPayPal = async (amount?: number, targetPayPal?: string) => {
     setIsPayPalSettlementModalOpen(true);
     showToast(
-      'Opening PayPal Settlement Center: Real revenue is credited via client invoices or PayPal.Me and auto-swept to Federal Bank.',
+      'Opening PayPal Settlement Center: Real revenue is credited via client invoices or PayPal.Me and auto-swept to your linked Payoneer Citibank account.',
       'info'
     );
   };
@@ -1097,8 +1115,8 @@ export default function App() {
         };
       case 'bank':
         return {
-          section: 'Indian Bank & UPI Portal',
-          description: 'Federal Bank IMPS/NEFT receiving portal, dynamic UPI QR checkout (chandimay@ybl), and real-time USD to INR settlement engine.'
+          section: 'Payoneer USD Checking & Wire Portal',
+          description: 'Citibank (111 Wall Street NY) ACH/Wire receiving portal, Routing 031100209, SWIFT CITIUS33, and direct USD client settlement engine.'
         };
       case 'analytics':
         return {
@@ -1133,6 +1151,7 @@ export default function App() {
         onOpenEmailVerification={() => setIsEmailVerificationOpen(true)}
         onOpenPasswordReset={() => setIsPasswordResetOpen(true)}
         onOpenPayPalConnect={() => setIsPayPalConnectOpen(true)}
+        onOpenPayPalCheckout={() => setIsPayPalCheckoutOpen(true)}
         onOpenGitHubSettings={() => setIsGitHubSettingsOpen(true)}
         onOpenAutoDeploy={() => setIsAutoDeployModalOpen(true)}
         onOpenCredentialsModal={() => setIsCredentialsModalOpen(true)}
@@ -1155,6 +1174,7 @@ export default function App() {
         onOpenEmailVerification={() => setIsEmailVerificationOpen(true)}
         onOpenPasswordReset={() => setIsPasswordResetOpen(true)}
         onOpenPayPalConnect={() => setIsPayPalConnectOpen(true)}
+        onOpenPayPalCheckout={() => setIsPayPalCheckoutOpen(true)}
         onOpenPayPalSettlement={() => setIsPayPalSettlementModalOpen(true)}
         onOpenGitHubSettings={() => setIsGitHubSettingsOpen(true)}
         onOpenAutoDeploy={() => setIsAutoDeployModalOpen(true)}
@@ -1203,6 +1223,7 @@ export default function App() {
             }
           }}
           onOpenPayPalSettlement={() => setIsPayPalSettlementModalOpen(true)}
+          onOpenPayPalCheckout={() => setIsPayPalCheckoutOpen(true)}
           onOpenBackendModal={() => setIsBackendModalOpen(true)}
           onOpenCredentialsModal={() => setIsCredentialsModalOpen(true)}
           onOpenGitHubSettings={() => setIsGitHubSettingsOpen(true)}
@@ -2125,7 +2146,16 @@ export default function App() {
                     client: 'Enterprise Client Inc'
                   };
                   setInvoices(prev => [newInv, ...prev]);
-                  showToast(`📄 Invoice #${invId} generated for ${fmt(amount)} USDT`, 'info');
+                  showToast(`📄 Invoice #${invId} generated! Opening PDF with Payoneer Citibank payment instructions...`, 'success');
+                  printOrSaveInvoicePdf({
+                    id: newInv.id,
+                    orderTitle: newInv.orderTitle,
+                    clientName: newInv.client,
+                    amount: newInv.amount,
+                    currency: 'USD',
+                    date: newInv.date,
+                    status: newInv.status
+                  });
                 }}
                 onOpenPayPalInvoice={(inv) => {
                   setSelectedPayPalInvoice(inv);
@@ -2135,8 +2165,35 @@ export default function App() {
                   setSelectedGSTInvoice(inv);
                   setIsGSTInvoiceOpen(true);
                 }}
-                onDownloadPDF={(invId) => showToast(`📥 Downloading ${invId}.pdf...`, 'success')}
-                onDownloadAllInvoices={() => showToast('📥 Exporting all invoices as ZIP/CSV archive...', 'success')}
+                onDownloadPDF={(invId) => {
+                  const inv = invoices.find(i => i.id === invId);
+                  if (inv) {
+                    printOrSaveInvoicePdf({
+                      id: inv.id,
+                      orderTitle: inv.orderTitle,
+                      clientName: inv.client,
+                      amount: inv.amount,
+                      currency: 'USD',
+                      date: inv.date,
+                      status: inv.status
+                    });
+                    showToast(`📄 Generating PDF for Invoice #${inv.id} with Payoneer Citibank Payment Instructions...`, 'success');
+                  } else {
+                    showToast(`Invoice #${invId} not found`, 'error');
+                  }
+                }}
+                onDownloadAllInvoices={() => {
+                  const summaryLines = invoices.map(i => `#${i.id} | $${i.amount} USD | ${i.date} | ${i.client} | ${i.status}`).join('\n');
+                  const report = `========================================================================\nCONSOLIDATED INVOICE REMITTANCE REGISTER\nBeneficiary: Kundan Kumar\nBank Name: Citibank\nBank Address: 111 Wall Street New York, NY 10043 USA\nAccount Number: 70589110002638744\nAccount Type: CHECKING\nRouting (ABA): 031100209\nSWIFT / BIC: CITIUS33\nCurrency: USD\nPayPal Link: https://paypal.me/ky8402\n========================================================================\n\n${summaryLines}`;
+                  const blob = new Blob([report], { type: 'text/plain' });
+                  const url = URL.createObjectURL(blob);
+                  const a = document.createElement('a');
+                  a.href = url;
+                  a.download = `Invoices_Register_Payoneer_Citibank.txt`;
+                  a.click();
+                  URL.revokeObjectURL(url);
+                  showToast('📥 Exported invoice register with Payoneer Citibank payment instructions', 'success');
+                }}
                 fmt={fmt}
               />
             </Suspense>
@@ -2488,6 +2545,47 @@ export default function App() {
         <PayPalConnectModal
           isOpen={isPayPalConnectOpen}
           onClose={() => setIsPayPalConnectOpen(false)}
+          showToast={showToast}
+        />
+      </Suspense>
+
+      {/* ===== PAYPAL LIVE CHECKOUT TERMINAL MODAL ===== */}
+      <Suspense fallback={null}>
+        <PayPalCheckoutModal
+          isOpen={isPayPalCheckoutOpen}
+          onClose={() => setIsPayPalCheckoutOpen(false)}
+          initialAmount={payPalCheckoutParams.amount}
+          initialTitle={payPalCheckoutParams.title}
+          initialClientName={payPalCheckoutParams.clientName}
+          initialClientEmail={payPalCheckoutParams.clientEmail}
+          initialOrderId={payPalCheckoutParams.orderId}
+          onPaymentSuccess={(orderId, captureResult) => {
+            triggerConfetti({ particleCount: 80, spread: 70 });
+            const capturedAmount = captureResult?.amount || payPalCheckoutParams.amount || 150;
+            setWalletBalance(curr => curr + capturedAmount);
+            setTodayEarnings(curr => curr + capturedAmount);
+            setCompletedOrders(curr => curr + 1);
+
+            const newTx: Transaction = {
+              id: makeUniqueId('tx_paypal_live'),
+              name: `💳 PayPal Direct Payment: ${payPalCheckoutParams.clientName} (${orderId})`,
+              date: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) + ' Today',
+              amount: capturedAmount,
+              type: 'credit',
+              method: 'PayPal',
+              referenceId: orderId,
+            };
+            setTransactions(t => [newTx, ...t]);
+
+            // If an associated work order exists, update it to completed
+            if (payPalCheckoutParams.orderId) {
+              setWorkOrders(prev =>
+                prev.map(o => String(o.id) === String(payPalCheckoutParams.orderId) ? { ...o, status: 'completed' } : o)
+              );
+            }
+
+            showToast(`🎉 PayPal Payment Captured: $${capturedAmount} USD credited to ledger!`, 'success');
+          }}
           showToast={showToast}
         />
       </Suspense>

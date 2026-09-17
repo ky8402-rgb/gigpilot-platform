@@ -21,6 +21,7 @@ import {
 import { ActiveContract } from '../types';
 import { generateClientReply } from '../services/api';
 import { PayPalSdkV6Button } from './PayPalSdkV6Button';
+import { printOrSaveInvoicePdf, downloadInvoiceTextSummary } from '../utils/invoicePdfGenerator';
 
 interface ContractsAndInvoicesProps {
   contracts: ActiveContract[];
@@ -363,9 +364,21 @@ export const ContractsAndInvoices: React.FC<ContractsAndInvoicesProps> = ({
 
               <div className="flex items-center space-x-2">
                 <button
-                  onClick={() => window.print()}
-                  className="flex items-center space-x-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 px-3 py-1.5 text-xs font-semibold transition-all"
-                  title="Print or Save as PDF"
+                  onClick={() => {
+                    const due = Math.max(1, showInvoiceModal.totalValue - showInvoiceModal.amountPaid);
+                    printOrSaveInvoicePdf({
+                      id: showInvoiceModal.id,
+                      orderTitle: showInvoiceModal.jobTitle,
+                      clientName: showInvoiceModal.clientName,
+                      amount: due,
+                      currency: 'USD',
+                      date: new Date().toISOString(),
+                      status: due <= 0 ? 'Paid' : 'Pending',
+                      platform: showInvoiceModal.platform
+                    });
+                  }}
+                  className="flex items-center space-x-1 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white px-3 py-1.5 text-xs font-semibold transition-all shadow-sm cursor-pointer"
+                  title="Generate and Print PDF with Payoneer Citibank Payment Instructions"
                 >
                   <Printer className="h-3.5 w-3.5" />
                   <span className="hidden sm:inline">Print / Save PDF</span>
@@ -373,12 +386,13 @@ export const ContractsAndInvoices: React.FC<ContractsAndInvoicesProps> = ({
 
                 <button
                   onClick={() => {
-                    const text = `INVOICE #${showInvoiceModal.id}\nPayee: Kundan Kumar\nProject: ${showInvoiceModal.jobTitle}\nClient: ${showInvoiceModal.clientName}\nAmount Due: $${(showInvoiceModal.totalValue - showInvoiceModal.amountPaid).toLocaleString()} USD\n\nBank Transfer:\nBank: Federal Bank\nAccount: 99980119788763\nIFSC: FDRL0001447\nUPI: chandimay@ybl\nPayPal: https://paypal.me/ky8402`;
+                    const text = `INVOICE #${showInvoiceModal.id}\nPayee: Kundan Kumar\nProject: ${showInvoiceModal.jobTitle}\nClient: ${showInvoiceModal.clientName}\nAmount Due: $${(showInvoiceModal.totalValue - showInvoiceModal.amountPaid).toLocaleString()} USD\n\nPAYMENT INSTRUCTIONS (Payoneer Citibank USD & PayPal):\nBank Name: Citibank\nBank Address: 111 Wall Street New York, NY 10043 USA\nBeneficiary: Kundan Kumar\nAccount Number: 70589110002638744\nAccount Type: CHECKING\nRouting (ABA): 031100209\nSWIFT / BIC: CITIUS33\nCurrency: USD\nPayPal Direct: https://paypal.me/ky8402`;
                     navigator.clipboard.writeText(text);
                     setInvoiceCopied(true);
                     setTimeout(() => setInvoiceCopied(false), 2000);
                   }}
-                  className="flex items-center space-x-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 px-3 py-1.5 text-xs font-semibold transition-all"
+                  className="flex items-center space-x-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 px-3 py-1.5 text-xs font-semibold transition-all cursor-pointer"
+                  title="Copy payment summary"
                 >
                   {invoiceCopied ? <Check className="h-3.5 w-3.5 text-emerald-400" /> : <Copy className="h-3.5 w-3.5" />}
                   <span>{invoiceCopied ? 'Copied!' : 'Copy Summary'}</span>
@@ -466,28 +480,43 @@ export const ContractsAndInvoices: React.FC<ContractsAndInvoicesProps> = ({
                 </div>
               </div>
 
-              {/* Settlement Instructions (Federal Bank & UPI & PayPal) */}
-              <div className="rounded-xl border border-slate-800 bg-slate-950/70 p-4 space-y-3">
-                <div className="font-bold text-xs text-white flex items-center gap-2">
-                  <ShieldCheck className="w-4 h-4 text-emerald-400" />
-                  <span>Official Settlement &amp; Remittance Details</span>
+              {/* Payment Instructions (Payoneer Citibank USD & PayPal) */}
+              <div className="rounded-xl border border-blue-500/30 bg-slate-950/80 p-4 space-y-3">
+                <div className="font-bold text-xs text-white flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <ShieldCheck className="w-4 h-4 text-emerald-400" />
+                    <span className="uppercase tracking-wider">Payment Instructions (Payoneer Citibank &amp; PayPal)</span>
+                  </div>
+                  <span className="text-[10px] text-cyan-400 font-mono font-bold">VERIFIED USD WIRE DESTINATION</span>
                 </div>
 
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-[11px]">
-                  <div className="rounded-lg border border-slate-800 bg-slate-900/80 p-2.5 space-y-1">
-                    <div className="text-emerald-400 font-bold">🇮🇳 Domestic INR / NEFT / IMPS / UPI:</div>
-                    <div className="text-slate-300">Bank: <strong className="text-white">Federal Bank</strong></div>
-                    <div className="text-slate-300">A/C: <strong className="text-white font-mono">99980119788763</strong></div>
-                    <div className="text-slate-300">IFSC: <strong className="text-white font-mono">FDRL0001447</strong></div>
-                    <div className="text-slate-300">UPI ID: <strong className="text-emerald-400 font-mono">chandimay@ybl</strong></div>
+                  <div className="rounded-lg border border-slate-800 bg-slate-900/80 p-3 space-y-1">
+                    <div className="text-emerald-400 font-bold flex items-center justify-between">
+                      <span>🏦 Payoneer USD Checking Account:</span>
+                      <span className="text-[10px] text-slate-400 font-mono">ACH / Wire</span>
+                    </div>
+                    <div className="text-slate-300">Bank: <strong className="text-white">Citibank</strong></div>
+                    <div className="text-slate-300 text-[10px]">Address: <span className="text-slate-200">111 Wall Street New York, NY 10043 USA</span></div>
+                    <div className="text-slate-300">Beneficiary: <strong className="text-white">Kundan Kumar</strong></div>
+                    <div className="text-slate-300">Account Number: <strong className="text-white font-mono">70589110002638744</strong></div>
+                    <div className="text-slate-300">Account Type: <strong className="text-emerald-400 font-mono">CHECKING</strong></div>
+                    <div className="text-slate-300">Routing (ABA): <strong className="text-emerald-400 font-mono">031100209</strong></div>
+                    <div className="text-slate-300">SWIFT / BIC: <strong className="text-cyan-400 font-mono">CITIUS33</strong></div>
                   </div>
 
-                  <div className="rounded-lg border border-slate-800 bg-slate-900/80 p-2.5 space-y-1">
-                    <div className="text-cyan-400 font-bold">🌏 Global USD / Wire &amp; PayPal:</div>
-                    <div className="text-slate-300">SWIFT / BIC: <strong className="text-white font-mono">FDRLINBBIBD</strong></div>
+                  <div className="rounded-lg border border-slate-800 bg-slate-900/80 p-3 space-y-1">
+                    <div className="text-cyan-400 font-bold flex items-center justify-between">
+                      <span>💳 Instant PayPal Checkout:</span>
+                      <span className="text-[10px] text-slate-400 font-mono">Global Express</span>
+                    </div>
                     <div className="text-slate-300">PayPal Handle: <strong className="text-white font-mono">ky8402</strong></div>
                     <div className="text-slate-300">Direct Link: <a href="https://paypal.me/ky8402" target="_blank" rel="noopener noreferrer" className="text-cyan-400 underline font-mono">paypal.me/ky8402</a></div>
-                    <div className="text-slate-300">Email: <strong className="text-white font-mono">kundank4@icloud.com</strong></div>
+                    <div className="text-slate-300">Receiver Email: <strong className="text-white font-mono">kundank4@icloud.com</strong></div>
+                    <div className="text-slate-300">Account ID: <strong className="text-white font-mono">98UNBJBN67H6W</strong></div>
+                    <div className="text-slate-400 text-[10px] pt-1">
+                      Funds received via PayPal Checkout &amp; Invoicing are auto-swept to your linked Payoneer Citibank checking account.
+                    </div>
                   </div>
                 </div>
 

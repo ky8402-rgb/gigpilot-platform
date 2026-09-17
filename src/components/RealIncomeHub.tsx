@@ -143,10 +143,12 @@ export const RealIncomeHub: React.FC<RealIncomeHubProps> = ({
   const PAYPAL_EMAIL = 'kundank4@icloud.com';
   const UPI_ID = 'chandimay@ybl';
   const ACCOUNT_HOLDER = 'Kundan Kumar';
-  const BANK_NAME = 'Federal Bank';
-  const ACCOUNT_NUMBER = '99980119788763';
-  const IFSC_CODE = 'FDRL0001447';
-  const SWIFT_CODE = 'FDRLINBBIBD';
+  const BANK_NAME = 'Citibank';
+  const BANK_ADDRESS = '111 Wall Street New York, NY 10043 USA';
+  const ROUTING_ABA = '031100209';
+  const ACCOUNT_NUMBER = '70589110002638744';
+  const ACCOUNT_TYPE = 'CHECKING';
+  const SWIFT_CODE = 'CITIUS33';
   const USD_TO_INR_RATE = 86.85;
 
   // Open Checkout for a package
@@ -178,15 +180,14 @@ Payee: ${ACCOUNT_HOLDER} (${PAYPAL_EMAIL})
 💳 Pay with PayPal (Instant Global Checkout):
 https://paypal.me/${PAYPAL_HANDLE}/${amtUsd}USD
 
-🇮🇳 Pay via UPI (GPay / PhonePe / Paytm / BHIM):
-UPI ID: ${UPI_ID}
-Direct UPI Link: upi://pay?pa=${UPI_ID}&pn=${encodeURIComponent(ACCOUNT_HOLDER)}&am=${amtInr}&cu=INR&tn=${encodeURIComponent(title)}
-
-🏦 Direct Bank Transfer (NEFT / IMPS / SWIFT):
-Bank: ${BANK_NAME}
+🏦 Payoneer USD Direct Bank Transfer (ACH / Wire):
+Bank Name: ${BANK_NAME}
+Bank Address: ${BANK_ADDRESS}
+Beneficiary Name: ${ACCOUNT_HOLDER}
 Account Number: ${ACCOUNT_NUMBER}
-IFSC Code: ${IFSC_CODE}
-SWIFT / BIC: ${SWIFT_CODE}
+Account Type: ${ACCOUNT_TYPE}
+Routing (ABA): ${ROUTING_ABA}
+SWIFT / BIC Code: ${SWIFT_CODE}
 -----------------------------------------
 Thank you for your business!`;
 
@@ -259,9 +260,9 @@ Thank you for your business!`;
             </div>
             <div className="flex items-center justify-between">
               <span className="text-slate-400 flex items-center gap-1.5 font-sans">
-                <Building className="w-3.5 h-3.5 text-teal-400" /> Indian Bank:
+                <Building className="w-3.5 h-3.5 text-teal-400" /> Payoneer (Citibank):
               </span>
-              <span className="text-slate-200 font-bold">{BANK_NAME} ••8763</span>
+              <span className="text-slate-200 font-bold">{BANK_NAME} ••••8744</span>
             </div>
           </div>
         </div>
@@ -808,8 +809,9 @@ Thank you for your business!`;
 
             {checkoutPaymentMethod === 'wire' && (
               <div className="space-y-3 rounded-2xl bg-slate-950 p-5 border border-slate-800 text-xs">
-                <div className="font-bold text-slate-200 border-b border-slate-800 pb-2">
-                  Domestic &amp; International Wire Transfer Instructions
+                <div className="font-bold text-slate-200 border-b border-slate-800 pb-2 flex items-center justify-between">
+                  <span>Payoneer USD Checking Account (Citibank NY)</span>
+                  <span className="text-[10px] text-cyan-400 font-mono">ACH &bull; WIRE &bull; SWIFT</span>
                 </div>
                 <div className="grid grid-cols-2 gap-3 text-slate-300">
                   <div>
@@ -820,16 +822,24 @@ Thank you for your business!`;
                     <span className="text-slate-500 block text-[10px]">Bank Name:</span>
                     <strong className="text-white">{BANK_NAME}</strong>
                   </div>
+                  <div className="col-span-2">
+                    <span className="text-slate-500 block text-[10px]">Bank Address:</span>
+                    <strong className="text-slate-200 font-mono text-[11px]">{BANK_ADDRESS}</strong>
+                  </div>
                   <div>
                     <span className="text-slate-500 block text-[10px]">Account Number:</span>
                     <strong className="text-white font-mono">{ACCOUNT_NUMBER}</strong>
                   </div>
                   <div>
-                    <span className="text-slate-500 block text-[10px]">IFSC Code (India):</span>
-                    <strong className="text-emerald-400 font-mono">{IFSC_CODE}</strong>
+                    <span className="text-slate-500 block text-[10px]">Account Type:</span>
+                    <strong className="text-emerald-400 font-mono">{ACCOUNT_TYPE}</strong>
                   </div>
-                  <div className="col-span-2">
-                    <span className="text-slate-500 block text-[10px]">SWIFT / BIC Code (Global):</span>
+                  <div>
+                    <span className="text-slate-500 block text-[10px]">Routing (ABA):</span>
+                    <strong className="text-emerald-400 font-mono">{ROUTING_ABA}</strong>
+                  </div>
+                  <div>
+                    <span className="text-slate-500 block text-[10px]">SWIFT / BIC Code:</span>
                     <strong className="text-blue-400 font-mono">{SWIFT_CODE}</strong>
                   </div>
                 </div>

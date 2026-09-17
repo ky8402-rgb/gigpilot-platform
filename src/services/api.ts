@@ -964,8 +964,8 @@ export async function fetchPayPalLiveBalance(): Promise<PayPalLiveBalanceResult>
       currency: 'USD',
       asOfTime: new Date().toISOString(),
       isLiveRest: false,
-      autoSweepStatus: 'Active - Daily RBI Automated Settlement to Linked Indian Bank',
-      linkedBank: 'Federal Bank (••••8763 / IFSC: FDRL0001447)'
+      autoSweepStatus: 'Active - Daily Automated Settlement to Linked Payoneer Citibank Account',
+      linkedBank: 'Citibank NY (Payoneer Checking ••••8744 / Routing: 031100209 / SWIFT: CITIUS33)'
     };
   }
 }
@@ -1583,16 +1583,16 @@ export async function fetchPlatformConnectivity(): Promise<PlatformConnectivityR
         },
         {
           id: 'indian_bank',
-          name: 'Indian Bank IMPS / UPI Portal',
+          name: 'Payoneer USD Checking & Wire Portal',
           category: 'Payment & Remittance',
           url: '/api/bank/config',
-          type: 'NPCI IMPS 24x7 Rail',
+          type: 'Citibank NY ACH / Wire Rail',
           status: 'online',
           latencyMs: 42,
           lastChecked: new Date().toISOString(),
-          details: 'Federal Bank / UPI instant inward settlement with autonomous sweep',
+          details: 'Payoneer Citibank ACH / Wire direct USD settlement with autonomous sweep',
           icon: 'building',
-          capabilities: ['Instant IMPS Sweep', 'Dynamic UPI QR', 'NEFT Auto-Credit'],
+          capabilities: ['Direct ACH Sweep', 'Routing 031100209', 'SWIFT CITIUS33'],
           uptime: '100.00%'
         },
         {
@@ -6583,8 +6583,23 @@ export async function toggleClientAutoResponder(convId: string, enabled?: boolea
 // 3. PAYMENT COLLECTION API (Collect Money)
 // =========================================================================
 export interface PaymentCollectionLinks {
+  primaryMethod?: string;
   amountUsd: number;
   amountInr: number;
+  payoneer?: {
+    isPrimary: boolean;
+    bankName: string;
+    bankAddress: string;
+    accountHolder: string;
+    accountNumber: string;
+    accountNumberMasked: string;
+    accountType: string;
+    routingAba: string;
+    swiftBic: string;
+    currency: string;
+    transferTypes: string;
+    notes: string;
+  };
   paypalUrl: string;
   upiUri: string;
   qrCodeUrl: string;
@@ -6603,7 +6618,7 @@ export interface PaymentCollectionRecord {
   description: string;
   amountUsd: number;
   amountInr: number;
-  paymentMethod: 'paypal' | 'upi' | 'card' | 'instant_escrow';
+  paymentMethod: 'payoneer' | 'paypal' | 'upi' | 'card' | 'instant_escrow';
   status: 'PAID' | 'PENDING' | 'FAILED';
   paidAt: string;
   transactionHash: string;
@@ -6635,7 +6650,7 @@ export async function recordClientPayment(params: {
   clientEmail?: string;
   description?: string;
   amountUsd: number;
-  paymentMethod?: 'paypal' | 'upi' | 'card' | 'instant_escrow';
+  paymentMethod?: 'payoneer' | 'paypal' | 'upi' | 'card' | 'instant_escrow';
 }): Promise<{ success: boolean; payment: PaymentCollectionRecord; message: string }> {
   const baseUrl = getApiBaseUrl();
   const res = await fetch(`${baseUrl}/api/payments/collect`, {
@@ -6709,12 +6724,28 @@ export interface SeniorEngineerApiGenResult {
 }
 
 export interface SettlementAccountsData {
+  primaryMethod?: string;
+  payoneerBank: {
+    isPrimary?: boolean;
+    bankName: string;
+    bankAddress: string;
+    accountHolder: string;
+    accountNumber: string;
+    accountNumberMasked: string;
+    accountType: string;
+    routingAba: string;
+    swift: string;
+    currency: string;
+    transferTypes?: string;
+    description?: string;
+  };
   paypal: {
     receiverEmail: string;
     userEmail: string;
     username: string;
     url: string;
     currency: string;
+    autoSweepTarget?: string;
   };
   indianBank: {
     bankName: string;

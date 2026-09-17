@@ -38,10 +38,12 @@ export const PayPalConnectModal: React.FC<PayPalConnectModalProps> = ({
   const PAYPAL_HANDLE = 'ky8402';
   const UPI_ID = 'chandimay@ybl';
   const ACCOUNT_HOLDER = 'Kundan Kumar';
-  const BANK_NAME = 'Federal Bank';
-  const ACCOUNT_NUMBER = '99980119788763';
-  const IFSC_CODE = 'FDRL0001447';
-  const SWIFT_CODE = 'FDRLINBBIBD';
+  const BANK_NAME = 'Citibank';
+  const BANK_ADDRESS = '111 Wall Street New York, NY 10043 USA';
+  const ROUTING_ABA = '031100209';
+  const ACCOUNT_NUMBER = '70589110002638744';
+  const ACCOUNT_TYPE = 'CHECKING';
+  const SWIFT_CODE = 'CITIUS33';
 
   const handleCopy = (text: string, fieldName: string) => {
     navigator.clipboard.writeText(text);
@@ -236,15 +238,15 @@ export const PayPalConnectModal: React.FC<PayPalConnectModalProps> = ({
           </div>
         )}
 
-        {/* TAB 3: BANK WIRE (FEDERAL BANK & SWIFT) */}
+        {/* TAB 3: PAYONEER USD CHECKING (CITIBANK NY) */}
         {activeTab === 'wire' && (
           <div className="space-y-4 rounded-2xl bg-slate-950 p-5 border border-slate-800 text-xs">
             <div className="flex items-center justify-between border-b border-slate-800 pb-2">
               <div className="font-bold text-white flex items-center gap-1.5">
                 <Building2 className="w-4 h-4 text-cyan-400" />
-                <span>Federal Bank Official Remittance Details</span>
+                <span>Payoneer USD Checking Account (Citibank NY)</span>
               </div>
-              <span className="text-[10px] text-slate-400 uppercase font-mono">NEFT / RTGS / IMPS / SWIFT</span>
+              <span className="text-[10px] text-emerald-400 uppercase font-mono">ACH &bull; WIRE &bull; SWIFT</span>
             </div>
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-slate-300">
@@ -256,6 +258,11 @@ export const PayPalConnectModal: React.FC<PayPalConnectModalProps> = ({
               <div className="rounded-xl border border-slate-800/80 bg-slate-900/60 p-3 space-y-1">
                 <span className="text-slate-500 block text-[10px] uppercase font-bold">Bank Name</span>
                 <strong className="text-white text-sm">{BANK_NAME}</strong>
+              </div>
+
+              <div className="col-span-1 sm:col-span-2 rounded-xl border border-slate-800/80 bg-slate-900/60 p-3 space-y-1">
+                <span className="text-slate-500 block text-[10px] uppercase font-bold">Bank Address</span>
+                <strong className="text-slate-200 text-xs font-mono">{BANK_ADDRESS}</strong>
               </div>
 
               <div className="rounded-xl border border-slate-800/80 bg-slate-900/60 p-3 space-y-1 flex items-center justify-between">
@@ -271,22 +278,27 @@ export const PayPalConnectModal: React.FC<PayPalConnectModalProps> = ({
                 </button>
               </div>
 
+              <div className="rounded-xl border border-slate-800/80 bg-slate-900/60 p-3 space-y-1">
+                <span className="text-slate-500 block text-[10px] uppercase font-bold">Account Type</span>
+                <strong className="text-emerald-400 font-mono text-sm">{ACCOUNT_TYPE}</strong>
+              </div>
+
               <div className="rounded-xl border border-slate-800/80 bg-slate-900/60 p-3 space-y-1 flex items-center justify-between">
                 <div>
-                  <span className="text-slate-500 block text-[10px] uppercase font-bold">IFSC Code (Domestic India)</span>
-                  <strong className="text-emerald-400 font-mono text-sm">{IFSC_CODE}</strong>
+                  <span className="text-slate-500 block text-[10px] uppercase font-bold">Routing Number (ABA)</span>
+                  <strong className="text-emerald-400 font-mono text-sm">{ROUTING_ABA}</strong>
                 </div>
                 <button
-                  onClick={() => handleCopy(IFSC_CODE, 'IFSC Code')}
+                  onClick={() => handleCopy(ROUTING_ABA, 'Routing Number (ABA)')}
                   className="p-1 text-slate-400 hover:text-white"
                 >
-                  {copiedField === 'IFSC Code' ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
+                  {copiedField === 'Routing Number (ABA)' ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
                 </button>
               </div>
 
-              <div className="col-span-1 sm:col-span-2 rounded-xl border border-slate-800/80 bg-slate-900/60 p-3 space-y-1 flex items-center justify-between">
+              <div className="rounded-xl border border-slate-800/80 bg-slate-900/60 p-3 space-y-1 flex items-center justify-between">
                 <div>
-                  <span className="text-slate-500 block text-[10px] uppercase font-bold">SWIFT / BIC Code (Global Inward Wire)</span>
+                  <span className="text-slate-500 block text-[10px] uppercase font-bold">SWIFT / BIC Code</span>
                   <strong className="text-cyan-400 font-mono text-sm">{SWIFT_CODE}</strong>
                 </div>
                 <button

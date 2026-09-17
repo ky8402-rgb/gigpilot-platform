@@ -14,7 +14,8 @@ import {
   Sparkles,
   ArrowRight,
   TrendingUp,
-  Building
+  Building,
+  Printer
 } from 'lucide-react';
 import {
   fetchPaymentCollectionLinks,
@@ -22,6 +23,8 @@ import {
   PaymentCollectionLinks,
   PaymentCollectionRecord
 } from '../services/api';
+import { PayPalSdkV6Button } from './PayPalSdkV6Button';
+import { printOrSaveInvoicePdf } from '../utils/invoicePdfGenerator';
 
 interface ClientPaymentCollectionModalProps {
   isOpen: boolean;
@@ -47,7 +50,7 @@ export const ClientPaymentCollectionModal: React.FC<ClientPaymentCollectionModal
   const [amountUsd, setAmountUsd] = useState<number>(initialAmount);
   const [name, setName] = useState<string>(clientName);
   const [email, setEmail] = useState<string>('');
-  const [selectedMethod, setSelectedMethod] = useState<'paypal' | 'upi' | 'card' | 'instant_escrow'>('paypal');
+  const [selectedMethod, setSelectedMethod] = useState<'payoneer' | 'paypal' | 'upi' | 'card' | 'instant_escrow'>('payoneer');
   const [paymentLinks, setPaymentLinks] = useState<PaymentCollectionLinks | null>(null);
   const [copiedLink, setCopiedLink] = useState<boolean>(false);
   const [isProcessing, setIsProcessing] = useState<boolean>(false);
@@ -187,10 +190,31 @@ export const ClientPaymentCollectionModal: React.FC<ClientPaymentCollectionModal
                 </div>
               </div>
 
-              <div className="pt-2 flex items-center justify-center gap-3">
+              <div className="pt-2 flex flex-wrap items-center justify-center gap-2">
                 <button
                   onClick={() => {
-                    const printable = `INVOICE & RECEIPT\nInvoice: ${completedPayment.invoiceNumber}\nClient: ${completedPayment.clientName}\nAmount: $${completedPayment.amountUsd} USD\nPaid: ${completedPayment.paidAt}\nTxHash: ${completedPayment.transactionHash}`;
+                    printOrSaveInvoicePdf({
+                      id: completedPayment.invoiceNumber,
+                      orderTitle: projectTitle || 'Client Deliverable Settlement',
+                      clientName: completedPayment.clientName,
+                      clientEmail: email || undefined,
+                      amount: completedPayment.amountUsd,
+                      currency: 'USD',
+                      date: completedPayment.paidAt,
+                      status: 'Paid',
+                      transactionHash: completedPayment.transactionHash
+                    });
+                  }}
+                  className="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold flex items-center gap-1.5 transition-colors shadow-md cursor-pointer"
+                  title="Generate Official PDF with Payoneer Citibank Payment Instructions"
+                >
+                  <Printer className="w-3.5 h-3.5" />
+                  <span>Print / Save PDF</span>
+                </button>
+
+                <button
+                  onClick={() => {
+                    const printable = `INVOICE & PROOF OF PAYMENT\nInvoice: ${completedPayment.invoiceNumber}\nClient: ${completedPayment.clientName}\nAmount: $${completedPayment.amountUsd} USD\nPaid: ${completedPayment.paidAt}\nTxHash: ${completedPayment.transactionHash}\n\nPAYMENT INSTRUCTIONS & REMITTANCE ON RECORD:\nBank Name: Citibank\nBank Address: 111 Wall Street New York, NY 10043 USA\nBeneficiary: Kundan Kumar\nAccount Number: 70589110002638744\nAccount Type: CHECKING\nRouting (ABA): 031100209\nSWIFT / BIC: CITIUS33\nPayPal: https://paypal.me/ky8402`;
                     const blob = new Blob([printable], { type: 'text/plain' });
                     const url = URL.createObjectURL(blob);
                     const a = document.createElement('a');
@@ -201,11 +225,12 @@ export const ClientPaymentCollectionModal: React.FC<ClientPaymentCollectionModal
                   className="px-4 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-semibold flex items-center gap-1.5 transition-colors cursor-pointer"
                 >
                   <Download className="w-3.5 h-3.5" />
-                  <span>Download Invoice Receipt</span>
+                  <span>Download Text Receipt</span>
                 </button>
+
                 <button
                   onClick={onClose}
-                  className="px-6 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold transition-all shadow-md cursor-pointer"
+                  className="px-5 py-2 rounded-xl bg-slate-700 hover:bg-slate-600 text-white text-xs font-bold transition-all cursor-pointer"
                 >
                   Done
                 </button>
@@ -255,7 +280,23 @@ export const ClientPaymentCollectionModal: React.FC<ClientPaymentCollectionModal
                 <label className="block text-xs font-semibold text-slate-300 mb-2">
                   Select Collection Channel:
                 </label>
-                <div className="grid grid-cols-3 gap-2">
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setSelectedMethod('payoneer')}
+                    className={`p-3 rounded-2xl border text-center transition-all cursor-pointer relative overflow-hidden ${
+                      selectedMethod === 'payoneer'
+                        ? 'bg-sky-600/20 border-sky-400 text-white shadow-md shadow-sky-500/10'
+                        : 'bg-slate-900/60 border-slate-800 text-slate-400 hover:text-white'
+                    }`}
+                  >
+                    <span className="text-[9px] bg-emerald-500/25 text-emerald-300 font-bold px-1.5 py-0.2 rounded border border-emerald-500/30 uppercase tracking-wider block w-fit mx-auto mb-1">
+                      Primary
+                    </span>
+                    <span className="text-xs font-bold block">Payoneer USD</span>
+                    <span className="text-[10px] text-sky-400 font-mono">Citibank ACH / Wire</span>
+                  </button>
+
                   <button
                     type="button"
                     onClick={() => setSelectedMethod('paypal')}
@@ -265,8 +306,9 @@ export const ClientPaymentCollectionModal: React.FC<ClientPaymentCollectionModal
                         : 'bg-slate-900/60 border-slate-800 text-slate-400 hover:text-white'
                     }`}
                   >
+                    <span className="text-[9px] text-slate-400 uppercase tracking-wider block mb-1">Instant</span>
                     <span className="text-xs font-bold block">PayPal.me</span>
-                    <span className="text-[10px] text-blue-400 font-mono">Instant USD Checkout</span>
+                    <span className="text-[10px] text-blue-400 font-mono">Auto-Swept</span>
                   </button>
 
                   <button
@@ -278,8 +320,9 @@ export const ClientPaymentCollectionModal: React.FC<ClientPaymentCollectionModal
                         : 'bg-slate-900/60 border-slate-800 text-slate-400 hover:text-white'
                     }`}
                   >
+                    <span className="text-[9px] text-slate-400 uppercase tracking-wider block mb-1">Domestic</span>
                     <span className="text-xs font-bold block">UPI QR Code</span>
-                    <span className="text-[10px] text-emerald-400 font-mono">GPay / PhonePe / Paytm</span>
+                    <span className="text-[10px] text-emerald-400 font-mono">GPay / PhonePe</span>
                   </button>
 
                   <button
@@ -291,11 +334,89 @@ export const ClientPaymentCollectionModal: React.FC<ClientPaymentCollectionModal
                         : 'bg-slate-900/60 border-slate-800 text-slate-400 hover:text-white'
                     }`}
                   >
+                    <span className="text-[9px] text-slate-400 uppercase tracking-wider block mb-1">Milestone</span>
                     <span className="text-xs font-bold block">Instant Escrow</span>
-                    <span className="text-[10px] text-purple-400 font-mono">Direct Bank Wire</span>
+                    <span className="text-[10px] text-purple-400 font-mono">Direct Release</span>
                   </button>
                 </div>
               </div>
+
+              {/* Active Method Details Area */}
+              {selectedMethod === 'payoneer' && (
+                <div className="rounded-2xl border border-sky-500/40 bg-sky-950/20 p-4 space-y-3">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-bold text-white flex items-center gap-1.5">
+                      <ShieldCheck className="w-4 h-4 text-emerald-400" />
+                      <span>Primary Collection Account: Payoneer Citibank USD Checking</span>
+                    </span>
+                    <span className="text-xs font-mono font-bold text-emerald-400">
+                      ${amountUsd} USD
+                    </span>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs font-mono bg-slate-950/80 p-3 rounded-xl border border-slate-800">
+                    <div>
+                      <span className="text-slate-500 block text-[10px]">Bank Name &amp; Address:</span>
+                      <strong className="text-white">Citibank</strong>
+                      <span className="text-slate-400 block text-[10px]">111 Wall Street, New York, NY 10043</span>
+                    </div>
+                    <div>
+                      <span className="text-slate-500 block text-[10px]">Beneficiary / Account Holder:</span>
+                      <strong className="text-white">Kundan Kumar</strong>
+                    </div>
+                    <div>
+                      <span className="text-slate-500 block text-[10px]">Account Number &amp; Type:</span>
+                      <div className="flex items-center gap-2">
+                        <strong className="text-white">70589110002638744</strong>
+                        <button
+                          onClick={() => handleCopy('70589110002638744')}
+                          className="text-[10px] text-sky-400 hover:underline flex items-center gap-0.5"
+                        >
+                          <Copy className="w-3 h-3" />
+                        </button>
+                      </div>
+                      <span className="text-emerald-400 text-[10px]">CHECKING</span>
+                    </div>
+                    <div>
+                      <span className="text-slate-500 block text-[10px]">Routing (ABA) &amp; SWIFT:</span>
+                      <div className="text-slate-200">
+                        ABA: <strong className="text-sky-300">031100209</strong> &bull; SWIFT: <strong className="text-cyan-300">CITIUS33</strong>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center justify-between flex-wrap gap-2 pt-1 text-xs">
+                    <button
+                      onClick={() => {
+                        const instructions = `PRIMARY PAYMENT INSTRUCTIONS (Payoneer Citibank USD Wire/ACH):\nBank Name: Citibank\nBank Address: 111 Wall Street New York, NY 10043 USA\nBeneficiary: Kundan Kumar\nAccount Number: 70589110002638744\nAccount Type: CHECKING\nRouting (ABA): 031100209\nSWIFT / BIC: CITIUS33\nCurrency: USD\nAmount Due: $${amountUsd} USD`;
+                        handleCopy(instructions);
+                      }}
+                      className="px-3 py-1.5 rounded-lg bg-sky-900/60 hover:bg-sky-800 text-sky-200 text-xs font-sans font-semibold flex items-center gap-1.5 transition cursor-pointer border border-sky-700/50"
+                    >
+                      <Copy className="w-3.5 h-3.5" />
+                      <span>Copy Full Wire Remittance Memo</span>
+                    </button>
+
+                    <button
+                      onClick={() => {
+                        printOrSaveInvoicePdf({
+                          invoiceNumber: `INV-${new Date().getFullYear()}-${Math.floor(1000 + Math.random() * 9000)}`,
+                          date: new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' }),
+                          clientName: name || 'Valued Client',
+                          clientEmail: email || 'client@enterprise.com',
+                          jobTitle: projectTitle,
+                          amountUsd,
+                          status: 'Pending Payment',
+                        });
+                      }}
+                      className="px-3 py-1.5 rounded-lg bg-emerald-900/50 hover:bg-emerald-800 text-emerald-200 text-xs font-sans font-semibold flex items-center gap-1.5 transition cursor-pointer border border-emerald-700/50"
+                    >
+                      <Printer className="w-3.5 h-3.5" />
+                      <span>Generate &amp; Print PDF Invoice</span>
+                    </button>
+                  </div>
+                </div>
+              )}
 
               {/* Active Method Details Area */}
               {selectedMethod === 'paypal' && paymentLinks && (
@@ -332,6 +453,25 @@ export const ClientPaymentCollectionModal: React.FC<ClientPaymentCollectionModal
                       <span>Open Checkout Page</span>
                       <ExternalLink className="w-3 h-3" />
                     </a>
+                  </div>
+
+                  {/* Interactive In-App PayPal Checkout Button */}
+                  <div className="pt-2 border-t border-slate-800/80">
+                    <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block mb-1.5">
+                      Or Pay Directly with PayPal In-App:
+                    </span>
+                    <PayPalSdkV6Button
+                      amount={amountUsd}
+                      currency="USD"
+                      description={`Payment for Order #${orderId || 'Direct'}: ${projectTitle}`}
+                      clientName={name}
+                      onSuccess={(_orderId) => {
+                        handleCollectMoney();
+                      }}
+                      onError={(err) => {
+                        console.warn('[PayPal Modal] Notice:', err);
+                      }}
+                    />
                   </div>
                 </div>
               )}

@@ -5,21 +5,42 @@ import { getAllLiveOrders, completeLiveOrder } from './platformIntegrations.js';
 import { getOrderDeliverable } from './workExecutionEngine.js';
 
 export const SETTLEMENT_PAYMENT_ACCOUNTS = {
+  primaryMethod: 'payoneerBank',
+  payoneerBank: {
+    isPrimary: true,
+    bankName: 'Citibank',
+    bankAddress: '111 Wall Street New York, NY 10043 USA',
+    accountHolder: 'Kundan Kumar',
+    accountNumber: '70589110002638744',
+    accountNumberMasked: '•••• 8744',
+    accountType: 'CHECKING',
+    routingAba: '031100209',
+    swift: 'CITIUS33',
+    currency: 'USD',
+    transferTypes: 'ACH, Fedwire, SWIFT Wire, Global ACH',
+    description: 'Primary receiving account for all client wire transfers, ACH direct deposits, and escrow milestone releases.',
+  },
   paypal: {
     receiverEmail: 'kundank4@icloud.com',
     userEmail: 'ky8402@gmail.com',
     username: 'ky8402',
     url: 'https://paypal.me/ky8402',
     currency: 'USD',
+    autoSweepTarget: 'Payoneer Citibank USD Checking',
   },
   indianBank: {
-    bankName: 'Federal Bank',
+    bankName: 'Citibank',
+    bankAddress: '111 Wall Street New York, NY 10043 USA',
     accountHolder: 'Kundan Kumar',
-    accountNumberMasked: '•••• 8763',
-    ifsc: 'FDRL0001447',
+    accountNumber: '70589110002638744',
+    accountNumberMasked: '•••• 8744',
+    accountType: 'CHECKING',
+    routingAba: '031100209',
+    ifsc: '031100209',
+    swift: 'CITIUS33',
     upiId: 'chandimay@ybl',
     fallbackUpiId: 'kundanvision369@okhdfcbank',
-    currency: 'INR',
+    currency: 'USD',
     usdToInrRate: 86.85,
   }
 };
@@ -95,15 +116,17 @@ export async function closeWorkOrderAndReleaseEscrow(params: {
   const clientName = (order as any)?.clientName || (order as any)?.client || 'Direct Client';
   const amountUsd = Number(order?.amount || 250);
   const amountInr = Math.round(amountUsd * SETTLEMENT_PAYMENT_ACCOUNTS.indianBank.usdToInrRate);
-  const payoutMethod = params.payoutMethod || 'paypal';
+  const payoutMethod = params.payoutMethod || 'bank_wire';
 
   let payoutDestination = '';
-  if (payoutMethod === 'paypal') {
-    payoutDestination = `PayPal (${SETTLEMENT_PAYMENT_ACCOUNTS.paypal.receiverEmail} / ${SETTLEMENT_PAYMENT_ACCOUNTS.paypal.url})`;
+  if (payoutMethod === 'bank_wire') {
+    payoutDestination = `Payoneer USD Checking (${SETTLEMENT_PAYMENT_ACCOUNTS.payoneerBank.bankName}, Acc ${SETTLEMENT_PAYMENT_ACCOUNTS.payoneerBank.accountNumberMasked}, Routing ${SETTLEMENT_PAYMENT_ACCOUNTS.payoneerBank.routingAba}, SWIFT ${SETTLEMENT_PAYMENT_ACCOUNTS.payoneerBank.swift})`;
+  } else if (payoutMethod === 'paypal') {
+    payoutDestination = `PayPal (${SETTLEMENT_PAYMENT_ACCOUNTS.paypal.receiverEmail} / ${SETTLEMENT_PAYMENT_ACCOUNTS.paypal.url} - Auto-Swept to Payoneer)`;
   } else if (payoutMethod === 'upi') {
     payoutDestination = `UPI (${SETTLEMENT_PAYMENT_ACCOUNTS.indianBank.upiId})`;
   } else {
-    payoutDestination = `NEFT/IMPS (${SETTLEMENT_PAYMENT_ACCOUNTS.indianBank.bankName} Acc ${SETTLEMENT_PAYMENT_ACCOUNTS.indianBank.accountNumberMasked}, IFSC ${SETTLEMENT_PAYMENT_ACCOUNTS.indianBank.ifsc})`;
+    payoutDestination = `Payoneer Direct Wire (${SETTLEMENT_PAYMENT_ACCOUNTS.payoneerBank.bankName}, Acc ${SETTLEMENT_PAYMENT_ACCOUNTS.payoneerBank.accountNumberMasked})`;
   }
 
   // Mark completed in system state
@@ -190,18 +213,20 @@ export async function generateSeniorEngineerCloseEndpoint(params: {
 
   const accountsContext = `
 ACCOUNTS TO USE FOR ESCROW DISPATCH:
-1. PayPal Primary:
+1. Payoneer USD Checking Account (PRIMARY BENEFICIARY SETTLEMENT DESTINATION):
+   - Bank Name: "${SETTLEMENT_PAYMENT_ACCOUNTS.payoneerBank.bankName}"
+   - Bank Address: "${SETTLEMENT_PAYMENT_ACCOUNTS.payoneerBank.bankAddress}"
+   - Beneficiary / Account Holder: "${SETTLEMENT_PAYMENT_ACCOUNTS.payoneerBank.accountHolder}"
+   - Account Number: "${SETTLEMENT_PAYMENT_ACCOUNTS.payoneerBank.accountNumber}" (${SETTLEMENT_PAYMENT_ACCOUNTS.payoneerBank.accountNumberMasked})
+   - Account Type: "${SETTLEMENT_PAYMENT_ACCOUNTS.payoneerBank.accountType}"
+   - Routing (ABA): "${SETTLEMENT_PAYMENT_ACCOUNTS.payoneerBank.routingAba}"
+   - SWIFT / BIC: "${SETTLEMENT_PAYMENT_ACCOUNTS.payoneerBank.swift}"
+   - Currency: USD
+2. PayPal Gateway (Secondary - Auto-Sweeps to Payoneer Citibank):
    - Email: "${SETTLEMENT_PAYMENT_ACCOUNTS.paypal.receiverEmail}" (Account user: "${SETTLEMENT_PAYMENT_ACCOUNTS.paypal.userEmail}")
    - Username: "${SETTLEMENT_PAYMENT_ACCOUNTS.paypal.username}"
    - PayPal.Me: "${SETTLEMENT_PAYMENT_ACCOUNTS.paypal.url}"
    - Currency: USD
-2. Indian Bank & UPI:
-   - Bank: "${SETTLEMENT_PAYMENT_ACCOUNTS.indianBank.bankName}"
-   - Beneficiary: "${SETTLEMENT_PAYMENT_ACCOUNTS.indianBank.accountHolder}"
-   - Account Number: "${SETTLEMENT_PAYMENT_ACCOUNTS.indianBank.accountNumberMasked}"
-   - IFSC Code: "${SETTLEMENT_PAYMENT_ACCOUNTS.indianBank.ifsc}"
-   - UPI ID: "${SETTLEMENT_PAYMENT_ACCOUNTS.indianBank.upiId}"
-   - USD to INR Rate: ${SETTLEMENT_PAYMENT_ACCOUNTS.indianBank.usdToInrRate} (Amount: ₹${inrAmount.toLocaleString('en-IN')})
 `;
 
   const prompt = `You are a Principal / Senior Staff Software Engineer at a Tier-1 Fintech & Freelance Infrastructure platform.
@@ -276,7 +301,7 @@ Only output valid JSON.`;
         accountsUsed: {
           paypal: `${SETTLEMENT_PAYMENT_ACCOUNTS.paypal.receiverEmail} (${SETTLEMENT_PAYMENT_ACCOUNTS.paypal.url})`,
           upi: SETTLEMENT_PAYMENT_ACCOUNTS.indianBank.upiId,
-          bank: `${SETTLEMENT_PAYMENT_ACCOUNTS.indianBank.bankName} (Acc ${SETTLEMENT_PAYMENT_ACCOUNTS.indianBank.accountNumberMasked}, IFSC ${SETTLEMENT_PAYMENT_ACCOUNTS.indianBank.ifsc})`
+          bank: `${SETTLEMENT_PAYMENT_ACCOUNTS.payoneerBank.bankName} (Acc ${SETTLEMENT_PAYMENT_ACCOUNTS.payoneerBank.accountNumberMasked}, Routing ${SETTLEMENT_PAYMENT_ACCOUNTS.payoneerBank.routingAba}, SWIFT ${SETTLEMENT_PAYMENT_ACCOUNTS.payoneerBank.swift})`
         }
       };
     }
@@ -309,7 +334,7 @@ Only output valid JSON.`;
     accountsUsed: {
       paypal: `${SETTLEMENT_PAYMENT_ACCOUNTS.paypal.receiverEmail} (${SETTLEMENT_PAYMENT_ACCOUNTS.paypal.url})`,
       upi: SETTLEMENT_PAYMENT_ACCOUNTS.indianBank.upiId,
-      bank: `${SETTLEMENT_PAYMENT_ACCOUNTS.indianBank.bankName} (Acc ${SETTLEMENT_PAYMENT_ACCOUNTS.indianBank.accountNumberMasked}, IFSC ${SETTLEMENT_PAYMENT_ACCOUNTS.indianBank.ifsc})`
+      bank: `${SETTLEMENT_PAYMENT_ACCOUNTS.payoneerBank.bankName} (Acc ${SETTLEMENT_PAYMENT_ACCOUNTS.payoneerBank.accountNumberMasked}, Routing ${SETTLEMENT_PAYMENT_ACCOUNTS.payoneerBank.routingAba}, SWIFT ${SETTLEMENT_PAYMENT_ACCOUNTS.payoneerBank.swift})`
     }
   };
 }
@@ -329,7 +354,7 @@ Author: Senior Staff Platform Engineer
 Target: FastAPI (Python 3.11+)
 Target Recipient:
   - PayPal: ${SETTLEMENT_PAYMENT_ACCOUNTS.paypal.receiverEmail} (${SETTLEMENT_PAYMENT_ACCOUNTS.paypal.url})
-  - UPI: ${SETTLEMENT_PAYMENT_ACCOUNTS.indianBank.upiId} (Federal Bank Acc ${SETTLEMENT_PAYMENT_ACCOUNTS.indianBank.accountNumberMasked})
+  - Payoneer USD: ${SETTLEMENT_PAYMENT_ACCOUNTS.payoneerBank.bankName} (Acc ${SETTLEMENT_PAYMENT_ACCOUNTS.payoneerBank.accountNumberMasked}, Routing ${SETTLEMENT_PAYMENT_ACCOUNTS.payoneerBank.routingAba}, SWIFT ${SETTLEMENT_PAYMENT_ACCOUNTS.payoneerBank.swift})
 """
 
 import hmac
@@ -419,9 +444,8 @@ async def close_work_order_and_release_escrow(
  * Framework: Express.js + TypeScript (Node 20+)
  *
  * Configured Beneficiary Accounts:
- * - PayPal: ${SETTLEMENT_PAYMENT_ACCOUNTS.paypal.receiverEmail} (${SETTLEMENT_PAYMENT_ACCOUNTS.paypal.url})
- * - UPI:    ${SETTLEMENT_PAYMENT_ACCOUNTS.indianBank.upiId}
- * - Bank:   ${SETTLEMENT_PAYMENT_ACCOUNTS.indianBank.bankName} (Acc ${SETTLEMENT_PAYMENT_ACCOUNTS.indianBank.accountNumberMasked}, IFSC ${SETTLEMENT_PAYMENT_ACCOUNTS.indianBank.ifsc})
+ * - PayPal:   ${SETTLEMENT_PAYMENT_ACCOUNTS.paypal.receiverEmail} (${SETTLEMENT_PAYMENT_ACCOUNTS.paypal.url})
+ * - Payoneer: ${SETTLEMENT_PAYMENT_ACCOUNTS.payoneerBank.bankName} (Acc ${SETTLEMENT_PAYMENT_ACCOUNTS.payoneerBank.accountNumberMasked}, Routing ${SETTLEMENT_PAYMENT_ACCOUNTS.payoneerBank.routingAba}, SWIFT ${SETTLEMENT_PAYMENT_ACCOUNTS.payoneerBank.swift})
  * ============================================================================
  */
 
@@ -432,8 +456,9 @@ import crypto from 'crypto';
 const PRIMARY_PAYPAL_RECIPIENT = '${SETTLEMENT_PAYMENT_ACCOUNTS.paypal.receiverEmail}';
 const PRIMARY_PAYPAL_ME_URL   = '${SETTLEMENT_PAYMENT_ACCOUNTS.paypal.url}';
 const PRIMARY_UPI_RECIPIENT    = '${SETTLEMENT_PAYMENT_ACCOUNTS.indianBank.upiId}';
-const PRIMARY_BANK_NAME        = '${SETTLEMENT_PAYMENT_ACCOUNTS.indianBank.bankName}';
-const PRIMARY_BANK_IFSC        = '${SETTLEMENT_PAYMENT_ACCOUNTS.indianBank.ifsc}';
+const PRIMARY_BANK_NAME        = '${SETTLEMENT_PAYMENT_ACCOUNTS.payoneerBank.bankName}';
+const PRIMARY_ROUTING_ABA      = '${SETTLEMENT_PAYMENT_ACCOUNTS.payoneerBank.routingAba}';
+const PRIMARY_SWIFT_CODE       = '${SETTLEMENT_PAYMENT_ACCOUNTS.payoneerBank.swift}';
 const USD_TO_INR_RATE          = ${SETTLEMENT_PAYMENT_ACCOUNTS.indianBank.usdToInrRate};
 
 export interface CloseWorkOrderPayload {
@@ -489,7 +514,7 @@ export async function closeWorkOrderAndReleaseEscrowHandler(
     } else if (payoutMethod === 'upi') {
       destinationLabel = \`UPI (\${PRIMARY_UPI_RECIPIENT})\`;
     } else {
-      destinationLabel = \`Bank Wire (\${PRIMARY_BANK_NAME} IFSC \${PRIMARY_BANK_IFSC})\`;
+      destinationLabel = \`Payoneer Wire (\${PRIMARY_BANK_NAME} Routing \${PRIMARY_ROUTING_ABA} SWIFT \${PRIMARY_SWIFT_CODE})\`;
     }
 
     // 5. Generate Cryptographic Release Receipt

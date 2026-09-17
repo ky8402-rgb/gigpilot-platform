@@ -29,7 +29,12 @@ export const InvoicesView: React.FC<InvoicesViewProps> = ({
               <i className="fas fa-file-invoice-dollar text-[#4f7cff]"></i>
               Automated Invoices &amp; Receipts
             </h3>
-            <p className="text-xs text-[#9aa2bf] mt-0.5">Invoices are automatically generated upon milestone completion</p>
+            <p className="text-xs text-[#9aa2bf] mt-0.5 flex items-center gap-2 flex-wrap">
+              <span>Invoices automatically include Payoneer Citibank USD &amp; PayPal Payment Instructions</span>
+              <span className="text-[10px] bg-sky-950/80 border border-sky-500/40 text-sky-400 font-mono font-bold px-2 py-0.5 rounded-full">
+                Citibank •••• 8744
+              </span>
+            </p>
           </div>
 
           <button
@@ -93,10 +98,11 @@ export const InvoicesView: React.FC<InvoicesViewProps> = ({
 
                   <button
                     onClick={() => onDownloadPDF(inv.id)}
-                    className="p-2 text-[#9aa2bf] hover:text-white bg-[#161b2b] hover:bg-[#1e2438] rounded-lg transition-all cursor-pointer"
-                    title="Download PDF"
+                    className="p-2 text-[#9aa2bf] hover:text-white bg-[#161b2b] hover:bg-[#1e2438] rounded-lg transition-all cursor-pointer flex items-center gap-1"
+                    title="Print / Save PDF Invoice (with Payoneer Citibank Payment Instructions)"
                   >
-                    <i className="fas fa-download"></i>
+                    <i className="fas fa-file-pdf text-rose-400"></i>
+                    <span className="text-[11px] font-semibold text-slate-300">PDF</span>
                   </button>
                 </div>
               </div>

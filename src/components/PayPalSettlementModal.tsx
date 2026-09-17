@@ -6,6 +6,7 @@ import {
   createPayPalCheckoutOrder,
   PayPalLiveBalanceResult
 } from '../services/api';
+import { PayPalSdkV6Button } from './PayPalSdkV6Button';
 
 interface PayPalSettlementModalProps {
   isOpen: boolean;
@@ -169,7 +170,7 @@ export const PayPalSettlementModal: React.FC<PayPalSettlementModalProps> = ({
                 </span>
               </h2>
               <p className="text-xs text-slate-400">
-                Merchant: Kundan Kumar &bull; Account ID: {balanceData?.accountId || '98UNBJBN67H6W'} &bull; Auto-Swept to Federal Bank
+                Merchant: Kundan Kumar &bull; Account ID: {balanceData?.accountId || '98UNBJBN67H6W'} &bull; Auto-Swept to Payoneer Citibank
               </p>
             </div>
           </div>
@@ -247,7 +248,7 @@ export const PayPalSettlementModal: React.FC<PayPalSettlementModalProps> = ({
                   <strong>2. RBI Cross-Border Auto-Sweep Rule:</strong> As an Indian merchant account, under Reserve Bank of India (RBI) regulations, PayPal India cannot hold foreign currency balances indefinitely, nor allow outbound API disbursements.
                 </p>
                 <p>
-                  <strong>3. 100% Automated Bank Settlement:</strong> Whenever a client pays an official invoice or checkout link, <strong>100% of the funds are automatically deposited into your linked Federal Bank account within 24 to 48 hours</strong>.
+                  <strong>3. 100% Automated Bank Settlement:</strong> Whenever a client pays an official invoice or checkout link, <strong>100% of the funds are automatically deposited into your linked Payoneer Citibank checking account within 24 to 48 hours</strong>.
                 </p>
               </div>
 
@@ -293,21 +294,24 @@ export const PayPalSettlementModal: React.FC<PayPalSettlementModalProps> = ({
                   <div className="flex items-center justify-between">
                     <span className="text-xs font-medium text-slate-400">Linked Auto-Withdrawal Bank</span>
                     <span className="text-[10px] px-2 py-0.5 rounded bg-emerald-500/20 text-emerald-300 font-mono">
-                      RBI Sweeper Active
+                      Payoneer Sweeper Active
                     </span>
                   </div>
                   <div>
                     <div className="text-base font-bold text-white flex items-center gap-2">
                       <i className="fas fa-university text-emerald-400"></i>
-                      <span>Federal Bank</span>
+                      <span>Citibank (Payoneer USD Checking)</span>
                     </div>
-                    <div className="text-xs text-slate-400 font-mono mt-1">
-                      Account: •••• 8763 &bull; IFSC: FDRL0001447
+                    <div className="text-xs text-slate-300 font-mono mt-1 space-y-0.5">
+                      <div>Beneficiary: Kundan Kumar</div>
+                      <div>Account: •••• 8744 &bull; Type: CHECKING</div>
+                      <div className="text-emerald-400">Routing (ABA): 031100209 &bull; SWIFT: CITIUS33</div>
+                      <div className="text-[10px] text-slate-400">111 Wall Street New York, NY 10043 USA</div>
                     </div>
                   </div>
                   <div className="text-[11px] text-slate-400 border-t border-[#2a3147] pt-2">
                     <p className="text-emerald-400">
-                      ✓ All USD received from international clients is automatically credited to this bank account daily.
+                      ✓ All USD received from international clients is automatically credited to this Payoneer Citibank checking account.
                     </p>
                   </div>
                 </div>
@@ -372,7 +376,7 @@ export const PayPalSettlementModal: React.FC<PayPalSettlementModalProps> = ({
               <div className="bg-emerald-950/20 border border-emerald-500/30 rounded-xl p-3.5 text-xs text-emerald-200 flex items-start gap-2.5">
                 <i className="fas fa-shield-alt text-emerald-400 mt-0.5 text-sm"></i>
                 <p>
-                  This tool uses PayPal's <strong>Invoicing v2 REST API</strong> to create an official, legally valid invoice directly on PayPal. Clients can open the link and pay via Credit Card, Debit Card, or PayPal balance. The money is credited to your PayPal merchant account and auto-swept to Federal Bank.
+                  This tool uses PayPal's <strong>Invoicing v2 REST API</strong> to create an official, legally valid invoice directly on PayPal. Clients can open the link and pay via Credit Card, Debit Card, or PayPal balance. The money is credited to your PayPal merchant account and auto-swept to your linked Payoneer Citibank checking account.
                 </p>
               </div>
 
@@ -556,6 +560,22 @@ export const PayPalSettlementModal: React.FC<PayPalSettlementModalProps> = ({
                       : `Open Live PayPal Checkout ($${parseFloat(testAmount || '0').toFixed(2)} USD)`}
                   </span>
                 </button>
+
+                <div className="pt-3 border-t border-[#2a3147]">
+                  <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider block mb-2">
+                    Or Execute In-App Payment (Web SDK v6):
+                  </span>
+                  <PayPalSdkV6Button
+                    amount={parseFloat(testAmount) || 1.00}
+                    currency="USD"
+                    description={`Test Settlement Verification ($${testAmount} USD)`}
+                    onSuccess={(orderId) => {
+                      if (showToast) showToast(`✅ Test Deposit Order ${orderId} Captured!`, 'success');
+                      loadTransactions();
+                      loadLiveBalance();
+                    }}
+                  />
+                </div>
               </div>
 
               {testApproveUrl && (
