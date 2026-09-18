@@ -2745,8 +2745,12 @@ async function startServer() {
   if (!isProduction) {
     try {
       const { createServer: createViteServer } = await import("vite");
+      const isHmrDisabled = process.env.DISABLE_HMR === 'true';
       const vite = await createViteServer({
-        server: { middlewareMode: true },
+        server: {
+          middlewareMode: true,
+          hmr: isHmrDisabled ? false : undefined,
+        },
         appType: "spa",
       });
       app.use(vite.middlewares);
@@ -2790,6 +2794,9 @@ async function startServer() {
 
   server.on('error', (err: any) => {
     console.error(`[GigPilot Server Error] Failed to bind to port ${PORT}:`, err.message);
+    if (err.code === 'EADDRINUSE') {
+      process.exit(1);
+    }
   });
 }
 
