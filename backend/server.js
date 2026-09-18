@@ -48,8 +48,9 @@ import {
 // Enforce boot-time credentials validation
 verifyBootCredentials();
 
-const __filename = typeof import.meta !== 'undefined' && import.meta.url ? fileURLToPath(import.meta.url) : (typeof __filename !== 'undefined' ? __filename : path.join(process.cwd(), 'backend/server.js'));
-const __dirname = typeof __dirname !== 'undefined' ? __dirname : path.dirname(__filename);
+const moduleDir = typeof __dirname !== 'undefined'
+  ? __dirname
+  : (typeof import.meta !== 'undefined' && import.meta?.url ? path.dirname(fileURLToPath(import.meta.url)) : path.resolve(process.cwd(), 'backend'));
 
 const app = express();
 const PORT = process.env.PORT || 8080;
@@ -59,8 +60,8 @@ app.use(cors({ origin: true, credentials: true }));
 app.use(express.json());
 
 // Serve static frontend assets if available
-app.use(express.static(path.resolve(__dirname, '../frontend/public')));
-app.use(express.static(path.resolve(__dirname, '../public')));
+app.use(express.static(path.resolve(moduleDir, '../frontend/public')));
+app.use(express.static(path.resolve(moduleDir, '../public')));
 
 // Rate limiter
 const apiLimiter = rateLimit({

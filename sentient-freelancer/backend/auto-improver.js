@@ -25,10 +25,11 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import { memory, DEFAULT_GENOME } from './memory.js';
 
-const __filename = typeof import.meta !== 'undefined' && import.meta.url ? fileURLToPath(import.meta.url) : (typeof __filename !== 'undefined' ? __filename : path.join(process.cwd(), 'sentient-freelancer/backend/auto-improver.js'));
-const __dirname = typeof __dirname !== 'undefined' ? __dirname : path.dirname(__filename);
-const RUN_LOG_PATH = path.resolve(__dirname, '../RUN_LOG.md');
-const ROOT_RUN_LOG_PATH = path.resolve(__dirname, '../../RUN_LOG.md');
+const moduleDir = typeof __dirname !== 'undefined'
+  ? __dirname
+  : (typeof import.meta !== 'undefined' && import.meta?.url ? path.dirname(fileURLToPath(import.meta.url)) : path.resolve(process.cwd(), 'sentient-freelancer/backend'));
+const RUN_LOG_PATH = path.resolve(moduleDir, '../RUN_LOG.md');
+const ROOT_RUN_LOG_PATH = path.resolve(moduleDir, '../../RUN_LOG.md');
 
 export class AutonomousImprover {
   constructor() {

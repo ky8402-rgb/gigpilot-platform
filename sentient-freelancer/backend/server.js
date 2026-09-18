@@ -24,8 +24,9 @@ import {
   rejectDeliverable
 } from './deliverables.js';
 
-const __filename = typeof import.meta !== 'undefined' && import.meta.url ? fileURLToPath(import.meta.url) : (typeof __filename !== 'undefined' ? __filename : path.join(process.cwd(), 'sentient-freelancer/backend/server.js'));
-const __dirname = typeof __dirname !== 'undefined' ? __dirname : path.dirname(__filename);
+const moduleDir = typeof __dirname !== 'undefined'
+  ? __dirname
+  : (typeof import.meta !== 'undefined' && import.meta?.url ? path.dirname(fileURLToPath(import.meta.url)) : path.resolve(process.cwd(), 'sentient-freelancer/backend'));
 
 const app = express();
 const PORT = process.env.PORT || 8080;
@@ -590,7 +591,7 @@ app.post('/api/improver/cycle', requireAuth, async (req, res) => {
 
 // GET /api/improver/run-log
 app.get('/api/improver/run-log', requireAuth, (req, res) => {
-  const logPath = path.resolve(__dirname, '../RUN_LOG.md');
+  const logPath = path.resolve(moduleDir, '../RUN_LOG.md');
   if (fs.existsSync(logPath)) {
     const content = fs.readFileSync(logPath, 'utf8');
     res.type('text/markdown').send(content);

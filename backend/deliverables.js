@@ -22,8 +22,9 @@ import { S3Client, PutObjectCommand } from '@aws-sdk/client-s3';
 import { scrapeStatic, scrapeDynamic, scrapePaginated, exportCSV, exportXLSX } from './scraper_engine.js';
 import { getRecipeForJob, RECIPES } from './scraper_recipes.js';
 
-const __filename = typeof import.meta !== 'undefined' && import.meta.url ? fileURLToPath(import.meta.url) : (typeof __filename !== 'undefined' ? __filename : path.join(process.cwd(), 'backend/deliverables.js'));
-const __dirname = typeof __dirname !== 'undefined' ? __dirname : path.dirname(__filename);
+const moduleDir = typeof __dirname !== 'undefined'
+  ? __dirname
+  : (typeof import.meta !== 'undefined' && import.meta?.url ? path.dirname(fileURLToPath(import.meta.url)) : path.resolve(process.cwd(), 'backend'));
 
 const S3_BUCKET = process.env.S3_BUCKET_NAME || 'kundanvision-deliverables';
 const AWS_REGION = process.env.AWS_REGION || 'us-east-1';
@@ -44,7 +45,7 @@ if (process.env.AWS_ACCESS_KEY_ID) {
 }
 
 // Storage directory for local deliverables
-const LOCAL_DELIVERABLES_DIR = path.resolve(__dirname, '../data/deliverables');
+const LOCAL_DELIVERABLES_DIR = path.resolve(moduleDir, '../data/deliverables');
 if (!fs.existsSync(LOCAL_DELIVERABLES_DIR)) {
   fs.mkdirSync(LOCAL_DELIVERABLES_DIR, { recursive: true });
 }
