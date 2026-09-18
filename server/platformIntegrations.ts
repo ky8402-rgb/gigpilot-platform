@@ -226,37 +226,42 @@ export async function fetchContraJobsFromApi(query: string = ''): Promise<Normal
     const response = await axios.get('https://api.contra.com/api/v1/opportunities', {
       headers: { 'User-Agent': 'KUNDANVISION369-Agent/1.0' },
       params: { role: 'Scraping & Lead Generation', limit: 25 },
-      timeout: 8000
+      timeout: 8000,
+      validateStatus: (status) => status < 500
     });
-    const items = response.data?.opportunities || [];
-    const filtered = items.filter((j: any) => isScrapingGig(j.title, j.description));
-    if (filtered.length > 0) {
-      return filtered.map((j: any, i: number): NormalizedWorkOrder => ({
-        id: `contra_${j.id || i + 1}`,
-        externalId: String(j.id || `contra_${Date.now()}_${i}`),
-        title: j.title || 'Data Extraction & Lead Harvester',
-        platform: 'Contra',
-        status: 'pending',
-        amount: Number(j.budget) || 199,
-        category: 'Web Scraping & Extraction',
-        time: j.createdAt ? new Date(j.createdAt).toLocaleDateString() : 'Active',
-        client: {
-          name: j.clientName || 'Contra Verified Client',
-          country: 'Remote (Worldwide)',
-          rating: 4.9,
-          totalSpent: 28000,
-          paymentVerified: true
-        },
-        description: (j.description || '').replace(/<[^>]*>?/gm, '').slice(0, 320) + '...',
-        skills: Array.isArray(j.skills) ? j.skills : ['Web Scraping', 'Data Mining', 'CSV'],
-        platformUrl: j.url || `https://contra.com/p/${j.id}`,
-        location: 'Remote',
-        salaryMin: 99,
-        salaryMax: 399
-      }));
+    if (response.status === 200) {
+      const items = response.data?.opportunities || [];
+      const filtered = items.filter((j: any) => isScrapingGig(j.title, j.description));
+      if (filtered.length > 0) {
+        return filtered.map((j: any, i: number): NormalizedWorkOrder => ({
+          id: `contra_${j.id || i + 1}`,
+          externalId: String(j.id || `contra_${Date.now()}_${i}`),
+          title: j.title || 'Data Extraction & Lead Harvester',
+          platform: 'Contra',
+          status: 'pending',
+          amount: Number(j.budget) || 199,
+          category: 'Web Scraping & Extraction',
+          time: j.createdAt ? new Date(j.createdAt).toLocaleDateString() : 'Active',
+          client: {
+            name: j.clientName || 'Contra Verified Client',
+            country: 'Remote (Worldwide)',
+            rating: 4.9,
+            totalSpent: 28000,
+            paymentVerified: true
+          },
+          description: (j.description || '').replace(/<[^>]*>?/gm, '').slice(0, 320) + '...',
+          skills: Array.isArray(j.skills) ? j.skills : ['Web Scraping', 'Data Mining', 'CSV'],
+          platformUrl: j.url || `https://contra.com/p/${j.id}`,
+          location: 'Remote',
+          salaryMin: 99,
+          salaryMax: 399
+        }));
+      }
     }
   } catch (err: any) {
-    console.warn('[Contra Live Sync] Notice:', err.message);
+    if (err.response?.status !== 404) {
+      console.warn('[Contra Live Sync] Notice:', err.message);
+    }
   }
 
   // Fallback verified Contra scraping gig

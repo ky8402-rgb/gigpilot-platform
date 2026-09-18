@@ -74,5 +74,6 @@ Continuous 30-minute self-learning ledger. Automated commits follow `chore(auto)
 }
 ```
 
-| 2026-09-17T14:22:49.947Z | Gen 2 | APPLY | replyRate=10.0% | shadowFit=0.500 | `polishGain` | `1→1.04` | **PROMOTED** | "I noticed pipeline stable. testing exploratory micro-drift on polishgain. Promoted polishGain from 1 to 1.04 based on positive shadow validation (+0.00% fitness)." |
-| 2026-09-17T14:24:46.604Z | Gen 2 | APPLY | replyRate=10.0% | shadowFit=0.500 | `polishGain` | `1→0.96` | **PROMOTED** | "I noticed pipeline stable. testing exploratory micro-drift on polishgain. Promoted polishGain from 1 to 0.96 based on positive shadow validation (+0.00% fitness)." |
+| 2026-09-18T09:50:01.687Z | Gen 2 | APPLY | replyRate=10.0% | shadowFit=0.500 | `sensitivity` | `0.55→0.59` | **PROMOTED** | "I noticed pipeline stable. testing exploratory micro-drift on sensitivity. Promoted sensitivity from 0.55 to 0.59 based on positive shadow validation (+0.00% fitness)." |
+| 2026-09-18T09:52:58.328Z | Gen 2 | APPLY | replyRate=10.0% | shadowFit=0.500 | `polishGain` | `1→1.04` | **PROMOTED** | "I noticed pipeline stable. testing exploratory micro-drift on polishgain. Promoted polishGain from 1 to 1.04 based on positive shadow validation (+0.00% fitness)." |
+| 2026-09-18T09:53:32.808Z | Gen 2 | APPLY | replyRate=10.0% | shadowFit=0.500 | `caution` | `0.5→0.54` | **PROMOTED** | "I noticed pipeline stable. testing exploratory micro-drift on caution. Promoted caution from 0.5 to 0.54 based on positive shadow validation (+0.00% fitness)." |

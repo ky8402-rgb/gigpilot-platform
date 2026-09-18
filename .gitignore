@@ -21,3 +21,4 @@ bids.db
 mlruns/
 .git-credentials
 data/snapshots/
+data/deliverables/
