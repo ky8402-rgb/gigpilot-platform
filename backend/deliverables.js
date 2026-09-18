@@ -22,8 +22,8 @@ import { S3Client, PutObjectCommand } from '@aws-sdk/client-s3';
 import { scrapeStatic, scrapeDynamic, scrapePaginated, exportCSV, exportXLSX } from './scraper_engine.js';
 import { getRecipeForJob, RECIPES } from './scraper_recipes.js';
 
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
+const __filename = typeof import.meta !== 'undefined' && import.meta.url ? fileURLToPath(import.meta.url) : (typeof __filename !== 'undefined' ? __filename : path.join(process.cwd(), 'backend/deliverables.js'));
+const __dirname = typeof __dirname !== 'undefined' ? __dirname : path.dirname(__filename);
 
 const S3_BUCKET = process.env.S3_BUCKET_NAME || 'kundanvision-deliverables';
 const AWS_REGION = process.env.AWS_REGION || 'us-east-1';

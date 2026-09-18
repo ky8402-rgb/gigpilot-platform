@@ -24,6 +24,9 @@ DEFAULT_BRANCH="main"
 AMPLIFY_APP_ID="${AMPLIFY_APP_ID:-d2qe2q720fbn3x}"
 AMPLIFY_APP_NAME="${AMPLIFY_APP_NAME:-gigpilot-platform}"
 EC2_HOST="${EC2_HOST:-3.222.149.9}"
+if [[ -z "$EC2_HOST" || "$EC2_HOST" =~ ^i- || "$EC2_HOST" == "13.233.54.120" ]]; then
+  EC2_HOST="3.222.149.9"
+fi
 EC2_WEBHOOK_URL="https://${EC2_HOST//./-}.sslip.io/api/github/webhook"
 EC2_HEALTH_URL="https://${EC2_HOST//./-}.sslip.io/api/health"
 
