@@ -3,6 +3,7 @@ import { memoryStore, safeExecutePgQuery, Job, Bid, WorkOrder, User } from './pg
 import { logActivityEvent } from './activityLogger.js';
 import { createFreelancerProject } from './freelancerApi.js';
 import { enqueueFreelancerJobSync, triggerWorkOrderFreelancerSync } from './freelancerRetryQueue.js';
+import { checkHardExcludeFilter } from './autoBidFilters.js';
 
 export interface DispatchResult {
   job: Job;
@@ -29,6 +30,32 @@ export async function autoDispatchJob(jobParams: {
   deadlineHours?: number;
   externalId?: string;
 }): Promise<DispatchResult> {
+  // Safety check: Hard Exclude Filters (Never Bid)
+  const excludeCheck = checkHardExcludeFilter({
+    title: jobParams.title,
+    description: jobParams.description
+  });
+
+  if (excludeCheck.shouldSkip) {
+    console.warn(`[AutoDispatch] 🚫 Job skipped by Hard Exclude Filter: "${jobParams.title}" matches "${excludeCheck.matchedKeyword}" (${excludeCheck.category})`);
+    return {
+      job: {
+        id: crypto.randomUUID(),
+        title: jobParams.title,
+        description: jobParams.description,
+        budget: Number(jobParams.budget) || 100,
+        status: 'cancelled',
+        customer_id: jobParams.customerId || 'system',
+        created_at: new Date().toISOString()
+      },
+      selectedWorker: null,
+      bid: null,
+      workOrder: null,
+      dispatchStatus: 'error',
+      message: `Job skipped by Hard Exclude Filter: matches "${excludeCheck.matchedKeyword}" (${excludeCheck.category}). Policy: Never Bid.`
+    };
+  }
+
   const jobId = crypto.randomUUID();
   const customerId = jobParams.customerId || '44444444-4444-4444-8444-444444444444';
   const budget = Number(jobParams.budget) || 100;

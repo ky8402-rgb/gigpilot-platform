@@ -1,6 +1,6 @@
 {
   "name": "kundanvision369",
-  "description": "Autonomous freelance autopilot featuring Tool 1 Autonomous Software Job Solver and Tool 2 Work Order Closer & Escrow Release (Senior Engineer API generator & Payoneer/PayPal settlement), client communications hub, and real-time job ingestion.",
+  "description": "Autonomous freelance autopilot featuring 10 supported micro-work job categories (Data scraping, Data entry & conversion, Content writing, Translation, Transcription, Simple coding, Image processing, SEO & research, PDF & document automation, Social media content), Tool 1 Autonomous Software Solver, Tool 2 Escrow Closer, and multi-format deliverable engines.",
   "requestFramePermissions": [],
   "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
 }

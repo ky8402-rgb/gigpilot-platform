@@ -7,6 +7,7 @@ import {
   deleteKeywordAlert,
   ScoredLead
 } from '../server/leadScoring.js';
+import { checkHardExcludeFilter } from '../server/autoBidFilters.js';
 import { getGeminiAI, generateContentResilient } from '../server/gemini.js';
 import { prisma } from '../server/db.js';
 import { createPayPalOrder, isPayPalConfigured } from '../server/paypal.js';
@@ -177,9 +178,28 @@ router.post('/auto-bid', authMiddleware, async (req: AuthenticatedRequest, res: 
     }
 
     const allLeads = await getScoredLeadsPool();
-    const leadsToBid = Array.isArray(leadIds) && leadIds.length > 0 
+    const candidateLeads = Array.isArray(leadIds) && leadIds.length > 0 
       ? allLeads.filter(l => leadIds.includes(l.id))
-      : allLeads.slice(0, 3);
+      : allLeads.slice(0, 5);
+
+    // Hard Exclude Filter (Never Bid) Enforcement
+    const leadsToBid: typeof candidateLeads = [];
+    const skippedLeads: Array<{ id: string; title: string; reason: string; keyword?: string; category?: string }> = [];
+
+    for (const lead of candidateLeads) {
+      const excludeCheck = checkHardExcludeFilter(lead);
+      if (excludeCheck.shouldSkip) {
+        skippedLeads.push({
+          id: lead.id,
+          title: lead.title,
+          reason: excludeCheck.reason || 'Hard exclude keyword match',
+          keyword: excludeCheck.matchedKeyword,
+          category: excludeCheck.category
+        });
+      } else {
+        leadsToBid.push(lead);
+      }
+    }
 
     const bidsSubmitted = leadsToBid.map(lead => ({
       bidId: `bid_auto_${Date.now()}_${lead.id.slice(0, 6)}`,
@@ -191,11 +211,22 @@ router.post('/auto-bid', authMiddleware, async (req: AuthenticatedRequest, res: 
       platform: lead.platform
     }));
 
+    let message = '';
+    if (bidsSubmitted.length > 0 && skippedLeads.length > 0) {
+      message = `Dispatched ${bidsSubmitted.length} automated bids. Instantly skipped ${skippedLeads.length} jobs matching Hard Exclude Filters (on-site / employment / human-dependent).`;
+    } else if (bidsSubmitted.length > 0) {
+      message = `Successfully dispatched ${bidsSubmitted.length} automated bids with customized AI pitches. All jobs passed Hard Exclude Safety Filters.`;
+    } else {
+      message = `0 bids dispatched. All ${skippedLeads.length} evaluated jobs were skipped because they matched Hard Exclude Filters (Never Bid policy).`;
+    }
+
     return res.json({
       success: true,
       submittedCount: bidsSubmitted.length,
+      skippedCount: skippedLeads.length,
       bids: bidsSubmitted,
-      message: `Successfully dispatched ${bidsSubmitted.length} automated bids with customized AI pitches.`
+      skipped: skippedLeads,
+      message
     });
   } catch (error: any) {
     return res.status(500).json({ success: false, error: error.message });

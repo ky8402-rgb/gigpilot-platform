@@ -77,6 +77,7 @@ import {
   generateSeniorEngineerCloseEndpoint,
   SETTLEMENT_PAYMENT_ACCOUNTS
 } from "./server/workOrderCloserService.js";
+import { tool2AutonomousCloser } from "./server/tool2AutonomousCloser.js";
 import "./server/worker.js";
 import { logActivityEvent } from "./server/activityLogger.js";
 import { verifyWebhookSignature } from "./server/webhookSecurity.js";
@@ -1926,6 +1927,105 @@ app.post("/api/platform/bid", async (req, res) => {
   }
 });
 
+// Endpoint to list the 10 supported autonomous job categories and deliverable specifications
+app.get("/api/job-categories", (req, res) => {
+  res.json({
+    success: true,
+    categories: [
+      {
+        id: 'data_scraping',
+        category: 'Data scraping',
+        examples: 'Scrape product prices, emails, listings, social media data',
+        deliverables: 'CSV, JSON, Excel',
+        techNeeded: 'Python, Scrapy, Puppeteer',
+        techStack: ['Python', 'Scrapy', 'Puppeteer', 'BeautifulSoup', 'httpx'],
+        deliverableFormats: ['.csv', '.json', '.xlsx']
+      },
+      {
+        id: 'data_entry_conversion',
+        category: 'Data entry & conversion',
+        examples: 'PDF → Excel, image → text (OCR), CSV cleanup, merge files',
+        deliverables: 'Excel, CSV, Word',
+        techNeeded: 'OCR, pandas, openpyxl',
+        techStack: ['OCR', 'pandas', 'openpyxl', 'python-docx'],
+        deliverableFormats: ['.xlsx', '.csv', '.docx']
+      },
+      {
+        id: 'content_writing',
+        category: 'Content writing',
+        examples: 'Blog posts, product descriptions, SEO articles, summaries',
+        deliverables: 'Google Doc, Word, text',
+        techNeeded: 'LLM (GPT, Claude)',
+        techStack: ['LLM / Gemini 3.8', 'Markdown to DOCX', 'Readability Engine'],
+        deliverableFormats: ['.docx', '.txt', '.md']
+      },
+      {
+        id: 'translation',
+        category: 'Translation',
+        examples: 'Translate documents, subtitles, product listings',
+        deliverables: 'Text, SRT',
+        techNeeded: 'Translation API',
+        techStack: ['Translation API', 'DeepL', 'SRT Parser', 'Glossary Alignment'],
+        deliverableFormats: ['.txt', '.srt']
+      },
+      {
+        id: 'transcription',
+        category: 'Transcription',
+        examples: 'Audio/video → text, subtitles',
+        deliverables: 'SRT, VTT, text',
+        techNeeded: 'Whisper, speech-to-text',
+        techStack: ['OpenAI Whisper', 'Speech-to-Text', 'PyDub', 'FFmpeg'],
+        deliverableFormats: ['.srt', '.vtt', '.txt']
+      },
+      {
+        id: 'simple_coding',
+        category: 'Simple coding',
+        examples: 'Python scripts, Excel macros, Google Sheets automation, bug fixes',
+        deliverables: '.py, .js, .gs',
+        techNeeded: 'Code generation + testing',
+        techStack: ['Python', 'Excel VBA Macros (.bas)', 'Google Apps Script (.gs)', 'pytest'],
+        deliverableFormats: ['.py', '.js', '.gs', '.bas']
+      },
+      {
+        id: 'image_processing',
+        category: 'Image processing',
+        examples: 'Background removal, resize, watermark, format conversion',
+        deliverables: 'PNG, JPG',
+        techNeeded: 'PIL, OpenCV, AI models',
+        techStack: ['PIL / Pillow', 'OpenCV', 'AI Background Removal', 'rembg'],
+        deliverableFormats: ['.png', '.jpg', '.webp']
+      },
+      {
+        id: 'seo_research',
+        category: 'SEO & research',
+        examples: 'Keyword research, competitor analysis, lead lists',
+        deliverables: 'Spreadsheet, report',
+        techNeeded: 'APIs, LLM',
+        techStack: ['Search APIs', 'LLM Synthesis', 'Spreadsheet Matrix Generator'],
+        deliverableFormats: ['.xlsx', '.csv', '.md']
+      },
+      {
+        id: 'pdf_doc_automation',
+        category: 'PDF & document automation',
+        examples: 'Fill forms, generate invoices, extract tables',
+        deliverables: 'PDF, Excel',
+        techNeeded: 'PDF libraries',
+        techStack: ['ReportLab', 'pdfplumber', 'PDFKit', 'openpyxl'],
+        deliverableFormats: ['.pdf', '.xlsx', '.csv']
+      },
+      {
+        id: 'social_media_content',
+        category: 'Social media content',
+        examples: 'Generate posts, captions, hashtags, schedule via API',
+        deliverables: 'Text, CSV',
+        techNeeded: 'LLM + platform API',
+        techStack: ['LLM / Gemini 3.8', 'Meta Graph API', 'X API v2', 'Buffer/Hootsuite CSV'],
+        deliverableFormats: ['.csv', '.txt', '.json']
+      }
+    ]
+  });
+});
+
 // Get Live Work Orders (Optimized payload with pagination and edge caching headers)
 app.get("/api/work-orders", (req, res) => {
   try {
@@ -2233,6 +2333,101 @@ app.get("/api/work-orders/settlement-accounts", (_req, res) => {
     success: true,
     accounts: SETTLEMENT_PAYMENT_ACCOUNTS
   });
+});
+
+// =========================================================================
+// TOOL 2 AUTONOMOUS, SELF-UPDATING & SELF-LEARNING ESCROW CLOSER ENDPOINTS
+// =========================================================================
+
+// Status of the autonomous daemon, self-learning memory, and adaptive FX engine
+app.get("/api/tool2/closer/status", (_req, res) => {
+  try {
+    const status = tool2AutonomousCloser.getStatus();
+    res.json({
+      success: true,
+      ...status
+    });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// Toggle the autonomous background escrow closer daemon ON/OFF
+app.post("/api/tool2/closer/toggle-autonomous", (req, res) => {
+  try {
+    const { enabled } = req.body || {};
+    const currentState = tool2AutonomousCloser.isEnabled();
+    const targetState = typeof enabled === 'boolean' ? enabled : !currentState;
+    const finalState = tool2AutonomousCloser.setEnabled(targetState);
+    res.json({
+      success: true,
+      isAutonomousActive: finalState,
+      message: `Tool 2 Autonomous Escrow Closer daemon is now ${finalState ? 'ACTIVE' : 'PAUSED'}.`
+    });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// Trigger an immediate autonomous cycle
+app.post("/api/tool2/closer/run-cycle", async (_req, res) => {
+  try {
+    const result = await tool2AutonomousCloser.runAutonomousCycle();
+    res.json({
+      success: true,
+      ...result,
+      message: `Autonomous cycle completed. Evaluated ${result.scannedCount} orders, auto-settled ${result.settledCount} deliverables.`
+    });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// Fetch full self-learning knowledge memory & evolution logs
+app.get("/api/tool2/closer/learning-memory", (_req, res) => {
+  try {
+    const memory = tool2AutonomousCloser.getLearningMemory();
+    res.json({
+      success: true,
+      memory
+    });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// Self-update policies / risk heuristics
+app.post("/api/tool2/closer/update-policy", (req, res) => {
+  try {
+    const { riskHeuristics } = req.body || {};
+    if (riskHeuristics) {
+      tool2AutonomousCloser.injectLearningRule(riskHeuristics);
+    }
+    res.json({
+      success: true,
+      message: "Tool 2 self-updating policies refreshed successfully.",
+      memory: tool2AutonomousCloser.getLearningMemory()
+    });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// Evaluate risk & autonomous eligibility for a specific work order
+app.post("/api/tool2/closer/evaluate-order", (req, res) => {
+  try {
+    const { order, deliverable } = req.body || {};
+    if (!order) {
+      return res.status(400).json({ success: false, error: "Order object is required" });
+    }
+    const evaluation = tool2AutonomousCloser.evaluateOrderRisk(order, deliverable);
+    res.json({
+      success: true,
+      evaluation
+    });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: err.message });
+  }
 });
 
 // =========================================================================

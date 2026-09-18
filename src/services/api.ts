@@ -1709,6 +1709,10 @@ export interface ScoredLeadItem {
   risks: string[];
   suggestedBidStrategy: string;
   tierRequired: 'free' | 'pro' | 'enterprise';
+  isHardExcluded?: boolean;
+  hardExcludeReason?: string;
+  hardExcludeKeyword?: string;
+  hardExcludeCategory?: string;
 }
 
 export interface ScoredFeedResponse {
@@ -1780,7 +1784,9 @@ export async function bulkAnalyzeLeads(leadIds?: string[]): Promise<{
 export async function autoBidLeads(leadIds?: string[]): Promise<{
   success: boolean;
   submittedCount: number;
+  skippedCount?: number;
   bids: any[];
+  skipped?: any[];
   message: string;
   error?: string;
   code?: string;
@@ -6812,6 +6818,124 @@ export async function fetchSettlementAccountsApi(): Promise<{ success: boolean; 
   const baseUrl = getApiBaseUrl();
   const res = await fetch(`${baseUrl}/api/work-orders/settlement-accounts`);
   if (!res.ok) throw new Error('Failed to fetch settlement accounts');
+  return res.json();
+}
+
+export interface Tool2AutonomousStatusResponse {
+  success: boolean;
+  isAutonomousActive: boolean;
+  scanIntervalSeconds: number;
+  lastCycleTimestamp: string;
+  isProcessing: boolean;
+  memory: {
+    version: string;
+    lastUpdated: string;
+    totalSettlementsEvaluated: number;
+    autonomousSettlementsCount: number;
+    totalEscrowDisbursedUsd: number;
+    totalEscrowDisbursedInr: number;
+    disputeRate: number;
+    overallConfidenceScore: number;
+    learnedCategoryVelocity: Record<string, { avgSecondsToAccept: number; sampleCount: number; successRate: number }>;
+    riskHeuristics: {
+      maxAutoReleaseLimitUsd: number;
+      minDeliverableChecksumChars: number;
+      requiresVerifiedClient: boolean;
+      autoHaltThresholdDisputeRisk: number;
+    };
+    adaptiveFx: {
+      usdToInrRate: number;
+      bufferSpread: number;
+      lastSyncedAt: string;
+      volatilityIndex: 'LOW' | 'MEDIUM' | 'HIGH';
+    };
+    gatewayRoutingHealth: {
+      payoneerBank: { status: 'OPTIMAL' | 'DEGRADED'; avgLatencyMs: number; preferenceWeight: number };
+      paypal: { status: 'OPTIMAL' | 'DEGRADED'; avgLatencyMs: number; preferenceWeight: number };
+      indianBankUpi: { status: 'OPTIMAL' | 'DEGRADED'; avgLatencyMs: number; preferenceWeight: number };
+    };
+    evolutionLog: Array<{
+      id: string;
+      category: string;
+      timestamp: string;
+      observation: string;
+      actionTaken: string;
+      confidenceImpact: number;
+    }>;
+  };
+  beneficiaryAccounts: SettlementAccountsData;
+}
+
+export async function fetchTool2StatusApi(): Promise<Tool2AutonomousStatusResponse> {
+  const baseUrl = getApiBaseUrl();
+  const res = await fetch(`${baseUrl}/api/tool2/closer/status`);
+  if (!res.ok) throw new Error('Failed to fetch Tool 2 autonomous status');
+  return res.json();
+}
+
+export async function toggleTool2AutonomousApi(enabled?: boolean): Promise<{ success: boolean; isAutonomousActive: boolean; message: string }> {
+  const baseUrl = getApiBaseUrl();
+  const res = await fetch(`${baseUrl}/api/tool2/closer/toggle-autonomous`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ enabled }),
+  });
+  if (!res.ok) throw new Error('Failed to toggle Tool 2 autonomous closer');
+  return res.json();
+}
+
+export async function runTool2AutonomousCycleApi(): Promise<{
+  success: boolean;
+  scannedCount: number;
+  settledCount: number;
+  settledOrders: EscrowReleaseRecord[];
+  insightsLearned: string[];
+  message: string;
+}> {
+  const baseUrl = getApiBaseUrl();
+  const res = await fetch(`${baseUrl}/api/tool2/closer/run-cycle`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+  });
+  if (!res.ok) throw new Error('Failed to run Tool 2 autonomous cycle');
+  return res.json();
+}
+
+export async function fetchTool2LearningMemoryApi(): Promise<{ success: boolean; memory: any }> {
+  const baseUrl = getApiBaseUrl();
+  const res = await fetch(`${baseUrl}/api/tool2/closer/learning-memory`);
+  if (!res.ok) throw new Error('Failed to fetch Tool 2 learning memory');
+  return res.json();
+}
+
+export async function updateTool2PolicyApi(riskHeuristics: any): Promise<{ success: boolean; message: string; memory: any }> {
+  const baseUrl = getApiBaseUrl();
+  const res = await fetch(`${baseUrl}/api/tool2/closer/update-policy`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ riskHeuristics }),
+  });
+  if (!res.ok) throw new Error('Failed to update Tool 2 policies');
+  return res.json();
+}
+
+export async function evaluateTool2OrderRiskApi(order: any, deliverable?: any): Promise<{
+  success: boolean;
+  evaluation: {
+    canAutoRelease: boolean;
+    disputeRiskScore: number;
+    reasons: string[];
+    recommendedPayoutMethod: 'bank_wire' | 'paypal' | 'upi';
+    confidence: number;
+  };
+}> {
+  const baseUrl = getApiBaseUrl();
+  const res = await fetch(`${baseUrl}/api/tool2/closer/evaluate-order`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ order, deliverable }),
+  });
+  if (!res.ok) throw new Error('Failed to evaluate order risk');
   return res.json();
 }
 

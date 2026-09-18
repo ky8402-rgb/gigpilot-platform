@@ -16,7 +16,7 @@ export interface Job {
   title: string;
   description: string;
   budget: number;
-  status: 'open' | 'assigned' | 'completed' | 'paid';
+  status: 'open' | 'assigned' | 'completed' | 'paid' | 'cancelled';
   customer_id: string;
   external_id?: string | null;
   created_at: string;

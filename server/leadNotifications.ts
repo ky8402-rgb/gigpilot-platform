@@ -1,6 +1,7 @@
 import axios from 'axios';
 import { getGeminiAI } from './gemini.js';
 import { logActivityEvent } from './activityLogger.js';
+import { checkHardExcludeFilter, ALL_HARD_EXCLUDE_KEYWORDS } from './autoBidFilters.js';
 
 export interface UserSessionCookieConfig {
   upworkCookies: string;
@@ -73,7 +74,10 @@ let notificationConfigStore: NotificationChannelConfig = {
   minBudgetThreshold: 1500,
   maxProposalsThreshold: 5,
   keywordsFilter: ['React', 'TypeScript', 'Node.js', 'Python', 'AI Agent', 'PayPal'],
-  excludedKeywords: ['WordPress', 'Entry level', 'Unpaid'],
+  excludedKeywords: [
+    ...ALL_HARD_EXCLUDE_KEYWORDS,
+    'WordPress', 'Entry level', 'Unpaid'
+  ],
   speedTier: 'pro_speed'
 };
 
@@ -312,6 +316,21 @@ export async function sendTelegramLeadAlert(lead: {
   aiWinningAngle?: string;
   tags?: string[];
 }): Promise<{ success: boolean; latencyMs: number; status: 'delivered' | 'simulated' | 'failed'; message: string }> {
+  // Hard Exclude Check
+  const hardExclude = checkHardExcludeFilter({
+    title: lead.title,
+    tags: lead.tags
+  });
+
+  if (hardExclude.shouldSkip) {
+    return {
+      success: false,
+      latencyMs: 0,
+      status: 'failed',
+      message: `Notification skipped: lead matches Hard Exclude Filter ("${hardExclude.matchedKeyword}" - ${hardExclude.category})`
+    };
+  }
+
   const startTime = Date.now();
   const botToken = notificationConfigStore.telegramBotToken || process.env.TELEGRAM_BOT_TOKEN;
   const chatId = notificationConfigStore.telegramChatId || process.env.TELEGRAM_CHAT_ID;
@@ -428,6 +447,21 @@ export async function sendEmailLeadAlert(lead: {
   aiWinningAngle?: string;
   tags?: string[];
 }): Promise<{ success: boolean; latencyMs: number; status: 'delivered' | 'simulated'; message: string }> {
+  // Hard Exclude Check
+  const hardExclude = checkHardExcludeFilter({
+    title: lead.title,
+    tags: lead.tags
+  });
+
+  if (hardExclude.shouldSkip) {
+    return {
+      success: false,
+      latencyMs: 0,
+      status: 'simulated',
+      message: `Email alert skipped: lead matches Hard Exclude Filter ("${hardExclude.matchedKeyword}" - ${hardExclude.category})`
+    };
+  }
+
   const startTime = Date.now();
   const recipient = notificationConfigStore.emailRecipient || 'ky8402@gmail.com';
 

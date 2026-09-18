@@ -23,7 +23,8 @@ import {
   Eye,
   Check,
   CreditCard,
-  Target
+  Target,
+  Ban
 } from 'lucide-react';
 import { 
   fetchScoredLeadsFeed, 
@@ -585,6 +586,14 @@ export const PremiumLeadsRadar: React.FC<PremiumLeadsRadarProps> = ({
                     <span className="rounded-lg bg-emerald-500/20 text-emerald-400 px-2 py-0.5 text-[11px] font-bold">
                       {lead.aiRecommendation}
                     </span>
+
+                    {/* Hard Exclude (Never Bid) Badge */}
+                    {lead.isHardExcluded && (
+                      <span className="rounded-lg bg-rose-500/20 text-rose-300 border border-rose-500/30 px-2 py-0.5 text-[11px] font-bold flex items-center gap-1">
+                        <Ban className="h-3 w-3 text-rose-400" />
+                        Never Bid ({lead.hardExcludeKeyword || 'Excluded'})
+                      </span>
+                    )}
                   </div>
 
                   {/* Title & Company */}

@@ -34,6 +34,11 @@ export interface FreelanceJob {
   experienceLevel: 'Entry' | 'Intermediate' | 'Expert';
   status: 'new' | 'analyzed' | 'bid_submitted' | 'queued' | 'interviewing' | 'won' | 'rejected';
   aiRecommendation?: 'STRONG_BID' | 'CONSIDER' | 'SKIP' | 'HIGH_RISK';
+  hardExcludeInfo?: {
+    matchedKeyword: string;
+    category: string;
+    reason: string;
+  };
 }
 
 export interface ProposedMilestone {
@@ -58,7 +63,7 @@ export interface AutopilotLog {
   jobId?: string;
   jobTitle?: string;
   platform?: PlatformType | string;
-  action: 'SCAN' | 'MATCH' | 'AI_PROPOSAL' | 'AUTO_BID' | 'QUEUED' | 'CLIENT_REPLY' | 'EARNING_PAYOUT';
+  action: 'SCAN' | 'MATCH' | 'AI_PROPOSAL' | 'AUTO_BID' | 'QUEUED' | 'CLIENT_REPLY' | 'EARNING_PAYOUT' | 'SKIP' | 'HARD_EXCLUDE';
   message: string;
   level: 'info' | 'success' | 'warning' | 'alert';
   connectsUsed?: number;
@@ -126,6 +131,12 @@ export interface AutopilotRules {
   proposalTone: 'confident' | 'consultative' | 'technical' | 'friendly';
   blacklistKeywords: string[];
   autoBoostBids: boolean;
+  hardExcludeFilters: {
+    enabled: boolean;
+    physicalOnSite: string[];
+    officeHiringEmployment: string[];
+    humanDependent: string[];
+  };
 }
 
 export const defaultProfile: FreelancerProfile = {
@@ -163,7 +174,24 @@ export const defaultRules: AutopilotRules = {
   bidsToday: 6,
   proposalTone: 'confident',
   blacklistKeywords: ['unpaid', 'equity only', 'revshare', 'test assignment without pay', 'crypto pump', 'telegram dm'],
-  autoBoostBids: true
+  autoBoostBids: true,
+  hardExcludeFilters: {
+    enabled: true,
+    physicalOnSite: [
+      'onsite', 'on-site', 'in-person', 'local', 'commute', 'relocate',
+      'warehouse', 'delivery', 'driving', 'labor', 'installation',
+      'repair', 'cleaning', 'security', 'physical', 'office', 'branch'
+    ],
+    officeHiringEmployment: [
+      'full-time', 'part-time', 'employee', 'hiring', 'job', 'vacancy',
+      'internship', 'contract-to-hire', '9-5', 'fixed hours', 'salary',
+      'payroll', 'HR', 'recruitment'
+    ],
+    humanDependent: [
+      'phone call', 'video call', 'Zoom', 'meeting', 'daily standup',
+      'team', 'manager', 'interview', 'NDA', 'legal', 'sign contract'
+    ]
+  }
 };
 
 export const defaultActiveContracts: ActiveContract[] = [];

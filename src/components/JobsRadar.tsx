@@ -16,9 +16,11 @@ import {
   Send,
   SlidersHorizontal,
   Flame,
-  ArrowRight
+  ArrowRight,
+  Ban
 } from 'lucide-react';
 import { FreelanceJob, PlatformType, FreelancerProfile } from '../types';
+import { checkHardExcludeFilter } from '../utils/autoBidFilters';
 
 interface JobsRadarProps {
   jobs: FreelanceJob[];
@@ -42,8 +44,21 @@ export const JobsRadar: React.FC<JobsRadarProps> = ({
   const [typeFilter, setTypeFilter] = useState<'ALL' | 'fixed' | 'hourly'>('ALL');
   const [onlyVerified, setOnlyVerified] = useState(false);
   const [minMatchScore, setMinMatchScore] = useState<number>(75);
+  const [hideHardExcluded, setHideHardExcluded] = useState<boolean>(false);
 
   const filteredJobs = jobs.filter(job => {
+    // Hard Exclude Check
+    const excludeResult = checkHardExcludeFilter({
+      title: job.title,
+      description: job.description,
+      skills: job.skills,
+      location: job.client?.country
+    });
+
+    if (hideHardExcluded && excludeResult.shouldSkip) {
+      return false;
+    }
+
     // Search query match
     const matchesSearch = 
       job.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
@@ -146,6 +161,20 @@ export const JobsRadar: React.FC<JobsRadarProps> = ({
               <span>Verified Only</span>
             </button>
 
+            {/* Hard Exclude Filter toggle */}
+            <button
+              onClick={() => setHideHardExcluded(!hideHardExcluded)}
+              className={`flex items-center space-x-1.5 rounded-xl border px-3 py-1.5 text-xs font-semibold transition-all cursor-pointer ${
+                hideHardExcluded 
+                  ? 'border-rose-500/50 bg-rose-950/40 text-rose-300' 
+                  : 'border-slate-800 bg-slate-950/80 text-slate-400 hover:text-slate-200'
+              }`}
+              title="Toggle hiding jobs that match Physical/On-site, Office/Hiring, or Human-dependent filters"
+            >
+              <Ban className="h-3.5 w-3.5 text-rose-400" />
+              <span>{hideHardExcluded ? 'Hiding Excluded Jobs' : 'Hide Hard Excludes'}</span>
+            </button>
+
           </div>
         </div>
 
@@ -191,12 +220,36 @@ export const JobsRadar: React.FC<JobsRadarProps> = ({
           filteredJobs.map((job) => {
             const isSubmitted = job.status === 'bid_submitted';
             const isQueued = job.status === 'queued';
+            const hardExcludeCheck = checkHardExcludeFilter({
+              title: job.title,
+              description: job.description,
+              skills: job.skills,
+              location: job.client?.country
+            });
 
             return (
               <div
                 key={job.id}
-                className="group relative overflow-hidden rounded-2xl border border-slate-800 bg-slate-900/70 p-5 backdrop-blur-sm transition-all hover:border-slate-700 hover:shadow-xl hover:shadow-slate-950/50"
+                className={`group relative overflow-hidden rounded-2xl border p-5 backdrop-blur-sm transition-all hover:shadow-xl hover:shadow-slate-950/50 ${
+                  hardExcludeCheck.shouldSkip
+                    ? 'border-rose-900/50 bg-slate-950/90 hover:border-rose-700/60'
+                    : 'border-slate-800 bg-slate-900/70 hover:border-slate-700'
+                }`}
               >
+                {/* Hard Exclude Notification Bar if flagged */}
+                {hardExcludeCheck.shouldSkip && (
+                  <div className="mb-3.5 -mx-2 -mt-2 px-3 py-2 rounded-xl bg-rose-950/50 border border-rose-500/40 flex items-center justify-between gap-2 flex-wrap">
+                    <div className="flex items-center gap-2 text-xs font-mono text-rose-200">
+                      <Ban className="h-4 w-4 text-rose-400 shrink-0" />
+                      <span className="font-bold uppercase tracking-wider text-rose-300">Never Bid Filter Triggered:</span>
+                      <span>Matched "{hardExcludeCheck.matchedKeyword}" &bull; {hardExcludeCheck.category}</span>
+                    </div>
+                    <span className="text-[10px] font-mono font-bold px-2 py-0.5 rounded bg-rose-500/20 text-rose-300 border border-rose-500/30">
+                      AUTO-SKIP ENFORCED
+                    </span>
+                  </div>
+                )}
+
                 {/* Status bar top indicator */}
                 <div className="flex flex-wrap items-start justify-between gap-2">
                   
@@ -352,6 +405,15 @@ export const JobsRadar: React.FC<JobsRadarProps> = ({
                         <CheckCircle className="mr-1.5 h-3.5 w-3.5" />
                         Bid Active
                       </span>
+                    ) : hardExcludeCheck.shouldSkip ? (
+                      <button
+                        disabled
+                        className="flex items-center space-x-1.5 rounded-lg bg-slate-900 border border-rose-500/30 px-3 py-1.5 text-xs font-bold text-rose-300/80 cursor-not-allowed"
+                        title={hardExcludeCheck.reason}
+                      >
+                        <Ban className="h-3.5 w-3.5 text-rose-400" />
+                        <span>Never Bid (Excluded)</span>
+                      </button>
                     ) : (
                       <button
                         onClick={() => onQuickAutoBid(job)}

@@ -15,6 +15,34 @@ const s3Client = new S3Client({ region: process.env.AWS_REGION || 'us-east-1' })
 
 let isProcessing = false;
 
+// Hard Exclude Filters (Never Bid) — Instantly skip jobs containing these words
+const HARD_EXCLUDE_TERMS = [
+  // Physical / On-site
+  'onsite', 'on-site', 'in-person', 'local', 'commute', 'relocate', 'warehouse', 'delivery', 'driving', 'labor', 'installation', 'repair', 'cleaning', 'security', 'physical', 'office', 'branch',
+  // Office / Hiring / Employment
+  'full-time', 'part-time', 'employee', 'hiring', 'job', 'vacancy', 'internship', 'contract-to-hire', '9-5', 'fixed hours', 'salary', 'payroll', 'hr', 'recruitment',
+  // Human-dependent
+  'phone call', 'video call', 'zoom', 'meeting', 'daily standup', 'team', 'manager', 'interview', 'nda', 'legal', 'sign contract'
+];
+
+function checkHardExcludeInText(text) {
+  if (!text) return null;
+  const lower = text.toLowerCase();
+  for (const term of HARD_EXCLUDE_TERMS) {
+    if (term === '9-5') {
+      if (/\b(9\s*[-/]\s*5|9\s+to\s+5)\b/i.test(lower)) return term;
+    } else if (term.includes(' ') || term.includes('-')) {
+      const parts = term.toLowerCase().split(/[-\s]+/);
+      const regex = new RegExp(`\\b${parts.join('[-\\s]+')}\\b`, 'i');
+      if (regex.test(lower)) return term;
+    } else {
+      const regex = new RegExp(`\\b${term}\\b`, 'i');
+      if (regex.test(lower)) return term;
+    }
+  }
+  return null;
+}
+
 // Human typing simulator with organic jitter and pauses
 async function typeHumanLike(page, selector, text) {
   await page.waitForSelector(selector, { visible: true, timeout: 15000 });
@@ -67,6 +95,19 @@ async function processNextApprovedProposal() {
     const approvedItem = queue.find(q => q.status === 'approved');
 
     if (!approvedItem) {
+      isProcessing = false;
+      return;
+    }
+
+    // Safety Gate: Hard Exclude Filters (Never Bid)
+    const matchedForbiddenWord = checkHardExcludeInText(`${approvedItem.jobTitle || ''} ${approvedItem.proposalText || ''} ${approvedItem.hook || ''}`);
+    if (matchedForbiddenWord) {
+      console.warn(`[Sentient Worker] 🚫 HARD EXCLUDE TRIGGERED on proposal ${approvedItem.id} ("${approvedItem.jobTitle}"): matched forbidden term "${matchedForbiddenWord}". Instantly skipping!`);
+      await memory.updateQueueItem(approvedItem.id, {
+        status: 'skipped',
+        skippedAt: Date.now(),
+        reason: `Hard Exclude Filter matched: "${matchedForbiddenWord}" (Never Bid policy enforced)`
+      });
       isProcessing = false;
       return;
     }

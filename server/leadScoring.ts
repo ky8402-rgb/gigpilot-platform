@@ -1,6 +1,7 @@
 import axios from 'axios';
 import { getGeminiAI } from './gemini.js';
 import { prisma } from './db.js';
+import { checkHardExcludeFilter } from './autoBidFilters.js';
 
 export interface ScoredLead {
   id: string;
@@ -43,6 +44,10 @@ export interface ScoredLead {
   risks: string[];
   suggestedBidStrategy: string;
   tierRequired: 'free' | 'pro' | 'enterprise';
+  isHardExcluded?: boolean;
+  hardExcludeReason?: string;
+  hardExcludeKeyword?: string;
+  hardExcludeCategory?: string;
 }
 
 export interface KeywordAlert {
@@ -242,6 +247,22 @@ export function scoreLead(rawJob: any): ScoredLead {
     aiRecommendation = 'STRONG_BID';
   }
 
+  // Check Hard Exclude Filters (Never Bid)
+  const hardExcludeCheck = checkHardExcludeFilter(rawJob);
+  let isHardExcluded = false;
+  let hardExcludeReason: string | undefined;
+  let hardExcludeKeyword: string | undefined;
+  let hardExcludeCategory: string | undefined;
+
+  if (hardExcludeCheck.shouldSkip) {
+    isHardExcluded = true;
+    hardExcludeReason = hardExcludeCheck.reason;
+    hardExcludeKeyword = hardExcludeCheck.matchedKeyword;
+    hardExcludeCategory = hardExcludeCheck.category;
+    aiRecommendation = 'SKIP';
+    badge = `🚫 Skipped: Never Bid (${hardExcludeCheck.matchedKeyword})`;
+  }
+
   // Tier Gating Classification:
   // Top 10 can be sampled for Free Tier, Top 50 for Pro Tier ($19/mo), all 500 for Enterprise ($49/mo)
   let tierRequired: ScoredLead['tierRequired'] = 'free';
@@ -249,6 +270,13 @@ export function scoreLead(rawJob: any): ScoredLead {
     tierRequired = 'enterprise';
   } else if (leadScore >= 80) {
     tierRequired = 'pro';
+  }
+
+  const risks: string[] = [
+    proposals > 10 ? 'Moderate competitive bid density' : 'Requires fast milestone handoff'
+  ];
+  if (isHardExcluded && hardExcludeReason) {
+    risks.unshift(`[HARD EXCLUDE] ${hardExcludeReason}`);
   }
 
   return {
@@ -292,11 +320,15 @@ export function scoreLead(rawJob: any): ScoredLead {
       `Client has ${hireRate}% hire rate with verified payment status`,
       `Low competition pool with only ${proposals} submitted proposals`
     ],
-    risks: [
-      proposals > 10 ? 'Moderate competitive bid density' : 'Requires fast milestone handoff'
-    ],
-    suggestedBidStrategy: `Submit customized pitch focusing on ${rawJob.tags?.[0] || 'core engineering'} with high-value architecture breakdown.`,
-    tierRequired
+    risks,
+    suggestedBidStrategy: isHardExcluded 
+      ? `HARD EXCLUDE ACTIVE: Never bid. Matches forbidden keyword "${hardExcludeKeyword}" (${hardExcludeCategory}).`
+      : `Submit customized pitch focusing on ${rawJob.tags?.[0] || 'core engineering'} with high-value architecture breakdown.`,
+    tierRequired,
+    isHardExcluded,
+    hardExcludeReason,
+    hardExcludeKeyword,
+    hardExcludeCategory
   };
 }
 

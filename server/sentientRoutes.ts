@@ -7,6 +7,7 @@ import { Router, Request, Response } from 'express';
 import fs from 'fs';
 import path from 'path';
 import { autoImprover } from './sentientAutoImprover.js';
+import { checkHardExcludeFilter } from './autoBidFilters.js';
 // @ts-ignore
 import { scrapeStatic, scrapeDynamic, checkRobotsTxt, SCRAPER_CONFIG } from '../backend/scraper_engine.js';
 // @ts-ignore
@@ -167,6 +168,12 @@ sentientRouter.post('/proposals', (req: Request, res: Response) => {
     return res.status(400).json({ ok: false, error: 'Proposal text is required.' });
   }
 
+  // Check Hard Exclude Filter
+  const hardExcludeCheck = checkHardExcludeFilter({
+    title: jobTitle,
+    description: `${proposalText} ${hook || ''}`
+  });
+
   const enqueued: ProposalItem = {
     id: `prop_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
     jobId: jobId || `job_${Date.now()}`,
@@ -178,10 +185,23 @@ sentientRouter.post('/proposals', (req: Request, res: Response) => {
     voice: voice || activePersona.voiceSignature,
     hook: hook || '',
     queuedAt: Date.now(),
-    status: 'pending_approval'
+    status: hardExcludeCheck.shouldSkip ? 'skipped' : 'pending_approval'
   };
 
   queue.push(enqueued);
+
+  if (hardExcludeCheck.shouldSkip) {
+    return res.json({
+      ok: true,
+      queued: true,
+      skipped: true,
+      proposal: enqueued,
+      position: queue.length,
+      reason: hardExcludeCheck.reason,
+      message: `Job matches Hard Exclude Filter ("${hardExcludeCheck.matchedKeyword}" - ${hardExcludeCheck.category}). Marked as skipped (Never Bid).`
+    });
+  }
+
   res.json({
     ok: true,
     queued: true,
@@ -198,6 +218,23 @@ sentientRouter.post('/proposals/:id/send', (req: Request, res: Response) => {
   if (!item) {
     return res.status(404).json({ ok: false, error: 'Proposal not found in queue.' });
   }
+
+  // Safety check: Hard Exclude Filter
+  const hardExcludeCheck = checkHardExcludeFilter({
+    title: item.jobTitle,
+    description: `${item.proposalText} ${item.hook || ''}`
+  });
+
+  if (hardExcludeCheck.shouldSkip) {
+    item.status = 'skipped';
+    return res.status(400).json({
+      ok: false,
+      blocked: true,
+      error: `Auto-bid blocked by Hard Exclude Filter: matches "${hardExcludeCheck.matchedKeyword}" (${hardExcludeCheck.category}). Never Bid policy enforced.`,
+      reason: hardExcludeCheck.reason
+    });
+  }
+
   item.status = 'approved';
   item.approvedAt = Date.now();
   proposalsToday += 1;

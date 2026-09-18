@@ -1,7 +1,8 @@
 import React, { useState, useEffect, useRef, useCallback, Suspense, lazy } from 'react';
 import type { RemoteOKJobItem } from './components/RemoteOKJobsBoard';
 import { SEOHead } from './components/SEOHead';
-import { FreelanceJob, GeneratedProposal, ActiveContract, defaultProfile, defaultRules, defaultActiveContracts } from './types';
+import { FreelanceJob, GeneratedProposal, ActiveContract, AutopilotRules, AutopilotLog, defaultProfile, defaultRules, defaultActiveContracts } from './types';
+import { checkHardExcludeFilter } from './utils/autoBidFilters';
 import { AppSidebar, type DashboardTab } from './components/dashboard/AppSidebar';
 import { AppTopbar } from './components/dashboard/AppTopbar';
 import { AppMobileNav } from './components/dashboard/AppMobileNav';
@@ -24,6 +25,12 @@ import { WorkExecutionModal } from './components/WorkExecutionModal';
 import { ClientCommunicationsHub } from './components/ClientCommunicationsHub';
 import { ClientPaymentCollectionModal } from './components/ClientPaymentCollectionModal';
 import { printOrSaveInvoicePdf } from './utils/invoicePdfGenerator';
+
+// Autopilot Console (Hard Exclude Auto-Bid Engine)
+const AutopilotConsole = lazy(() => import('./components/AutopilotConsole').then(m => ({ default: m.AutopilotConsole })));
+
+// 10 Supported Job Types & Autonomous Delivery Engines Hub
+const SupportedJobTypesHub = lazy(() => import('./components/SupportedJobTypesHub').then(m => ({ default: m.SupportedJobTypesHub })));
 
 // Tool 1: Autonomous Software Job Solver
 const SoftwareJobAutonomousTool = lazy(() => import('./components/SoftwareJobAutonomousTool').then(m => ({ default: m.SoftwareJobAutonomousTool })));
@@ -256,6 +263,44 @@ export default function App() {
   const [editingOrderId, setEditingOrderId] = useState<number | string | null>(null);
   const [editingAmountValue, setEditingAmountValue] = useState<string>('');
   const [autopilot, setAutopilot] = useState<boolean>(true);
+  const [autopilotRules, setAutopilotRules] = useState<AutopilotRules>(defaultRules);
+  const [isBotRunning, setIsBotRunning] = useState<boolean>(false);
+  const [autopilotLogs, setAutopilotLogs] = useState<AutopilotLog[]>([
+    {
+      id: 'log-init-1',
+      timestamp: new Date().toLocaleTimeString(),
+      action: 'SCAN',
+      message: 'Daemon initialized with 42 Hard Exclude Filters across Physical, Office, and Human-dependent categories.',
+      level: 'info'
+    },
+    {
+      id: 'log-init-2',
+      timestamp: new Date().toLocaleTimeString(),
+      jobTitle: 'Senior Full Stack Engineer (On-site 5 days)',
+      platform: 'RemoteOK',
+      action: 'SCAN',
+      message: '🚫 SKIPPED (HARD EXCLUDE): Matched "onsite" under Physical / On-site category. Auto-bid blocked.',
+      level: 'warning'
+    },
+    {
+      id: 'log-init-3',
+      timestamp: new Date().toLocaleTimeString(),
+      jobTitle: 'Technical Recruiter & HR Hiring Specialist',
+      platform: 'Direct Remote',
+      action: 'SCAN',
+      message: '🚫 SKIPPED (HARD EXCLUDE): Matched "hiring" under Office / Hiring / Employment category. Auto-bid blocked.',
+      level: 'warning'
+    },
+    {
+      id: 'log-init-4',
+      timestamp: new Date().toLocaleTimeString(),
+      jobTitle: 'Frontend Lead (Daily Zoom standup required)',
+      platform: 'Upwork',
+      action: 'SCAN',
+      message: '🚫 SKIPPED (HARD EXCLUDE): Matched "Zoom" under Human-dependent category. Auto-bid blocked.',
+      level: 'warning'
+    }
+  ]);
   const [handedOverOrderIdForTool2, setHandedOverOrderIdForTool2] = useState<string | number | null>(null);
 
   // Authentication, Security & Mobile Navigation States
@@ -516,6 +561,133 @@ export default function App() {
       setIsWatchdogRestarting(false);
     }
   };
+
+  // Run autonomous scan and auto-bid loop with Hard Exclude enforcement
+  const handleRunBotCycle = useCallback(async () => {
+    setIsBotRunning(true);
+    showToast('🤖 Autonomous scanning & filtering loop initiated...', 'info');
+
+    const cycleTimestamp = new Date().toLocaleTimeString();
+    const newLogs: AutopilotLog[] = [
+      {
+        id: `log-${Date.now()}-scan-start`,
+        timestamp: cycleTimestamp,
+        action: 'SCAN',
+        message: 'Scanning active platforms (RemoteOK, Direct Remote, Ingestion daemon) against 42 Hard Exclude Filters...',
+        level: 'info'
+      }
+    ];
+
+    try {
+      // Gather candidate jobs from work orders
+      const candidates = workOrders.map(w => ({
+        id: String(w.id),
+        title: w.title,
+        description: w.description || '',
+        skills: w.tags || [w.category],
+        platform: w.platform || 'RemoteOK',
+        location: w.location,
+        budget: w.amount || 150
+      }));
+
+      // If candidate pool is small, populate with diverse realistic candidates to demonstrate live hard-exclude filtering
+      if (candidates.length < 4) {
+        candidates.push(
+          {
+            id: 'demo-cand-1',
+            title: 'Senior Full Stack React & Node Engineer (On-site 5 days)',
+            description: 'Looking for a developer. Must work onsite at office branch in downtown Chicago. Commute required.',
+            skills: ['React', 'Node.js', 'Onsite'],
+            platform: 'RemoteOK',
+            location: 'Chicago, IL',
+            budget: 2200
+          },
+          {
+            id: 'demo-cand-2',
+            title: 'Remote Tailwind & Next.js API Developer (Async)',
+            description: 'Autonomous expert to build Supabase and Stripe integration. 100% remote asynchronous delivery.',
+            skills: ['Next.js', 'Tailwind CSS', 'Stripe'],
+            platform: 'RemoteOK',
+            location: 'Remote',
+            budget: 1600
+          },
+          {
+            id: 'demo-cand-3',
+            title: 'Full-time Employee Software Engineer (Hiring / Payroll)',
+            description: 'Permanent employee hiring role. 9-5 fixed hours with HR interview process.',
+            skills: ['Python', 'Django', 'Full-time'],
+            platform: 'Direct Remote',
+            location: 'San Francisco, CA',
+            budget: 3000
+          },
+          {
+            id: 'demo-cand-4',
+            title: 'Technical Project Lead (Daily Zoom Standup & Interview)',
+            description: 'Must sign contract and NDA, participate in daily standup and video call with manager.',
+            skills: ['TypeScript', 'Project Management'],
+            platform: 'Upwork',
+            location: 'Austin, TX',
+            budget: 2500
+          },
+          {
+            id: 'demo-cand-5',
+            title: 'Autonomous Web Scraping & Playwright Bot Builder',
+            description: 'Scrape freelance directories and output JSON to Supabase. Pure autonomous milestone.',
+            skills: ['Python', 'Playwright', 'Automation'],
+            platform: 'RemoteOK',
+            location: 'Worldwide',
+            budget: 1200
+          }
+        );
+      }
+
+      let skippedCount = 0;
+      let qualifiedCount = 0;
+
+      for (const job of candidates) {
+        const filterResult = checkHardExcludeFilter({
+          title: job.title,
+          description: job.description,
+          skills: job.skills,
+          location: job.location
+        });
+
+        if (filterResult.shouldSkip) {
+          skippedCount++;
+          newLogs.push({
+            id: `log-${Date.now()}-${job.id}-skip`,
+            timestamp: new Date().toLocaleTimeString(),
+            jobId: job.id,
+            jobTitle: job.title,
+            platform: job.platform,
+            action: 'SCAN',
+            message: `🚫 SKIPPED (HARD EXCLUDE): Matched "${filterResult.matchedKeyword}" under ${filterResult.category}. Never bid policy enforced.`,
+            level: 'warning'
+          });
+        } else {
+          qualifiedCount++;
+          newLogs.push({
+            id: `log-${Date.now()}-${job.id}-match`,
+            timestamp: new Date().toLocaleTimeString(),
+            jobId: job.id,
+            jobTitle: job.title,
+            platform: job.platform,
+            action: 'MATCH',
+            message: `🎯 QUALIFIED: Passed all 42 Hard Exclude filters. Clean remote contract ($${job.budget}). Auto-bid staged.`,
+            level: 'success',
+            amount: job.budget
+          });
+        }
+      }
+
+      setAutopilotLogs(prev => [...newLogs, ...prev].slice(0, 150));
+      showToast(`⚡ Bot cycle finished: ${qualifiedCount} qualified, ${skippedCount} safely skipped via Hard Excludes!`, 'success');
+    } catch (err: any) {
+      showToast(`Scan error: ${err.message}`, 'error');
+    } finally {
+      setIsBotRunning(false);
+    }
+  }, [workOrders]);
 
   // Automated Backend Health-Check Watchdog Effect
   // Actively verifies backend connectivity, monitors timeout spikes, and triggers a soft restart command
@@ -1407,6 +1579,37 @@ export default function App() {
               className="mb-2"
             />
 
+            {/* 10 Supported Job Types & Deliverable Engines Banner */}
+            <div className="rounded-2xl border border-blue-500/30 bg-gradient-to-r from-blue-950/40 via-slate-900 to-indigo-950/30 p-4 sm:p-5 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 shadow-xl">
+              <div className="flex items-center gap-3.5">
+                <div className="w-10 h-10 rounded-xl bg-blue-500/20 border border-blue-500/30 flex items-center justify-center text-blue-400 text-lg shrink-0">
+                  <i className="fas fa-layer-group"></i>
+                </div>
+                <div>
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <span className="text-xs font-bold uppercase tracking-wider text-blue-400">Autonomous Job Engines Matrix</span>
+                    <span className="bg-blue-500/20 text-blue-300 text-[10px] px-2.5 py-0.5 rounded-full font-mono font-bold border border-blue-500/30">
+                      10 Active Micro-Work Categories
+                    </span>
+                  </div>
+                  <h4 className="text-sm font-bold text-white mt-0.5">
+                    Data Scraping, Data Entry, Content Writing, Translation, Transcription, Simple Coding, Image Processing, SEO &amp; Research, PDF Automation, Social Media
+                  </h4>
+                  <p className="text-xs text-slate-400 mt-0.5">
+                    Delivers production-grade CSV, JSON, Excel, Word, SRT, VTT, .py, .gs, and PNG files with automated verification and client handover.
+                  </p>
+                </div>
+              </div>
+
+              <button
+                onClick={() => setActiveTab('job_categories')}
+                className="bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white font-bold px-4 py-2 rounded-xl text-xs flex items-center justify-center gap-2 transition-all shrink-0 cursor-pointer shadow-md shadow-blue-500/20"
+              >
+                <span>Launch 10 Categories Hub</span>
+                <i className="fas fa-arrow-right text-xs"></i>
+              </button>
+            </div>
+
             {/* Autonomous Revenue Intelligence & Dynamic Pricing Panel */}
             <AutonomousRevenuePanel />
 
@@ -1950,6 +2153,59 @@ export default function App() {
               </div>
             </div>
 
+          </div>
+        )}
+
+        {/* ===== TAB: 10 SUPPORTED JOB CATEGORIES & AUTONOMOUS ENGINES ===== */}
+        {activeTab === 'job_categories' && (
+          <div className="space-y-6">
+            <Suspense fallback={<LazyFallback label="Loading 10 Supported Job Types Hub..." />}>
+              <SupportedJobTypesHub
+                onSelectCategoryFilter={(cat) => {
+                  setActiveTab('orders');
+                  showToast(`Filtered work orders by ${cat}`, 'info');
+                }}
+                onAddWorkOrder={(newOrder) => {
+                  const created: WorkOrder = {
+                    id: newOrder.id || `ord_${Date.now()}`,
+                    title: newOrder.title || 'New Work Order',
+                    category: newOrder.category || 'General',
+                    amount: newOrder.amount || 250,
+                    status: 'in-progress',
+                    time: 'Just now',
+                    clientName: newOrder.client?.name || 'Client',
+                    description: newOrder.description || '',
+                    skills: newOrder.skills || [],
+                  };
+                  setWorkOrders(prev => [created, ...prev]);
+                  showToast(`Queued "${created.title}" into Work Orders`, 'success');
+                  triggerConfetti({ particleCount: 35, spread: 55 });
+                }}
+                onNavigateToTab={(tab) => setActiveTab(tab as DashboardTab)}
+              />
+            </Suspense>
+          </div>
+        )}
+
+        {/* ===== TAB: AUTOPILOT CONSOLE & HARD EXCLUDE BID ENGINE ===== */}
+        {activeTab === 'autopilot' && (
+          <div className="space-y-6">
+            <Suspense fallback={<LazyFallback label="Loading Autonomous Auto-Bid Console & Hard Excludes..." />}>
+              <AutopilotConsole
+                rules={autopilotRules}
+                onUpdateRules={(newRules) => {
+                  setAutopilotRules(prev => ({ ...prev, ...newRules }));
+                  showToast('Auto-bid filter rules updated', 'success');
+                }}
+                logs={autopilotLogs}
+                onClearLogs={() => {
+                  setAutopilotLogs([]);
+                  showToast('Autopilot logs cleared', 'info');
+                }}
+                onRunBotCycle={handleRunBotCycle}
+                isBotRunning={isBotRunning}
+              />
+            </Suspense>
           </div>
         )}
 

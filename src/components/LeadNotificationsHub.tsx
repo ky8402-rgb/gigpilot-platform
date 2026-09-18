@@ -646,6 +646,34 @@ export const LeadNotificationsHub: React.FC<LeadNotificationsHubProps> = ({
                   Add
                 </button>
               </div>
+
+              {/* Hard Exclude Filters Notice */}
+              <div className="mt-4 rounded-xl border border-rose-500/30 bg-rose-950/20 p-3.5 space-y-2">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <i className="fas fa-ban text-rose-400 text-xs"></i>
+                    <span className="text-xs font-bold text-white uppercase tracking-wider font-mono">
+                      Hard Exclude Filters (Never Bid / Never Alert) Active
+                    </span>
+                  </div>
+                  <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-rose-500/20 text-rose-300 font-bold border border-rose-500/30">
+                    42 Words Filtered
+                  </span>
+                </div>
+                <p className="text-[11px] text-slate-300 leading-relaxed">
+                  The notification dispatcher automatically checks every incoming job against the 3 Hard Exclude categories (<strong>Physical / On-site</strong>, <strong>Office / Hiring</strong>, <strong>Human-dependent</strong>). If any forbidden term appears, the alert is suppressed immediately to prevent alert fatigue.
+                </p>
+                <div className="flex flex-wrap gap-1 text-[10px] font-mono text-rose-300/80 pt-0.5">
+                  <span className="px-1.5 py-0.5 rounded bg-slate-900 border border-rose-900/50">onsite</span>
+                  <span className="px-1.5 py-0.5 rounded bg-slate-900 border border-rose-900/50">in-person</span>
+                  <span className="px-1.5 py-0.5 rounded bg-slate-900 border border-rose-900/50">full-time</span>
+                  <span className="px-1.5 py-0.5 rounded bg-slate-900 border border-rose-900/50">hiring</span>
+                  <span className="px-1.5 py-0.5 rounded bg-slate-900 border border-rose-900/50">Zoom</span>
+                  <span className="px-1.5 py-0.5 rounded bg-slate-900 border border-rose-900/50">daily standup</span>
+                  <span className="px-1.5 py-0.5 rounded bg-slate-900 border border-rose-900/50">interview</span>
+                  <span className="text-slate-400 self-center">+ 35 more</span>
+                </div>
+              </div>
             </div>
 
             <div className="pt-2 flex justify-end">

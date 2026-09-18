@@ -2,6 +2,8 @@ import React from 'react';
 
 export type DashboardTab =
   | 'dashboard'
+  | 'job_categories'
+  | 'autopilot'
   | 'tool1'
   | 'tool2'
   | 'income'
@@ -140,6 +142,38 @@ export const AppSidebar: React.FC<AppSidebarProps> = ({
             >
               <i className="fas fa-chart-pie w-4 text-center text-sm"></i>
               <span>Live Dashboard</span>
+            </button>
+
+            <button
+              id="sidebar-nav-job-categories"
+              onClick={() => setActiveTab('job_categories')}
+              className={`w-full flex items-center gap-3 px-3 py-2 rounded-xl text-xs font-semibold transition-all cursor-pointer ${
+                activeTab === 'job_categories'
+                  ? 'bg-gradient-to-r from-blue-600 via-indigo-600 to-purple-600 text-white shadow-md shadow-blue-600/30'
+                  : 'text-slate-400 hover:text-slate-100 hover:bg-slate-900/60'
+              }`}
+            >
+              <i className="fas fa-layer-group w-4 text-center text-sm text-amber-400"></i>
+              <span>10 Job Categories Hub</span>
+              <span className="ml-auto text-[9px] font-mono px-1.5 py-0.5 rounded bg-amber-500/15 text-amber-300 border border-amber-500/30 font-bold">
+                Engines
+              </span>
+            </button>
+
+            <button
+              id="sidebar-nav-autopilot"
+              onClick={() => setActiveTab('autopilot')}
+              className={`w-full flex items-center gap-3 px-3 py-2 rounded-xl text-xs font-semibold transition-all cursor-pointer ${
+                activeTab === 'autopilot'
+                  ? 'bg-gradient-to-r from-emerald-600 to-teal-600 text-white shadow-md shadow-emerald-600/30'
+                  : 'text-slate-400 hover:text-slate-100 hover:bg-slate-900/60'
+              }`}
+            >
+              <i className="fas fa-robot w-4 text-center text-sm text-emerald-400"></i>
+              <span>Auto-Bid Console</span>
+              <span className="ml-auto text-[9px] font-mono px-1.5 py-0.5 rounded bg-emerald-500/15 text-emerald-300 border border-emerald-500/30 font-bold">
+                Hard Excludes
+              </span>
             </button>
 
             <button

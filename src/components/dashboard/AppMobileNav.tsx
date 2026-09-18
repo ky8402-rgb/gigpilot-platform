@@ -167,6 +167,8 @@ export const AppMobileNav: React.FC<AppMobileNavProps> = ({
             <div className="space-y-1 overflow-y-auto flex-1">
               {([
                 { tab: 'dashboard' as const, label: 'Live Dashboard', icon: 'fa-chart-pie', badge: undefined },
+                { tab: 'job_categories' as const, label: '10 Job Categories Hub', icon: 'fa-layer-group', badge: 'Engines' },
+                { tab: 'autopilot' as const, label: 'Auto-Bid Console', icon: 'fa-robot', badge: 'Hard Excludes' },
                 { tab: 'tool1' as const, label: 'Tool 1: Software Solver', icon: 'fa-brain', badge: 'AI Autopilot' },
                 { tab: 'tool2' as const, label: 'Tool 2: Escrow Closer', icon: 'fa-shield-alt', badge: 'Senior API' },
                 { tab: 'orders' as const, label: 'Work Orders', icon: 'fa-tasks', badge: activeOrdersCount > 0 ? String(activeOrdersCount) : undefined },
