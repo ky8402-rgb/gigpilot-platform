@@ -271,6 +271,7 @@ class Tool2AutonomousEscrowCloser {
     this.lastCycleTimestamp = new Date().toISOString();
     const settledOrders: EscrowReleaseRecord[] = [];
     const insightsLearned: string[] = [];
+    let scannedCount = 0;
 
     try {
       const liveOrders = getAllLiveOrders();
@@ -286,6 +287,8 @@ class Tool2AutonomousEscrowCloser {
         const deliverable = getOrderDeliverable(strId);
         return order.status === 'completed' || deliverable?.status === 'completed';
       });
+
+      scannedCount = candidates.length;
 
       for (const order of candidates) {
         const rawId = String(order.id);
@@ -324,7 +327,7 @@ class Tool2AutonomousEscrowCloser {
     }
 
     return {
-      scannedCount: candidates?.length || 0,
+      scannedCount,
       settledCount: settledOrders.length,
       settledOrders,
       insightsLearned
