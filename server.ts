@@ -508,6 +508,9 @@ app.get(["/api/automated-payouts", "/api/revenue/payouts"], async (_req, res) =>
 });
 
 app.post(["/api/revenue/simulate-won", "/api/bids/simulate-won"], async (req, res) => {
+  if (process.env.NODE_ENV === "production") {
+    return res.status(404).json({ success: false, error: "SIMULATION_DISABLED_IN_PRODUCTION" });
+  }
   if (process.env.NODE_ENV === 'production') {
     return res.status(404).json({ success: false, error: 'NOT_AVAILABLE_IN_PRODUCTION' });
   }
