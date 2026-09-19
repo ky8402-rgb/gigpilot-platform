@@ -50,6 +50,7 @@ fi
 # baseline the known initial migration without changing application data, then apply
 # all newer migrations normally. Never use db push or reset in production.
 MIGRATE_LOG="$(mktemp)"
+trap 'rm -f "$MIGRATE_LOG"' EXIT
 if npx prisma migrate deploy 2>&1 | tee "$MIGRATE_LOG"; then
   :
 elif grep -q "Error: P3005" "$MIGRATE_LOG"; then
@@ -59,10 +60,8 @@ elif grep -q "Error: P3005" "$MIGRATE_LOG"; then
 else
   echo "ERROR: Prisma production migration failed for a reason other than an uninitialized migration history."
   cat "$MIGRATE_LOG"
-  rm -f "$MIGRATE_LOG"
   exit 1
 fi
-rm -f "$MIGRATE_LOG"
 npx prisma generate
 
 echo "Building application bundles (Vite + esbuild)..."
