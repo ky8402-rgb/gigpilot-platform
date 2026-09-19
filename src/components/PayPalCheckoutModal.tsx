@@ -39,11 +39,11 @@ export interface PayPalCheckoutModalProps {
 
 const PRESET_AMOUNTS = [50, 100, 250, 500, 1000];
 const USD_TO_INR = 86.85;
-const PAYPAL_HANDLE = 'ky8402';
-const PAYPAL_EMAIL = 'kundank4@icloud.com';
-const UPI_ID = 'chandimay@ybl';
-const ACCOUNT_HOLDER = 'Kundan Kumar';
-const PAYPAL_CLIENT_ID = 'BAAv8rRenc5jlfD6eH_8pvgcU250jXTZCnyPKdBby13EAYRKhCempoPQ3Hj41GEfe2qBMu1P8ZslnbdkIc';
+const PAYPAL_HANDLE = '';
+const PAYPAL_EMAIL = '';
+const UPI_ID = '';
+const ACCOUNT_HOLDER = '';
+const PAYPAL_CLIENT_ID = '';
 
 export const PayPalCheckoutModal: React.FC<PayPalCheckoutModalProps> = ({
   isOpen,
@@ -111,6 +111,7 @@ export const PayPalCheckoutModal: React.FC<PayPalCheckoutModalProps> = ({
           let script = document.querySelector('script[src*="paypal.com/sdk/js"]') as HTMLScriptElement;
           if (!script) {
             script = document.createElement('script');
+            if (!PAYPAL_CLIENT_ID) throw new Error('PayPal SDK client ID is configured server-side; use the backend checkout flow.');
             script.src = `https://www.paypal.com/sdk/js?client-id=${PAYPAL_CLIENT_ID}&currency=USD&components=buttons&enable-funding=venmo,card`;
             script.crossOrigin = 'anonymous';
             script.async = true;
@@ -301,7 +302,8 @@ export const PayPalCheckoutModal: React.FC<PayPalCheckoutModalProps> = ({
   if (!isOpen) return null;
 
   const inrEquivalent = Math.round(amount * USD_TO_INR).toLocaleString('en-IN');
-  const directPayPalUrl = `https://paypal.me/${PAYPAL_HANDLE}/${amount.toFixed(2)}USD`;
+  const directPayPalUrl = '';
+
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/85 backdrop-blur-md overflow-y-auto animate-fadeIn">
@@ -368,7 +370,7 @@ export const PayPalCheckoutModal: React.FC<PayPalCheckoutModalProps> = ({
               </div>
               <div className="flex justify-between text-slate-400">
                 <span>Recipient:</span>
-                <strong className="text-white">ky8402 ({PAYPAL_EMAIL})</strong>
+                <strong className="text-white">Configured server-side</strong>
               </div>
               <div className="flex justify-between text-slate-400">
                 <span>Payer:</span>
