@@ -415,8 +415,8 @@ export async function getFreelancerTokenDetails(): Promise<{
     configured: Boolean(currentToken),
     tokenPresent: Boolean(currentToken),
     maskedToken: maskFreelancerToken(currentToken),
-    username: verification.username || 'kundank879',
-    userId: verification.userId || 94426143,
+    username: verification.username,
+    userId: verification.userId,
     status: verification.status,
     message: verification.message,
     isCustomToken: true,
@@ -544,6 +544,52 @@ export async function saveFreelancerApiToken(rawToken: string): Promise<{
   };
 }
 
+/**
+ * Poll one submitted bid through the official Freelancer API.
+ * Award state is provider data; GigPilot never infers acceptance from a local flag.
+ */
+export async function getFreelancerBidStatus(bidId: string | number): Promise<{
+  success: boolean;
+  bidId: string;
+  awardStatus?: string;
+  completeStatus?: string;
+  paidStatus?: string;
+  frontendStatus?: string;
+  projectId?: string;
+  raw?: any;
+  error?: string;
+}> {
+  const token = resolveActiveFreelancerToken();
+  if (!token) {
+    return { success: false, bidId: String(bidId), error: 'FREELANCER_NOT_CONFIGURED' };
+  }
+  const endpoint = `${getFreelancerApiBase()}/projects/0.1/bids/${encodeURIComponent(String(bidId))}`;
+  const result = await executeFreelancerRequest(endpoint, {
+    method: 'GET',
+    params: {
+      award_status_possibilities: true,
+      project_details: true,
+      job_details: true,
+    },
+    silent: true,
+  });
+  if (!result.success) {
+    return { success: false, bidId: String(bidId), error: result.error || `HTTP ${result.status || 0}` };
+  }
+  const data: any = result.data?.result || result.data || {};
+  const bid: any = data.bid || data;
+  return {
+    success: true,
+    bidId: String(bid.id || bidId),
+    awardStatus: bid.award_status || bid.awardStatus || bid.award_status_name,
+    completeStatus: bid.complete_status || bid.completeStatus,
+    paidStatus: bid.paid_status || bid.paidStatus,
+    frontendStatus: bid.frontend_status || bid.frontendStatus,
+    projectId: String(bid.project_id || bid.projectId || bid.project?.id || ''),
+    raw: bid,
+  };
+}
+
 export interface FreelancerOAuth2Config {
   oauthVersion: '2.0';
   legacyV01Deprecated: boolean;
@@ -621,7 +667,7 @@ export function getFreelancerOAuth2Config(): FreelancerOAuth2Config {
 
   const expiresAt = storedConfig.freelancerTokenExpiresAt || null;
   const authMode = storedConfig.freelancerAuthMode || (clientId ? 'oauth2_app' : 'personal_token');
-  const currentUsername = storedConfig.freelancerUsername || 'kundank879';
+  const currentUsername = storedConfig.freelancerUsername || undefined;
 
   // Construct official Freelancer authorization URL
   const authUrlParams = new URLSearchParams({
