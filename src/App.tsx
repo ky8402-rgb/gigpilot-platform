@@ -112,12 +112,12 @@ const PRIMARY_PAYPAL_ME = 'configured server-side';
 const PRIMARY_PAYPAL_ME_URL = '';
 
 // Primary Payoneer USD Checking Account Configuration
-const PRIMARY_PAYONEER_BANK_NAME = 'Citibank';
-const PRIMARY_PAYONEER_BANK_ADDRESS = '111 Wall Street New York, NY 10043 USA';
-const PRIMARY_PAYONEER_ROUTING_ABA = '031100209';
-const PRIMARY_PAYONEER_SWIFT = 'CITIUS33';
-const PRIMARY_PAYONEER_ACCOUNT_NUM = '70589110002638744';
-const PRIMARY_PAYONEER_ACCOUNT_TYPE = 'CHECKING';
+const PRIMARY_PAYONEER_BANK_NAME = 'configured server-side';
+const PRIMARY_PAYONEER_BANK_ADDRESS = 'configured server-side';
+const PRIMARY_PAYONEER_ROUTING_ABA = 'configured server-side';
+const PRIMARY_PAYONEER_SWIFT = 'configured server-side';
+const PRIMARY_PAYONEER_ACCOUNT_NUM = 'configured server-side';
+const PRIMARY_PAYONEER_ACCOUNT_TYPE = 'server-configured';
 const PRIMARY_PAYONEER_BENEFICIARY = 'Kundan Kumar';
 const USD_TO_INR_RATE = 86.85;
 
