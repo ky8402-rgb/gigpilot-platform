@@ -573,7 +573,22 @@ router.post('/work-orders/:workOrderId/milestones/:milestoneId/approve', authMid
       String(req.body?.approvalToken || ''),
       req.body?.deliverableChecksum
     );
-    res.json({ success: true, milestone: result, settlement: 'RELEASE_PENDING' });
+
+    // Approval is the completion signal. Settlement is initiated only after the
+    // milestone is provider-funded and the destination is read from server-side
+    // configuration; the browser cannot choose the payout destination.
+    const provider = String(process.env.AUTONOMOUS_SETTLEMENT_PROVIDER || 'paypal') as 'paypal' | 'payoneer';
+    const settlement = await releaseApprovedMilestone(
+      req.params.workOrderId,
+      req.params.milestoneId,
+      provider
+    );
+
+    return res.status(settlement.status === 'SETTLED' ? 200 : 202).json({
+      success: settlement.status === 'SETTLED',
+      milestone: result,
+      settlement
+    });
   } catch (err: any) {
     res.status(409).json({ success: false, error: err.message });
   }
@@ -581,9 +596,12 @@ router.post('/work-orders/:workOrderId/milestones/:milestoneId/approve', authMid
 
 router.post('/work-orders/:workOrderId/milestones/:milestoneId/release', authMiddleware, async (req, res) => {
   try {
-    const provider = String(req.body?.provider || 'paypal') as 'paypal' | 'payoneer';
-    const receiverEmail = String(req.body?.receiverEmail || '').trim();
-    const result = await releaseApprovedMilestone(req.params.workOrderId, req.params.milestoneId, provider, receiverEmail);
+    const provider = String(process.env.AUTONOMOUS_SETTLEMENT_PROVIDER || 'paypal') as 'paypal' | 'payoneer';
+    const result = await releaseApprovedMilestone(
+      req.params.workOrderId,
+      req.params.milestoneId,
+      provider
+    );
     res.status(result.status === 'SETTLED' ? 200 : 202).json({ success: result.status === 'SETTLED', ...result });
   } catch (err: any) {
     res.status(409).json({ success: false, error: err.message });

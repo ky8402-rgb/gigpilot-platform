@@ -208,14 +208,28 @@ export async function approveMilestone(workOrderId: string, milestoneId: string,
   return result;
 }
 
+function getConfiguredSettlementDestination(provider: SettlementProvider) {
+  if (provider === 'paypal') {
+    const receiverEmail = String(process.env.PAYPAL_RECEIVER_EMAIL || '').trim();
+    if (!receiverEmail) throw new Error('PAYPAL_RECEIVER_EMAIL_NOT_CONFIGURED');
+
+    return {
+      provider,
+      receiverEmail,
+      destinationFingerprint: crypto.createHash('sha256').update(receiverEmail, 'utf8').digest('hex')
+    };
+  }
+
+  throw new Error('PAYONEER_PROVIDER_NOT_CONFIGURED: Configure an official Payoneer payout API contract before enabling this provider.');
+}
+
 export async function releaseApprovedMilestone(
   workOrderId: string,
   milestoneId: string,
-  provider: SettlementProvider,
-  receiverEmail: string
+  provider: SettlementProvider
 ) {
   requireDatabase();
-  if (!receiverEmail) throw new Error('SETTLEMENT_DESTINATION_REQUIRED');
+  const destination = getConfiguredSettlementDestination(provider);
 
   const reservationKey = `escrow:${workOrderId}:${milestoneId}`;
   const providerRequestId = `gp_${crypto.createHash('sha256').update(reservationKey).digest('hex').slice(0, 32)}`;
@@ -247,9 +261,17 @@ export async function releaseApprovedMilestone(
   if (reserved.alreadySettled) return { status: 'SETTLED', providerTransactionId: null };
 
   if (provider !== 'paypal') {
-    throw new Error('PAYONEER_PROVIDER_NOT_CONFIGURED: Configure an official Payoneer payout API contract before enabling this provider.');
+    throw new Error('SETTLEMENT_PROVIDER_NOT_SUPPORTED');
   }
   if (!isPayPalConfigured()) throw new Error('PAYPAL_NOT_CONFIGURED');
+
+  console.log(
+    '[Settlement] Destination verified against server-side configuration',
+    JSON.stringify({
+      provider: destination.provider,
+      destinationFingerprint: destination.destinationFingerprint
+    })
+  );
 
   let payout: { payoutBatchId: string; status: string };
   try {
@@ -257,7 +279,7 @@ export async function releaseApprovedMilestone(
     payout = { payoutBatchId: providerRequestId, status: existing.batchStatus };
   } catch {
     payout = await createPayPalPayout({
-      receiverEmail,
+      receiverEmail: destination.receiverEmail,
       amount: reserved.milestone.amount,
       currency: reserved.milestone.currency,
       note: `GigPilot approved milestone ${milestoneId}`,
