@@ -621,7 +621,7 @@ export async function createLivePayPalInvoice(params: {
         },
         invoicer: {
           business_name: 'Kundan Kumar',
-          email_address: cfg.receiverEmail || '${PAYPAL_RECEIVER_EMAIL}'
+          email_address: cfg.receiverEmail || process.env.PAYPAL_RECEIVER_EMAIL || ''
         },
         primary_recipients: [
           {
