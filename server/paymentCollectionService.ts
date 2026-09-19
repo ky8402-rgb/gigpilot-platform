@@ -124,20 +124,21 @@ export function recordCollectedPayment(data: {
  * Get all collected payments and revenue stats
  */
 export function getPaymentSummary() {
-  const totalCollectedUsd = paymentLedger.reduce((sum, p) => sum + p.amountUsd, 0);
-  const totalCollectedInr = paymentLedger.reduce((sum, p) => sum + p.amountInr, 0);
+  const paidPayments = paymentLedger.filter((p) => p.status === 'PAID');
+  const totalCollectedUsd = paidPayments.reduce((sum, p) => sum + p.amountUsd, 0);
+  const totalCollectedInr = paidPayments.reduce((sum, p) => sum + p.amountInr, 0);
 
   return {
     totalCollectedUsd,
     totalCollectedInr,
-    transactionCount: paymentLedger.length,
+    transactionCount: paidPayments.length,
     recentPayments: paymentLedger.slice(0, 20),
     primaryDestination: 'payoneer',
     destinations: {
       primary: 'payoneer',
       payoneer: PRIMARY_PAYONEER_ACCOUNT,
       paypal: PAYPAL_HANDLE,
-      paypalEmail: '${PAYPAL_ME_USERNAME}@gmail.com',
+      paypalEmail: '',
       usdToInrRate: USD_TO_INR_RATE,
     },
   };
