@@ -101,95 +101,7 @@ interface BidRecord {
   notes?: string;
 }
 
-// Fallback seed records if SQLite db has not been populated yet by python engine
-const fallbackBids: BidRecord[] = [
-  {
-    id: "fl_proj_98124",
-    job_title: "Full-Stack SaaS Platform with React, Node.js & Stripe",
-    company: "Apex Tech Labs",
-    platform: "freelancer",
-    package: "Full-Stack Engineering",
-    bid_amount: 499,
-    cover_letter: "I reviewed your SaaS requirements. I will deliver production architecture with verified milestones and instant deployment.",
-    status: "won",
-    client_name: "Apex Tech",
-    job_url: "https://www.freelancer.com/projects/react/full-stack-saas-platform",
-    submitted_at: new Date(Date.now() - 3600000 * 4).toISOString(),
-    updated_at: new Date(Date.now() - 3600000 * 2).toISOString(),
-  },
-  {
-    id: "fl_proj_98135",
-    job_title: "Gemini 2.5 AI Workflow Agent & Webhook Automation",
-    company: "OmniFlow Systems",
-    platform: "freelancer",
-    package: "AI Agent & Webhook",
-    bid_amount: 299,
-    cover_letter: "I specialize in autonomous LLM pipelines and webhook synchronization with sub-second latency.",
-    status: "active",
-    client_name: "OmniFlow",
-    job_url: "https://www.freelancer.com/projects/ai/gemini-workflow-agent",
-    submitted_at: new Date(Date.now() - 3600000 * 12).toISOString(),
-    updated_at: new Date(Date.now() - 3600000 * 12).toISOString(),
-  },
-  {
-    id: "fl_proj_98146",
-    job_title: "PayPal REST API & Razorpay Payment Integration",
-    company: "Global Goods Co",
-    platform: "freelancer",
-    package: "Payment Gateway Integration",
-    bid_amount: 199,
-    cover_letter: "Zero-failure checkout architecture with IPN/Webhook security validation and invoice dispatch.",
-    status: "won",
-    client_name: "Global Goods",
-    job_url: "https://www.freelancer.com/projects/payments/paypal-rest-integration",
-    submitted_at: new Date(Date.now() - 3600000 * 24).toISOString(),
-    updated_at: new Date(Date.now() - 3600000 * 18).toISOString(),
-  },
-  {
-    id: "fl_proj_98157",
-    job_title: "Fix Next.js Production Build Memory Leak & Performance Audit",
-    company: "Velocity Studios",
-    platform: "freelancer",
-    package: "Code Audit & Fixes",
-    bid_amount: 99,
-    cover_letter: "Complete memory profile inspection, dependency tree cleanup, and verified sub-100ms response time.",
-    status: "won",
-    client_name: "Velocity Studios",
-    job_url: "https://www.freelancer.com/projects/audit/nextjs-performance-audit",
-    submitted_at: new Date(Date.now() - 3600000 * 48).toISOString(),
-    updated_at: new Date(Date.now() - 3600000 * 40).toISOString(),
-  },
-  {
-    id: "fl_proj_98168",
-    job_title: "React Native Mobile App Firebase Auth & Notifications",
-    company: "Pulse Media",
-    platform: "freelancer",
-    package: "Full-Stack Engineering",
-    bid_amount: 499,
-    cover_letter: "Clean modular components with verified token refresh and push notification handlers.",
-    status: "active",
-    client_name: "Pulse Media",
-    job_url: "https://www.freelancer.com/projects/mobile/react-native-firebase",
-    submitted_at: new Date(Date.now() - 3600000 * 8).toISOString(),
-    updated_at: new Date(Date.now() - 3600000 * 8).toISOString(),
-  },
-  {
-    id: "fl_proj_98179",
-    job_title: "Telegram Bot with Auto-Trading & Webhook Alerts",
-    company: "CryptoSync Ltd",
-    platform: "freelancer",
-    package: "AI Agent & Webhook",
-    bid_amount: 299,
-    cover_letter: "High-frequency webhook ingest with async message dispatch and error retry queues.",
-    status: "won",
-    client_name: "CryptoSync",
-    job_url: "https://www.freelancer.com/projects/bot/telegram-auto-alerts",
-    submitted_at: new Date(Date.now() - 3600000 * 30).toISOString(),
-    updated_at: new Date(Date.now() - 3600000 * 20).toISOString(),
-  }
-];
-
-// Helper to query SQLite or PostgreSQL via optimized Prisma queries with select
+// No synthetic bid records. Revenue, wins, and work status must come from provider/DB records.\nconst fallbackBids: BidRecord[] = [];\n\n// Helper to query SQLite or PostgreSQL via optimized Prisma queries with select
 async function readBidsFromDb(): Promise<BidRecord[]> {
   const trackingStore = loadBidTracking();
 
@@ -382,7 +294,7 @@ conn.close()
           }
         } catch (_) {}
       }
-      resolve(enrichBids(fallbackBids));
+      resolve(enrichBids([]));
     });
   });
 }

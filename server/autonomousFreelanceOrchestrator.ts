@@ -1,6 +1,7 @@
 import { prisma } from './db.js';
 import { executeWorkOrderDeliverable } from './workExecutionEngine.js';
 import { getPlatformStatus } from './platformIntegrations.js';
+import { getFreelancerBidStatus, deliverFreelancerWorkPackage } from './freelancerService.js';
 import { logActivityEvent } from './activityLogger.js';
 
 export interface AutonomousReadiness {
@@ -37,22 +38,68 @@ export function getAutonomousReadiness(): AutonomousReadiness {
     blockers.push('PayPal client credentials are not configured for real settlement.');
   }
 
-  // Deliberately explicit: no invented provider acceptance or delivery.
-  blockers.push('Freelancer award/acceptance tracking is not yet backed by an official webhook/polling contract.');
-  blockers.push('Marketplace file/message delivery is not yet backed by an official provider delivery API.');
-  
+  // Acceptance and delivery adapters are provider-backed. Execution is still gated
+  // on real acceptance + real funding, and settlement on real provider confirmation.
   return {
     ready: blockers.length === 0,
     blockers,
     capabilities: {
       liveMarketplaceFeed: true,
       realBidSubmission: status.freelancer.tokenConfigured,
-      contractAcceptanceTracking: false,
+      contractAcceptanceTracking: status.freelancer.tokenConfigured,
       autonomousExecution: status.autonomous.executionEnabled,
-      realClientDelivery: false,
+      realClientDelivery: status.freelancer.tokenConfigured,
       realPayout: status.paypal.connected,
     }
   };
+}
+
+/**
+ * Poll submitted Freelancer bids and persist only provider-confirmed awards.
+ * This does not create a WorkOrder or funding record by itself.
+ */
+export async function syncFreelancerContractAcceptances(): Promise<{ scanned: number; accepted: number; errors: number }> {
+  const candidates = await prisma.workOrder.findMany({
+    where: {
+      externalProvider: { equals: 'Freelancer', mode: 'insensitive' },
+      externalBidId: { not: null },
+      externalAcceptanceVerified: false,
+    },
+    select: { id: true, externalBidId: true, externalProjectId: true },
+    take: 25,
+  });
+  let accepted = 0;
+  let errors = 0;
+  for (const order of candidates) {
+    try {
+      const status = await getFreelancerBidStatus(String(order.externalBidId));
+      if (!status.success) { errors += 1; continue; }
+      const awarded = String(status.awardStatus || '').toLowerCase() === 'awarded';
+      const projectAwarded = String(status.raw?.project?.status || '').toLowerCase() === 'awarded';
+      if (!awarded && !projectAwarded) continue;
+      await prisma.workOrder.update({
+        where: { id: order.id },
+        data: {
+          externalAcceptanceVerified: true,
+          externalAcceptedAt: new Date(),
+          status: 'PENDING',
+          ...(status.projectId ? { externalProjectId: status.projectId } : {}),
+        },
+      });
+      accepted += 1;
+      logActivityEvent({
+        source: 'FreelancerAcceptanceSync',
+        type: 'CONTRACT_ACCEPTED',
+        status: 'success',
+        summary: `Freelancer provider confirmed award for bid ${order.externalBidId}.`,
+        tags: ['freelancer', 'award', 'provider_confirmed'],
+      });
+    } catch (err: any) {
+      errors += 1;
+      console.warn('[FreelancerAcceptanceSync] Order sync failed:', order.id, err?.message || err);
+    }
+  }
+  return { scanned: candidates.length, accepted, errors };
 }
 
 /**
@@ -87,11 +134,34 @@ export async function runAutonomousContractorCycle(maxJobs = 3) {
         budget: order.amount
       });
 
+      let deliveryStatus = 'READY_FOR_PROVIDER_DELIVERY';
+      let deliveryError: string | undefined;
+
+      if (String(order.externalProvider || '').toLowerCase() === 'freelancer' && order.externalProjectId) {
+        const delivery = await deliverFreelancerWorkPackage({
+          projectId: order.externalProjectId,
+          message: deliverable.clientHandoverNote + `\n\nDelivery checksum: ${deliverable.checksum}`,
+          files: deliverable.files.map((file) => ({ filename: file.filename, content: file.content })),
+        });
+        if (delivery.success) {
+          deliveryStatus = 'PROVIDER_DELIVERED';
+          logActivityEvent({
+            source: 'FreelancerDeliveryAdapter',
+            type: 'WORK_DELIVERED',
+            status: 'success',
+            summary: `Work order ${order.id} delivered through Freelancer project messaging with ${delivery.uploadedFiles} attachments.`,
+            tags: ['freelancer', 'delivery', 'provider_confirmed'],
+          });
+        } else {
+          deliveryError = delivery.error;
+        }
+      }
+
       await prisma.workOrder.update({
         where: { id: order.id },
         data: {
           status: 'IN_PROGRESS',
-          deliveryStatus: 'READY_FOR_PROVIDER_DELIVERY',
+          deliveryStatus,
           deliverableChecksum: deliverable.checksum,
           deliverables: deliverable.summary
         }
@@ -100,16 +170,19 @@ export async function runAutonomousContractorCycle(maxJobs = 3) {
       results.push({
         orderId: order.id,
         title: order.title,
-        deliveryStatus: 'READY_FOR_PROVIDER_DELIVERY',
+        deliveryStatus,
         checksum: deliverable.checksum,
-        files: deliverable.files.length
+        files: deliverable.files.length,
+        ...(deliveryError ? { error: deliveryError } : {})
       });
 
       logActivityEvent({
         source: 'AutonomousFreelanceOrchestrator',
-        type: 'WORK_READY_FOR_PROVIDER_DELIVERY',
-        status: 'success',
-        summary: 'Provider-confirmed work order ' + order.id + ' executed; deliverable is ready for the configured provider delivery adapter.',
+        type: deliveryStatus === 'PROVIDER_DELIVERED' ? 'WORK_DELIVERED' : 'WORK_READY_FOR_PROVIDER_DELIVERY',
+        status: deliveryStatus === 'PROVIDER_DELIVERED' ? 'success' : 'warning',
+        summary: deliveryStatus === 'PROVIDER_DELIVERED'
+          ? 'Provider-confirmed work order ' + order.id + ' was executed and delivered through the marketplace.'
+          : 'Provider-confirmed work order ' + order.id + ' executed; provider delivery is still pending.',
         tags: ['autonomous_freelance', 'execution', order.platform]
       });
     } catch (err: any) {

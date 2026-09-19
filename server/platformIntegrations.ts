@@ -1,3 +1,4 @@
+import { prisma } from './db.js';
 import axios from 'axios';
 
 export interface NormalizedWorkOrder {
@@ -421,6 +422,35 @@ export async function submitPlatformBid(orderId: number | string, proposalData: 
       });
       const bidId = response.data?.result?.id;
       if (!bidId) throw new Error('FREELANCER_BID_UNCONFIRMED: Provider returned no bid id.');
+
+      // Persist the real submitted bid as a non-awarded WorkOrder candidate.
+      // Acceptance and funding remain separate provider-confirmed states.
+      try {
+        const existing = await prisma.workOrder.findFirst({ where: { externalBidId: String(bidId) } });
+        if (!existing) {
+          await prisma.workOrder.create({
+            data: {
+              title: targetOrder.title,
+              clientName: targetOrder.client?.name || 'Freelancer Client',
+              clientEmail: undefined,
+              amount: Number(proposalData.bidAmount),
+              currency: 'USD',
+              status: 'PENDING',
+              platform: 'Freelancer',
+              description: targetOrder.description || '',
+              externalProvider: 'Freelancer',
+              externalProjectId: projectId,
+              externalBidId: String(bidId),
+              externalAcceptanceVerified: false,
+              escrowStatus: 'UNFUNDED',
+              deliveryStatus: 'NOT_READY',
+            }
+          });
+        }
+      } catch (persistErr: any) {
+        console.warn('[FreelancerBid] Bid was provider-confirmed but local persistence failed:', persistErr?.message || persistErr);
+      }
+
       return { success: true, externalBidId: String(bidId), platform: 'Freelancer', message: 'Freelancer bid submitted and confirmed by the provider.' };
     } catch (err: any) {
       return { success: false, platform: 'Freelancer', message: 'Freelancer bid submission failed; no external success was recorded.', error: err.response?.data?.message || err.message };

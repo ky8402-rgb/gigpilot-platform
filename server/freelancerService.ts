@@ -415,8 +415,8 @@ export async function getFreelancerTokenDetails(): Promise<{
     configured: Boolean(currentToken),
     tokenPresent: Boolean(currentToken),
     maskedToken: maskFreelancerToken(currentToken),
-    username: verification.username || 'kundank879',
-    userId: verification.userId || 94426143,
+    username: verification.username,
+    userId: verification.userId,
     status: verification.status,
     message: verification.message,
     isCustomToken: true,
@@ -544,6 +544,126 @@ export async function saveFreelancerApiToken(rawToken: string): Promise<{
   };
 }
 
+/**
+ * Poll one submitted bid through the official Freelancer API.
+ * Award state is provider data; GigPilot never infers acceptance from a local flag.
+ */
+export async function getFreelancerBidStatus(bidId: string | number): Promise<{
+  success: boolean;
+  bidId: string;
+  awardStatus?: string;
+  completeStatus?: string;
+  paidStatus?: string;
+  frontendStatus?: string;
+  projectId?: string;
+  raw?: any;
+  error?: string;
+}> {
+  const token = resolveActiveFreelancerToken();
+  if (!token) {
+    return { success: false, bidId: String(bidId), error: 'FREELANCER_NOT_CONFIGURED' };
+  }
+  const endpoint = `${getFreelancerApiBase()}/projects/0.1/bids/${encodeURIComponent(String(bidId))}`;
+  const result = await executeFreelancerRequest(endpoint, {
+    method: 'GET',
+    params: {
+      award_status_possibilities: true,
+      project_details: true,
+      job_details: true,
+    },
+    silent: true,
+  });
+  if (!result.success) {
+    return { success: false, bidId: String(bidId), error: result.error || `HTTP ${result.status || 0}` };
+  }
+  const data: any = result.data?.result || result.data || {};
+  const bid: any = data.bid || data;
+  return {
+    success: true,
+    bidId: String(bid.id || bidId),
+    awardStatus: bid.award_status || bid.awardStatus || bid.award_status_name,
+    completeStatus: bid.complete_status || bid.completeStatus,
+    paidStatus: bid.paid_status || bid.paidStatus,
+    frontendStatus: bid.frontend_status || bid.frontendStatus,
+    projectId: String(bid.project_id || bid.projectId || bid.project?.id || ''),
+    raw: bid,
+  };
+}
+
+/**
+ * Deliver an executed work package through Freelancer's official messaging API.
+ * Uses the provider project context, creates a project thread, posts the handover,
+ * and uploads generated files as message attachments.
+ */
+export async function deliverFreelancerWorkPackage(params: {
+  projectId: string | number;
+  message: string;
+  files: Array<{ filename: string; content: string }>;
+}): Promise<{ success: boolean; threadId?: string; uploadedFiles: number; error?: string }> {
+  const token = resolveActiveFreelancerToken();
+  if (!token) return { success: false, uploadedFiles: 0, error: 'FREELANCER_NOT_CONFIGURED' };
+
+  const base = getFreelancerApiBase();
+  const projectRes = await executeFreelancerRequest(`${base}/projects/0.1/projects/${encodeURIComponent(String(params.projectId))}`, {
+    method: 'GET',
+    silent: true,
+  });
+  if (!projectRes.success) return { success: false, uploadedFiles: 0, error: projectRes.error || 'PROJECT_LOOKUP_FAILED' };
+
+  const project = (projectRes.data as any)?.result || projectRes.data || {};
+  const ownerId = project.owner_id || project.ownerId || project.owner?.id;
+  if (!ownerId) return { success: false, uploadedFiles: 0, error: 'PROJECT_OWNER_NOT_FOUND' };
+
+  const form = new URLSearchParams();
+  form.append('members[]', String(ownerId));
+  form.append('context_type', 'project');
+  form.append('context', String(params.projectId));
+  form.append('message', params.message);
+  const threadRes = await fetch(`${base}/messages/0.1/threads/`, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${token}`,
+      'Content-Type': 'application/x-www-form-urlencoded',
+      Accept: 'application/json',
+    },
+    body: form.toString(),
+  });
+  const threadBody: any = await threadRes.json().catch(() => ({}));
+  if (!threadRes.ok || threadBody?.status === 'error') {
+    return { success: false, uploadedFiles: 0, error: threadBody?.message || `THREAD_CREATE_FAILED_HTTP_${threadRes.status}` };
+  }
+
+  const threadId = String(threadBody?.result?.id || threadBody?.result?.thread_id || '');
+  if (!threadId) return { success: false, uploadedFiles: 0, error: 'THREAD_ID_NOT_RETURNED' };
+
+  let uploadedFiles = 0;
+  const totalBytes = params.files.reduce((sum, file) => sum + Buffer.byteLength(file.content || '', 'utf8'), 0);
+  if (totalBytes > 7 * 1024 * 1024) {
+    return { success: false, threadId, uploadedFiles, error: 'DELIVERY_PACKAGE_TOO_LARGE_FOR_PROVIDER_MESSAGE' };
+  }
+
+  if (params.files.length > 0) {
+    const attachmentForm = new FormData();
+    for (const file of params.files) {
+      const blob = new Blob([file.content || ''], { type: 'text/plain' });
+      attachmentForm.append('files[]', blob, file.filename);
+      attachmentForm.append('attachments[]', file.filename);
+    }
+    const attachRes = await fetch(`${base}/messages/0.1/threads/${encodeURIComponent(threadId)}/messages/`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}`, Accept: 'application/json' },
+      body: attachmentForm,
+    });
+    const attachBody: any = await attachRes.json().catch(() => ({}));
+    if (!attachRes.ok || attachBody?.status === 'error') {
+      return { success: false, threadId, uploadedFiles, error: attachBody?.message || `ATTACHMENT_UPLOAD_FAILED_HTTP_${attachRes.status}` };
+    }
+    uploadedFiles = params.files.length;
+  }
+
+  return { success: true, threadId, uploadedFiles };
+}
+
 export interface FreelancerOAuth2Config {
   oauthVersion: '2.0';
   legacyV01Deprecated: boolean;
@@ -621,7 +741,7 @@ export function getFreelancerOAuth2Config(): FreelancerOAuth2Config {
 
   const expiresAt = storedConfig.freelancerTokenExpiresAt || null;
   const authMode = storedConfig.freelancerAuthMode || (clientId ? 'oauth2_app' : 'personal_token');
-  const currentUsername = storedConfig.freelancerUsername || 'kundank879';
+  const currentUsername = storedConfig.freelancerUsername || undefined;
 
   // Construct official Freelancer authorization URL
   const authUrlParams = new URLSearchParams({
