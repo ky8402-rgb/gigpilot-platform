@@ -7,6 +7,7 @@ import { getPgPool, memoryStore, User } from '../server/pgDatabase.js';
 import { getPayPalConfig, isPayPalConfigured } from '../server/paypal.js';
 import { logActivityEvent } from '../server/activityLogger.js';
 import { checkExternalLinkHealth, getFreelancerProjectUrl } from '../server/freelancerApi.js';
+import { getAutonomousReadiness, runAutonomousContractorCycle } from '../server/autonomousFreelanceOrchestrator.js';
 import { scanAndRetryMissingExternalJobs, syncJobToFreelancer, enqueueFreelancerJobSync, triggerWorkOrderFreelancerSync } from '../server/freelancerRetryQueue.js';
 
 const router = express.Router();
@@ -757,6 +758,31 @@ router.post('/jobs/:id/sync-freelancer', async (req, res) => {
         ? `Successfully synced job ${id} with external freelancer platform.`
         : `Could not sync job ${id}. Enqueued for automatic background retry.`,
     });
+  } catch (err: any) {
+    return res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+/**
+ * GET /api/autonomous-freelance/readiness
+ * Reports the real state of the find -> bid -> award -> work -> deliver -> paid loop.
+ */
+router.get('/autonomous-freelance/readiness', async (_req, res) => {
+  try {
+    return res.json({ success: true, readiness: getAutonomousReadiness() });
+  } catch (err: any) {
+    return res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+/**
+ * POST /api/autonomous-freelance/run
+ * Executes only provider-confirmed + funded contracts.
+ */
+router.post('/autonomous-freelance/run', async (req, res) => {
+  try {
+    const result = await runAutonomousContractorCycle(Number(req.body?.maxJobs) || 3);
+    return res.status(result.success ? 200 : 409).json(result);
   } catch (err: any) {
     return res.status(500).json({ success: false, error: err.message });
   }
