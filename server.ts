@@ -2509,19 +2509,19 @@ app.get(["/api/invoices/:id.pdf", "/api/invoices/:id/pdf", "/api/invoices/:id"],
       <div class="grid">
         <div class="box">
           <div style="font-size: 11px; font-weight: 700; margin-bottom: 6px; color: #0284c7;">Payoneer USD Checking (Citibank NY):</div>
-          <div class="field"><span style="color: #64748b;">Bank Name:</span><strong>Citibank</strong></div>
-          <div class="field"><span style="color: #64748b;">Bank Address:</span><span style="font-size: 11px;">111 Wall Street New York, NY 10043 USA</span></div>
-          <div class="field"><span style="color: #64748b;">Beneficiary:</span><strong>Kundan Kumar</strong></div>
-          <div class="field"><span style="color: #64748b;">Account Number:</span><span class="val-highlight">70589110002638744</span></div>
+          <div class="field"><span style="color: #64748b;">Bank Name:</span><strong>${process.env.PAYONEER_BANK_NAME || 'Configured server-side'}</strong></div>
+          <div class="field"><span style="color: #64748b;">Bank Address:</span><span style="font-size: 11px;">${process.env.PAYONEER_BANK_ADDRESS || 'Configured server-side'}</span></div>
+          <div class="field"><span style="color: #64748b;">Beneficiary:</span><strong>${process.env.PAYONEER_ACCOUNT_HOLDER || 'Configured server-side'}</strong></div>
+          <div class="field"><span style="color: #64748b;">Account Number:</span><span class="val-highlight">${process.env.PAYONEER_ACCOUNT_NUMBER || 'Configured server-side'}</span></div>
           <div class="field"><span style="color: #64748b;">Account Type:</span><strong style="color: #059669;">CHECKING</strong></div>
-          <div class="field"><span style="color: #64748b;">Routing (ABA):</span><span class="val-highlight">031100209</span></div>
-          <div class="field"><span style="color: #64748b;">SWIFT / BIC:</span><span class="val-highlight">CITIUS33</span></div>
+          <div class="field"><span style="color: #64748b;">Routing (ABA):</span><span class="val-highlight">${process.env.PAYONEER_ROUTING_ABA || 'Configured server-side'}</span></div>
+          <div class="field"><span style="color: #64748b;">SWIFT / BIC:</span><span class="val-highlight">${process.env.PAYONEER_SWIFT || 'Configured server-side'}</span></div>
           <div class="field"><span style="color: #64748b;">Currency:</span><strong>USD</strong></div>
         </div>
         <div class="box">
           <div style="font-size: 11px; font-weight: 700; margin-bottom: 6px; color: #0070ba;">PayPal Instant Checkout:</div>
-          <div class="field"><span style="color: #64748b;">Direct Link:</span><a href="https://paypal.me/ky8402" target="_blank" style="color: #0284c7; font-family: monospace;">paypal.me/ky8402</a></div>
-          <div class="field"><span style="color: #64748b;">Receiver:</span><span style="font-family: monospace;">kundank4@icloud.com</span></div>
+          <div class="field"><span style="color: #64748b;">Direct Link:</span><a href="${process.env.PAYPAL_ME_USERNAME ? `https://paypal.me/${process.env.PAYPAL_ME_USERNAME}` : 'Configured server-side'}" target="_blank" style="color: #0284c7; font-family: monospace;">paypal.me/ky8402</a></div>
+          <div class="field"><span style="color: #64748b;">Receiver:</span><span style="font-family: monospace;">${process.env.PAYPAL_RECEIVER_EMAIL || 'Configured server-side'}</span></div>
           <div style="margin-top: 10px; font-size: 11px; color: #64748b; line-height: 1.4;">
             Funds deposited via PayPal are auto-settled into our linked Payoneer Citibank checking account.
           </div>
