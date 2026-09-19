@@ -156,51 +156,10 @@ export const prisma: PrismaClient = createSafePrisma();
  * Persists normalized live jobs from Remote OK, We Work Remotely & FlexJobs into PostgreSQL
  */
 export async function syncLiveJobsToPostgres(jobs: any[]): Promise<number> {
-  if (!Array.isArray(jobs) || jobs.length === 0) return 0;
-  let syncedCount = 0;
-
-  for (const job of jobs) {
-    try {
-      const orderKey = `job_${(job.platform || 'remote').toLowerCase()}_${job.externalId || job.id}`;
-      const amount = Number(job.amount) || 500;
-      const title = String(job.title || 'Remote Work Order').slice(0, 250);
-      const clientName = job.client?.name ? String(job.client.name).slice(0, 100) : `${job.platform} Verified Client`;
-      const clientEmail = `${String(job.platform || 'remote').toLowerCase()}.client@remote-inward.com`;
-      const description = job.description 
-        ? String(job.description).slice(0, 1000) 
-        : `${job.platform} live opportunity. Skills: ${(job.skills || []).join(', ')}`;
-      const deliverables = `Scope of work for ${title}. Initialized via automated platform feed.`;
-
-      await prisma.workOrder.upsert({
-        where: { paypalOrderId: orderKey },
-        update: {
-          title,
-          amount,
-          status: 'PENDING',
-          updatedAt: new Date()
-        },
-        create: {
-          title,
-          clientName,
-          clientEmail,
-          amount,
-          currency: 'USD',
-          status: 'PENDING',
-          platform: String(job.platform || 'REMOTE_FEED').toUpperCase(),
-          paypalOrderId: orderKey,
-          description,
-          deliverables,
-          startDate: new Date(),
-          dueDate: new Date(Date.now() + 14 * 24 * 60 * 60 * 1000)
-        }
-      });
-      syncedCount++;
-    } catch (err: any) {
-      console.warn(`[Postgres Job Sync] Notice for job ${job.id}:`, err.message);
-    }
-  }
-
-  return syncedCount;
+  // A marketplace listing is a lead, not an awarded contract. Never create a WorkOrder,
+  // fabricate a client email, or mark payment status from a public feed.
+  // WorkOrders are created only after a provider-confirmed award/acceptance or a verified PayPal capture.
+  return Array.isArray(jobs) ? jobs.length : 0;
 }
 
 /**
@@ -297,14 +256,7 @@ export async function initializeWorkOrderFromPayPal(params: {
     console.error('Failed to initialize WorkOrder from PayPal in PostgreSQL:', err);
     return {
       success: false,
-      error: err.message,
-      simulatedOrder: {
-        id: `wo_${Date.now()}`,
-        title,
-        amount: params.amount,
-        status: 'IN_PROGRESS',
-        paypalOrderId: params.orderId
-      }
+      error: err.message
     };
   }
 }

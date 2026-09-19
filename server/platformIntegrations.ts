@@ -184,125 +184,9 @@ export async function fetchUpworkJobsFromApi(query: string = ''): Promise<Normal
       console.warn('[Upwork Live Sync] Notice:', err.message);
     }
   }
-
-  // Fallback verified Upwork jobs across supported categories
-  return [
-    {
-      id: 'upwork_0129a8f4c',
-      externalId: '0129a8f4c',
-      title: 'Shopify Store Catalog Web Scraper with Live Stock & Price Monitoring',
-      platform: 'Upwork',
-      status: 'pending',
-      amount: 799,
-      category: 'Data scraping',
-      time: 'Just now',
-      client: {
-        name: 'D2C Retail Brands Ltd',
-        country: 'United States',
-        rating: 4.98,
-        totalSpent: 84000,
-        paymentVerified: true
-      },
-      description: 'Extract 15,000 product SKUs with variant options and setup daily price monitoring into CSV & Excel.',
-      skills: ['Python', 'Web Scraping', 'Shopify', 'CSV', 'Price Monitoring'],
-      platformUrl: 'https://upwork.com/jobs/~0129a8f4c',
-      location: 'Remote',
-      salaryMin: 399,
-      salaryMax: 799
-    },
-    {
-      id: 'upwork_0142c9f1d',
-      externalId: '0142c9f1d',
-      title: '2,500-word Authority SEO Blog Posts & Product Guides',
-      platform: 'Upwork',
-      status: 'pending',
-      amount: 350,
-      category: 'Content writing',
-      time: '25m ago',
-      client: {
-        name: 'Nexus B2B Media',
-        country: 'United States',
-        rating: 4.95,
-        totalSpent: 48000,
-        paymentVerified: true
-      },
-      description: 'Write high-intent, deeply researched technical blog posts and SEO product descriptions in Word/Google Docs format.',
-      skills: ['Content Writing', 'SEO Article', 'Copywriting', 'Word / Doc'],
-      platformUrl: 'https://upwork.com/jobs/~0142c9f1d',
-      location: 'Remote',
-      salaryMin: 200,
-      salaryMax: 450
-    },
-    {
-      id: 'upwork_0155e8a2b',
-      externalId: '0155e8a2b',
-      title: 'Google Apps Script (.gs) & Sheets Automation Pipeline',
-      platform: 'Upwork',
-      status: 'pending',
-      amount: 280,
-      category: 'Simple coding',
-      time: '40m ago',
-      client: {
-        name: 'Acuity Capital Ops',
-        country: 'United Kingdom',
-        rating: 4.91,
-        totalSpent: 31000,
-        paymentVerified: true
-      },
-      description: 'Build Google Apps Script (.gs) automation to synchronize incoming sales rows with webhooks and generate formatted reports.',
-      skills: ['Google Apps Script', 'Python', 'Excel Macro', '.gs', 'Simple Coding'],
-      platformUrl: 'https://upwork.com/jobs/~0155e8a2b',
-      location: 'Remote',
-      salaryMin: 150,
-      salaryMax: 350
-    },
-    {
-      id: 'upwork_0167f3c4e',
-      externalId: '0167f3c4e',
-      title: 'Automated PDF Invoice & Form Generator with Tax Calculation',
-      platform: 'Upwork',
-      status: 'pending',
-      amount: 380,
-      category: 'PDF & document automation',
-      time: '1h ago',
-      client: {
-        name: 'Vanguard Global Corp',
-        country: 'Canada',
-        rating: 4.97,
-        totalSpent: 62000,
-        paymentVerified: true
-      },
-      description: 'Create automated PDF invoice generation script with ReportLab/PDFKit and extract tabular expense reports into Excel.',
-      skills: ['PDF Automation', 'ReportLab', 'Invoice Generator', 'Excel'],
-      platformUrl: 'https://upwork.com/jobs/~0167f3c4e',
-      location: 'Remote',
-      salaryMin: 250,
-      salaryMax: 500
-    },
-    {
-      id: 'upwork_0178d1e5a',
-      externalId: '0178d1e5a',
-      title: 'English to Spanish Technical Manual & Video Subtitle Translation',
-      platform: 'Upwork',
-      status: 'pending',
-      amount: 320,
-      category: 'Translation',
-      time: '2h ago',
-      client: {
-        name: 'Iberia Tech Solutions',
-        country: 'Spain',
-        rating: 4.88,
-        totalSpent: 19500,
-        paymentVerified: true
-      },
-      description: 'Translate software documentation and generate aligned bilingual SRT subtitle tracks with consistent technical glossaries.',
-      skills: ['Translation', 'Spanish', 'SRT Subtitles', 'Bilingual'],
-      platformUrl: 'https://upwork.com/jobs/~0178d1e5a',
-      location: 'Remote',
-      salaryMin: 180,
-      salaryMax: 400
-    }
-  ];
+  // Never fabricate marketplace listings. If the official API is unavailable or unauthenticated,
+  // return an empty result and let the caller surface the disconnected state.
+  return [];
 }
 
 /**
@@ -350,79 +234,7 @@ export async function fetchContraJobsFromApi(query: string = ''): Promise<Normal
       console.warn('[Contra Live Sync] Notice:', err.message);
     }
   }
-
-  // Fallback verified Contra jobs across supported categories
-  return [
-    {
-      id: 'contra_maps_44',
-      externalId: 'maps_44',
-      title: 'Scanned PDF Financial Ledger to Formatted Excel Workbook',
-      platform: 'Contra',
-      status: 'pending',
-      amount: 280,
-      category: 'Data entry & conversion',
-      time: '2h ago',
-      client: {
-        name: 'Metropolitan Financial Partners',
-        country: 'United States',
-        rating: 4.95,
-        totalSpent: 31000,
-        paymentVerified: true
-      },
-      description: 'Convert 45 monthly scanned invoice statements into clean audited Excel workbooks with pandas & OCR reconciliation.',
-      skills: ['OCR', 'pandas', 'openpyxl', 'Data Entry', 'Excel'],
-      platformUrl: 'https://contra.com/p/pdf-to-excel-44',
-      location: 'Remote',
-      salaryMin: 150,
-      salaryMax: 350
-    },
-    {
-      id: 'contra_seo_92',
-      externalId: 'seo_92',
-      title: 'B2B SaaS Competitor Organic Keyword Gap & Lead List Research',
-      platform: 'Contra',
-      status: 'pending',
-      amount: 420,
-      category: 'SEO & research',
-      time: '3h ago',
-      client: {
-        name: 'Apex Growth Labs',
-        country: 'United Kingdom',
-        rating: 4.98,
-        totalSpent: 54000,
-        paymentVerified: true
-      },
-      description: 'Conduct competitor backlink and keyword gap research, organize actionable content clusters into a spreadsheet, and extract 250 qualified B2B leads.',
-      skills: ['SEO', 'Keyword Research', 'Lead Lists', 'Spreadsheet'],
-      platformUrl: 'https://contra.com/p/seo-research-92',
-      location: 'Remote',
-      salaryMin: 300,
-      salaryMax: 500
-    },
-    {
-      id: 'contra_social_18',
-      externalId: 'social_18',
-      title: '30-Day Multi-Platform Social Media Calendar & Caption Pack',
-      platform: 'Contra',
-      status: 'pending',
-      amount: 340,
-      category: 'Social media content',
-      time: '4h ago',
-      client: {
-        name: 'Starlight Retail Brands',
-        country: 'Australia',
-        rating: 4.89,
-        totalSpent: 26000,
-        paymentVerified: true
-      },
-      description: 'Generate 30 days of high-conversion LinkedIn posts, Twitter threads, Instagram captions, and hashtags formatted in a CSV schedule.',
-      skills: ['Social Media', 'Content Calendar', 'Captions', 'Hashtags', 'CSV'],
-      platformUrl: 'https://contra.com/p/social-content-18',
-      location: 'Remote',
-      salaryMin: 200,
-      salaryMax: 400
-    }
-  ];
+  return [];
 }
 
 /**
@@ -481,156 +293,123 @@ export async function fetchFreelancerJobsFromApi(query: string = ''): Promise<No
   } catch (err: any) {
     console.warn('[Freelancer Live Sync] Notice:', err.message);
   }
-
-  // Fallback verified Freelancer.com jobs across supported categories
-  return [
-    {
-      id: 'fl_audio_210',
-      externalId: 'audio_210',
-      title: '60-Minute Executive Interview Audio Transcription & SRT Subtitles',
-      platform: 'Freelancer',
-      status: 'pending',
-      amount: 210,
-      category: 'Transcription',
-      time: '1h ago',
-      client: {
-        name: 'OmniMedia Podcast Network',
-        country: 'United States',
-        rating: 4.93,
-        totalSpent: 38000,
-        paymentVerified: true
-      },
-      description: 'Transcribe high-level executive panel audio into verbatim timestamped text transcript and SRT/VTT caption tracks using Whisper.',
-      skills: ['Whisper', 'Transcription', 'SRT', 'VTT', 'Speech to Text'],
-      platformUrl: 'https://freelancer.com/projects/audio-transcription-210',
-      location: 'Remote',
-      salaryMin: 120,
-      salaryMax: 250
-    },
-    {
-      id: 'fl_img_260',
-      externalId: 'img_260',
-      title: 'Batch Product Photo Background Removal, Watermark & Format Conversion',
-      platform: 'Freelancer',
-      status: 'pending',
-      amount: 260,
-      category: 'Image processing',
-      time: '3h ago',
-      client: {
-        name: 'Studio Lux E-commerce',
-        country: 'France',
-        rating: 4.89,
-        totalSpent: 27000,
-        paymentVerified: true
-      },
-      description: 'Automate transparent background cutout, standard watermark stamp, and multi-tier PNG/JPG format conversion for 400 catalog photos.',
-      skills: ['PIL', 'OpenCV', 'Image Processing', 'PNG', 'JPG'],
-      platformUrl: 'https://freelancer.com/projects/image-processing-260',
-      location: 'Remote',
-      salaryMin: 150,
-      salaryMax: 350
-    },
-    {
-      id: 'fl_pdf_450',
-      externalId: 'pdf_450',
-      title: 'Financial Statement Multi-Page PDF Table Extraction to Excel/CSV',
-      platform: 'Freelancer',
-      status: 'pending',
-      amount: 190,
-      category: 'PDF & document automation',
-      time: '4h ago',
-      client: {
-        name: 'FinAudit Partners',
-        country: 'Canada',
-        rating: 4.9,
-        totalSpent: 22000,
-        paymentVerified: true
-      },
-      description: 'Extract multi-page tabular bank and ledger statements with 100% precision into structured CSV and audited Excel spreadsheets.',
-      skills: ['PDF Extraction', 'Excel Export', 'CSV', 'pdfplumber'],
-      platformUrl: 'https://freelancer.com/projects/pdf-extraction-450',
-      location: 'Remote',
-      salaryMin: 120,
-      salaryMax: 240
-    }
-  ];
+  return [];
 }
 
-// Deprecated aliases for backwards compatibility
-export const fetchRemoteOKJobsFromApi = fetchUpworkJobsFromApi;
-export const fetchWWRJobsFromApi = fetchContraJobsFromApi;
-export const fetchFlexJobsFromApi = fetchFreelancerJobsFromApi;
+/** Real RemoteOK public feed. RemoteOK is a job board, not a contract/award API. */
+export async function fetchRemoteOKJobsFromApi(query: string = ''): Promise<NormalizedWorkOrder[]> {
+  try {
+    const response = await axios.get('https://remoteok.com/api', {
+      headers: { 'Accept': 'application/json', 'User-Agent': 'GigPilot/1.0 (+https://main.d2qe2q720fbn3x.amplifyapp.com/)' },
+      timeout: 10000
+    });
+    const items = Array.isArray(response.data) ? response.data.slice(1) : [];
+    const q = query.trim().toLowerCase();
+    return items
+      .filter((j: any) => j && j.id && (!q || `${j.position || ''} ${j.description || ''} ${(j.tags || []).join(' ')}`.toLowerCase().includes(q)))
+      .filter((j: any) => isSupportedJobGig(j.position || j.title, j.description || ''))
+      .map((j: any): NormalizedWorkOrder => ({
+        id: `remoteok_${j.id}`,
+        externalId: String(j.id),
+        title: String(j.position || j.title || 'Remote opportunity').slice(0, 250),
+        platform: 'RemoteOK',
+        status: 'pending',
+        amount: Number(j.salary_min || j.salary_max || 0),
+        category: 'Remote Job Board',
+        time: j.date ? new Date(j.date).toLocaleDateString() : 'Active',
+        client: {
+          name: String(j.company || 'RemoteOK employer').slice(0, 100),
+          country: j.location || 'Remote',
+          paymentVerified: false
+        },
+        description: String(j.description || '').replace(/<[^>]*>?/gm, '').slice(0, 1000),
+        skills: Array.isArray(j.tags) ? j.tags.map(String).slice(0, 20) : [],
+        platformUrl: j.url || j.apply_url || `https://remoteok.com/remote-jobs/${j.slug || j.id}`,
+        location: j.location || 'Remote',
+        salaryMin: Number(j.salary_min || 0) || undefined,
+        salaryMax: Number(j.salary_max || 0) || undefined
+      }));
+  } catch (err: any) {
+    console.warn('[RemoteOK Live Sync] Notice:', err.message);
+    return [];
+  }
+}
+
+/** We Work Remotely and FlexJobs do not expose a supported authenticated contract API here. */
+export const fetchWWRJobsFromApi = async (_query: string = ''): Promise<NormalizedWorkOrder[]> => [];
+export const fetchFlexJobsFromApi = async (_query: string = ''): Promise<NormalizedWorkOrder[]> => [];
 
 /**
- * Unified Live Platform Job Ingestion from Upwork (OAuth), Contra & Freelancer.com
- * strictly filtered to data-scraping jobs only.
+ * Unified live platform job ingestion. Public job boards are leads; marketplace contracts require provider confirmation.
  */
 export async function fetchLivePlatformJobs(query: string = ''): Promise<{
   jobs: NormalizedWorkOrder[];
   source: 'live_api' | 'cached_stream';
   platformsChecked: string[];
 }> {
-  const platformsChecked: string[] = ['Upwork (OAuth)', 'Contra', 'Freelancer.com'];
-  
-  const [upworkResults, contraResults, freelancerResults] = await Promise.allSettled([
+  const platformsChecked = ['RemoteOK (public feed)', 'Upwork (OAuth)', 'Contra (API)', 'Freelancer.com (OAuth)'];
+  const [remoteOk, upwork, contra, freelancer] = await Promise.allSettled([
+    fetchRemoteOKJobsFromApi(query),
     fetchUpworkJobsFromApi(query),
     fetchContraJobsFromApi(query),
     fetchFreelancerJobsFromApi(query)
   ]);
-
   const fetched: NormalizedWorkOrder[] = [];
-
-  if (upworkResults.status === 'fulfilled') {
-    fetched.push(...upworkResults.value);
+  for (const r of [remoteOk, upwork, contra, freelancer]) {
+    if (r.status === 'fulfilled') fetched.push(...r.value);
   }
-  if (contraResults.status === 'fulfilled') {
-    fetched.push(...contraResults.value);
+  const existingIds = new Set<string>();
+  const deduped = fetched.filter(item => {
+    const key = `${item.platform}:${item.externalId || item.id}`;
+    if (existingIds.has(key)) return false;
+    existingIds.add(key);
+    return true;
+  });
+  if (deduped.length) {
+    liveWorkOrders = deduped.concat(liveWorkOrders.filter(o => !existingIds.has(`${o.platform}:${o.externalId || o.id}`))).slice(0, 100);
+    return { jobs: liveWorkOrders, source: 'live_api', platformsChecked };
   }
-  if (freelancerResults.status === 'fulfilled') {
-    fetched.push(...freelancerResults.value);
-  }
-
-  if (fetched.length > 0) {
-    const existingIds = new Set(liveWorkOrders.map(o => String(o.id)));
-    for (const item of fetched) {
-      if (!existingIds.has(String(item.id))) {
-        liveWorkOrders.unshift(item);
-        existingIds.add(String(item.id));
-      }
-    }
-
-    return {
-      jobs: liveWorkOrders.slice(0, 100),
-      source: 'live_api',
-      platformsChecked
-    };
-  }
-
-  return {
-    jobs: liveWorkOrders,
-    source: 'cached_stream',
-    platformsChecked
-  };
+  return { jobs: liveWorkOrders, source: 'cached_stream', platformsChecked };
 }
 
-/**
- * Submit proposal or bid to platform
- */
+/** Submit only a real, provider-confirmed proposal. Never synthesize an external bid id. */
 export async function submitPlatformBid(orderId: number | string, proposalData: {
   bidAmount: number;
   deliveryDays: number;
   coverLetter: string;
   milestones?: { title: string; amount: number }[];
-}): Promise<{ success: boolean; externalBidId: string; platform: string; message: string }> {
+}): Promise<{ success: boolean; externalBidId?: string; platform: string; message: string; error?: string }> {
   const targetOrder = liveWorkOrders.find(o => String(o.id) === String(orderId) || o.externalId === String(orderId));
-  const platform = targetOrder?.platform || 'Upwork';
+  if (!targetOrder) throw new Error('LIVE_JOB_NOT_FOUND: The requested live job is not in the current provider feed.');
 
-  return {
-    success: true,
-    externalBidId: `${platform.toLowerCase()}_prop_${Date.now()}`,
-    platform: platform,
-    message: `Scraping proposal successfully dispatched to ${platform} ($${proposalData.bidAmount} terms).`
-  };
+  if (targetOrder.platform === 'Freelancer') {
+    const token = (process.env.FREELANCER_ACCESS_TOKEN || process.env.FREELANCER_API_KEY || '').trim();
+    if (!token) {
+      return { success: false, platform: 'Freelancer', message: 'Freelancer OAuth/API credentials are not configured; no bid was submitted.', error: 'FREELANCER_NOT_CONFIGURED' };
+    }
+    const projectId = String(targetOrder.externalId || targetOrder.id).replace(/^fl_/, '');
+    const base = (process.env.FREELANCER_API_BASE_URL || process.env.FREELANCER_API_BASE || process.env.FREELANCER_API_URL || 'https://www.freelancer.com/api').replace(/\\/+$/, '');
+    try {
+      const response = await axios.post(`${base}/projects/0.1/bids/`, {
+        project_id: Number(projectId),
+        bidder_id: null,
+        amount: Number(proposalData.bidAmount),
+        period: Math.max(1, Number(proposalData.deliveryDays) || 5),
+        description: proposalData.coverLetter,
+        milestone_percentage: 100
+      }, {
+        headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json', 'Accept': 'application/json' },
+        timeout: 15000
+      });
+      const bidId = response.data?.result?.id;
+      if (!bidId) throw new Error('FREELANCER_BID_UNCONFIRMED: Provider returned no bid id.');
+      return { success: true, externalBidId: String(bidId), platform: 'Freelancer', message: 'Freelancer bid submitted and confirmed by the provider.' };
+    } catch (err: any) {
+      return { success: false, platform: 'Freelancer', message: 'Freelancer bid submission failed; no external success was recorded.', error: err.response?.data?.message || err.message };
+    }
+  }
+
+  return { success: false, platform: targetOrder.platform, message: `No supported bid-submission API is configured for ${targetOrder.platform}; the job remains a lead only.`, error: 'BID_PROVIDER_UNSUPPORTED' };
 }
 
 export function getAllLiveOrders(): NormalizedWorkOrder[] {

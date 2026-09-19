@@ -414,16 +414,16 @@ export async function getPayPalLiveBalance(): Promise<{
     success: false,
     accountId: '',
     merchantName: '',
-    email: cfg.receiverEmail || '',
-    paypalMeUsername: cfg.paypalMeUsername || '',
-    availableBalance: 0.00,
-    totalBalance: 0.00,
-    withheldBalance: 0.00,
+    email: '',
+    paypalMeUsername: '',
+    availableBalance: 0,
+    totalBalance: 0,
+    withheldBalance: 0,
     currency: 'USD',
     asOfTime: new Date().toISOString(),
     isLiveRest: false,
-    autoSweepStatus: 'Active - Daily Automated Settlement to Linked Payoneer Citibank Account',
-    linkedBank: 'Citibank NY (Payoneer Checking ••••8744 / Routing: 031100209 / SWIFT: CITIUS33)'
+    autoSweepStatus: 'UNKNOWN - provider confirmation required',
+    linkedBank: 'UNKNOWN - provider configuration required'
   };
 }
 
@@ -650,16 +650,5 @@ export async function createLivePayPalInvoice(params: {
     }
   }
 
-  // Fallback to PayPal.me direct smart payment link
-  const fallbackId = `INV-SMART-${Date.now().toString().slice(-6)}`;
-  return {
-    success: true,
-    invoiceId: fallbackId,
-    invoiceNumber: fallbackId,
-    payerViewUrl: `https://paypal.me/${cfg.paypalMeUsername || 'ky8402'}/${formattedAmount}${currency}`,
-    status: 'SMART_LINK',
-    amount: Number(params.amount),
-    currency,
-    isLiveRest: false
-  };
+  throw new Error('PAYPAL_INVOICE_CREATE_FAILED: PayPal did not confirm invoice creation.');
 }
