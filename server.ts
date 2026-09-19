@@ -51,6 +51,7 @@ import freelancerBidsRoutes from "./routes/freelancerBids.js";
 import neonRoutes from "./routes/neon.js";
 import autoDispatchRoutes from "./routes/autoDispatchRoutes.js";
 import { runAutonomousContractorCycle, syncFreelancerContractAcceptances } from "./server/autonomousFreelanceOrchestrator.js";
+import { contractOperationsRouter } from "./routes/contractOperations.js";
 import amplifyRoutes from "./server/amplifyRoutes.js";
 import devopsActionsRoutes from "./server/devopsActionsRoutes.js";
 import autoDeployRoutes from "./server/autoDeployRoutes.js";
@@ -373,6 +374,9 @@ app.use("/api/notifications", notificationsRoutes);
 
 // 6. Activity Logs & Telemetry
 app.use("/api/activity-logs", activityLogsRoutes);
+
+// Unified contract lifecycle telemetry and bottleneck detection
+app.use("/api/contract-operations", contractOperationsRouter);
 
 // 7. JWT Auth & User Profile Management
 app.use("/api/auth", authRoutes);

@@ -8,6 +8,7 @@ import { AppSidebar, type DashboardTab } from './components/dashboard/AppSidebar
 import { AppTopbar } from './components/dashboard/AppTopbar';
 import { AppMobileNav } from './components/dashboard/AppMobileNav';
 import { DashboardMetricsCards } from './components/dashboard/DashboardMetricsCards';
+import { ContractOperationsPanel } from './components/dashboard/ContractOperationsPanel';
 
 // Core Dashboard & View Components (Direct imports for immediate reliability and zero-flicker rendering)
 import { WorkOrdersView } from './components/views/WorkOrdersView';
@@ -1619,6 +1620,8 @@ export default function App() {
 
             {/* Autonomous Revenue Intelligence & Dynamic Pricing Panel */}
             <AutonomousRevenuePanel />
+
+            <ContractOperationsPanel />
 
             {/* Executive KPI Metrics Grid */}
             <DashboardMetricsCards
