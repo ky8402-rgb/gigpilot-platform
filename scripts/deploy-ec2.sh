@@ -24,6 +24,12 @@ else
 fi
 
 echo "Working directory: $(pwd)"
+# Load only the host's existing runtime environment; no credentials are committed.
+if [ -f ".env" ]; then
+  set -a
+  source .env
+  set +a
+fi
 git fetch --all --prune
 # Stash and reset any runtime logs so merge/pull succeeds cleanly
 git checkout -- RUN_LOG.md sentient-freelancer/RUN_LOG.md 2>/dev/null || true
