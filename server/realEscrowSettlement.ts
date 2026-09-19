@@ -248,11 +248,13 @@ export async function releaseApprovedMilestone(
   }
   if (!isPayPalConfigured()) throw new Error('PAYPAL_NOT_CONFIGURED');
 
+  const providerRequestId = `gp_${crypto.createHash('sha256').update(reservationKey).digest('hex').slice(0, 32)}`;
   const payout = await createPayPalPayout({
     receiverEmail,
     amount: reserved.milestone.amount,
     currency: reserved.milestone.currency,
-    note: `GigPilot approved milestone ${milestoneId}`
+    note: `GigPilot approved milestone ${milestoneId}`,
+    senderBatchId: providerRequestId
   });
 
   const confirmation = await getPayPalPayoutBatch(payout.payoutBatchId);
