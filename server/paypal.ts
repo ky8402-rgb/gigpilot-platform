@@ -355,6 +355,54 @@ export async function createPayPalPayout(params: {
 }
 
 /**
+ * Fetch a PayPal payout batch and its provider-confirmed item transaction IDs.
+ * A batch ID alone is not settlement confirmation; callers must require SUCCESS
+ * on the payout item and a provider transaction_id before recording SETTLED.
+ */
+export async function getPayPalPayoutBatch(payoutBatchId: string): Promise<{
+  batchStatus: string;
+  items: Array<{
+    payoutItemId?: string;
+    transactionId?: string;
+    transactionStatus?: string;
+    error?: string;
+  }>;
+}> {
+  if (!payoutBatchId) throw new Error('PAYPAL_PAYOUT_BATCH_ID_REQUIRED');
+  const token = await getPayPalAccessToken();
+  if (!token) throw new Error('PAYPAL_NOT_CONFIGURED: PayPal payout status could not be verified.');
+
+  const baseUrl = getPayPalBaseUrl();
+  try {
+    const res = await axios.get(
+      `${baseUrl}/v1/payments/payouts/${encodeURIComponent(payoutBatchId)}`,
+      {
+        headers: { Authorization: `Bearer ${token}` },
+        timeout: 12000
+      }
+    );
+
+    const items = Array.isArray(res.data?.items)
+      ? res.data.items.map((item: any) => ({
+          payoutItemId: item.payout_item_id,
+          transactionId: item.transaction_id,
+          transactionStatus: item.transaction_status,
+          error: item.errors?.name || item.errors?.message
+        }))
+      : [];
+
+    return {
+      batchStatus: res.data?.batch_header?.batch_status || 'UNKNOWN',
+      items
+    };
+  } catch (err: any) {
+    throw new Error(
+      `PAYPAL_PAYOUT_STATUS_FAILED: ${err?.response?.data?.message || err?.message || 'Provider status unavailable'}`
+    );
+  }
+}
+
+/**
  * Fetch Real-Time PayPal Account Balance & Merchant Status
  */
 export async function getPayPalLiveBalance(): Promise<{
