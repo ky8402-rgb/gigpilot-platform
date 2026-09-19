@@ -616,32 +616,25 @@ export async function submitLivePlatformBid(orderId: number | string, bidData: {
   milestones?: { title: string; amount: number }[];
 }): Promise<{ success: boolean; externalBidId?: string; platform?: string; message: string }> {
   try {
-    const res = await fetch(`${BACKEND_BASE_URL}/api/cron/find-and-bid`);
-    if (res.ok) {
-      const data = await res.json();
-      return {
-        success: true,
-        externalBidId: data.bids_placed ? `bid_${data.bids_placed}` : `bid_${orderId}`,
-        platform: 'freelancer',
-        message: 'Proposal successfully dispatched to Freelancer.com live pipeline!'
-      };
-    } else {
-      console.warn(`[GigPilot Backend] Warning: ${BACKEND_BASE_URL}/api/cron/find-and-bid responded with HTTP ${res.status}`);
-    }
-    const fallbackRes = await fetch(apiUrl('/api/platforms/submit-bid'), {
+    const res = await fetch(apiUrl('/api/platforms/submit-bid'), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ orderId, ...bidData })
     });
-    const fallbackData = await fallbackRes.json();
-    return fallbackData;
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      return {
+        success: false,
+        platform: 'freelancer',
+        message: data?.error || data?.message || `Bid submission failed (HTTP ${res.status})`
+      };
+    }
+    return data;
   } catch (err: any) {
-    console.warn(`[GigPilot Backend] Backend unreachable at ${BACKEND_BASE_URL}/api/cron/find-and-bid. Logging bid locally. Error:`, err?.message || err);
     return {
-      success: true,
-      externalBidId: `bid_${orderId}`,
+      success: false,
       platform: 'freelancer',
-      message: 'Proposal successfully logged and queued for client dispatch!'
+      message: err?.message || 'Freelancer bid service is unavailable'
     };
   }
 }
@@ -744,7 +737,7 @@ export async function fetchRemoteOKJobs(): Promise<RemoteOKJob[]> {
     });
     if (!res.ok) {
       console.warn(`RemoteOK API returned HTTP status ${res.status}`);
-      return getVerifiedFallbackJobs();
+      return [];
     }
     const jobs = await res.json();
     if (Array.isArray(jobs) && jobs.length > 0) {
@@ -764,7 +757,7 @@ export async function fetchRemoteOKJobs(): Promise<RemoteOKJob[]> {
         time: job.time || 'Today'
       }));
     }
-    return getVerifiedFallbackJobs();
+    return [];
   } catch (e) {
     console.warn('Notice loading RemoteOK feed, supplying verified live listings:', e);
     return getVerifiedFallbackJobs();
@@ -780,21 +773,9 @@ function getVerifiedFallbackJobs(): RemoteOKJob[] {
     { title: 'Mobile Responsive UI/UX Redesign & Design System', company: 'Apex Digital', category: 'UI/UX & Design', amount: 62.00, platform: 'RemoteOK', location: 'Worldwide 🌏', tags: ['ui/ux', 'tailwind', 'figma', 'react'] }
   ];
 
-  return fallbackTemplates.map((item, index) => ({
-    id: 'rok-seed-' + (index + 1) + '-' + Date.now(),
-    title: item.title,
-    company: item.company,
-    description: 'Autonomous verified remote work order ready for AI execution, proposal generation, and client settlement.',
-    url: 'https://remoteok.com',
-    pubDate: new Date().toISOString(),
-    tags: item.tags,
-    location: item.location,
-    status: 'pending',
-    amount: item.amount,
-    category: item.category,
-    platform: item.platform,
-    time: 'Today'
-  }));
+  // Never manufacture marketplace listings. An empty result means the live feed
+  // could not provide verified work at this time.
+  return [];
 }
 
 export async function fetchAllPublicJobs(): Promise<RemoteOKJob[]> {
@@ -812,7 +793,7 @@ export async function fetchAllPublicJobs(): Promise<RemoteOKJob[]> {
 
   // 2. Guaranteed high-paying verified public remote jobs if empty
   if (combined.length === 0) {
-    combined.push(...getVerifiedFallbackJobs());
+    // Keep the feed empty rather than fabricating jobs when all live sources fail.
   }
 
   // Return jobs
