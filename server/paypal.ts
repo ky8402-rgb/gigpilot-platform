@@ -38,8 +38,8 @@ let payPalConfig: PayPalConfig = {
   clientId: initialCreds.clientId,
   clientSecret: initialCreds.clientSecret,
   mode: (process.env.PAYPAL_MODE === 'sandbox') ? 'sandbox' : 'live',
-  receiverEmail: process.env.PAYPAL_RECEIVER_EMAIL || 'kundank4@icloud.com',
-  paypalMeUsername: process.env.PAYPAL_ME_USERNAME || 'ky8402',
+  receiverEmail: process.env.PAYPAL_RECEIVER_EMAIL || '',
+  paypalMeUsername: process.env.PAYPAL_ME_USERNAME || '',
   webhookId: process.env.PAYPAL_WEBHOOK_ID || '',
   currency: 'USD',
   autoCapture: true
@@ -53,8 +53,8 @@ export function getPayPalConfig(): PayPalConfig {
     clientId: payPalConfig.clientId || creds.clientId,
     clientSecret: payPalConfig.clientSecret || creds.clientSecret,
     mode: process.env.PAYPAL_MODE ? envMode : (payPalConfig.mode || 'live'),
-    receiverEmail: (process.env.PAYPAL_RECEIVER_EMAIL || payPalConfig.receiverEmail || 'kundank4@icloud.com').trim(),
-    paypalMeUsername: (process.env.PAYPAL_ME_USERNAME || payPalConfig.paypalMeUsername || 'ky8402').trim(),
+    receiverEmail: (process.env.PAYPAL_RECEIVER_EMAIL || payPalConfig.receiverEmail || '').trim(),
+    paypalMeUsername: (process.env.PAYPAL_ME_USERNAME || payPalConfig.paypalMeUsername || '').trim(),
     webhookId: (process.env.PAYPAL_WEBHOOK_ID || payPalConfig.webhookId || '').trim()
   };
 }
@@ -272,19 +272,12 @@ export async function capturePayPalOrder(orderId: string): Promise<{
         rawResponse: res.data
       };
     } catch (err: any) {
-      console.warn('PayPal REST capture error:', err?.response?.data || err.message);
+      console.error('PayPal REST capture error:', err?.response?.data || err.message);
+      throw new Error('PAYPAL_CAPTURE_FAILED: PayPal did not confirm the capture.');
     }
   }
 
-  // Instant Smart Settlement Fallback
-  return {
-    orderId,
-    status: 'COMPLETED',
-    captureId: `CAP-${Date.now()}`,
-    amountCaptured: 0,
-    currency: 'USD',
-    isLiveRest: false
-  };
+  throw new Error('PAYPAL_NOT_CONFIGURED: Live PayPal capture could not be verified.');
 }
 
 /**
@@ -399,18 +392,18 @@ export async function getPayPalLiveBalance(): Promise<{
 
       return {
         success: true,
-        accountId: res.data?.account_id || '98UNBJBN67H6W',
-        merchantName: 'Kundan Kumar',
-        email: cfg.receiverEmail || 'kundank4@icloud.com',
-        paypalMeUsername: cfg.paypalMeUsername || 'ky8402',
+        accountId: res.data?.account_id || '',
+        merchantName: '',
+        email: cfg.receiverEmail || '',
+        paypalMeUsername: cfg.paypalMeUsername || '',
         availableBalance: availVal,
         totalBalance: totalVal,
         withheldBalance: withheldVal,
         currency: primaryBalance?.currency || 'USD',
         asOfTime: res.data?.as_of_time || new Date().toISOString(),
         isLiveRest: true,
-        autoSweepStatus: 'Active - Daily Automated Settlement to Linked Payoneer Citibank Account',
-        linkedBank: 'Citibank NY (Payoneer Checking ••••8744 / Routing: 031100209 / SWIFT: CITIUS33)'
+        autoSweepStatus: 'UNKNOWN - provider confirmation required',
+        linkedBank: 'UNKNOWN - provider configuration required'
       };
     } catch (err: any) {
       console.warn('PayPal live balance query notice:', err?.response?.data || err.message);
@@ -419,10 +412,10 @@ export async function getPayPalLiveBalance(): Promise<{
 
   return {
     success: false,
-    accountId: '98UNBJBN67H6W',
-    merchantName: 'Kundan Kumar',
-    email: cfg.receiverEmail || 'kundank4@icloud.com',
-    paypalMeUsername: cfg.paypalMeUsername || 'ky8402',
+    accountId: '',
+    merchantName: '',
+    email: cfg.receiverEmail || '',
+    paypalMeUsername: cfg.paypalMeUsername || '',
     availableBalance: 0.00,
     totalBalance: 0.00,
     withheldBalance: 0.00,
