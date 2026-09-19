@@ -2060,42 +2060,14 @@ app.post("/api/work-orders/accept", (req, res) => {
 });
 
 // Complete Live Work Order
-app.post("/api/work-orders/complete", (req, res) => {
-  try {
-    const { orderId } = req.body;
-    const completed = completeLiveOrder(orderId);
-    if (completed) {
-      logActivityEvent({
-        source: (completed.platform as any) || 'System',
-        type: 'ORDER_STATE_SYNC',
-        status: 'success',
-        method: 'POST',
-        endpoint: '/api/work-orders/complete',
-        statusCode: 200,
-        summary: `Work Order #${completed.id} Completed: Payout $${completed.amount.toFixed(2)} USD released for "${completed.title}"`,
-        headers: { 'content-type': 'application/json' },
-        requestPayload: req.body,
-        responsePayload: { orderId: completed.id, status: 'completed', payout: completed.amount },
-        stateDiff: {
-          action: 'ESCROW_PAYOUT_RELEASED',
-          entityType: 'balance',
-          amountUsd: completed.amount,
-          details: `Milestone approved for "${completed.title}". Added $${completed.amount.toFixed(2)} USD to earnings.`
-        },
-        tags: ['order', 'completed', completed.platform.toLowerCase()]
-      });
-
-      return res.json({
-        success: true,
-        order: completed,
-        payoutAmount: completed.amount,
-        message: `Deliverables approved for "${completed.title}". Payout of $${completed.amount.toFixed(2)} USD recorded.`
-      });
-    }
-    res.status(404).json({ success: false, error: "Order not found" });
-  } catch (err: any) {
-    res.status(500).json({ success: false, error: err.message });
-  }
+app.post("/api/work-orders/complete", async (req, res) => {
+  // This endpoint previously converted any feed item into a fake completed/payout record.
+  // Real settlement is performed only by the completion worker after provider-confirmed payment/award state.
+  return res.status(409).json({
+    success: false,
+    error: "REAL_SETTLEMENT_REQUIRED",
+    message: "A live job listing cannot be marked completed or paid. A provider-confirmed award and customer payment/settlement record are required."
+  });
 });
 
 // =========================================================================
