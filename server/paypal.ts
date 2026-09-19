@@ -204,8 +204,7 @@ export async function createPayPalOrder(params: {
       const res = await axios.post(`${baseUrl}/v2/checkout/orders`, payload, {
         headers: {
           'Authorization': `Bearer ${token}`,
-          'Content-Type': 'application/json',
-          'PayPal-Request-Id': senderBatchId
+          'Content-Type': 'application/json'
         },
         timeout: 12000
       });
