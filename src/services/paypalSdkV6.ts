@@ -85,7 +85,8 @@ export async function getPayPalSdkV6Instance(config?: PayPalSdkV6Config): Promis
       });
     }
 
-    const clientId = config?.clientId || 'BAAv8rRenc5jlfD6eH_8pvgcU250jXTZCnyPKdBby13EAYRKhCempoPQ3Hj41GEfe2qBMu1P8ZslnbdkIc';
+    const clientId = config?.clientId || ((import.meta as any).env?.VITE_PAYPAL_CLIENT_ID || '').trim();
+    if (!clientId) throw new Error('PAYPAL_CLIENT_ID_MISSING: Configure VITE_PAYPAL_CLIENT_ID for checkout UI.');
 
     try {
       if (window.paypal && typeof window.paypal.createInstance === 'function') {
@@ -344,11 +345,7 @@ export async function configurePayPalButton(
           const approveUrl = `https://paypal.me/ky8402/${amount}${currency}`;
           const popup = window.open(approveUrl, 'PayPalCheckout', `width=${width},height=${height},left=${left},top=${top}`);
           
-          // Auto-trigger approval callback for demonstration/seamless flow if popup opened
-          setTimeout(() => {
-            paymentSessionOptions.onApprove({ orderId: orderData.orderId });
-          }, 3000);
-          return;
+          throw new Error('PAYPAL_SDK_FALLBACK: Complete payment in the PayPal checkout window; payment confirmation comes only from the server after PayPal capture.');
         }
         // If payment-handler fails or unsupported in standard browser tab without SW
         const err: any = new Error('payment-handler presentation mode not supported in current context');
