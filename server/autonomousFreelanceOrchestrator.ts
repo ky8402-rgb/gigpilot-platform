@@ -1,6 +1,7 @@
 import { prisma } from './db.js';
 import { executeWorkOrderDeliverable } from './workExecutionEngine.js';
 import { getPlatformStatus } from './platformIntegrations.js';
+import { getFreelancerBidStatus } from './freelancerService.js';
 import { logActivityEvent } from './activityLogger.js';
 
 export interface AutonomousReadiness {
@@ -53,6 +54,54 @@ export function getAutonomousReadiness(): AutonomousReadiness {
       realPayout: status.paypal.connected,
     }
   };
+}
+
+/**
+ * Poll submitted Freelancer bids and persist only provider-confirmed awards.
+ * This does not create a WorkOrder or funding record by itself.
+ */
+export async function syncFreelancerContractAcceptances(): Promise<{ scanned: number; accepted: number; errors: number }> {
+  const candidates = await prisma.workOrder.findMany({
+    where: {
+      externalProvider: { equals: 'Freelancer', mode: 'insensitive' },
+      externalBidId: { not: null },
+      externalAcceptanceVerified: false,
+    },
+    select: { id: true, externalBidId: true, externalProjectId: true },
+    take: 25,
+  });
+  let accepted = 0;
+  let errors = 0;
+  for (const order of candidates) {
+    try {
+      const status = await getFreelancerBidStatus(String(order.externalBidId));
+      if (!status.success) { errors += 1; continue; }
+      const awarded = String(status.awardStatus || '').toLowerCase() === 'awarded';
+      const projectAwarded = String(status.raw?.project?.status || '').toLowerCase() === 'awarded';
+      if (!awarded && !projectAwarded) continue;
+      await prisma.workOrder.update({
+        where: { id: order.id },
+        data: {
+          externalAcceptanceVerified: true,
+          externalAcceptedAt: new Date(),
+          status: 'PENDING',
+          ...(status.projectId ? { externalProjectId: status.projectId } : {}),
+        },
+      });
+      accepted += 1;
+      logActivityEvent({
+        source: 'FreelancerAcceptanceSync',
+        type: 'CONTRACT_ACCEPTED',
+        status: 'success',
+        summary: `Freelancer provider confirmed award for bid ${order.externalBidId}.`,
+        tags: ['freelancer', 'award', 'provider_confirmed'],
+      });
+    } catch (err: any) {
+      errors += 1;
+      console.warn('[FreelancerAcceptanceSync] Order sync failed:', order.id, err?.message || err);
+    }
+  }
+  return { scanned: candidates.length, accepted, errors };
 }
 
 /**
