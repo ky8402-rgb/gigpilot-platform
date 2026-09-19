@@ -2520,10 +2520,10 @@ app.get(["/api/invoices/:id.pdf", "/api/invoices/:id/pdf", "/api/invoices/:id"],
         </div>
         <div class="box">
           <div style="font-size: 11px; font-weight: 700; margin-bottom: 6px; color: #0070ba;">PayPal Instant Checkout:</div>
-          <div class="field"><span style="color: #64748b;">Direct Link:</span><a href="${process.env.PAYPAL_ME_USERNAME ? `https://paypal.me/${process.env.PAYPAL_ME_USERNAME}` : 'Configured server-side'}" target="_blank" style="color: #0284c7; font-family: monospace;">paypal.me/ky8402</a></div>
+          <div class="field"><span style="color: #64748b;">Direct Link:</span><a href="${process.env.PAYPAL_ME_USERNAME ? 'https://paypal.me/' + process.env.PAYPAL_ME_USERNAME : 'Configured server-side'}" target="_blank" style="color: #0284c7; font-family: monospace;">configured server-side</a></div>
           <div class="field"><span style="color: #64748b;">Receiver:</span><span style="font-family: monospace;">${process.env.PAYPAL_RECEIVER_EMAIL || 'Configured server-side'}</span></div>
           <div style="margin-top: 10px; font-size: 11px; color: #64748b; line-height: 1.4;">
-            Funds deposited via PayPal are auto-settled into our linked Payoneer Citibank checking account.
+            Funds are settled according to the provider-confirmed payout configuration.
           </div>
         </div>
       </div>
