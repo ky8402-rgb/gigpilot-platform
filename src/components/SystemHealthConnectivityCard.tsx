@@ -195,7 +195,7 @@ export const SystemHealthConnectivityCard: React.FC<SystemHealthConnectivityCard
           </div>
           <div>
             <div className="text-xs font-bold text-white truncate">
-              {health?.apiKeys?.paypal?.receiverEmail || 'kundank4@icloud.com'}
+              {health?.apiKeys?.paypal?.receiverEmail || 'configured server-side'}
             </div>
             <div className="text-[11px] text-slate-400 flex items-center justify-between mt-1">
               <span>Live Checkout</span>
@@ -283,7 +283,7 @@ export const SystemHealthConnectivityCard: React.FC<SystemHealthConnectivityCard
                 <div className="flex items-center justify-between pb-2 border-b border-slate-800/60">
                   <div>
                     <span className="font-semibold text-slate-200">PayPal Direct Gateway:</span>
-                    <p className="text-[11px] text-slate-400">Recipient: kundank4@icloud.com</p>
+                    <p className="text-[11px] text-slate-400">Recipient: configured server-side</p>
                   </div>
                   <div className="text-right">
                     <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
