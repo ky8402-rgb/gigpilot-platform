@@ -24,6 +24,7 @@ import {
   getAllInvoices
 } from '../backend/invoices.js';
 import { logActivityEvent } from '../server/activityLogger.js';
+import { authMiddleware } from '../server/authMiddleware.js';
 import { prisma } from '../server/db.js';
 import { recordVerifiedPayPalFunding, createMilestoneApprovalToken, approveMilestone, releaseApprovedMilestone } from '../server/realEscrowSettlement.js';
 
@@ -60,7 +61,7 @@ router.get('/config', (req, res) => {
  * POST /api/paypal/config
  * Update PayPal configuration at runtime
  */
-router.post('/config', (req, res) => {
+router.post('/config', authMiddleware, (req, res) => {
   try {
     const { clientId, clientSecret, mode, receiverEmail, paypalMeUsername, currency } = req.body;
     const updated = updatePayPalConfig({
@@ -407,7 +408,7 @@ router.get('/work-orders', async (req, res) => {
  * POST /api/paypal/payout
  * Send automated payout to collaborator / subcontractor
  */
-router.post('/payout', async (req, res) => {
+router.post('/payout', authMiddleware, async (req, res) => {
   try {
     const { receiverEmail, amount, note, recipientName } = req.body;
     const numericAmount = Number(amount);
@@ -555,7 +556,7 @@ router.post('/webhook', async (req, res) => {
 /**
  * Create, approve and release a funded milestone using persisted provider state.
  */
-router.post('/work-orders/:workOrderId/milestones', async (req, res) => {
+router.post('/work-orders/:workOrderId/milestones', authMiddleware, async (req, res) => {
   try {
     const result = await createMilestoneApprovalToken(req.params.workOrderId, Number(req.body?.amount || 0) || undefined);
     res.status(201).json({ success: true, ...result });
@@ -564,7 +565,7 @@ router.post('/work-orders/:workOrderId/milestones', async (req, res) => {
   }
 });
 
-router.post('/work-orders/:workOrderId/milestones/:milestoneId/approve', async (req, res) => {
+router.post('/work-orders/:workOrderId/milestones/:milestoneId/approve', authMiddleware, async (req, res) => {
   try {
     const result = await approveMilestone(
       req.params.workOrderId,
@@ -578,7 +579,7 @@ router.post('/work-orders/:workOrderId/milestones/:milestoneId/approve', async (
   }
 });
 
-router.post('/work-orders/:workOrderId/milestones/:milestoneId/release', async (req, res) => {
+router.post('/work-orders/:workOrderId/milestones/:milestoneId/release', authMiddleware, async (req, res) => {
   try {
     const provider = String(req.body?.provider || 'paypal') as 'paypal' | 'payoneer';
     const receiverEmail = String(req.body?.receiverEmail || '').trim();
