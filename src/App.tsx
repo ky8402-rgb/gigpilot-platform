@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback, Suspense, lazy } from 'react';
+import { AppErrorBoundary } from './components/AppErrorBoundary';
 import type { RemoteOKJobItem } from './components/RemoteOKJobsBoard';
 import { SEOHead } from './components/SEOHead';
 import { FreelanceJob, GeneratedProposal, ActiveContract, AutopilotRules, AutopilotLog, defaultProfile, defaultRules, defaultActiveContracts } from './types';
@@ -36,7 +37,6 @@ const SupportedJobTypesHub = lazy(() => import('./components/SupportedJobTypesHu
 const SoftwareJobAutonomousTool = lazy(() => import('./components/SoftwareJobAutonomousTool').then(m => ({ default: m.SoftwareJobAutonomousTool })));
 // Tool 2: Work Order Closer & Escrow Release (Senior Engineer API Endpoint)
 const WorkOrderCloserTool = lazy(() => import('./components/WorkOrderCloserTool').then(m => ({ default: m.WorkOrderCloserTool })));
-import { AppErrorBoundary } from './components/AppErrorBoundary';
 
 // Lazy-load heavy non-critical dashboard components to reduce initial JavaScript bundle
 const FreelancerMetricsSection = lazy(() => import('./components/FreelancerMetricsSection').then(m => ({ default: m.FreelancerMetricsSection })));
