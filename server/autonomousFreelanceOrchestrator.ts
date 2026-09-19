@@ -38,9 +38,9 @@ export function getAutonomousReadiness(): AutonomousReadiness {
     blockers.push('PayPal client credentials are not configured for real settlement.');
   }
 
-  // Deliberately explicit: no invented provider acceptance or delivery.
-  blockers.push('Freelancer award/acceptance tracking is not yet backed by an official webhook/polling contract.');
-  blockers.push('Marketplace file/message delivery is not yet backed by an official provider delivery API.');
+  // Acceptance is now polled from the provider's bid resource. Delivery remains
+  // intentionally fail-closed until an official delivery contract is wired.
+  blockers.push('Marketplace file/message delivery is not yet backed by a verified provider delivery adapter.');
   
   return {
     ready: blockers.length === 0,
@@ -48,7 +48,7 @@ export function getAutonomousReadiness(): AutonomousReadiness {
     capabilities: {
       liveMarketplaceFeed: true,
       realBidSubmission: status.freelancer.tokenConfigured,
-      contractAcceptanceTracking: false,
+      contractAcceptanceTracking: status.freelancer.tokenConfigured,
       autonomousExecution: status.autonomous.executionEnabled,
       realClientDelivery: false,
       realPayout: status.paypal.connected,
