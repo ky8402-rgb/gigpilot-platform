@@ -340,13 +340,7 @@ export const fetchWWRJobsFromApi = async (_query: string = ''): Promise<Normaliz
 export const fetchFlexJobsFromApi = async (_query: string = ''): Promise<NormalizedWorkOrder[]> => [];
 
 /**
-export const fetchRemoteOKJobsFromApi = fetchUpworkJobsFromApi;
-export const fetchWWRJobsFromApi = fetchContraJobsFromApi;
-export const fetchFlexJobsFromApi = fetchFreelancerJobsFromApi;
-
-/**
- * Unified Live Platform Job Ingestion from Upwork (OAuth), Contra & Freelancer.com
- * strictly filtered to data-scraping jobs only.
+ * Unified live platform job ingestion. Public job boards are leads; marketplace contracts require provider confirmation.
  */
 export async function fetchLivePlatformJobs(query: string = ''): Promise<{
   jobs: NormalizedWorkOrder[];
