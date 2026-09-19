@@ -60,7 +60,7 @@ jobs:
             curl -sS -X POST -d '{}' "$AMPLIFY_WEBHOOK" || true
           fi
           
-          echo "✔ AWS Amplify frontend auto-deploy triggered successfully."
+          echo "✔ AWS Amplify frontend deployment trigger submitted."
           echo "Amplify URL: https://main.$AMPLIFY_APP_ID.amplifyapp.com"
 
       - name: Report Amplify Status to Step Summary
