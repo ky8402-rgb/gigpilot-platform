@@ -6939,3 +6939,45 @@ export async function evaluateTool2OrderRiskApi(order: any, deliverable?: any): 
 
 
 
+
+
+export interface ContractOperation {
+  id: string;
+  title: string;
+  clientName: string;
+  platform: string;
+  amount: number;
+  currency: string;
+  state: string;
+  stateOrder: number;
+  blockingReasons: string[];
+  updatedAt: string;
+  dueDate?: string | null;
+  fundedAt?: string | null;
+  clientApprovedAt?: string | null;
+  deliveryStatus: string;
+  escrowStatus: string;
+  externalProvider?: string | null;
+  externalProjectId?: string | null;
+  externalBidId?: string | null;
+  externalAcceptanceVerified: boolean;
+}
+
+export interface ContractOperationsSummary {
+  success: boolean;
+  generatedAt: string;
+  totalContracts: number;
+  activeContracts: number;
+  settledContracts: number;
+  blockedContracts: number;
+  stalledContracts: number;
+  byState: Record<string, number>;
+  operations: ContractOperation[];
+}
+
+export async function fetchContractOperationsSummary(): Promise<ContractOperationsSummary> {
+  const baseUrl = getApiBaseUrl();
+  const res = await fetch(`${baseUrl}/api/contract-operations/summary`, { headers: { Accept: 'application/json' } });
+  if (!res.ok) throw new Error(`Failed to fetch contract operations (HTTP ${res.status})`);
+  return res.json();
+}
