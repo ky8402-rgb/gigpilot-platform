@@ -8,6 +8,7 @@ import { getPayPalConfig, isPayPalConfigured } from '../server/paypal.js';
 import { logActivityEvent } from '../server/activityLogger.js';
 import { checkExternalLinkHealth, getFreelancerProjectUrl } from '../server/freelancerApi.js';
 import { getAutonomousReadiness, runAutonomousContractorCycle } from '../server/autonomousFreelanceOrchestrator.js';
+import { runAutonomousBidCycle } from '../server/autonomousBidWorker.js';
 import { scanAndRetryMissingExternalJobs, syncJobToFreelancer, enqueueFreelancerJobSync, triggerWorkOrderFreelancerSync } from '../server/freelancerRetryQueue.js';
 
 const router = express.Router();
@@ -785,6 +786,16 @@ router.post('/autonomous-freelance/run', async (req, res) => {
     return res.status(result.success ? 200 : 409).json(result);
   } catch (err: any) {
     return res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+/** POST /api/autonomous-freelance/bid-cycle - submit only real provider bids when explicitly enabled. */
+router.post('/autonomous-freelance/bid-cycle', async (_req, res) => {
+  try {
+    const result = await runAutonomousBidCycle();
+    return res.status(result.enabled ? 200 : 409).json({ success: result.enabled, ...result });
+  } catch (err: any) {
+    return res.status(500).json({ success: false, error: err?.message || 'AUTONOMOUS_BID_CYCLE_FAILED' });
   }
 });
 
