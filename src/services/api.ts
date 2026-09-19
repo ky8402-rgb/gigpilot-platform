@@ -533,31 +533,31 @@ export async function getPlatformStatus(): Promise<PlatformConnectionStatus> {
   } catch (err) {
     return {
       remoteok: {
-        connected: true,
+        connected: false,
         authMethod: 'Live Remote Feed',
         endpoint: 'https://remoteok.com/api',
         lastPing: new Date().toISOString(),
         apiKeyConfigured: false
       },
       weworkremotely: {
-        connected: true,
+        connected: false,
         authMethod: 'Curated WWR Feed',
         endpoint: 'https://weworkremotely.com/api/v1/jobs',
         lastPing: new Date().toISOString(),
         apiKeyConfigured: false
       },
       flexjobs: {
-        connected: true,
+        connected: false,
         authMethod: 'Verified Jobs Stream',
         endpoint: 'https://www.flexjobs.com/api/v1/jobs',
         lastPing: new Date().toISOString(),
         apiKeyConfigured: false
       },
       paypal: {
-        connected: true,
-        mode: 'live',
-        receiverEmail: 'kundank4@icloud.com',
-        paypalMeUsername: 'ky8402'
+        connected: false,
+        mode: 'unconfigured',
+        receiverEmail: '',
+        paypalMeUsername: ''
       }
     };
   }
@@ -760,19 +760,11 @@ export async function fetchRemoteOKJobs(): Promise<RemoteOKJob[]> {
     return [];
   } catch (e) {
     console.warn('Notice loading RemoteOK feed, supplying verified live listings:', e);
-    return getVerifiedFallbackJobs();
+    return [];
   }
 }
 
 function getVerifiedFallbackJobs(): RemoteOKJob[] {
-  const fallbackTemplates = [
-    { title: 'Full-Stack React & Node.js Dashboard Engineer', company: 'NextGen Media', category: 'Software Development', amount: 68.50, platform: 'RemoteOK', location: 'Worldwide 🌏', tags: ['react', 'node', 'full-stack', 'typescript'] },
-    { title: 'PayPal Checkout Integration & React Webhook Handler', company: 'SaaS Payments Co', category: 'Software Development', amount: 75.00, platform: 'RemoteOK', location: 'USA / Remote 🇺🇸', tags: ['paypal', 'payments', 'react', 'api'] },
-    { title: 'Automated Data Pipeline & AI Bot Sync', company: 'DataFlow Labs', category: 'Backend & APIs', amount: 82.20, platform: 'RemoteOK', location: 'Worldwide 🌏', tags: ['python', 'ai', 'automation', 'gemini'] },
-    { title: 'Technical Documentation & Cloud Copywriting', company: 'Global Growth Co', category: 'Writing', amount: 48.00, platform: 'Direct Remote', location: 'Europe 🇪🇺', tags: ['docs', 'cloud', 'content'] },
-    { title: 'Mobile Responsive UI/UX Redesign & Design System', company: 'Apex Digital', category: 'UI/UX & Design', amount: 62.00, platform: 'RemoteOK', location: 'Worldwide 🌏', tags: ['ui/ux', 'tailwind', 'figma', 'react'] }
-  ];
-
   // Never manufacture marketplace listings. An empty result means the live feed
   // could not provide verified work at this time.
   return [];
@@ -833,15 +825,15 @@ export async function fetchPayPalConfig(): Promise<{ success: boolean; config: P
     return {
       success: false,
       config: {
-        receiverEmail: 'kundank4@icloud.com',
-        paypalMeUsername: 'ky8402',
-        mode: 'live',
+        receiverEmail: '',
+        paypalMeUsername: '',
+        mode: 'sandbox',
         currency: 'USD',
-        autoCapture: true,
-        clientId: 'sb'
+        autoCapture: false,
+        clientId: ''
       },
-      totalReceived: 205.00,
-      transactionCount: 2
+      totalReceived: 0,
+      transactionCount: 0
     };
   }
 }
