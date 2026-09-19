@@ -69,9 +69,12 @@ export const WorkOrderCloserTool: React.FC<WorkOrderCloserToolProps> = ({
   // Navigation sub-tabs within Tool 2
   const [activeTab, setActiveTab] = useState<'autonomous' | 'senior_engineer' | 'escrow_release' | 'settlement_ledger' | 'accounts_config'>('autonomous');
 
+  // Normalize the handoff payload so a missing/temporarily loading order list cannot crash Tool 2.
+  const safeLiveOrders = Array.isArray(liveOrders) ? liveOrders : [];
+
   // Selected order for closing
-  const completedOrders = liveOrders.filter(o => o.status === 'completed');
-  const allAvailableOrders = liveOrders;
+  const completedOrders = safeLiveOrders.filter(o => o && o.status === 'completed');
+  const allAvailableOrders = safeLiveOrders;
 
   const [selectedOrderId, setSelectedOrderId] = useState<string>(() => {
     if (handedOverOrderId) return String(handedOverOrderId);
@@ -87,7 +90,7 @@ export const WorkOrderCloserTool: React.FC<WorkOrderCloserToolProps> = ({
     }
   }, [handedOverOrderId]);
 
-  const selectedOrder = liveOrders.find(o => String(o.id) === String(selectedOrderId)) || {
+  const selectedOrder = safeLiveOrders.find(o => o && String(o.id) === String(selectedOrderId)) || {
     id: selectedOrderId,
     title: 'Full-Stack React & Node.js Platform Engineering',
     clientName: 'Apex Cloud Solutions',
