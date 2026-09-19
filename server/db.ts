@@ -217,8 +217,8 @@ export async function checkDatabaseConnection() {
         type: 'PostgreSQL (Neon / Supabase Ready)',
         latencyMs: 0,
         provider: 'PostgreSQL',
-        message: 'DATABASE_URL not configured. Running in high-performance in-memory mode. Add PostgreSQL or Neon credentials in Settings to sync cloud records.',
-        stats: { users: 1, transactions: 0, workOrders: 0, paypalOrders: 0 }
+        message: 'DATABASE_URL is not configured. Persistent database-backed operations are disabled until PostgreSQL is configured.',
+        stats: { users: 0, transactions: 0, workOrders: 0, paypalOrders: 0 }
       };
     }
 
