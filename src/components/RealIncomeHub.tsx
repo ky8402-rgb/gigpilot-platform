@@ -139,15 +139,15 @@ export const RealIncomeHub: React.FC<RealIncomeHubProps> = ({
   const [isSimulatingConfirmation, setIsSimulatingConfirmation] = useState(false);
 
   // Constants
-  const PAYPAL_HANDLE = '${PAYPAL_ME_USERNAME}';
-  const PAYPAL_EMAIL = '${PAYPAL_RECEIVER_EMAIL}';
+  const PAYPAL_HANDLE = 'ky8402';
+  const PAYPAL_EMAIL = 'kundank4@icloud.com';
   const ACCOUNT_HOLDER = 'Kundan Kumar';
-  const BANK_NAME = '${PAYONEER_BANK_NAME}';
-  const BANK_ADDRESS = '${PAYONEER_BANK_ADDRESS}';
-  const ROUTING_ABA = '${PAYONEER_ROUTING_ABA}';
-  const ACCOUNT_NUMBER = '${PAYONEER_ACCOUNT_NUMBER}';
+  const BANK_NAME = 'Citibank';
+  const BANK_ADDRESS = '111 Wall Street New York, NY 10043 USA';
+  const ROUTING_ABA = '031100209';
+  const ACCOUNT_NUMBER = '70589110002638744';
   const ACCOUNT_TYPE = 'CHECKING';
-  const SWIFT_CODE = '${PAYONEER_SWIFT}';
+  const SWIFT_CODE = 'CITIUS33';
   const USD_TO_INR_RATE = 86.85;
 
   // Open Checkout for a package
@@ -249,7 +249,7 @@ Thank you for your business!`;
             </div>
             <div className="flex items-center justify-between">
               <span className="text-slate-400 flex items-center gap-1.5 font-sans">
-                <Building className="w-3.5 h-3.5 text-teal-400" /> Payoneer (${PAYONEER_BANK_NAME}):
+                <Building className="w-3.5 h-3.5 text-teal-400" /> Payoneer (Citibank):
               </span>
               <span className="text-slate-200 font-bold">{BANK_NAME} ••••8744</span>
             </div>
@@ -603,7 +603,7 @@ Thank you for your business!`;
                 <span className="text-emerald-400 font-mono">100% Retained</span>
               </div>
               <p className="text-xs text-slate-300">
-                Bill private clients directly via your verified Payoneer ${PAYONEER_BANK_NAME} wire or custom PayPal.me link with 0% platform intermediary commission.
+                Bill private clients directly via your verified Payoneer Citibank wire or custom PayPal.me link with 0% platform intermediary commission.
               </p>
               <button
                 onClick={() => setActiveSubTab('custom_link')}
@@ -699,7 +699,7 @@ Thank you for your business!`;
                     : 'bg-slate-950 text-slate-400 border-slate-800 hover:border-slate-700'
                 }`}
               >
-                🏦 Payoneer ${PAYONEER_BANK_NAME} (USD)
+                🏦 Payoneer Citibank (USD)
               </button>
 
               <button
@@ -756,7 +756,7 @@ Thank you for your business!`;
             {checkoutPaymentMethod === 'wire' && (
               <div className="space-y-3 rounded-2xl bg-slate-950 p-5 border border-slate-800 text-xs">
                 <div className="font-bold text-slate-200 border-b border-slate-800 pb-2 flex items-center justify-between">
-                  <span>Payoneer USD Checking Account (${PAYONEER_BANK_NAME} NY)</span>
+                  <span>Payoneer USD Checking Account (Citibank NY)</span>
                   <span className="text-[10px] text-cyan-400 font-mono">ACH &bull; WIRE &bull; SWIFT</span>
                 </div>
                 <div className="grid grid-cols-2 gap-3 text-slate-300">

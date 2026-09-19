@@ -2,7 +2,7 @@
  * Automated Invoice PDF Generator & Printable Settlement Engine
  * 
  * Automatically formats and generates official client invoices for print and PDF export,
- * embedding the verified Payoneer ${PAYONEER_BANK_NAME} USD checking banking details and PayPal remittance
+ * embedding the verified Payoneer Citibank USD checking banking details and PayPal remittance
  * directly into the 'Payment Instructions' section of all generated documents.
  */
 
@@ -32,19 +32,19 @@ export interface InvoicePdfPayload {
 }
 
 export const OFFICIAL_PAYONEER_BANKING = {
-  bankName: '${PAYONEER_BANK_NAME}',
-  bankAddress: '${PAYONEER_BANK_ADDRESS}',
+  bankName: 'Citibank',
+  bankAddress: '111 Wall Street New York, NY 10043 USA',
   accountHolder: 'Kundan Kumar',
-  accountNumber: '${PAYONEER_ACCOUNT_NUMBER}',
+  accountNumber: '70589110002638744',
   accountNumberMasked: '•••• 8744',
   accountType: 'CHECKING',
-  routingAba: '${PAYONEER_ROUTING_ABA}',
-  swift: '${PAYONEER_SWIFT}',
+  routingAba: '031100209',
+  swift: 'CITIUS33',
   currency: 'USD',
-  paypalHandle: '${PAYPAL_ME_USERNAME}',
-  paypalMeUrl: '${PAYPAL_ME_URL}',
-  receiverEmail: '${PAYPAL_RECEIVER_EMAIL}',
-  officialContactEmail: '${PAYPAL_ME_USERNAME}@gmail.com'
+  paypalHandle: 'ky8402',
+  paypalMeUrl: 'https://paypal.me/ky8402',
+  receiverEmail: 'kundank4@icloud.com',
+  officialContactEmail: 'ky8402@gmail.com'
 };
 
 /**
@@ -405,7 +405,7 @@ export function generateInvoicePdfHtml(invoice: InvoicePdfPayload): string {
   <div class="no-print-bar">
     <div>
       <strong>Official Client Invoice #${invoice.id}</strong>
-      <span style="opacity: 0.7; font-size: 11px; margin-left: 8px;">(Configured with Payoneer ${PAYONEER_BANK_NAME} banking instructions)</span>
+      <span style="opacity: 0.7; font-size: 11px; margin-left: 8px;">(Configured with Payoneer Citibank banking instructions)</span>
     </div>
     <div style="display: flex; gap: 8px;">
       <button onclick="window.print()" class="btn btn-primary">
@@ -504,18 +504,18 @@ export function generateInvoicePdfHtml(invoice: InvoicePdfPayload): string {
     </div>
 
     <!-- ========================================================================= -->
-    <!-- PAYMENT INSTRUCTIONS SECTION (Payoneer ${PAYONEER_BANK_NAME} & PayPal)                -->
+    <!-- PAYMENT INSTRUCTIONS SECTION (Payoneer Citibank & PayPal)                -->
     <!-- ========================================================================= -->
     <div class="payment-instructions-card">
       <div class="payment-instructions-header">
         <h3 class="payment-instructions-title">
-          💳 Payment Instructions (Payoneer ${PAYONEER_BANK_NAME} ACH / Wire Transfer &amp; PayPal)
+          💳 Payment Instructions (Payoneer Citibank ACH / Wire Transfer &amp; PayPal)
         </h3>
         <span class="payment-instructions-badge">VERIFIED USD WIRE DESTINATION</span>
       </div>
 
       <div class="banking-grid">
-        <!-- Payoneer ${PAYONEER_BANK_NAME} USD Checking Account -->
+        <!-- Payoneer Citibank USD Checking Account -->
         <div class="banking-box">
           <div class="banking-box-title">
             <span>Primary Wire / ACH Option:</span>
@@ -581,7 +581,7 @@ export function generateInvoicePdfHtml(invoice: InvoicePdfPayload): string {
           </div>
 
           <div style="margin-top: 10px; padding: 8px; background: #f8fafc; border-radius: 4px; font-size: 10.5px; color: #64748b; line-height: 1.4;">
-            All client remittances received via PayPal Checkout or PayPal.Me are autonomously auto-swept to our verified Payoneer ${PAYONEER_BANK_NAME} checking account.
+            All client remittances received via PayPal Checkout or PayPal.Me are autonomously auto-swept to our verified Payoneer Citibank checking account.
           </div>
         </div>
       </div>
@@ -672,7 +672,7 @@ Scope: ${invoice.orderTitle || 'Freelance Engineering Deliverable'}
 ================================================================================
 
 PAYMENT INSTRUCTIONS
-Primary Remittance: Payoneer USD Checking Account (${PAYONEER_BANK_NAME} NY)
+Primary Remittance: Payoneer USD Checking Account (Citibank NY)
 - Bank Name: ${OFFICIAL_PAYONEER_BANKING.bankName}
 - Bank Address: ${OFFICIAL_PAYONEER_BANKING.bankAddress}
 - Beneficiary: ${OFFICIAL_PAYONEER_BANKING.accountHolder}

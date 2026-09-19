@@ -178,8 +178,8 @@ DATABASE_URL="${NEON_DATABASE_URL}"
 REDIS_URL=redis://red-daarifid0e5s7392b3k0:6379
 
 # PayPal Payment Gateway & Virtual Terminal (Sandbox / Production Mode)
-PAYPAL_CLIENT_ID=<set-in-aws-secret-store>
-PAYPAL_CLIENT_SECRET=<set-in-aws-secret-store>
+PAYPAL_CLIENT_ID=BAAv8rRenc5jlfD6eH_8pvgcU250jXTZCnyPKdBby13EAYRKhCempoPQ3Hj41GEfe2qBMu1P8ZslnbdkIc
+PAYPAL_CLIENT_SECRET=EH8CcxBIVPvFhoAKbL-HN8l_jSdOYzlGA2oahgGs1wPV7bogYK_TE4hIOjPtzOVj-mOUUXVy8uMIt6-N
 PAYPAL_MODE=sandbox
 PAYPAL_RECEIVER_EMAIL=kundank4@icloud.com
 PAYPAL_ME_USERNAME=ky8402

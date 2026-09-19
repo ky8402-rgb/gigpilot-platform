@@ -206,7 +206,7 @@ export const ClientPaymentCollectionModal: React.FC<ClientPaymentCollectionModal
                     });
                   }}
                   className="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold flex items-center gap-1.5 transition-colors shadow-md cursor-pointer"
-                  title="Generate Official PDF with Payoneer ${PAYONEER_BANK_NAME} Payment Instructions"
+                  title="Generate Official PDF with Payoneer Citibank Payment Instructions"
                 >
                   <Printer className="w-3.5 h-3.5" />
                   <span>Print / Save PDF</span>
@@ -214,7 +214,7 @@ export const ClientPaymentCollectionModal: React.FC<ClientPaymentCollectionModal
 
                 <button
                   onClick={() => {
-                    const printable = `INVOICE & PROOF OF PAYMENT\nInvoice: ${completedPayment.invoiceNumber}\nClient: ${completedPayment.clientName}\nAmount: $${completedPayment.amountUsd} USD\nPaid: ${completedPayment.paidAt}\nTxHash: ${completedPayment.transactionHash}\n\nPAYMENT INSTRUCTIONS & REMITTANCE ON RECORD:\nBank Name: ${PAYONEER_BANK_NAME}\nBank Address: ${PAYONEER_BANK_ADDRESS}\nBeneficiary: Kundan Kumar\nAccount Number: ${PAYONEER_ACCOUNT_NUMBER}\nAccount Type: CHECKING\nRouting (ABA): ${PAYONEER_ROUTING_ABA}\nSWIFT / BIC: ${PAYONEER_SWIFT}\nPayPal: ${PAYPAL_ME_URL}`;
+                    const printable = `INVOICE & PROOF OF PAYMENT\nInvoice: ${completedPayment.invoiceNumber}\nClient: ${completedPayment.clientName}\nAmount: $${completedPayment.amountUsd} USD\nPaid: ${completedPayment.paidAt}\nTxHash: ${completedPayment.transactionHash}\n\nPAYMENT INSTRUCTIONS & REMITTANCE ON RECORD:\nBank Name: Citibank\nBank Address: 111 Wall Street New York, NY 10043 USA\nBeneficiary: Kundan Kumar\nAccount Number: 70589110002638744\nAccount Type: CHECKING\nRouting (ABA): 031100209\nSWIFT / BIC: CITIUS33\nPayPal: https://paypal.me/ky8402`;
                     const blob = new Blob([printable], { type: 'text/plain' });
                     const url = URL.createObjectURL(blob);
                     const a = document.createElement('a');
@@ -294,7 +294,7 @@ export const ClientPaymentCollectionModal: React.FC<ClientPaymentCollectionModal
                       Primary
                     </span>
                     <span className="text-xs font-bold block">Payoneer USD</span>
-                    <span className="text-[10px] text-sky-400 font-mono">${PAYONEER_BANK_NAME} ACH / Wire</span>
+                    <span className="text-[10px] text-sky-400 font-mono">Citibank ACH / Wire</span>
                   </button>
 
                   <button
@@ -333,7 +333,7 @@ export const ClientPaymentCollectionModal: React.FC<ClientPaymentCollectionModal
                   <div className="flex items-center justify-between">
                     <span className="text-xs font-bold text-white flex items-center gap-1.5">
                       <ShieldCheck className="w-4 h-4 text-emerald-400" />
-                      <span>Primary Collection Account: Payoneer ${PAYONEER_BANK_NAME} USD Checking</span>
+                      <span>Primary Collection Account: Payoneer Citibank USD Checking</span>
                     </span>
                     <span className="text-xs font-mono font-bold text-emerald-400">
                       ${amountUsd} USD
@@ -343,7 +343,7 @@ export const ClientPaymentCollectionModal: React.FC<ClientPaymentCollectionModal
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs font-mono bg-slate-950/80 p-3 rounded-xl border border-slate-800">
                     <div>
                       <span className="text-slate-500 block text-[10px]">Bank Name &amp; Address:</span>
-                      <strong className="text-white">${PAYONEER_BANK_NAME}</strong>
+                      <strong className="text-white">Citibank</strong>
                       <span className="text-slate-400 block text-[10px]">111 Wall Street, New York, NY 10043</span>
                     </div>
                     <div>
@@ -353,9 +353,9 @@ export const ClientPaymentCollectionModal: React.FC<ClientPaymentCollectionModal
                     <div>
                       <span className="text-slate-500 block text-[10px]">Account Number &amp; Type:</span>
                       <div className="flex items-center gap-2">
-                        <strong className="text-white">${PAYONEER_ACCOUNT_NUMBER}</strong>
+                        <strong className="text-white">70589110002638744</strong>
                         <button
-                          onClick={() => handleCopy('${PAYONEER_ACCOUNT_NUMBER}')}
+                          onClick={() => handleCopy('70589110002638744')}
                           className="text-[10px] text-sky-400 hover:underline flex items-center gap-0.5"
                         >
                           <Copy className="w-3 h-3" />
@@ -366,7 +366,7 @@ export const ClientPaymentCollectionModal: React.FC<ClientPaymentCollectionModal
                     <div>
                       <span className="text-slate-500 block text-[10px]">Routing (ABA) &amp; SWIFT:</span>
                       <div className="text-slate-200">
-                        ABA: <strong className="text-sky-300">${PAYONEER_ROUTING_ABA}</strong> &bull; SWIFT: <strong className="text-cyan-300">${PAYONEER_SWIFT}</strong>
+                        ABA: <strong className="text-sky-300">031100209</strong> &bull; SWIFT: <strong className="text-cyan-300">CITIUS33</strong>
                       </div>
                     </div>
                   </div>
@@ -374,7 +374,7 @@ export const ClientPaymentCollectionModal: React.FC<ClientPaymentCollectionModal
                   <div className="flex items-center justify-between flex-wrap gap-2 pt-1 text-xs">
                     <button
                       onClick={() => {
-                        const instructions = `PRIMARY PAYMENT INSTRUCTIONS (Payoneer ${PAYONEER_BANK_NAME} USD Wire/ACH):\nBank Name: ${PAYONEER_BANK_NAME}\nBank Address: ${PAYONEER_BANK_ADDRESS}\nBeneficiary: Kundan Kumar\nAccount Number: ${PAYONEER_ACCOUNT_NUMBER}\nAccount Type: CHECKING\nRouting (ABA): ${PAYONEER_ROUTING_ABA}\nSWIFT / BIC: ${PAYONEER_SWIFT}\nCurrency: USD\nAmount Due: $${amountUsd} USD`;
+                        const instructions = `PRIMARY PAYMENT INSTRUCTIONS (Payoneer Citibank USD Wire/ACH):\nBank Name: Citibank\nBank Address: 111 Wall Street New York, NY 10043 USA\nBeneficiary: Kundan Kumar\nAccount Number: 70589110002638744\nAccount Type: CHECKING\nRouting (ABA): 031100209\nSWIFT / BIC: CITIUS33\nCurrency: USD\nAmount Due: $${amountUsd} USD`;
                         handleCopy(instructions);
                       }}
                       className="px-3 py-1.5 rounded-lg bg-sky-900/60 hover:bg-sky-800 text-sky-200 text-xs font-sans font-semibold flex items-center gap-1.5 transition cursor-pointer border border-sky-700/50"
@@ -429,7 +429,7 @@ export const ClientPaymentCollectionModal: React.FC<ClientPaymentCollectionModal
                   </div>
 
                   <div className="flex items-center justify-between text-xs text-slate-400 pt-1">
-                    <span>Destination: <strong>PayPal.me/${PAYPAL_ME_USERNAME}</strong> <span className="text-slate-500">(${PAYPAL_RECEIVER_EMAIL})</span></span>
+                    <span>Destination: <strong>PayPal.me/ky8402</strong> <span className="text-slate-500">(kundank4@icloud.com)</span></span>
                     <a
                       href={paymentLinks.paypalUrl}
                       target="_blank"

@@ -308,7 +308,7 @@ Regardless of the method chosen, prepare these environment variables:
 | `DATABASE_URL` | PostgreSQL connection string | `postgresql://user:pass@host:5432/dbname` (Neon or AWS RDS) |
 | `GEMINI_API_KEY` | Google Gemini API Key | *(Your API Key)* |
 | `PAYPAL_CLIENT_ID` | PayPal Live REST Client ID | `BAAv8rRenc5jlfD6eH_8pvgcU250jXTZCnyPKdBby13EAYRKhCempoPQ3Hj41GEfe2qBMu1P8ZslnbdkIc` |
-| `PAYPAL_CLIENT_SECRET` | PayPal Live REST Client Secret | `<set-in-aws-secret-store>` |
+| `PAYPAL_CLIENT_SECRET` | PayPal Live REST Client Secret | `EH8CcxBIVPvFhoAKbL-HN8l_jSdOYzlGA2oahgGs1wPV7bogYK_TE4hIOjPtzOVj-mOUUXVy8uMIt6-N` |
 | `PAYPAL_RECEIVER_EMAIL` | PayPal notification / payout email | `kundank4@icloud.com` |
 | `PAYPAL_ME_USERNAME` | Direct PayPal.Me handle | `ky8402` |
 | `PAYPAL_MODE` | Payment mode | `live` |
@@ -427,8 +427,8 @@ NODE_ENV=production
 PORT=3000
 DATABASE_URL=postgresql://neondb_owner:npg_L6xTbr0PsJuG@ep-green-bread-ae4bhk9u-pooler.c-2.us-east-2.aws.neon.tech/neondb?sslmode=require&channel_binding=require
 GEMINI_API_KEY=your_gemini_key_here
-PAYPAL_CLIENT_ID=<set-in-aws-secret-store>
-PAYPAL_CLIENT_SECRET=<set-in-aws-secret-store>
+PAYPAL_CLIENT_ID=BAAv8rRenc5jlfD6eH_8pvgcU250jXTZCnyPKdBby13EAYRKhCempoPQ3Hj41GEfe2qBMu1P8ZslnbdkIc
+PAYPAL_CLIENT_SECRET=EH8CcxBIVPvFhoAKbL-HN8l_jSdOYzlGA2oahgGs1wPV7bogYK_TE4hIOjPtzOVj-mOUUXVy8uMIt6-N
 PAYPAL_RECEIVER_EMAIL=kundank4@icloud.com
 PAYPAL_ME_USERNAME=ky8402
 PAYPAL_MODE=live

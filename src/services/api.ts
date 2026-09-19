@@ -509,19 +509,6 @@ export interface PlatformConnectionStatus {
   };
 }
 
-export async function getAutonomousFreelanceReadiness(): Promise<any> {
-  const res = await secureFetch(apiUrl('/api/autonomous-freelance/readiness'));
-  return safeResponseJson(res);
-}
-
-export async function runAutonomousFreelanceCycle(maxJobs = 3): Promise<any> {
-  const res = await secureFetch(apiUrl('/api/autonomous-freelance/run'), {
-    method: 'POST',
-    body: JSON.stringify({ maxJobs })
-  });
-  return safeResponseJson(res);
-}
-
 export async function getPlatformStatus(): Promise<PlatformConnectionStatus> {
   try {
     const res = await fetch(apiUrl('/api/platform/status'));
@@ -6522,9 +6509,9 @@ export async function fetchClientConversations(): Promise<{
   totalUnread: number;
 }> {
   const baseUrl = getApiBaseUrl();
-  const res = await fetch(`${baseUrl}/api/clients/conversations`, { headers: { Accept: 'application/json' }, credentials: 'include' });
-  if (!res.ok) throw new Error(`Failed to fetch client conversations (HTTP ${res.status})`);
-  return safeResponseJson(res, { success: false, conversations: [], totalUnread: 0 });
+  const res = await fetch(`${baseUrl}/api/clients/conversations`);
+  if (!res.ok) throw new Error('Failed to fetch client conversations');
+  return res.json();
 }
 
 export async function sendClientMessage(params: {
@@ -6540,8 +6527,8 @@ export async function sendClientMessage(params: {
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(params),
   });
-  if (!res.ok) throw new Error(`Failed to send message (HTTP ${res.status})`);
-  return safeResponseJson<{ success: boolean; message: ClientMessage }>(res, { success: false, message: { id: '', sender: 'freelancer', senderName: '', text: '', timestamp: new Date().toISOString() } });
+  if (!res.ok) throw new Error('Failed to send message');
+  return res.json();
 }
 
 export async function generateClientAutoReply(params: {
@@ -6562,8 +6549,8 @@ export async function generateClientAutoReply(params: {
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(params),
   });
-  if (!res.ok) throw new Error(`Failed to generate auto-reply (HTTP ${res.status})`);
-  return safeResponseJson(res, { success: false, replyText: '' });
+  if (!res.ok) throw new Error('Failed to generate auto-reply');
+  return res.json();
 }
 
 export async function createClientConversation(params: {
@@ -6580,8 +6567,8 @@ export async function createClientConversation(params: {
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(params),
   });
-  if (!res.ok) throw new Error(`Failed to create client conversation (HTTP ${res.status})`);
-  return safeResponseJson(res, { success: false, conversation: undefined as any });
+  if (!res.ok) throw new Error('Failed to create client conversation');
+  return res.json();
 }
 
 export async function toggleClientAutoResponder(convId: string, enabled?: boolean): Promise<{
@@ -6594,8 +6581,8 @@ export async function toggleClientAutoResponder(convId: string, enabled?: boolea
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ enabled }),
   });
-  if (!res.ok) throw new Error(`Failed to toggle auto responder (HTTP ${res.status})`);
-  return safeResponseJson(res, { success: false, autoResponderActive: false });
+  if (!res.ok) throw new Error('Failed to toggle auto responder');
+  return res.json();
 }
 
 // =========================================================================
@@ -6951,6 +6938,151 @@ export async function evaluateTool2OrderRiskApi(order: any, deliverable?: any): 
   if (!res.ok) throw new Error('Failed to evaluate order risk');
   return res.json();
 }
+
+// =========================================================================
+// TOOL 1: AUTONOMOUS TEST ENGINE (JEST GENERATION & SANDBOX VERIFICATION)
+// =========================================================================
+
+export interface JestTestCase {
+  id: string;
+  name: string;
+  status: 'passed' | 'failed' | 'skipped';
+  durationMs: number;
+  assertionCount: number;
+  errorMessage?: string;
+  errorStack?: string;
+}
+
+export interface JestTestSuite {
+  suiteId: string;
+  filename: string;
+  targetSourceFile: string;
+  testCode: string;
+  testCases: JestTestCase[];
+  status: 'passed' | 'failed' | 'error';
+  durationMs: number;
+  totalTests: number;
+  passedTests: number;
+  failedTests: number;
+  consoleLogs: string[];
+}
+
+export interface CodeCoverageMetrics {
+  statements: { total: number; covered: number; pct: number };
+  branches: { total: number; covered: number; pct: number };
+  functions: { total: number; covered: number; pct: number };
+  lines: { total: number; covered: number; pct: number };
+}
+
+export interface QualityVerificationCertificate {
+  certificateId: string;
+  orderId: string | number;
+  jobTitle: string;
+  timestamp: string;
+  isQualityApproved: boolean;
+  qualityScore: number;
+  codeCoveragePct: number;
+  totalSuites: number;
+  passedSuites: number;
+  totalTests: number;
+  passedTests: number;
+  failedTests: number;
+  sha256Signature: string;
+  deliverableChecksum: string;
+  auditor: string;
+  verificationBadges: string[];
+  handoffStatus: 'CERTIFIED_READY_FOR_HANDOFF' | 'REJECTED_QUALITY_GAPS';
+}
+
+export interface DeliverableQualityReport {
+  orderId: string | number;
+  jobTitle: string;
+  createdAt: string;
+  overallStatus: 'passed' | 'failed';
+  qualityScore: number;
+  coverage: CodeCoverageMetrics;
+  testSuites: JestTestSuite[];
+  certificate?: QualityVerificationCertificate;
+  rawConsoleOutput: string[];
+  recommendations: string[];
+}
+
+export async function generateJestTestSuitesApi(params: {
+  orderId?: string | number;
+  deliverable?: WorkExecutionDeliverable;
+  customPrompt?: string;
+}): Promise<{
+  success: boolean;
+  orderId: string | number;
+  jobTitle: string;
+  suites: { filename: string; targetSourceFile: string; testCode: string }[];
+  summary: string;
+  sourceFilesScanned: number;
+}> {
+  const baseUrl = getApiBaseUrl();
+  const res = await fetch(`${baseUrl}/api/tool1/test-engine/generate`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(params),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.error || 'Failed to synthesize Jest test suites');
+  }
+  return res.json();
+}
+
+export async function runSandboxedJestTestsApi(params: {
+  orderId?: string | number;
+  deliverable?: WorkExecutionDeliverable;
+  suites?: { filename: string; targetSourceFile: string; testCode: string }[];
+}): Promise<{
+  success: boolean;
+  report: DeliverableQualityReport;
+}> {
+  const baseUrl = getApiBaseUrl();
+  const res = await fetch(`${baseUrl}/api/tool1/test-engine/run`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(params),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.error || 'Failed to run sandboxed Jest test verification');
+  }
+  return res.json();
+}
+
+export async function fetchDeliverableQualityReportApi(orderId: string | number): Promise<{
+  success: boolean;
+  orderId: string | number;
+  report: DeliverableQualityReport | null;
+  isCertified: boolean;
+}> {
+  const baseUrl = getApiBaseUrl();
+  const res = await fetch(`${baseUrl}/api/tool1/test-engine/report/${orderId}`);
+  if (!res.ok) throw new Error('Failed to retrieve deliverable test report');
+  return res.json();
+}
+
+export async function verifyDeliverableQualityHandoffApi(orderId: string | number, forceRunIfMissing = true): Promise<{
+  success: boolean;
+  orderId: string | number;
+  isCertified: boolean;
+  qualityScore: number;
+  certificate: QualityVerificationCertificate | null;
+  message: string;
+}> {
+  const baseUrl = getApiBaseUrl();
+  const res = await fetch(`${baseUrl}/api/tool1/test-engine/verify-handoff`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ orderId, forceRunIfMissing }),
+  });
+  if (!res.ok) throw new Error('Failed to verify deliverable quality gate');
+  return res.json();
+}
+
 
 
 
