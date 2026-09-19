@@ -51,6 +51,7 @@ import freelancerBidsRoutes from "./routes/freelancerBids.js";
 import neonRoutes from "./routes/neon.js";
 import autoDispatchRoutes from "./routes/autoDispatchRoutes.js";
 import { runAutonomousContractorCycle, syncFreelancerContractAcceptances } from "./server/autonomousFreelanceOrchestrator.js";
+import { runAutonomousBidCycle } from "./server/autonomousBidWorker.js";
 import { contractOperationsRouter } from "./routes/contractOperations.js";
 import amplifyRoutes from "./server/amplifyRoutes.js";
 import devopsActionsRoutes from "./server/devopsActionsRoutes.js";
@@ -2854,13 +2855,18 @@ export async function runHourlyJobSyncWorker() {
 
 // Provider-confirmed autonomous contractor execution loop.
 // Disabled by default; when enabled it only processes funded, externally accepted contracts.
-if (process.env.AUTONOMOUS_EXECUTION_ENABLED === 'true') {
+if (process.env.AUTONOMOUS_EXECUTION_ENABLED === 'true' || process.env.AUTONOMOUS_BIDDING_ENABLED === 'true') {
   cron.schedule('*/5 * * * *', async () => {
     try {
-      await syncFreelancerContractAcceptances();
-      await runAutonomousContractorCycle(3);
+      if (process.env.AUTONOMOUS_BIDDING_ENABLED === 'true') {
+        await runAutonomousBidCycle();
+      }
+      if (process.env.AUTONOMOUS_EXECUTION_ENABLED === 'true') {
+        await syncFreelancerContractAcceptances();
+        await runAutonomousContractorCycle(3);
+      }
     } catch (err: any) {
-      console.error('[AutonomousFreelance] Execution cycle failed:', err?.message || err);
+      console.error('[AutonomousFreelance] Autonomous cycle failed:', err?.message || err);
     }
   });
 }
