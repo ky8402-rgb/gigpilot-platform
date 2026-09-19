@@ -105,10 +105,10 @@ import {
 } from './services/api';
 import { PayPalSettlementModal } from './components/PayPalSettlementModal';
 
-// Primary Payment Gateways Configuration
-const PRIMARY_PAYPAL_EMAIL = 'kundank4@icloud.com';
-const PRIMARY_PAYPAL_ME = 'ky8402';
-const PRIMARY_PAYPAL_ME_URL = 'https://paypal.me/ky8402';
+// Payment destinations are server-configured; never embed financial identifiers in the browser bundle.
+const PRIMARY_PAYPAL_EMAIL = 'configured server-side';
+const PRIMARY_PAYPAL_ME = 'configured server-side';
+const PRIMARY_PAYPAL_ME_URL = '';
 
 // Primary Payoneer USD Checking Account Configuration
 const PRIMARY_PAYONEER_BANK_NAME = 'Citibank';
@@ -1116,7 +1116,7 @@ export default function App() {
 
     const newTx: Transaction = {
       id: makeUniqueId('tx_collect'),
-      name: `Milestone Ready for Client Invoicing (${PRIMARY_PAYPAL_EMAIL})`,
+      name: 'Milestone Ready for Client Invoicing',
       date: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) + ' Today',
       amount: collected,
       type: 'credit',
