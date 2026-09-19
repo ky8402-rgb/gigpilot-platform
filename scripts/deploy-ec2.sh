@@ -34,6 +34,14 @@ git reset --hard origin/main || git pull origin main || git pull origin master
 echo "Installing production build dependencies..."
 npm install --prefer-offline || npm install --legacy-peer-deps
 
+echo "Applying production PostgreSQL migrations..."
+if [ -z "${DATABASE_URL:-}" ]; then
+  echo "ERROR: DATABASE_URL is required for production deployment."
+  exit 1
+fi
+npx prisma migrate deploy
+npx prisma generate
+
 echo "Building application bundles (Vite + esbuild)..."
 npm run build
 
