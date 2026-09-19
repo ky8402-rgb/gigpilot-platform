@@ -184,7 +184,7 @@ app.use((req, res, next) => {
 const parseAllowedOrigins = (): string[] => {
   const envOrigins = process.env.CORS_ALLOWED_ORIGINS;
   if (!envOrigins || envOrigins.trim() === "" || envOrigins.trim() === "*") {
-    return ["*"];
+    return [];
   }
   return envOrigins.split(",").map((o) => o.trim()).filter(Boolean);
 };
