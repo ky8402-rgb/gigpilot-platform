@@ -79,7 +79,7 @@ export const WorkOrderCloserTool: React.FC<WorkOrderCloserToolProps> = ({
   const [selectedOrderId, setSelectedOrderId] = useState<string>(() => {
     if (handedOverOrderId) return String(handedOverOrderId);
     if (completedOrders.length > 0) return String(completedOrders[0].id);
-    return liveOrders[0]?.id ? String(liveOrders[0].id) : 'live-order-1';
+    return safeLiveOrders[0]?.id ? String(liveOrders[0].id) : 'live-order-1';
   });
 
   // Keep in sync when handedOverOrderId changes from Tool 1
@@ -534,7 +534,7 @@ export const WorkOrderCloserTool: React.FC<WorkOrderCloserToolProps> = ({
                 </h3>
                 <p className="text-xs text-slate-300 max-w-2xl leading-relaxed">
                   Continuously watches completed client work orders, verifies SHA-256 deliverable checksum integrity,
-                  evaluates dispute risk heuristics, and autonomously disburses funds to your Payoneer ${PAYONEER_BANK_NAME} Checking
+                  evaluates dispute risk heuristics, and autonomously disburses funds to your Payoneer {accounts?.payoneerBank?.bankName || 'USD account'} Checking
                   or PayPal accounts with zero human intervention required.
                 </p>
               </div>
@@ -725,7 +725,7 @@ export const WorkOrderCloserTool: React.FC<WorkOrderCloserToolProps> = ({
                     <div className="p-2.5 rounded-xl bg-slate-900/80 border border-slate-800">
                       <div className="text-slate-500 text-[10px]">Recommended Payout Route</div>
                       <div className="text-purple-300 font-bold text-sm mt-0.5 uppercase">
-                        {riskEvaluation.recommendedPayoutMethod === 'bank_wire' ? 'Payoneer ${PAYONEER_BANK_NAME} Checking' : 'PayPal'}
+                        {riskEvaluation.recommendedPayoutMethod === 'bank_wire' ? 'Payoneer {accounts?.payoneerBank?.bankName || 'USD account'} Checking' : 'PayPal'}
                       </div>
                     </div>
                   </div>
@@ -799,7 +799,7 @@ export const WorkOrderCloserTool: React.FC<WorkOrderCloserToolProps> = ({
                   <div className="flex items-center gap-2.5">
                     <div className="w-2 h-2 rounded-full bg-emerald-400" />
                     <div>
-                      <div className="text-xs font-bold text-white">Payoneer ${PAYONEER_BANK_NAME} Checking (USD)</div>
+                      <div className="text-xs font-bold text-white">Payoneer {accounts?.payoneerBank?.bankName || 'USD account'} Checking (USD)</div>
                       <div className="text-[10px] font-mono text-slate-500">Primary route for tickets &ge; $200 (Zero Wire Fees)</div>
                     </div>
                   </div>
@@ -912,8 +912,8 @@ export const WorkOrderCloserTool: React.FC<WorkOrderCloserToolProps> = ({
                   id: 'evo_002',
                   category: 'Payout Optimization',
                   timestamp: new Date(Date.now() - 3600000).toISOString(),
-                  observation: 'Payoneer ${PAYONEER_BANK_NAME} USD Checking account avoids international wire intermediary fees on tickets > $200.',
-                  actionTaken: 'Self-updated routing priority: set Payoneer ${PAYONEER_BANK_NAME} checking as primary destination with PayPal auto-sweep.',
+                  observation: 'Payoneer {accounts?.payoneerBank?.bankName || 'USD account'} USD Checking account avoids international wire intermediary fees on tickets > $200.',
+                  actionTaken: 'Self-updated routing priority: set Payoneer {accounts?.payoneerBank?.bankName || 'USD account'} checking as primary destination with PayPal auto-sweep.',
                   confidenceImpact: +0.9
                 }
               ]).map((item) => (
@@ -1203,7 +1203,7 @@ export const WorkOrderCloserTool: React.FC<WorkOrderCloserToolProps> = ({
                   >
                     <div className="flex items-center justify-between">
                       <div className="flex items-center gap-1.5">
-                        <span className="text-xs font-bold text-white font-mono">Payoneer ${PAYONEER_BANK_NAME}</span>
+                        <span className="text-xs font-bold text-white font-mono">Payoneer {accounts?.payoneerBank?.bankName || 'USD account'}</span>
                         <span className="text-[9px] bg-emerald-500/25 text-emerald-300 font-bold px-1.5 py-0.2 rounded border border-emerald-500/30">
                           PRIMARY
                         </span>
@@ -1215,10 +1215,10 @@ export const WorkOrderCloserTool: React.FC<WorkOrderCloserToolProps> = ({
                       </div>
                     </div>
                     <div className="text-[11px] text-slate-300 font-mono">
-                      ${PAYONEER_BANK_NAME} •••• 8744 (USD Checking)
+                      {accounts?.payoneerBank?.bankName || 'Payoneer'} •••• {accounts?.payoneerBank?.accountNumberMasked || 'configured'} (USD)
                     </div>
                     <div className="text-[10px] text-emerald-400 font-mono">
-                      Routing: ${PAYONEER_ROUTING_ABA} &bull; SWIFT: ${PAYONEER_SWIFT}
+                      Settlement banking details are managed securely by the server
                     </div>
                   </div>
 
@@ -1436,7 +1436,7 @@ export const WorkOrderCloserTool: React.FC<WorkOrderCloserToolProps> = ({
               <div className="flex items-center justify-between">
                 <span className="text-xs font-bold text-emerald-400 font-mono uppercase flex items-center gap-1.5">
                   <Building2 className="w-4 h-4 text-emerald-400" />
-                  Primary Collection: Payoneer (${PAYONEER_BANK_NAME})
+                  Primary Collection: Payoneer ({accounts?.payoneerBank?.bankName || 'Configured bank'})
                 </span>
                 <span className="px-2 py-0.5 rounded bg-emerald-950 text-emerald-300 border border-emerald-500/40 text-[10px] font-mono font-bold">
                   PRIMARY
@@ -1450,7 +1450,7 @@ export const WorkOrderCloserTool: React.FC<WorkOrderCloserToolProps> = ({
                 </div>
                 <div className="flex justify-between border-b border-slate-800/80 pb-1.5">
                   <span className="text-slate-500">Bank Name:</span>
-                  <span className="text-white font-bold">${PAYONEER_BANK_NAME}</span>
+                  <span className="text-white font-bold">{accounts?.payoneerBank?.bankName || 'Configured bank'}</span>
                 </div>
                 <div className="flex justify-between border-b border-slate-800/80 pb-1.5">
                   <span className="text-slate-500">Bank Address:</span>
@@ -1458,7 +1458,7 @@ export const WorkOrderCloserTool: React.FC<WorkOrderCloserToolProps> = ({
                 </div>
                 <div className="flex justify-between border-b border-slate-800/80 pb-1.5">
                   <span className="text-slate-500">Account Number:</span>
-                  <span className="text-white font-bold tracking-wider">${PAYONEER_ACCOUNT_NUMBER}</span>
+                  <span className="text-white font-bold tracking-wider">{accounts?.payoneerBank?.accountNumberMasked || '••••'}</span>
                 </div>
                 <div className="flex justify-between border-b border-slate-800/80 pb-1.5">
                   <span className="text-slate-500">Account Type:</span>
@@ -1466,11 +1466,11 @@ export const WorkOrderCloserTool: React.FC<WorkOrderCloserToolProps> = ({
                 </div>
                 <div className="flex justify-between border-b border-slate-800/80 pb-1.5">
                   <span className="text-slate-500">Routing (ABA):</span>
-                  <span className="text-amber-400 font-bold">${PAYONEER_ROUTING_ABA}</span>
+                  <span className="text-amber-400 font-bold">'Configured'</span>
                 </div>
                 <div className="flex justify-between items-center pt-1">
                   <span className="text-slate-500">SWIFT / BIC:</span>
-                  <span className="text-emerald-400 font-bold">${PAYONEER_SWIFT}</span>
+                  <span className="text-emerald-400 font-bold">'Configured'</span>
                 </div>
               </div>
             </div>
