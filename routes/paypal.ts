@@ -270,7 +270,8 @@ const handleCaptureOrder = async (req: express.Request, res: express.Response) =
     const payerName = capture.payerName || clientName || 'Verified PayPal Client';
     const payerEmail = capture.payerEmail || clientEmail || 'client@paypal-direct.com';
 
-    // Do not create a funded WorkOrder from the synchronous capture response.\n    // The authoritative PayPal webhook must be verified and persisted first.\n    logActivityEvent({
+    // Do not create a funded WorkOrder from the synchronous capture response. The authoritative PayPal webhook must be verified and persisted first.
+    logActivityEvent({
       source: 'PayPal',
       type: 'PAYMENT_RECEIVED',
       status: 'success',
@@ -286,7 +287,7 @@ const handleCaptureOrder = async (req: express.Request, res: express.Response) =
         workOrderId: undefined
       },
       stateDiff: {
-        action: 'WORK_ORDER_INITIALIZED_PAYPAL',
+        action: 'PAYPAL_CAPTURE_PROVIDER_CONFIRMED_AWAITING_WEBHOOK',
         entityType: 'work_order',
         entityId: undefined,
         amountUsd: capturedAmount,
