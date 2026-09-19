@@ -4,6 +4,7 @@ import express from "express";
 import cookieParser from "cookie-parser";
 import path from "path";
 import fs from "fs";
+import crypto from "crypto";
 
 // Precedence for user-saved Freelancer tokens over container placeholder envs
 try {
@@ -507,6 +508,9 @@ app.get(["/api/automated-payouts", "/api/revenue/payouts"], async (_req, res) =>
 });
 
 app.post(["/api/revenue/simulate-won", "/api/bids/simulate-won"], async (req, res) => {
+  if (process.env.NODE_ENV === 'production') {
+    return res.status(404).json({ success: false, error: 'NOT_AVAILABLE_IN_PRODUCTION' });
+  }
   try {
     const { executeAutonomousCashOut, getRevenueIntelligenceStats, recordBidOutcome } = await import("./server/revenueEngine.js");
     const bidId = req.body?.bidId || `won_proj_${Date.now()}`;
@@ -2728,7 +2732,7 @@ app.post(["/api/bids/withdraw", "/api/bids/:id/withdraw", "/api/freelancer/withd
         receiverEmail,
         amount,
         note: `GigPilot withdrawal for bid ${bidId}`,
-        senderBatchId: `gp_withdraw_${require('crypto').createHash('sha256').update(`${platform}:${bidId}:${amount}`).digest('hex').slice(0, 32)}`
+        senderBatchId: `gp_withdraw_${crypto.createHash('sha256').update(`${platform}:${bidId}:${amount}`).digest('hex').slice(0, 32)}`
       });
 
       logActivityEvent({
