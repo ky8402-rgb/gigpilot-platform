@@ -122,7 +122,7 @@ export async function getAccessToken() {
       throw new Error('PAYPAL_AUTH_FAILED: PayPal authentication was not confirmed.');
     }
     console.warn('[PayPal Auth Notice]', errorData?.error_description || errorData?.error || err.message);
-    return 'mock_sandbox_access_token_kundanvision369';
+    throw new Error('PAYPAL_AUTH_UNAVAILABLE: PayPal authentication was not confirmed.');
   }
 }
 
