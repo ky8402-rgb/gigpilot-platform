@@ -10,10 +10,8 @@ try {
   const cfgPath = path.join(process.cwd(), 'bidding_config.json');
   if (fs.existsSync(cfgPath)) {
     const cfg = JSON.parse(fs.readFileSync(cfgPath, 'utf-8'));
-    if (cfg.freelancerAccessToken && cfg.freelancerAccessToken !== '3PKsiB3m736mE0wnirnHeLTUzLP1xc') {
-      process.env.FREELANCER_ACCESS_TOKEN = cfg.freelancerAccessToken;
-      process.env.FREELANCER_AUTH_TOKEN = cfg.freelancerAccessToken;
-      process.env.FREELANCER_SESSION = cfg.freelancerAccessToken;
+    if (cfg.freelancerAccessToken && cfg.freelancerAccessToken.trim().length > 0) {
+      process.env.FREELANCER_ACCESS_TOKEN = cfg.freelancerAccessToken.trim();
     }
   }
 } catch (_) {}
@@ -719,7 +717,7 @@ app.get("/api/health", async (req, res) => {
     const payPalMode = payPalCfg.mode;
     const hasPayPalCredentials = Boolean(payPalClientId && payPalSecret);
     const freelancerToken = (process.env.FREELANCER_ACCESS_TOKEN || '').trim();
-    const hasFreelancer = Boolean(freelancerToken && freelancerToken.length > 0 && freelancerToken !== '3PKsiB3m736mE0wnirnHeLTUzLP1xc');
+    const hasFreelancer = Boolean(freelancerToken && freelancerToken.length > 0);
     const sqlitePath = path.join(process.cwd(), 'bids.db');
     const sqliteExists = fs.existsSync(sqlitePath);
 
@@ -770,8 +768,8 @@ app.get("/api/health", async (req, res) => {
         },
         paypal: {
           name: 'PayPal Merchant Gateway',
-          configured: true,
-          status: fullCheck.checks.paypal.status === 'healthy' ? 'active' : 'degraded',
+          configured: hasPayPalCredentials,
+          status: hasPayPalCredentials && fullCheck.checks.paypal.status === 'healthy' ? 'active' : (hasPayPalCredentials ? 'degraded' : 'unconfigured'),
           mode: payPalMode,
           receiverEmail: payPalEmail,
           payPalMeUsername: payPalMe,
