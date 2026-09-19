@@ -6541,7 +6541,7 @@ export async function sendClientMessage(params: {
     body: JSON.stringify(params),
   });
   if (!res.ok) throw new Error(`Failed to send message (HTTP ${res.status})`);
-  return safeResponseJson(res, { success: false, message: { id: '', sender: 'freelancer', senderName: '', text: '', timestamp: new Date().toISOString() } });
+  return safeResponseJson<{ success: boolean; message: ClientMessage }>(res, { success: false, message: { id: '', sender: 'freelancer', senderName: '', text: '', timestamp: new Date().toISOString() } });
 }
 
 export async function generateClientAutoReply(params: {
@@ -6580,8 +6580,8 @@ export async function createClientConversation(params: {
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(params),
   });
-  if (!res.ok) throw new Error('Failed to create client conversation');
-  return res.json();
+  if (!res.ok) throw new Error(`Failed to create client conversation (HTTP ${res.status})`);
+  return safeResponseJson(res, { success: false, conversation: undefined as any });
 }
 
 export async function toggleClientAutoResponder(convId: string, enabled?: boolean): Promise<{
@@ -6594,8 +6594,8 @@ export async function toggleClientAutoResponder(convId: string, enabled?: boolea
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ enabled }),
   });
-  if (!res.ok) throw new Error('Failed to toggle auto responder');
-  return res.json();
+  if (!res.ok) throw new Error(`Failed to toggle auto responder (HTTP ${res.status})`);
+  return safeResponseJson(res, { success: false, autoResponderActive: false });
 }
 
 // =========================================================================
