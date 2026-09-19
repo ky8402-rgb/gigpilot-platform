@@ -21,14 +21,14 @@ export interface PaymentCollectionRecord {
 // Verified Primary Beneficiary Settlement Accounts
 export const PRIMARY_PAYONEER_ACCOUNT = {
   isPrimary: true,
-  bankName: '${PAYONEER_BANK_NAME}',
-  bankAddress: '${PAYONEER_BANK_ADDRESS}',
+  bankName: process.env.PAYONEER_BANK_NAME || '',
+  bankAddress: process.env.PAYONEER_BANK_ADDRESS || '',
   accountHolder: 'Kundan Kumar',
-  accountNumber: '${PAYONEER_ACCOUNT_NUMBER}',
+  accountNumber: process.env.PAYONEER_ACCOUNT_NUMBER || '',
   accountNumberMasked: '•••• 8744',
   accountType: 'CHECKING',
-  routingAba: '${PAYONEER_ROUTING_ABA}',
-  swiftBic: '${PAYONEER_SWIFT}',
+  routingAba: process.env.PAYONEER_ROUTING_ABA || '',
+  swiftBic: process.env.PAYONEER_SWIFT || '',
   currency: 'USD',
   transferTypes: 'ACH, Fedwire, SWIFT Wire, Global ACH',
   notes: 'Primary payment collection destination for all client deliverables, contract milestones, and auto-swept marketplace payouts.',
@@ -37,7 +37,7 @@ export const PRIMARY_PAYONEER_ACCOUNT = {
 // In-memory payment ledger
 const paymentLedger: PaymentCollectionRecord[] = [];
 
-const PAYPAL_HANDLE = '${PAYPAL_ME_USERNAME}';
+const PAYPAL_HANDLE = (process.env.PAYPAL_ME_USERNAME || '').trim();
 const USD_TO_INR_RATE = 86.85;
 
 /**
