@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback, Suspense, lazy } from 'react';
+import { AppErrorBoundary } from './components/AppErrorBoundary';
 import type { RemoteOKJobItem } from './components/RemoteOKJobsBoard';
 import { SEOHead } from './components/SEOHead';
 import { FreelanceJob, GeneratedProposal, ActiveContract, AutopilotRules, AutopilotLog, defaultProfile, defaultRules, defaultActiveContracts } from './types';
@@ -2252,14 +2253,16 @@ export default function App() {
         {/* ===== TAB: TOOL 2 - WORK ORDER CLOSER & ESCROW RELEASE ===== */}
         {activeTab === 'tool2' && (
           <div className="space-y-6">
-            <Suspense fallback={<LazyFallback label="Loading Tool 2 Work Order Closer & Escrow Release..." />}>
-              <WorkOrderCloserTool
-                liveOrders={workOrders}
-                handedOverOrderId={handedOverOrderIdForTool2}
-                onNavigateToTool1={() => setActiveTab('tool1')}
-                showToast={showToast}
-              />
-            </Suspense>
+            <AppErrorBoundary title="Tool 2: Escrow Closer failed to render">
+              <Suspense fallback={<LazyFallback label="Loading Tool 2 Work Order Closer & Escrow Release..." />}>
+                <WorkOrderCloserTool
+                  liveOrders={Array.isArray(workOrders) ? workOrders : []}
+                  handedOverOrderId={handedOverOrderIdForTool2}
+                  onNavigateToTool1={() => setActiveTab('tool1')}
+                  showToast={showToast}
+                />
+              </Suspense>
+            </AppErrorBoundary>
           </div>
         )}
 

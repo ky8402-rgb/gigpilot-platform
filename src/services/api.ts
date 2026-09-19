@@ -6522,9 +6522,9 @@ export async function fetchClientConversations(): Promise<{
   totalUnread: number;
 }> {
   const baseUrl = getApiBaseUrl();
-  const res = await fetch(`${baseUrl}/api/clients/conversations`);
-  if (!res.ok) throw new Error('Failed to fetch client conversations');
-  return res.json();
+  const res = await fetch(`${baseUrl}/api/clients/conversations`, { headers: { Accept: 'application/json' }, credentials: 'include' });
+  if (!res.ok) throw new Error(`Failed to fetch client conversations (HTTP ${res.status})`);
+  return safeResponseJson(res, { success: false, conversations: [], totalUnread: 0 });
 }
 
 export async function sendClientMessage(params: {
@@ -6540,8 +6540,8 @@ export async function sendClientMessage(params: {
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(params),
   });
-  if (!res.ok) throw new Error('Failed to send message');
-  return res.json();
+  if (!res.ok) throw new Error(`Failed to send message (HTTP ${res.status})`);
+  return safeResponseJson<{ success: boolean; message: ClientMessage }>(res, { success: false, message: { id: '', sender: 'freelancer', senderName: '', text: '', timestamp: new Date().toISOString() } });
 }
 
 export async function generateClientAutoReply(params: {
@@ -6562,8 +6562,8 @@ export async function generateClientAutoReply(params: {
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(params),
   });
-  if (!res.ok) throw new Error('Failed to generate auto-reply');
-  return res.json();
+  if (!res.ok) throw new Error(`Failed to generate auto-reply (HTTP ${res.status})`);
+  return safeResponseJson(res, { success: false, replyText: '' });
 }
 
 export async function createClientConversation(params: {
@@ -6580,8 +6580,8 @@ export async function createClientConversation(params: {
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(params),
   });
-  if (!res.ok) throw new Error('Failed to create client conversation');
-  return res.json();
+  if (!res.ok) throw new Error(`Failed to create client conversation (HTTP ${res.status})`);
+  return safeResponseJson(res, { success: false, conversation: undefined as any });
 }
 
 export async function toggleClientAutoResponder(convId: string, enabled?: boolean): Promise<{
@@ -6594,8 +6594,8 @@ export async function toggleClientAutoResponder(convId: string, enabled?: boolea
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ enabled }),
   });
-  if (!res.ok) throw new Error('Failed to toggle auto responder');
-  return res.json();
+  if (!res.ok) throw new Error(`Failed to toggle auto responder (HTTP ${res.status})`);
+  return safeResponseJson(res, { success: false, autoResponderActive: false });
 }
 
 // =========================================================================
