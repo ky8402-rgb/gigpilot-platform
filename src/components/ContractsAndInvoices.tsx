@@ -378,7 +378,7 @@ export const ContractsAndInvoices: React.FC<ContractsAndInvoicesProps> = ({
                     });
                   }}
                   className="flex items-center space-x-1 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white px-3 py-1.5 text-xs font-semibold transition-all shadow-sm cursor-pointer"
-                  title="Generate and Print PDF with Payoneer ${PAYONEER_BANK_NAME} Payment Instructions"
+                  title="Generate and Print PDF with Payoneer Configured Payoneer account Payment Instructions"
                 >
                   <Printer className="h-3.5 w-3.5" />
                   <span className="hidden sm:inline">Print / Save PDF</span>
@@ -386,7 +386,7 @@ export const ContractsAndInvoices: React.FC<ContractsAndInvoicesProps> = ({
 
                 <button
                   onClick={() => {
-                    const text = `INVOICE #${showInvoiceModal.id}\nPayee: Kundan Kumar\nProject: ${showInvoiceModal.jobTitle}\nClient: ${showInvoiceModal.clientName}\nAmount Due: $${(showInvoiceModal.totalValue - showInvoiceModal.amountPaid).toLocaleString()} USD\n\nPAYMENT INSTRUCTIONS (Payoneer ${PAYONEER_BANK_NAME} USD & PayPal):\nBank Name: ${PAYONEER_BANK_NAME}\nBank Address: ${PAYONEER_BANK_ADDRESS}\nBeneficiary: Kundan Kumar\nAccount Number: ${PAYONEER_ACCOUNT_NUMBER}\nAccount Type: CHECKING\nRouting (ABA): ${PAYONEER_ROUTING_ABA}\nSWIFT / BIC: ${PAYONEER_SWIFT}\nCurrency: USD\nPayPal Direct: ${PAYPAL_ME_URL}`;
+                    const text = `INVOICE #${showInvoiceModal.id}\nPayee: Kundan Kumar\nProject: ${showInvoiceModal.jobTitle}\nClient: ${showInvoiceModal.clientName}\nAmount Due: $${(showInvoiceModal.totalValue - showInvoiceModal.amountPaid).toLocaleString()} USD\n\nPAYMENT INSTRUCTIONS (Payoneer Configured Payoneer account USD & PayPal):\nBank Name: Configured Payoneer account\nBank Address: Configured server-side\nBeneficiary: Kundan Kumar\nAccount Number: Configured server-side\nAccount Type: CHECKING\nRouting (ABA): Configured server-side\nSWIFT / BIC: Configured server-side\nCurrency: USD\nPayPal Direct: Configured server-side`;
                     navigator.clipboard.writeText(text);
                     setInvoiceCopied(true);
                     setTimeout(() => setInvoiceCopied(false), 2000);
@@ -414,7 +414,7 @@ export const ContractsAndInvoices: React.FC<ContractsAndInvoicesProps> = ({
                 <div>
                   <h2 className="text-lg font-black text-white tracking-tight">Kundan Kumar</h2>
                   <p className="text-slate-400 mt-0.5">Senior Full-Stack &amp; Autonomous Automation Lead</p>
-                  <p className="text-slate-500 font-mono mt-1">Email: ${PAYPAL_ME_USERNAME}@gmail.com</p>
+                  <p className="text-slate-500 font-mono mt-1">Email: Configured server-side@gmail.com</p>
                 </div>
                 <div className="sm:text-right">
                   <div className="text-slate-400 font-semibold">Date of Issue</div>
@@ -480,12 +480,12 @@ export const ContractsAndInvoices: React.FC<ContractsAndInvoicesProps> = ({
                 </div>
               </div>
 
-              {/* Payment Instructions (Payoneer ${PAYONEER_BANK_NAME} USD & PayPal) */}
+              {/* Payment Instructions (Payoneer Configured Payoneer account USD & PayPal) */}
               <div className="rounded-xl border border-blue-500/30 bg-slate-950/80 p-4 space-y-3">
                 <div className="font-bold text-xs text-white flex items-center justify-between">
                   <div className="flex items-center gap-2">
                     <ShieldCheck className="w-4 h-4 text-emerald-400" />
-                    <span className="uppercase tracking-wider">Payment Instructions (Payoneer ${PAYONEER_BANK_NAME} &amp; PayPal)</span>
+                    <span className="uppercase tracking-wider">Payment Instructions (Payoneer Configured Payoneer account &amp; PayPal)</span>
                   </div>
                   <span className="text-[10px] text-cyan-400 font-mono font-bold">VERIFIED USD WIRE DESTINATION</span>
                 </div>
@@ -496,13 +496,13 @@ export const ContractsAndInvoices: React.FC<ContractsAndInvoicesProps> = ({
                       <span>🏦 Payoneer USD Checking Account:</span>
                       <span className="text-[10px] text-slate-400 font-mono">ACH / Wire</span>
                     </div>
-                    <div className="text-slate-300">Bank: <strong className="text-white">${PAYONEER_BANK_NAME}</strong></div>
-                    <div className="text-slate-300 text-[10px]">Address: <span className="text-slate-200">${PAYONEER_BANK_ADDRESS}</span></div>
+                    <div className="text-slate-300">Bank: <strong className="text-white">Configured Payoneer account</strong></div>
+                    <div className="text-slate-300 text-[10px]">Address: <span className="text-slate-200">Configured server-side</span></div>
                     <div className="text-slate-300">Beneficiary: <strong className="text-white">Kundan Kumar</strong></div>
-                    <div className="text-slate-300">Account Number: <strong className="text-white font-mono">${PAYONEER_ACCOUNT_NUMBER}</strong></div>
+                    <div className="text-slate-300">Account Number: <strong className="text-white font-mono">Configured server-side</strong></div>
                     <div className="text-slate-300">Account Type: <strong className="text-emerald-400 font-mono">CHECKING</strong></div>
-                    <div className="text-slate-300">Routing (ABA): <strong className="text-emerald-400 font-mono">${PAYONEER_ROUTING_ABA}</strong></div>
-                    <div className="text-slate-300">SWIFT / BIC: <strong className="text-cyan-400 font-mono">${PAYONEER_SWIFT}</strong></div>
+                    <div className="text-slate-300">Routing (ABA): <strong className="text-emerald-400 font-mono">Configured server-side</strong></div>
+                    <div className="text-slate-300">SWIFT / BIC: <strong className="text-cyan-400 font-mono">Configured server-side</strong></div>
                   </div>
 
                   <div className="rounded-lg border border-slate-800 bg-slate-900/80 p-3 space-y-1">
@@ -510,12 +510,12 @@ export const ContractsAndInvoices: React.FC<ContractsAndInvoicesProps> = ({
                       <span>💳 Instant PayPal Checkout:</span>
                       <span className="text-[10px] text-slate-400 font-mono">Global Express</span>
                     </div>
-                    <div className="text-slate-300">PayPal Handle: <strong className="text-white font-mono">${PAYPAL_ME_USERNAME}</strong></div>
-                    <div className="text-slate-300">Direct Link: <a href="${PAYPAL_ME_URL}" target="_blank" rel="noopener noreferrer" className="text-cyan-400 underline font-mono">paypal.me/${PAYPAL_ME_USERNAME}</a></div>
-                    <div className="text-slate-300">Receiver Email: <strong className="text-white font-mono">${PAYPAL_RECEIVER_EMAIL}</strong></div>
+                    <div className="text-slate-300">PayPal Handle: <strong className="text-white font-mono">Configured server-side</strong></div>
+                    <div className="text-slate-300">Direct Link: <a href="Configured server-side" target="_blank" rel="noopener noreferrer" className="text-cyan-400 underline font-mono">paypal.me/Configured server-side</a></div>
+                    <div className="text-slate-300">Receiver Email: <strong className="text-white font-mono">Configured server-side</strong></div>
                     <div className="text-slate-300">Account ID: <strong className="text-white font-mono">98UNBJBN67H6W</strong></div>
                     <div className="text-slate-400 text-[10px] pt-1">
-                      Funds received via PayPal Checkout &amp; Invoicing are auto-swept to your linked Payoneer ${PAYONEER_BANK_NAME} checking account.
+                      Funds received via PayPal Checkout &amp; Invoicing are auto-swept to your linked Payoneer Configured Payoneer account checking account.
                     </div>
                   </div>
                 </div>
@@ -545,7 +545,7 @@ export const ContractsAndInvoices: React.FC<ContractsAndInvoicesProps> = ({
             {/* Bottom Actions */}
             <div className="mt-6 flex flex-wrap items-center justify-between gap-3 border-t border-slate-800 pt-4">
               <a
-                href={`${PAYPAL_ME_URL}/${showInvoiceModal.totalValue - showInvoiceModal.amountPaid}`}
+                href={`Configured server-side/${showInvoiceModal.totalValue - showInvoiceModal.amountPaid}`}
                 target="_blank"
                 rel="noopener noreferrer"
                 className="flex items-center space-x-1.5 rounded-xl bg-cyan-500/15 border border-cyan-500/30 text-cyan-300 hover:bg-cyan-500/25 px-4 py-2 text-xs font-bold transition-all"
