@@ -1915,9 +1915,12 @@ app.post("/api/platform/bid", async (req, res) => {
       milestones
     });
 
-    res.json({ success: true, ...result });
+    if (!result.success) {
+      return res.status(409).json({ success: false, ...result });
+    }
+    return res.json({ success: true, ...result });
   } catch (err: any) {
-    res.status(500).json({ success: false, error: err.message });
+    return res.status(500).json({ success: false, error: err.message });
   }
 });
 
