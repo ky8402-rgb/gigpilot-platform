@@ -77,70 +77,12 @@ function createSafePrisma(): PrismaClient {
         return member;
       }
 
-      // Safe Model Mock Proxy when database is not configured
+      // Production safety: never fabricate users, payments, work orders or ledger rows.
+      // Any state-changing database operation must have a real PostgreSQL connection.
       return new Proxy({}, {
-        get(_, modelAction: string) {
-          return async (args?: any) => {
-            switch (modelAction) {
-              case 'findUnique':
-              case 'findFirst':
-                if (prop === 'user') {
-                  const email = args?.where?.email || 'ky8402@gmail.com';
-                  const id = args?.where?.id || 'user_active_1';
-                  return {
-                    id,
-                    email,
-                    passwordHash: 'active_hash',
-                    credits: 25,
-                    subscriptionStatus: 'active',
-                    createdAt: new Date(),
-                  };
-                }
-                return null;
-
-              case 'findMany':
-                return [];
-
-              case 'count':
-                return prop === 'user' ? 1 : 0;
-
-              case 'create':
-                if (prop === 'user') {
-                  return {
-                    id: args?.data?.id || 'user_active_1',
-                    email: args?.data?.email || 'ky8402@gmail.com',
-                    passwordHash: args?.data?.passwordHash || 'active_hash',
-                    credits: args?.data?.credits ?? 25,
-                    subscriptionStatus: args?.data?.subscriptionStatus || 'active',
-                    createdAt: new Date(),
-                  };
-                }
-                return { id: `item_${Date.now()}`, ...args?.data, createdAt: new Date() };
-
-              case 'update':
-                if (prop === 'user') {
-                  return {
-                    id: args?.where?.id || 'user_active_1',
-                    email: 'ky8402@gmail.com',
-                    passwordHash: 'active_hash',
-                    credits: typeof args?.data?.credits?.decrement === 'number'
-                      ? 24
-                      : (args?.data?.credits?.increment ? 35 : 25),
-                    subscriptionStatus: 'active',
-                    createdAt: new Date(),
-                  };
-                }
-                return { id: args?.where?.id || `item_${Date.now()}`, ...args?.data };
-
-              case 'updateMany':
-              case 'delete':
-              case 'deleteMany':
-              case 'upsert':
-                return { count: 1 };
-
-              default:
-                return null;
-            }
+        get() {
+          return async () => {
+            throw new Error('DATABASE_REQUIRED: PostgreSQL is required for persistent application state.');
           };
         }
       });
@@ -275,8 +217,8 @@ export async function checkDatabaseConnection() {
         type: 'PostgreSQL (Neon / Supabase Ready)',
         latencyMs: 0,
         provider: 'PostgreSQL',
-        message: 'DATABASE_URL not configured. Running in high-performance in-memory mode. Add PostgreSQL or Neon credentials in Settings to sync cloud records.',
-        stats: { users: 1, transactions: 0, workOrders: 0, paypalOrders: 0 }
+        message: 'DATABASE_URL is not configured. Persistent database-backed operations are disabled until PostgreSQL is configured.',
+        stats: { users: 0, transactions: 0, workOrders: 0, paypalOrders: 0 }
       };
     }
 
