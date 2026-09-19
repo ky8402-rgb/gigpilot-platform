@@ -140,7 +140,7 @@ export async function runAutonomousContractorCycle(maxJobs = 3) {
       if (String(order.externalProvider || '').toLowerCase() === 'freelancer' && order.externalProjectId) {
         const delivery = await deliverFreelancerWorkPackage({
           projectId: order.externalProjectId,
-          message: deliverable.clientHandoverNote + `\\n\\nDelivery checksum: ${deliverable.checksum}`,
+          message: deliverable.clientHandoverNote + `\n\nDelivery checksum: ${deliverable.checksum}`,
           files: deliverable.files.map((file) => ({ filename: file.filename, content: file.content })),
         });
         if (delivery.success) {
