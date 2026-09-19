@@ -858,10 +858,16 @@ export default function App() {
     if (!order || order.status === 'completed') return;
 
     // Call backend endpoint to trigger milestone completion & escrow release
+    let completionResult: { success: boolean; payoutAmount?: number; message?: string };
     try {
-      await completeBackendWorkOrder(id);
-    } catch (e) {
-      console.warn('Backend completion call warning:', e);
+      completionResult = await completeBackendWorkOrder(id);
+    } catch (e: any) {
+      completionResult = { success: false, message: e?.message || 'Completion request failed' };
+    }
+
+    if (!completionResult.success) {
+      showToast(completionResult.message || 'Order cannot be marked complete until real provider settlement is confirmed.', 'error');
+      return;
     }
 
     setWorkOrders(prev => prev.map(o => String(o.id) === String(id) ? { ...o, status: 'completed' } : o));
