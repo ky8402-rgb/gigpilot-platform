@@ -788,4 +788,14 @@ router.post('/autonomous-freelance/run', async (req, res) => {
   }
 });
 
+/** POST /api/autonomous-freelance/bid-cycle - submit only real provider bids when explicitly enabled. */
+router.post('/autonomous-freelance/bid-cycle', async (_req, res) => {
+  try {
+    const result = await runAutonomousBidCycle();
+    return res.status(result.enabled ? 200 : 409).json({ success: result.enabled, ...result });
+  } catch (err: any) {
+    return res.status(500).json({ success: false, error: err?.message || 'AUTONOMOUS_BID_CYCLE_FAILED' });
+  }
+});
+
 export default router;
