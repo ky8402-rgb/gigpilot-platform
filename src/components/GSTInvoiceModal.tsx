@@ -40,7 +40,7 @@ export const GSTInvoiceModal: React.FC<GSTInvoiceModalProps> = ({
 
   const buyer = invoice.buyer || {
     name: 'Alex Morgan',
-    email: 'ky8402@gmail.com',
+    email: '${PAYPAL_ME_USERNAME}@gmail.com',
     stateCode: '27',
     stateName: 'Maharashtra',
     gstin: 'N/A (B2C Consumer)'
@@ -247,7 +247,7 @@ export const GSTInvoiceModal: React.FC<GSTInvoiceModalProps> = ({
             </div>
           </div>
 
-          {/* Payment Instructions (Payoneer Citibank USD & PayPal Wire Remittance) */}
+          {/* Payment Instructions (Payoneer ${PAYONEER_BANK_NAME} USD & PayPal Wire Remittance) */}
           <div className="rounded-xl border border-sky-300 bg-sky-50/70 p-4 space-y-2.5">
             <div className="flex items-center justify-between border-b border-sky-200 pb-2">
               <div className="font-bold text-xs text-sky-950 uppercase tracking-wider flex items-center gap-1.5">
@@ -262,16 +262,16 @@ export const GSTInvoiceModal: React.FC<GSTInvoiceModalProps> = ({
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
               <div className="bg-white border border-slate-200 rounded-lg p-3 space-y-1">
                 <div className="font-bold text-slate-900 flex items-center justify-between pb-1 border-b border-slate-100">
-                  <span className="text-sky-800 font-bold">Payoneer USD Checking (Citibank NA):</span>
+                  <span className="text-sky-800 font-bold">Payoneer USD Checking (${PAYONEER_BANK_NAME} NA):</span>
                   <span className="text-[10px] text-slate-500 font-mono">ACH / Wire</span>
                 </div>
-                <div className="flex justify-between text-slate-600"><span>Bank Name:</span><strong className="text-slate-900">Citibank</strong></div>
-                <div className="flex justify-between text-slate-600"><span>Bank Address:</span><span className="text-slate-700 text-[11px]">111 Wall Street New York, NY 10043 USA</span></div>
+                <div className="flex justify-between text-slate-600"><span>Bank Name:</span><strong className="text-slate-900">${PAYONEER_BANK_NAME}</strong></div>
+                <div className="flex justify-between text-slate-600"><span>Bank Address:</span><span className="text-slate-700 text-[11px]">${PAYONEER_BANK_ADDRESS}</span></div>
                 <div className="flex justify-between text-slate-600"><span>Beneficiary:</span><strong className="text-slate-900">Kundan Kumar</strong></div>
-                <div className="flex justify-between text-slate-600"><span>Account Number:</span><strong className="text-sky-900 font-mono">70589110002638744</strong></div>
+                <div className="flex justify-between text-slate-600"><span>Account Number:</span><strong className="text-sky-900 font-mono">${PAYONEER_ACCOUNT_NUMBER}</strong></div>
                 <div className="flex justify-between text-slate-600"><span>Account Type:</span><strong className="text-emerald-700 font-mono">CHECKING</strong></div>
-                <div className="flex justify-between text-slate-600"><span>Routing (ABA):</span><strong className="text-sky-900 font-mono">031100209</strong></div>
-                <div className="flex justify-between text-slate-600"><span>SWIFT / BIC:</span><strong className="text-sky-900 font-mono">CITIUS33</strong></div>
+                <div className="flex justify-between text-slate-600"><span>Routing (ABA):</span><strong className="text-sky-900 font-mono">${PAYONEER_ROUTING_ABA}</strong></div>
+                <div className="flex justify-between text-slate-600"><span>SWIFT / BIC:</span><strong className="text-sky-900 font-mono">${PAYONEER_SWIFT}</strong></div>
                 <div className="flex justify-between text-slate-600"><span>Currency:</span><strong className="text-slate-900">USD</strong></div>
               </div>
 
@@ -280,11 +280,11 @@ export const GSTInvoiceModal: React.FC<GSTInvoiceModalProps> = ({
                   <span className="text-blue-700 font-bold">PayPal Direct Remittance:</span>
                   <span className="text-[10px] text-slate-500 font-mono">Global Express</span>
                 </div>
-                <div className="flex justify-between text-slate-600"><span>PayPal Link:</span><a href="https://paypal.me/ky8402" target="_blank" rel="noopener noreferrer" className="text-sky-700 underline font-mono">paypal.me/ky8402</a></div>
-                <div className="flex justify-between text-slate-600"><span>Receiver Email:</span><span className="font-mono text-slate-800">kundank4@icloud.com</span></div>
+                <div className="flex justify-between text-slate-600"><span>PayPal Link:</span><a href="${PAYPAL_ME_URL}" target="_blank" rel="noopener noreferrer" className="text-sky-700 underline font-mono">paypal.me/${PAYPAL_ME_USERNAME}</a></div>
+                <div className="flex justify-between text-slate-600"><span>Receiver Email:</span><span className="font-mono text-slate-800">${PAYPAL_RECEIVER_EMAIL}</span></div>
                 <div className="flex justify-between text-slate-600"><span>Settlement Mode:</span><span className="text-emerald-700 font-bold">Auto-Sweep to Payoneer</span></div>
                 <div className="text-[11px] text-slate-500 pt-2 border-t border-slate-100 leading-snug">
-                  Please include the invoice reference in the transfer memo. All inbound transfers clear into our primary Citibank USD checking account.
+                  Please include the invoice reference in the transfer memo. All inbound transfers clear into our primary ${PAYONEER_BANK_NAME} USD checking account.
                 </div>
               </div>
             </div>
