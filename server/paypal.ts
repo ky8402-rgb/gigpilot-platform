@@ -204,7 +204,8 @@ export async function createPayPalOrder(params: {
       const res = await axios.post(`${baseUrl}/v2/checkout/orders`, payload, {
         headers: {
           'Authorization': `Bearer ${token}`,
-          'Content-Type': 'application/json'
+          'Content-Type': 'application/json',
+          'PayPal-Request-Id': senderBatchId
         },
         timeout: 12000
       });
@@ -289,6 +290,7 @@ export async function createPayPalPayout(params: {
   currency?: string;
   note?: string;
   recipientName?: string;
+  senderBatchId?: string;
 }): Promise<{
   payoutBatchId: string;
   status: string;
@@ -303,7 +305,7 @@ export async function createPayPalPayout(params: {
 
   if (token) {
     try {
-      const senderBatchId = `batch_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
+      const senderBatchId = params.senderBatchId || `batch_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
       const payload = {
         sender_batch_header: {
           sender_batch_id: senderBatchId,
