@@ -218,10 +218,11 @@ export async function releaseApprovedMilestone(
   if (!receiverEmail) throw new Error('SETTLEMENT_DESTINATION_REQUIRED');
 
   const reservationKey = `escrow:${workOrderId}:${milestoneId}`;
+  const providerRequestId = `gp_${crypto.createHash('sha256').update(reservationKey).digest('hex').slice(0, 32)}`;
   const reserved = await prisma.$transaction(async (tx: any) => {
     const milestone = await tx.escrowMilestone.findUnique({ where: { id: milestoneId } });
     if (!milestone || milestone.workOrderId !== workOrderId) throw new Error('MILESTONE_NOT_FOUND');
-    if (milestone.status !== 'APPROVED') {
+    if (milestone.status !== 'APPROVED' && milestone.status !== 'RELEASING') {
       if (milestone.status === 'SETTLED') return { alreadySettled: true, milestone };
       throw new Error('MILESTONE_NOT_APPROVED');
     }
@@ -229,10 +230,12 @@ export async function releaseApprovedMilestone(
     const order = await tx.workOrder.findUnique({ where: { id: workOrderId } });
     if (!order || order.escrowStatus !== 'RELEASE_PENDING') throw new Error('ESCROW_NOT_RELEASEABLE');
 
-    await tx.escrowMilestone.update({
-      where: { id: milestoneId },
-      data: { status: 'RELEASING' }
-    });
+    if (milestone.status === 'APPROVED') {
+      await tx.escrowMilestone.update({
+        where: { id: milestoneId },
+        data: { status: 'RELEASING' }
+      });
+    }
 
     return {
       alreadySettled: false,
@@ -248,14 +251,19 @@ export async function releaseApprovedMilestone(
   }
   if (!isPayPalConfigured()) throw new Error('PAYPAL_NOT_CONFIGURED');
 
-  const providerRequestId = `gp_${crypto.createHash('sha256').update(reservationKey).digest('hex').slice(0, 32)}`;
-  const payout = await createPayPalPayout({
-    receiverEmail,
-    amount: reserved.milestone.amount,
-    currency: reserved.milestone.currency,
-    note: `GigPilot approved milestone ${milestoneId}`,
-    senderBatchId: providerRequestId
-  });
+  let payout: { payoutBatchId: string; status: string };
+  try {
+    const existing = await getPayPalPayoutBatch(providerRequestId);
+    payout = { payoutBatchId: providerRequestId, status: existing.batchStatus };
+  } catch {
+    payout = await createPayPalPayout({
+      receiverEmail,
+      amount: reserved.milestone.amount,
+      currency: reserved.milestone.currency,
+      note: `GigPilot approved milestone ${milestoneId}`,
+      senderBatchId: providerRequestId
+    });
+  }
 
   const confirmation = await getPayPalPayoutBatch(payout.payoutBatchId);
   const successfulItem = confirmation.items?.find((item: any) =>
