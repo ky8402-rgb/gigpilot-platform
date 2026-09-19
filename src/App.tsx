@@ -36,6 +36,7 @@ const SupportedJobTypesHub = lazy(() => import('./components/SupportedJobTypesHu
 const SoftwareJobAutonomousTool = lazy(() => import('./components/SoftwareJobAutonomousTool').then(m => ({ default: m.SoftwareJobAutonomousTool })));
 // Tool 2: Work Order Closer & Escrow Release (Senior Engineer API Endpoint)
 const WorkOrderCloserTool = lazy(() => import('./components/WorkOrderCloserTool').then(m => ({ default: m.WorkOrderCloserTool })));
+import { AppErrorBoundary } from './components/AppErrorBoundary';
 
 // Lazy-load heavy non-critical dashboard components to reduce initial JavaScript bundle
 const FreelancerMetricsSection = lazy(() => import('./components/FreelancerMetricsSection').then(m => ({ default: m.FreelancerMetricsSection })));
@@ -2252,14 +2253,16 @@ export default function App() {
         {/* ===== TAB: TOOL 2 - WORK ORDER CLOSER & ESCROW RELEASE ===== */}
         {activeTab === 'tool2' && (
           <div className="space-y-6">
-            <Suspense fallback={<LazyFallback label="Loading Tool 2 Work Order Closer & Escrow Release..." />}>
-              <WorkOrderCloserTool
-                liveOrders={workOrders}
-                handedOverOrderId={handedOverOrderIdForTool2}
-                onNavigateToTool1={() => setActiveTab('tool1')}
-                showToast={showToast}
-              />
-            </Suspense>
+            <AppErrorBoundary title="Tool 2: Escrow Closer failed to render">
+              <Suspense fallback={<LazyFallback label="Loading Tool 2 Work Order Closer & Escrow Release..." />}>
+                <WorkOrderCloserTool
+                  liveOrders={Array.isArray(workOrders) ? workOrders : []}
+                  handedOverOrderId={handedOverOrderIdForTool2}
+                  onNavigateToTool1={() => setActiveTab('tool1')}
+                  showToast={showToast}
+                />
+              </Suspense>
+            </AppErrorBoundary>
           </div>
         )}
 
