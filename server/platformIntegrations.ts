@@ -388,7 +388,7 @@ export async function submitPlatformBid(orderId: number | string, proposalData: 
       return { success: false, platform: 'Freelancer', message: 'Freelancer OAuth/API credentials are not configured; no bid was submitted.', error: 'FREELANCER_NOT_CONFIGURED' };
     }
     const projectId = String(targetOrder.externalId || targetOrder.id).replace(/^fl_/, '');
-    const base = (process.env.FREELANCER_API_BASE_URL || process.env.FREELANCER_API_BASE || process.env.FREELANCER_API_URL || 'https://www.freelancer.com/api').replace(/\\/+$/, '');
+    const base = (process.env.FREELANCER_API_BASE_URL || process.env.FREELANCER_API_BASE || process.env.FREELANCER_API_URL || 'https://www.freelancer.com/api').replace(/\/+$/, '');
     try {
       const response = await axios.post(`${base}/projects/0.1/bids/`, {
         project_id: Number(projectId),
