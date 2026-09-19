@@ -329,7 +329,8 @@ export async function createPayPalPayout(params: {
       const res = await axios.post(`${baseUrl}/v1/payments/payouts`, payload, {
         headers: {
           'Authorization': `Bearer ${token}`,
-          'Content-Type': 'application/json'
+          'Content-Type': 'application/json',
+          'PayPal-Request-Id': senderBatchId
         },
         timeout: 12000
       });
@@ -345,9 +346,7 @@ export async function createPayPalPayout(params: {
       const errData = err?.response?.data;
       console.warn('PayPal Payouts REST API error:', errData || err.message);
       if (errData?.name === 'PAYOUT_NOT_AVAILABLE') {
-        throw new Error(
-          'PAYOUT_NOT_AVAILABLE: PayPal merchant accounts with auto-sweep enabled automatically deposit all foreign client revenue received via PayPal Checkout, Invoicing, or PayPal.Me directly into your linked Payoneer Citibank checking account (Acc: 70589110002638744 / Routing: 031100209) within 24-48 hours.'
-        );
+        throw new Error('PAYOUT_NOT_AVAILABLE: PayPal payout service is not available for this account. Provider confirmation is required; no transfer is claimed.');
       }
       throw new Error(errData?.message || err.message || 'PayPal Payout request failed');
     }
