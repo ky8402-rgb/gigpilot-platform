@@ -21,14 +21,14 @@ export interface PaymentCollectionRecord {
 // Verified Primary Beneficiary Settlement Accounts
 export const PRIMARY_PAYONEER_ACCOUNT = {
   isPrimary: true,
-  bankName: 'Citibank',
-  bankAddress: '111 Wall Street New York, NY 10043 USA',
+  bankName: process.env.PAYONEER_BANK_NAME || '',
+  bankAddress: process.env.PAYONEER_BANK_ADDRESS || '',
   accountHolder: 'Kundan Kumar',
-  accountNumber: '70589110002638744',
+  accountNumber: process.env.PAYONEER_ACCOUNT_NUMBER || '',
   accountNumberMasked: '•••• 8744',
   accountType: 'CHECKING',
-  routingAba: '031100209',
-  swiftBic: 'CITIUS33',
+  routingAba: process.env.PAYONEER_ROUTING_ABA || '',
+  swiftBic: process.env.PAYONEER_SWIFT || '',
   currency: 'USD',
   transferTypes: 'ACH, Fedwire, SWIFT Wire, Global ACH',
   notes: 'Primary payment collection destination for all client deliverables, contract milestones, and auto-swept marketplace payouts.',
@@ -37,7 +37,7 @@ export const PRIMARY_PAYONEER_ACCOUNT = {
 // In-memory payment ledger
 const paymentLedger: PaymentCollectionRecord[] = [];
 
-const PAYPAL_HANDLE = 'ky8402';
+const PAYPAL_HANDLE = (process.env.PAYPAL_ME_USERNAME || '').trim();
 const USD_TO_INR_RATE = 86.85;
 
 /**
@@ -84,9 +84,9 @@ export function recordCollectedPayment(data: {
   const now = new Date().toISOString();
   const paymentMethod = data.paymentMethod || 'payoneer';
 
-  let payoutDestination = 'Payoneer USD Checking (Citibank, Acc: 70589110002638744, Routing: 031100209)';
+  let payoutDestination = 'Payoneer USD Checking (${PAYONEER_BANK_NAME}, Acc: ${PAYONEER_ACCOUNT_NUMBER}, Routing: ${PAYONEER_ROUTING_ABA})';
   if (paymentMethod === 'paypal') {
-    payoutDestination = 'PayPal (Auto-Swept to Payoneer Citibank)';
+    payoutDestination = 'PayPal (Auto-Swept to Payoneer ${PAYONEER_BANK_NAME})';
   } else if (paymentMethod === 'instant_escrow') {
     payoutDestination = 'Platform Escrow Direct Release (Payoneer Wire)';
   }
@@ -137,7 +137,7 @@ export function getPaymentSummary() {
       primary: 'payoneer',
       payoneer: PRIMARY_PAYONEER_ACCOUNT,
       paypal: PAYPAL_HANDLE,
-      paypalEmail: 'ky8402@gmail.com',
+      paypalEmail: '${PAYPAL_ME_USERNAME}@gmail.com',
       usdToInrRate: USD_TO_INR_RATE,
     },
   };

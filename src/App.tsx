@@ -2821,10 +2821,14 @@ export default function App() {
           initialOrderId={payPalCheckoutParams.orderId}
           onPaymentSuccess={(orderId, captureResult) => {
             triggerConfetti({ particleCount: 80, spread: 70 });
-            const capturedAmount = captureResult?.amount || payPalCheckoutParams.amount || 150;
-            setWalletBalance(curr => curr + capturedAmount);
-            setTodayEarnings(curr => curr + capturedAmount);
-            setCompletedOrders(curr => curr + 1);
+            const capturedAmount = captureResult?.amount || payPalCheckoutParams.amount || 0;
+            // Synchronous capture is not the settlement ledger. PayPal webhook confirmation
+            // must be processed before balances, earnings, or completed orders change.
+            const confirmedAmount = Number(capturedAmount);
+            if (!Number.isFinite(confirmedAmount) || confirmedAmount <= 0) {
+              showToast('PayPal capture returned no valid amount; waiting for provider confirmation.', 'warning');
+              return;
+            }
 
             const newTx: Transaction = {
               id: makeUniqueId('tx_paypal_live'),
@@ -2844,7 +2848,7 @@ export default function App() {
               );
             }
 
-            showToast(`🎉 PayPal Payment Captured: $${capturedAmount} USD credited to ledger!`, 'success');
+            showToast(`PayPal capture confirmed for ${confirmedAmount} USD. Ledger credit will appear after verified provider webhook settlement.`, 'info');
           }}
           showToast={showToast}
         />

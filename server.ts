@@ -4,16 +4,15 @@ import express from "express";
 import cookieParser from "cookie-parser";
 import path from "path";
 import fs from "fs";
+import crypto from "crypto";
 
 // Precedence for user-saved Freelancer tokens over container placeholder envs
 try {
   const cfgPath = path.join(process.cwd(), 'bidding_config.json');
   if (fs.existsSync(cfgPath)) {
     const cfg = JSON.parse(fs.readFileSync(cfgPath, 'utf-8'));
-    if (cfg.freelancerAccessToken && cfg.freelancerAccessToken !== '3PKsiB3m736mE0wnirnHeLTUzLP1xc') {
-      process.env.FREELANCER_ACCESS_TOKEN = cfg.freelancerAccessToken;
-      process.env.FREELANCER_AUTH_TOKEN = cfg.freelancerAccessToken;
-      process.env.FREELANCER_SESSION = cfg.freelancerAccessToken;
+    if (cfg.freelancerAccessToken && cfg.freelancerAccessToken.trim().length > 0) {
+      process.env.FREELANCER_ACCESS_TOKEN = cfg.freelancerAccessToken.trim();
     }
   }
 } catch (_) {}
@@ -509,6 +508,9 @@ app.get(["/api/automated-payouts", "/api/revenue/payouts"], async (_req, res) =>
 });
 
 app.post(["/api/revenue/simulate-won", "/api/bids/simulate-won"], async (req, res) => {
+  if (process.env.NODE_ENV === 'production') {
+    return res.status(404).json({ success: false, error: 'NOT_AVAILABLE_IN_PRODUCTION' });
+  }
   try {
     const { executeAutonomousCashOut, getRevenueIntelligenceStats, recordBidOutcome } = await import("./server/revenueEngine.js");
     const bidId = req.body?.bidId || `won_proj_${Date.now()}`;
@@ -719,7 +721,7 @@ app.get("/api/health", async (req, res) => {
     const payPalMode = payPalCfg.mode;
     const hasPayPalCredentials = Boolean(payPalClientId && payPalSecret);
     const freelancerToken = (process.env.FREELANCER_ACCESS_TOKEN || '').trim();
-    const hasFreelancer = Boolean(freelancerToken && freelancerToken.length > 0 && freelancerToken !== '3PKsiB3m736mE0wnirnHeLTUzLP1xc');
+    const hasFreelancer = Boolean(freelancerToken && freelancerToken.length > 0);
     const sqlitePath = path.join(process.cwd(), 'bids.db');
     const sqliteExists = fs.existsSync(sqlitePath);
 
@@ -770,8 +772,8 @@ app.get("/api/health", async (req, res) => {
         },
         paypal: {
           name: 'PayPal Merchant Gateway',
-          configured: true,
-          status: fullCheck.checks.paypal.status === 'healthy' ? 'active' : 'degraded',
+          configured: hasPayPalCredentials,
+          status: hasPayPalCredentials && fullCheck.checks.paypal.status === 'healthy' ? 'active' : (hasPayPalCredentials ? 'degraded' : 'unconfigured'),
           mode: payPalMode,
           receiverEmail: payPalEmail,
           payPalMeUsername: payPalMe,
@@ -2692,109 +2694,78 @@ app.get("/api/payments/summary", (req, res) => {
 });
 
 // Process / Record Bid Earnings Withdrawal with robust DB and Marketplace API try-catch handling
-app.post(["/api/bids/withdraw", "/api/bids/:id/withdraw", "/api/freelancer/withdraw"], withdrawRateLimiter, async (req, res) => {
+app.post(["/api/bids/withdraw", "/api/bids/:id/withdraw", "/api/freelancer/withdraw"], withdrawRateLimiter, authMiddleware, async (req, res) => {
   try {
     const rawBidId = req.params.id || req.body?.bidId;
     const bidId = rawBidId ? String(rawBidId) : 'all';
     const amount = Number(req.body?.amount ?? 0);
     const platform = String(req.body?.platform || 'freelancer').toLowerCase();
-    const payoutMethod = String(req.body?.payoutMethod || 'paypal');
+    const payoutMethod = String(req.body?.payoutMethod || '').toLowerCase();
 
-    console.log(`[API /api/bids/withdraw] Request received. bidId: "${bidId}", Amount: $${amount}, Platform: "${platform}", PayoutMethod: "${payoutMethod}"`);
+    if (!Number.isFinite(amount) || amount <= 0) {
+      return res.status(400).json({ success: false, error: 'A positive withdrawal amount is required.' });
+    }
+    if (!['paypal', 'payoneer'].includes(payoutMethod)) {
+      return res.status(400).json({ success: false, error: 'Unsupported payout method. Use paypal or payoneer.' });
+    }
 
-    // Invalidate Redis/memory cache on withdrawal
-    await clearBidsCache();
-
-    // Parameter validation check
-    if (isNaN(amount) || amount < 0) {
-      const valError = `Invalid withdrawal amount provided: ${req.body?.amount}. Amount must be a positive number.`;
-      console.error(`[API /api/bids/withdraw] Validation error: ${valError}`);
-      return res.status(400).json({
+    // Never claim a withdrawal happened unless a real provider API confirms it.
+    if (payoutMethod === 'payoneer') {
+      return res.status(503).json({
         success: false,
-        error: valError,
-        bidId,
-        timestamp: new Date().toISOString()
+        error: 'PAYONEER_PROVIDER_NOT_CONFIGURED',
+        message: 'Payoneer settlement is intentionally disabled until an official Payoneer payout API integration and credentials are configured.'
       });
     }
 
-    const withdrawalUrls: Record<string, string> = {
-      freelancer: 'https://www.freelancer.com/payments/withdraw.php',
-      upwork: 'https://www.upwork.com/nx/navigator/payments/withdraw',
-      fiverr: 'https://www.fiverr.com/balance/withdraw',
-      remoteok: 'https://remoteok.com'
-    };
-
-    const targetUrl = withdrawalUrls[platform] || withdrawalUrls.freelancer;
-    let dbStatus = 'unmodified';
-    let dbErrorDetails: string | null = null;
-
-    // 1. Safe Database Interaction wrapped in dedicated try-catch
-    try {
-      if (bidId && bidId !== 'all' && bidId !== 'platform_aggregate') {
-        const liveOrders = getAllLiveOrders();
-        const orderMatch = liveOrders.find(o => String(o.id) === String(bidId));
-        if (orderMatch) {
-          orderMatch.status = 'completed';
-          dbStatus = 'memory_updated';
-          console.log(`[API /api/bids/withdraw] Updated in-memory work order #${bidId} status to 'completed'.`);
-        } else {
-          dbStatus = 'order_not_in_memory';
-          console.log(`[API /api/bids/withdraw] Bid #${bidId} not found in in-memory live orders; flagged as non-blocking.`);
-        }
+    if (payoutMethod === 'paypal') {
+      const { createPayPalPayout, isPayPalConfigured } = await import('./server/paypal.js');
+      if (!isPayPalConfigured()) {
+        return res.status(503).json({ success: false, error: 'PAYPAL_NOT_CONFIGURED' });
       }
-    } catch (dbErr: any) {
-      dbErrorDetails = dbErr?.message || 'Database record lookup notice';
-      console.error(`[API /api/bids/withdraw] Database operation warning for Bid "${bidId}":`, dbErr);
-    }
+      const receiverEmail = String(process.env.PAYPAL_RECEIVER_EMAIL || '').trim();
+      if (!receiverEmail) {
+        return res.status(503).json({ success: false, error: 'PAYPAL_RECEIVER_EMAIL_NOT_CONFIGURED' });
+      }
 
-    // 2. Safe Marketplace API Call / State Sync wrapped in dedicated try-catch
-    let marketplaceStatus = 'ready';
-    try {
+      const payout = await createPayPalPayout({
+        receiverEmail,
+        amount,
+        note: `GigPilot withdrawal for bid ${bidId}`,
+        senderBatchId: `gp_withdraw_${crypto.createHash('sha256').update(`${platform}:${bidId}:${amount}`).digest('hex').slice(0, 32)}`
+      });
+
       logActivityEvent({
-        source: (platform.includes('upwork') ? 'Upwork' : 'Freelancer') as any,
-        type: 'ORDER_STATE_SYNC',
+        source: 'PayPal',
+        type: 'BANK_AUTO_TRANSFER',
         status: 'success',
         method: 'POST',
         endpoint: '/api/bids/withdraw',
         statusCode: 200,
-        summary: `Withdrawal initiated for Bid #${bidId}: $${amount.toFixed(2)} USD routed to ${platform.toUpperCase()} financial portal`,
-        headers: { 'content-type': 'application/json' },
-        requestPayload: req.body,
-        responsePayload: { bidId, amount, platform, withdrawalUrl: targetUrl },
-        stateDiff: {
-          action: 'ESCROW_PAYOUT_RELEASED',
-          entityType: 'transaction',
-          amountUsd: amount,
-          details: `Dispatched withdrawal intent for bid #${bidId} to ${platform.toUpperCase()} portal.`
-        },
-        tags: ['withdrawal', 'bid', platform]
+        summary: `Provider-confirmed PayPal payout initiated for bid #${bidId}: $${amount.toFixed(2)} USD`,
+        responsePayload: payout,
+        tags: ['withdrawal', 'bid', 'paypal', 'provider_confirmed_request']
       });
-      marketplaceStatus = 'logged';
-      console.log(`[API /api/bids/withdraw] Activity audit event recorded for Bid #${bidId}.`);
-    } catch (marketErr: any) {
-      console.error(`[API /api/bids/withdraw] Marketplace logging / state sync error for Bid #${bidId}:`, marketErr);
+
+      return res.status(202).json({
+        success: true,
+        status: 'PROVIDER_PENDING',
+        bidId,
+        amount,
+        platform,
+        payoutMethod,
+        payout,
+        message: 'PayPal accepted the payout request. Final settlement is reported only after provider confirmation.'
+      });
     }
 
-    return res.status(200).json({
-      success: true,
-      bidId,
-      amount,
-      platform,
-      payoutMethod,
-      withdrawalUrl: targetUrl,
-      dbStatus,
-      marketplaceStatus,
-      message: `Withdrawal request for $${amount.toFixed(2)} USD on ${platform.toUpperCase()} validated and routed successfully.`,
-      timestamp: new Date().toISOString()
-    });
+    return res.status(400).json({ success: false, error: 'Unsupported payout method.' });
   } catch (err: any) {
-    const errorMsg = err?.message || 'Internal server error processing withdrawal';
-    console.error("[API /api/bids/withdraw] Comprehensive Try-Catch caught unhandled error:", err);
-    return res.status(500).json({
+    console.error('[API /api/bids/withdraw] Provider payout error:', err);
+    return res.status(502).json({
       success: false,
-      error: `Failed to process withdrawal: ${errorMsg}`,
-      bidId: req.params?.id || req.body?.bidId || 'unknown',
-      timestamp: new Date().toISOString()
+      error: 'REAL_PAYOUT_FAILED',
+      details: err?.message || 'Provider rejected or did not confirm the payout request.'
     });
   }
 });

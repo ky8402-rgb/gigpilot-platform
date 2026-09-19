@@ -593,19 +593,19 @@ export async function createLivePayPalInvoice(params: {
         console.warn('Could not generate next invoice number, using timestamp:', numErr);
       }
 
-      // 2. Build invoice payload with Payoneer Citibank Payment Instructions
+      // 2. Build invoice payload with Payoneer ${PAYONEER_BANK_NAME} Payment Instructions
       const paymentInstructions = [
         'PAYMENT INSTRUCTIONS:',
-        'Payoneer USD Checking Account (Citibank NY):',
-        '• Bank Name: Citibank',
-        '• Bank Address: 111 Wall Street New York, NY 10043 USA',
+        'Payoneer USD Checking Account (${PAYONEER_BANK_NAME} NY):',
+        '• Bank Name: ${PAYONEER_BANK_NAME}',
+        '• Bank Address: ${PAYONEER_BANK_ADDRESS}',
         '• Beneficiary: Kundan Kumar',
-        '• Account Number: 70589110002638744',
+        '• Account Number: ${PAYONEER_ACCOUNT_NUMBER}',
         '• Account Type: CHECKING',
-        '• Routing (ABA): 031100209',
-        '• SWIFT / BIC: CITIUS33',
+        '• Routing (ABA): ${PAYONEER_ROUTING_ABA}',
+        '• SWIFT / BIC: ${PAYONEER_SWIFT}',
         '• Currency: USD',
-        '• PayPal Direct Link: https://paypal.me/ky8402'
+        '• PayPal Direct Link: ${PAYPAL_ME_URL}'
       ].join('\n');
 
       const invoicePayload = {
@@ -621,7 +621,7 @@ export async function createLivePayPalInvoice(params: {
         },
         invoicer: {
           business_name: 'Kundan Kumar',
-          email_address: cfg.receiverEmail || 'kundank4@icloud.com'
+          email_address: cfg.receiverEmail || process.env.PAYPAL_RECEIVER_EMAIL || ''
         },
         primary_recipients: [
           {
