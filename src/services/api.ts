@@ -533,31 +533,31 @@ export async function getPlatformStatus(): Promise<PlatformConnectionStatus> {
   } catch (err) {
     return {
       remoteok: {
-        connected: true,
+        connected: false,
         authMethod: 'Live Remote Feed',
         endpoint: 'https://remoteok.com/api',
         lastPing: new Date().toISOString(),
         apiKeyConfigured: false
       },
       weworkremotely: {
-        connected: true,
+        connected: false,
         authMethod: 'Curated WWR Feed',
         endpoint: 'https://weworkremotely.com/api/v1/jobs',
         lastPing: new Date().toISOString(),
         apiKeyConfigured: false
       },
       flexjobs: {
-        connected: true,
+        connected: false,
         authMethod: 'Verified Jobs Stream',
         endpoint: 'https://www.flexjobs.com/api/v1/jobs',
         lastPing: new Date().toISOString(),
         apiKeyConfigured: false
       },
       paypal: {
-        connected: true,
-        mode: 'live',
-        receiverEmail: 'kundank4@icloud.com',
-        paypalMeUsername: 'ky8402'
+        connected: false,
+        mode: 'unconfigured',
+        receiverEmail: '',
+        paypalMeUsername: ''
       }
     };
   }
@@ -616,32 +616,25 @@ export async function submitLivePlatformBid(orderId: number | string, bidData: {
   milestones?: { title: string; amount: number }[];
 }): Promise<{ success: boolean; externalBidId?: string; platform?: string; message: string }> {
   try {
-    const res = await fetch(`${BACKEND_BASE_URL}/api/cron/find-and-bid`);
-    if (res.ok) {
-      const data = await res.json();
-      return {
-        success: true,
-        externalBidId: data.bids_placed ? `bid_${data.bids_placed}` : `bid_${orderId}`,
-        platform: 'freelancer',
-        message: 'Proposal successfully dispatched to Freelancer.com live pipeline!'
-      };
-    } else {
-      console.warn(`[GigPilot Backend] Warning: ${BACKEND_BASE_URL}/api/cron/find-and-bid responded with HTTP ${res.status}`);
-    }
-    const fallbackRes = await fetch(apiUrl('/api/platforms/submit-bid'), {
+    const res = await fetch(apiUrl('/api/platforms/submit-bid'), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ orderId, ...bidData })
     });
-    const fallbackData = await fallbackRes.json();
-    return fallbackData;
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      return {
+        success: false,
+        platform: 'freelancer',
+        message: data?.error || data?.message || `Bid submission failed (HTTP ${res.status})`
+      };
+    }
+    return data;
   } catch (err: any) {
-    console.warn(`[GigPilot Backend] Backend unreachable at ${BACKEND_BASE_URL}/api/cron/find-and-bid. Logging bid locally. Error:`, err?.message || err);
     return {
-      success: true,
-      externalBidId: `bid_${orderId}`,
+      success: false,
       platform: 'freelancer',
-      message: 'Proposal successfully logged and queued for client dispatch!'
+      message: err?.message || 'Freelancer bid service is unavailable'
     };
   }
 }
@@ -744,7 +737,7 @@ export async function fetchRemoteOKJobs(): Promise<RemoteOKJob[]> {
     });
     if (!res.ok) {
       console.warn(`RemoteOK API returned HTTP status ${res.status}`);
-      return getVerifiedFallbackJobs();
+      return [];
     }
     const jobs = await res.json();
     if (Array.isArray(jobs) && jobs.length > 0) {
@@ -764,37 +757,17 @@ export async function fetchRemoteOKJobs(): Promise<RemoteOKJob[]> {
         time: job.time || 'Today'
       }));
     }
-    return getVerifiedFallbackJobs();
+    return [];
   } catch (e) {
     console.warn('Notice loading RemoteOK feed, supplying verified live listings:', e);
-    return getVerifiedFallbackJobs();
+    return [];
   }
 }
 
 function getVerifiedFallbackJobs(): RemoteOKJob[] {
-  const fallbackTemplates = [
-    { title: 'Full-Stack React & Node.js Dashboard Engineer', company: 'NextGen Media', category: 'Software Development', amount: 68.50, platform: 'RemoteOK', location: 'Worldwide 🌏', tags: ['react', 'node', 'full-stack', 'typescript'] },
-    { title: 'PayPal Checkout Integration & React Webhook Handler', company: 'SaaS Payments Co', category: 'Software Development', amount: 75.00, platform: 'RemoteOK', location: 'USA / Remote 🇺🇸', tags: ['paypal', 'payments', 'react', 'api'] },
-    { title: 'Automated Data Pipeline & AI Bot Sync', company: 'DataFlow Labs', category: 'Backend & APIs', amount: 82.20, platform: 'RemoteOK', location: 'Worldwide 🌏', tags: ['python', 'ai', 'automation', 'gemini'] },
-    { title: 'Technical Documentation & Cloud Copywriting', company: 'Global Growth Co', category: 'Writing', amount: 48.00, platform: 'Direct Remote', location: 'Europe 🇪🇺', tags: ['docs', 'cloud', 'content'] },
-    { title: 'Mobile Responsive UI/UX Redesign & Design System', company: 'Apex Digital', category: 'UI/UX & Design', amount: 62.00, platform: 'RemoteOK', location: 'Worldwide 🌏', tags: ['ui/ux', 'tailwind', 'figma', 'react'] }
-  ];
-
-  return fallbackTemplates.map((item, index) => ({
-    id: 'rok-seed-' + (index + 1) + '-' + Date.now(),
-    title: item.title,
-    company: item.company,
-    description: 'Autonomous verified remote work order ready for AI execution, proposal generation, and client settlement.',
-    url: 'https://remoteok.com',
-    pubDate: new Date().toISOString(),
-    tags: item.tags,
-    location: item.location,
-    status: 'pending',
-    amount: item.amount,
-    category: item.category,
-    platform: item.platform,
-    time: 'Today'
-  }));
+  // Never manufacture marketplace listings. An empty result means the live feed
+  // could not provide verified work at this time.
+  return [];
 }
 
 export async function fetchAllPublicJobs(): Promise<RemoteOKJob[]> {
@@ -812,7 +785,7 @@ export async function fetchAllPublicJobs(): Promise<RemoteOKJob[]> {
 
   // 2. Guaranteed high-paying verified public remote jobs if empty
   if (combined.length === 0) {
-    combined.push(...getVerifiedFallbackJobs());
+    // Keep the feed empty rather than fabricating jobs when all live sources fail.
   }
 
   // Return jobs
@@ -852,15 +825,15 @@ export async function fetchPayPalConfig(): Promise<{ success: boolean; config: P
     return {
       success: false,
       config: {
-        receiverEmail: 'kundank4@icloud.com',
-        paypalMeUsername: 'ky8402',
-        mode: 'live',
+        receiverEmail: '',
+        paypalMeUsername: '',
+        mode: 'sandbox',
         currency: 'USD',
-        autoCapture: true,
-        clientId: 'sb'
+        autoCapture: false,
+        clientId: ''
       },
-      totalReceived: 205.00,
-      transactionCount: 2
+      totalReceived: 0,
+      transactionCount: 0
     };
   }
 }

@@ -305,12 +305,12 @@ Regardless of the method chosen, prepare these environment variables:
 |---|---|---|
 | `NODE_ENV` | Environment mode | `production` |
 | `PORT` | Web server listening port | `3000` |
-| `DATABASE_URL` | PostgreSQL connection string | `postgresql://user:pass@host:5432/dbname` (Neon or AWS RDS) |
+| `DATABASE_URL | PostgreSQL connection string | `<set-in-aws-secret-store>`postgresql://user:pass@host:5432/dbname` (Neon or AWS RDS) |
 | `GEMINI_API_KEY` | Google Gemini API Key | *(Your API Key)* |
-| `PAYPAL_CLIENT_ID` | PayPal Live REST Client ID | `BAAv8rRenc5jlfD6eH_8pvgcU250jXTZCnyPKdBby13EAYRKhCempoPQ3Hj41GEfe2qBMu1P8ZslnbdkIc` |
-| `PAYPAL_CLIENT_SECRET` | PayPal Live REST Client Secret | `<set-in-aws-secret-store>` |
-| `PAYPAL_RECEIVER_EMAIL` | PayPal notification / payout email | `kundank4@icloud.com` |
-| `PAYPAL_ME_USERNAME` | Direct PayPal.Me handle | `ky8402` |
+| `PAYPAL_CLIENT_ID | PayPal Live REST Client ID | `<set-in-aws-secret-store>`BAAv8rRenc5jlfD6eH_8pvgcU250jXTZCnyPKdBby13EAYRKhCempoPQ3Hj41GEfe2qBMu1P8ZslnbdkIc` |
+| `PAYPAL_CLIENT_SECRET | PayPal Live REST Client Secret | `<set-in-aws-secret-store>`<set-in-aws-secret-store>` |
+| `PAYPAL_RECEIVER_EMAIL | PayPal notification / payout email | `<set-in-aws-secret-store>`kundank4@icloud.com` |
+| `PAYPAL_ME_USERNAME | Direct PayPal.Me handle | `<set-in-aws-secret-store>`ky8402` |
 | `PAYPAL_MODE` | Payment mode | `live` |
 | `FREELANCER_ACCESS_TOKEN` | Freelancer.com API Bearer Token | *(Your Freelancer Token)* |
 | `JWT_SECRET` | Secret token for session signing | *(Any random 32+ char string)* |
@@ -347,9 +347,9 @@ AWS App Runner provides 100% automated backend deployment on every `git push`. T
 ### Step 4: Add Environment Variables
 Add your production variables in the App Runner console:
 - `NODE_ENV`: `production`
-- `DATABASE_URL`: `postgresql://neondb_owner:npg_L6xTbr0PsJuG@ep-green-bread-ae4bhk9u-pooler.c-2.us-east-2.aws.neon.tech/neondb?sslmode=require&channel_binding=require`
-- `PAYPAL_CLIENT_ID`: `BAAv8rRenc5jlfD6eH_8pvgcU250jXTZCnyPKdBby13EAYRKhCempoPQ3Hj41GEfe2qBMu1P8ZslnbdkIc`
-- `PAYPAL_CLIENT_SECRET`: `EH8CcxBIVPvFhoAKbL-HN8l_jSdOYzlGA2oahgGs1wPV7bogYK_TE4hIOjPtzOVj-mOUUXVy8uMIt6-N`
+- `DATABASE_URL | PostgreSQL connection string | `<set-in-aws-secret-store>`postgresql://neondb_owner:npg_L6xTbr0PsJuG@ep-green-bread-ae4bhk9u-pooler.c-2.us-east-2.aws.neon.tech/neondb?sslmode=require&channel_binding=require`
+- `PAYPAL_CLIENT_ID | PayPal Live REST Client ID | `<set-in-aws-secret-store>`BAAv8rRenc5jlfD6eH_8pvgcU250jXTZCnyPKdBby13EAYRKhCempoPQ3Hj41GEfe2qBMu1P8ZslnbdkIc`
+- `PAYPAL_CLIENT_SECRET | PayPal Live REST Client Secret | `<set-in-aws-secret-store>`EH8CcxBIVPvFhoAKbL-HN8l_jSdOYzlGA2oahgGs1wPV7bogYK_TE4hIOjPtzOVj-mOUUXVy8uMIt6-N`
 - `PAYPAL_MODE`: `live`
 - `GEMINI_API_KEY`: *(Your Google Gemini API Key)*
 - `AUTO_HEAL_ENABLED`: `true`
@@ -487,7 +487,7 @@ sudo nginx -t && sudo systemctl restart nginx
 3. Application name: `gigpilot-platform`.
 4. Platform: **Node.js** (Platform branch: **Node.js 20 running on 64bit Amazon Linux 2023**).
 5. Under **Application code**, select **Upload your code** or deploy using the AWS EB CLI (`eb init` & `eb deploy`).
-6. Under **Configuration** &rarr; **Software** &rarr; **Environment properties**, set the required environment variables (`DATABASE_URL`, `PAYPAL_CLIENT_ID`, etc.).
+6. Under **Configuration** &rarr; **Software** &rarr; **Environment properties**, set the required environment variables (`DATABASE_URL | PostgreSQL connection string | `<set-in-aws-secret-store>`PAYPAL_CLIENT_ID`, etc.).
 7. Click **Create App**.
 
 ---

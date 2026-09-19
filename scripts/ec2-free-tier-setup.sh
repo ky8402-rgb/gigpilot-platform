@@ -54,12 +54,12 @@ echo "⚙️ Configuring production environment variables..."
 cat << 'EOF' > "$APP_DIR/.env"
 NODE_ENV=production
 PORT=3000
-DATABASE_URL=postgresql://neondb_owner:npg_L6xTbr0PsJuG@ep-green-bread-ae4bhk9u-pooler.c-2.us-east-2.aws.neon.tech/neondb?sslmode=require&channel_binding=require
+DATABASE_URL=<set-in-aws-secret-store>
 PAYPAL_CLIENT_ID=<set-in-aws-secret-store>
 PAYPAL_CLIENT_SECRET=<set-in-aws-secret-store>
 PAYPAL_MODE=live
-PAYPAL_RECEIVER_EMAIL=kundank4@icloud.com
-PAYPAL_ME_USERNAME=ky8402
+PAYPAL_RECEIVER_EMAIL=<set-in-aws-secret-store>
+PAYPAL_ME_USERNAME=<set-in-aws-secret-store>
 AUTO_HEAL_ENABLED=true
 ML_ENABLED=true
 EOF

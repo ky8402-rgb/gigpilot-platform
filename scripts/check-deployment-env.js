@@ -45,7 +45,7 @@ const CHECKS = [
     name: 'PayPal Merchant / Payout Email',
     category: 'paypal',
     required: false,
-    default: 'kundank4@icloud.com',
+    default: '<set-in-secret-store>',
     hint: 'Destination PayPal address for receiving client payments & bid winnings.'
   },
   {

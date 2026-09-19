@@ -65,8 +65,8 @@ export const SoftwareJobAutonomousTool: React.FC<SoftwareJobAutonomousToolProps>
 
   // Queue state
   const [autoDeliverOnComplete, setAutoDeliverOnComplete] = useState<boolean>(true);
-  const [autoCloseEscrowWithTool2, setAutoCloseEscrowWithTool2] = useState<boolean>(true);
-  const [escrowPayoutMethod, setEscrowPayoutMethod] = useState<'paypal' | 'upi'>('paypal');
+  const [autoCloseEscrowWithTool2, setAutoCloseEscrowWithTool2] = useState<boolean>(false);
+  const [escrowPayoutMethod, setEscrowPayoutMethod] = useState<'paypal' | 'bank_wire'>('paypal');
   const [isSolvingQueue, setIsSolvingQueue] = useState<boolean>(false);
   const [solvingProgressText, setSolvingProgressText] = useState<string>('');
   const [selectedOrder, setSelectedOrder] = useState<any | null>(null);
@@ -392,25 +392,25 @@ export const SoftwareJobAutonomousTool: React.FC<SoftwareJobAutonomousToolProps>
             <div className="p-2.5 rounded-xl bg-slate-950/60 border border-slate-800/80 text-center">
               <span className="text-[10px] uppercase font-mono text-slate-400 block">Orders Solved</span>
               <span className="text-base sm:text-lg font-bold text-white font-mono">
-                {learningBase?.totalOrdersSolved || 48}
+                {learningBase?.totalOrdersSolved ?? 0}
               </span>
             </div>
             <div className="p-2.5 rounded-xl bg-slate-950/60 border border-slate-800/80 text-center">
               <span className="text-[10px] uppercase font-mono text-slate-400 block">Total LOC</span>
               <span className="text-base sm:text-lg font-bold text-blue-400 font-mono">
-                {learningBase?.totalLOCGenerated ? `${(learningBase.totalLOCGenerated / 1000).toFixed(1)}k` : '14.2k'}
+                {learningBase?.totalLOCGenerated != null ? `${(learningBase.totalLOCGenerated / 1000).toFixed(1)}k` : '0'}
               </span>
             </div>
             <div className="p-2.5 rounded-xl bg-slate-950/60 border border-slate-800/80 text-center">
               <span className="text-[10px] uppercase font-mono text-slate-400 block">Satisfaction</span>
               <span className="text-base sm:text-lg font-bold text-emerald-400 font-mono">
-                {learningBase?.overallSatisfactionRate || 98.4}%
+                {learningBase?.overallSatisfactionRate != null ? `${learningBase.overallSatisfactionRate}%` : '—'}
               </span>
             </div>
             <div className="p-2.5 rounded-xl bg-slate-950/60 border border-slate-800/80 text-center">
               <span className="text-[10px] uppercase font-mono text-slate-400 block">Skills Learned</span>
               <span className="text-base sm:text-lg font-bold text-purple-300 font-mono">
-                {learningBase?.skills?.length || 5}
+                {learningBase?.skills?.length ?? 0}
               </span>
             </div>
           </div>
@@ -518,7 +518,7 @@ export const SoftwareJobAutonomousTool: React.FC<SoftwareJobAutonomousToolProps>
             {/* Payout method selector */}
             <select
               value={escrowPayoutMethod}
-              onChange={(e) => setEscrowPayoutMethod(e.target.value as 'paypal' | 'upi')}
+              onChange={(e) => setEscrowPayoutMethod(e.target.value as 'paypal' | 'bank_wire')}
               className="bg-slate-950 text-slate-200 border border-slate-700 rounded-lg px-2 py-0.5 text-[10px] font-mono cursor-pointer focus:border-purple-500 outline-none"
               title="Escrow release disbursement route"
             >
