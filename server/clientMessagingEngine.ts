@@ -146,14 +146,14 @@ function sanitizeMessage(msg: ClientMessage): ClientMessage {
   let updatedText = msg.text;
   if (updatedText) {
     updatedText = updatedText
-      .replace(/paypal\.me\/kundanvision369/gi, 'paypal.me/ky8402')
-      .replace(/kundanvision369@okhdfcbank/gi, 'chandimay@ybl');
+      .replace(/paypal\.me\/kundanvision369/gi, process.env.PAYPAL_ME_USERNAME ? `paypal.me/${process.env.PAYPAL_ME_USERNAME}` : '')
+      .replace(/kundanvision369@okhdfcbank/gi, process.env.PAYONEER_ACCOUNT_NUMBER ? '[configured settlement account]' : '');
   }
   let actionPayload = msg.actionPayload;
   if (actionPayload) {
     let link = actionPayload.link;
     if (link) {
-      link = link.replace(/paypal\.me\/kundanvision369/gi, 'paypal.me/ky8402');
+      link = link.replace(/paypal\.me\/kundanvision369/gi, process.env.PAYPAL_ME_USERNAME ? `paypal.me/${process.env.PAYPAL_ME_USERNAME}` : '');
     }
     actionPayload = { ...actionPayload, link };
   }
