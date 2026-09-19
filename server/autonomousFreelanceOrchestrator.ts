@@ -1,7 +1,7 @@
 import { prisma } from './db.js';
 import { executeWorkOrderDeliverable } from './workExecutionEngine.js';
 import { getPlatformStatus } from './platformIntegrations.js';
-import { getFreelancerBidStatus } from './freelancerService.js';
+import { getFreelancerBidStatus, deliverFreelancerWorkPackage } from './freelancerService.js';
 import { logActivityEvent } from './activityLogger.js';
 
 export interface AutonomousReadiness {
@@ -38,10 +38,8 @@ export function getAutonomousReadiness(): AutonomousReadiness {
     blockers.push('PayPal client credentials are not configured for real settlement.');
   }
 
-  // Acceptance is now polled from the provider's bid resource. Delivery remains
-  // intentionally fail-closed until an official delivery contract is wired.
-  blockers.push('Marketplace file/message delivery is not yet backed by a verified provider delivery adapter.');
-  
+  // Acceptance and delivery adapters are provider-backed. Execution is still gated
+  // on real acceptance + real funding, and settlement on real provider confirmation.
   return {
     ready: blockers.length === 0,
     blockers,
@@ -50,7 +48,7 @@ export function getAutonomousReadiness(): AutonomousReadiness {
       realBidSubmission: status.freelancer.tokenConfigured,
       contractAcceptanceTracking: status.freelancer.tokenConfigured,
       autonomousExecution: status.autonomous.executionEnabled,
-      realClientDelivery: false,
+      realClientDelivery: status.freelancer.tokenConfigured,
       realPayout: status.paypal.connected,
     }
   };
@@ -136,11 +134,34 @@ export async function runAutonomousContractorCycle(maxJobs = 3) {
         budget: order.amount
       });
 
+      let deliveryStatus = 'READY_FOR_PROVIDER_DELIVERY';
+      let deliveryError: string | undefined;
+
+      if (String(order.externalProvider || '').toLowerCase() === 'freelancer' && order.externalProjectId) {
+        const delivery = await deliverFreelancerWorkPackage({
+          projectId: order.externalProjectId,
+          message: deliverable.clientHandoverNote + `\\n\\nDelivery checksum: ${deliverable.checksum}`,
+          files: deliverable.files.map((file) => ({ filename: file.filename, content: file.content })),
+        });
+        if (delivery.success) {
+          deliveryStatus = 'PROVIDER_DELIVERED';
+          logActivityEvent({
+            source: 'FreelancerDeliveryAdapter',
+            type: 'WORK_DELIVERED',
+            status: 'success',
+            summary: `Work order ${order.id} delivered through Freelancer project messaging with ${delivery.uploadedFiles} attachments.`,
+            tags: ['freelancer', 'delivery', 'provider_confirmed'],
+          });
+        } else {
+          deliveryError = delivery.error;
+        }
+      }
+
       await prisma.workOrder.update({
         where: { id: order.id },
         data: {
           status: 'IN_PROGRESS',
-          deliveryStatus: 'READY_FOR_PROVIDER_DELIVERY',
+          deliveryStatus,
           deliverableChecksum: deliverable.checksum,
           deliverables: deliverable.summary
         }
@@ -149,16 +170,19 @@ export async function runAutonomousContractorCycle(maxJobs = 3) {
       results.push({
         orderId: order.id,
         title: order.title,
-        deliveryStatus: 'READY_FOR_PROVIDER_DELIVERY',
+        deliveryStatus,
         checksum: deliverable.checksum,
-        files: deliverable.files.length
+        files: deliverable.files.length,
+        ...(deliveryError ? { error: deliveryError } : {})
       });
 
       logActivityEvent({
         source: 'AutonomousFreelanceOrchestrator',
-        type: 'WORK_READY_FOR_PROVIDER_DELIVERY',
-        status: 'success',
-        summary: 'Provider-confirmed work order ' + order.id + ' executed; deliverable is ready for the configured provider delivery adapter.',
+        type: deliveryStatus === 'PROVIDER_DELIVERED' ? 'WORK_DELIVERED' : 'WORK_READY_FOR_PROVIDER_DELIVERY',
+        status: deliveryStatus === 'PROVIDER_DELIVERED' ? 'success' : 'warning',
+        summary: deliveryStatus === 'PROVIDER_DELIVERED'
+          ? 'Provider-confirmed work order ' + order.id + ' was executed and delivered through the marketplace.'
+          : 'Provider-confirmed work order ' + order.id + ' executed; provider delivery is still pending.',
         tags: ['autonomous_freelance', 'execution', order.platform]
       });
     } catch (err: any) {
