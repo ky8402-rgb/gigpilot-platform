@@ -45,7 +45,24 @@ if [ -z "${DATABASE_URL:-}" ]; then
   echo "ERROR: DATABASE_URL is required for production deployment."
   exit 1
 fi
-npx prisma migrate deploy
+
+# Existing production databases may predate Prisma migration history. In that case,
+# baseline the known initial migration without changing application data, then apply
+# all newer migrations normally. Never use db push or reset in production.
+MIGRATE_LOG="$(mktemp)"
+if npx prisma migrate deploy 2>&1 | tee "$MIGRATE_LOG"; then
+  :
+elif grep -q "Error: P3005" "$MIGRATE_LOG"; then
+  echo "Detected an existing non-empty database without Prisma migration history; baselining the initial migration."
+  npx prisma migrate resolve --applied 20260831000000_add_bid_performance_indexes
+  npx prisma migrate deploy
+else
+  echo "ERROR: Prisma production migration failed for a reason other than an uninitialized migration history."
+  cat "$MIGRATE_LOG"
+  rm -f "$MIGRATE_LOG"
+  exit 1
+fi
+rm -f "$MIGRATE_LOG"
 npx prisma generate
 
 echo "Building application bundles (Vite + esbuild)..."
