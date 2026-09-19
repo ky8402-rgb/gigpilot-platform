@@ -912,8 +912,8 @@ export const WorkOrderCloserTool: React.FC<WorkOrderCloserToolProps> = ({
                   id: 'evo_002',
                   category: 'Payout Optimization',
                   timestamp: new Date(Date.now() - 3600000).toISOString(),
-                  observation: 'Payoneer {accounts?.payoneerBank?.bankName || 'USD account'} USD Checking account avoids international wire intermediary fees on tickets > $200.',
-                  actionTaken: 'Self-updated routing priority: set Payoneer {accounts?.payoneerBank?.bankName || 'USD account'} checking as primary destination with PayPal auto-sweep.',
+                  observation: `Payoneer ${accounts?.payoneerBank?.bankName || 'USD account'} USD Checking account avoids international wire intermediary fees on tickets > $200`,
+                  actionTaken: `Self-updated routing priority: set Payoneer ${accounts?.payoneerBank?.bankName || 'USD account'} checking as primary destination with PayPal auto-sweep`,
                   confidenceImpact: +0.9
                 }
               ]).map((item) => (
