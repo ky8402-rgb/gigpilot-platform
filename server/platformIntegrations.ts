@@ -58,6 +58,11 @@ export interface PlatformStatus {
     receiverEmail: string;
     paypalMeUsername: string;
   };
+  autonomous: {
+    biddingEnabled: boolean;
+    executionEnabled: boolean;
+    freelancerCredentialsConfigured: boolean;
+  };
 }
 
 const SUPPORTED_JOB_KEYWORDS = [
@@ -100,12 +105,15 @@ let liveWorkOrders: NormalizedWorkOrder[] = [];
 export function getPlatformStatus(): PlatformStatus {
   const upworkToken = process.env.UPWORK_OAUTH_TOKEN;
   const contraKey = process.env.CONTRA_API_KEY;
-  const flToken = process.env.FREELANCER_OAUTH_TOKEN;
+  const flToken = process.env.FREELANCER_ACCESS_TOKEN || process.env.FREELANCER_API_KEY || process.env.FREELANCER_OAUTH_TOKEN;
   const paypalClientId = process.env.PAYPAL_CLIENT_ID;
   const paypalSecret = process.env.PAYPAL_CLIENT_SECRET;
-  const paypalReceiver = process.env.PAYPAL_RECEIVER_EMAIL || 'kundank4@icloud.com';
-  const paypalMeUser = process.env.PAYPAL_ME_USERNAME || 'ky8402';
-  const isPaypalLive = process.env.PAYPAL_MODE === 'live' || Boolean(paypalClientId && !paypalClientId.startsWith('sb-'));
+  const paypalReceiver = process.env.PAYPAL_RECEIVER_EMAIL || '';
+  const paypalMeUser = process.env.PAYPAL_ME_USERNAME || '';
+  const isPaypalLive = process.env.PAYPAL_MODE === 'live';
+  const freelancerCredentialsConfigured = Boolean(flToken && flToken.trim().length > 0);
+  const biddingEnabled = process.env.AUTONOMOUS_BIDDING_ENABLED === 'true';
+  const executionEnabled = process.env.AUTONOMOUS_EXECUTION_ENABLED === 'true';
 
   return {
     upwork: {
@@ -116,7 +124,7 @@ export function getPlatformStatus(): PlatformStatus {
       tokenConfigured: Boolean(upworkToken && upworkToken.trim().length > 0)
     },
     contra: {
-      connected: true,
+      connected: Boolean(contraKey && contraKey.trim().length > 0),
       authMethod: 'Freelance Marketplace API',
       endpoint: 'https://api.contra.com/api/v1/opportunities',
       lastPing: new Date().toISOString(),
@@ -130,10 +138,15 @@ export function getPlatformStatus(): PlatformStatus {
       tokenConfigured: Boolean(flToken && flToken.trim().length > 0)
     },
     paypal: {
-      connected: Boolean((paypalClientId && paypalSecret) || paypalReceiver || paypalMeUser),
-      mode: isPaypalLive ? 'live' : 'sandbox',
+      connected: Boolean(paypalClientId && paypalSecret),
+      mode: paypalClientId && paypalSecret ? (isPaypalLive ? 'live' : 'sandbox') : 'unconfigured',
       receiverEmail: paypalReceiver,
       paypalMeUsername: paypalMeUser
+    },
+    autonomous: {
+      biddingEnabled,
+      executionEnabled,
+      freelancerCredentialsConfigured
     }
   };
 }
@@ -163,15 +176,15 @@ export async function fetchUpworkJobsFromApi(query: string = ''): Promise<Normal
           title: j.title || 'Data Scraping & Extraction Contract',
           platform: 'Upwork',
           status: 'pending',
-          amount: Number(j.budget) || 199,
+          amount: Number.isFinite(Number(j.budget)) ? Number(j.budget) : 0,
           category: 'Web Scraping & Data Extraction',
           time: j.date_created ? new Date(j.date_created).toLocaleDateString() : 'Just now',
           client: {
-            name: j.client?.company_name || 'Upwork Verified Client',
-            country: j.client?.country || 'United States',
-            rating: Number(j.client?.feedback) || 4.95,
-            totalSpent: Number(j.client?.total_spent) || 35000,
-            paymentVerified: true
+            name: j.client?.company_name || j.client?.name || 'Upwork Client',
+            country: j.client?.country || 'Unknown',
+            rating: Number.isFinite(Number(j.client?.feedback)) ? Number(j.client.feedback) : undefined,
+            totalSpent: Number.isFinite(Number(j.client?.total_spent)) ? Number(j.client.total_spent) : undefined,
+            paymentVerified: typeof j.client?.payment_verified === 'boolean' ? j.client.payment_verified : undefined
           },
           description: (j.snippet || j.description || '').replace(/<[^>]*>?/gm, '').slice(0, 320) + '...',
           skills: Array.isArray(j.skills) ? j.skills : ['Python', 'Web Scraping', 'CSV Export'],
@@ -193,9 +206,14 @@ export async function fetchUpworkJobsFromApi(query: string = ''): Promise<Normal
  * Fetch and sync scraping jobs from Contra marketplace
  */
 export async function fetchContraJobsFromApi(query: string = ''): Promise<NormalizedWorkOrder[]> {
+  const contraKey = (process.env.CONTRA_API_KEY || '').trim();
+  if (!contraKey) return [];
   try {
     const response = await axios.get('https://api.contra.com/api/v1/opportunities', {
-      headers: { 'User-Agent': 'KUNDANVISION369-Agent/1.0' },
+      headers: {
+        'User-Agent': 'KUNDANVISION369-Agent/1.0',
+        Authorization: `Bearer ${contraKey.trim()}`
+      },
       params: { role: 'Scraping & Lead Generation', limit: 25 },
       timeout: 8000,
       validateStatus: (status) => status < 500
@@ -214,11 +232,11 @@ export async function fetchContraJobsFromApi(query: string = ''): Promise<Normal
           category: 'Web Scraping & Extraction',
           time: j.createdAt ? new Date(j.createdAt).toLocaleDateString() : 'Active',
           client: {
-            name: j.clientName || 'Contra Verified Client',
-            country: 'Remote (Worldwide)',
-            rating: 4.9,
-            totalSpent: 28000,
-            paymentVerified: true
+            name: j.clientName || 'Contra Client',
+            country: j.clientCountry || 'Unknown',
+            rating: Number.isFinite(Number(j.clientRating)) ? Number(j.clientRating) : undefined,
+            totalSpent: Number.isFinite(Number(j.clientTotalSpent)) ? Number(j.clientTotalSpent) : undefined,
+            paymentVerified: typeof j.paymentVerified === 'boolean' ? j.paymentVerified : undefined
           },
           description: (j.description || '').replace(/<[^>]*>?/gm, '').slice(0, 320) + '...',
           skills: Array.isArray(j.skills) ? j.skills : ['Web Scraping', 'Data Mining', 'CSV'],
@@ -241,13 +259,13 @@ export async function fetchContraJobsFromApi(query: string = ''): Promise<Normal
  * Fetch and sync scraping jobs from Freelancer.com
  */
 export async function fetchFreelancerJobsFromApi(query: string = ''): Promise<NormalizedWorkOrder[]> {
-  const flToken = process.env.FREELANCER_OAUTH_TOKEN;
+  const flToken = process.env.FREELANCER_ACCESS_TOKEN || process.env.FREELANCER_API_KEY || process.env.FREELANCER_OAUTH_TOKEN;
   const headers: Record<string, string> = {
     'User-Agent': 'KUNDANVISION369-Agent/1.0',
     'Accept': 'application/json'
   };
   if (flToken) {
-    headers['Freelancer-OAuth-V1'] = flToken.trim();
+    headers['Authorization'] = `Bearer ${flToken.trim()}`;
   }
 
   try {
@@ -277,10 +295,10 @@ export async function fetchFreelancerJobsFromApi(query: string = ''): Promise<No
           time: j.submitdate ? new Date(j.submitdate * 1000).toLocaleDateString() : 'Active',
           client: {
             name: j.owner?.username || 'Freelancer Client',
-            country: 'Global',
-            rating: 4.85,
-            totalSpent: 19000,
-            paymentVerified: true
+            country: j.owner?.country || 'Unknown',
+            rating: Number.isFinite(Number(j.owner?.rating)) ? Number(j.owner.rating) : undefined,
+            totalSpent: Number.isFinite(Number(j.owner?.total_spent)) ? Number(j.owner.total_spent) : undefined,
+            paymentVerified: typeof j.owner?.payment_verified === 'boolean' ? j.owner.payment_verified : undefined
           },
           description: (j.preview_description || j.description || '').replace(/<[^>]*>?/gm, '').slice(0, 320) + '...',
           skills: ['Data Mining', 'Python', 'CSV', 'Automation'],
@@ -383,7 +401,7 @@ export async function submitPlatformBid(orderId: number | string, proposalData: 
   if (!targetOrder) throw new Error('LIVE_JOB_NOT_FOUND: The requested live job is not in the current provider feed.');
 
   if (targetOrder.platform === 'Freelancer') {
-    const token = (process.env.FREELANCER_ACCESS_TOKEN || process.env.FREELANCER_API_KEY || '').trim();
+    const token = (process.env.FREELANCER_ACCESS_TOKEN || process.env.FREELANCER_API_KEY || process.env.FREELANCER_OAUTH_TOKEN || '').trim();
     if (!token) {
       return { success: false, platform: 'Freelancer', message: 'Freelancer OAuth/API credentials are not configured; no bid was submitted.', error: 'FREELANCER_NOT_CONFIGURED' };
     }
@@ -416,11 +434,6 @@ export function getAllLiveOrders(): NormalizedWorkOrder[] {
   return liveWorkOrders;
 }
 
-export function completeLiveOrder(id: number | string): NormalizedWorkOrder | null {
-  const order = liveWorkOrders.find(o => String(o.id) === String(id));
-  if (order) {
-    order.status = 'completed';
-    return order;
-  }
+export function completeLiveOrder(_id: number | string): NormalizedWorkOrder | null {
   return null;
 }

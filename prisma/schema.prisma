@@ -78,6 +78,13 @@ model WorkOrder {
   clientApprovedAt DateTime?
   escrowStatus    String   @default("UNFUNDED")
   milestoneStatus String   @default("PENDING_APPROVAL")
+  externalProvider String?
+  externalProjectId String?
+  externalBidId String?
+  externalAcceptanceVerified Boolean @default(false)
+  externalAcceptedAt DateTime?
+  deliveryStatus String @default("NOT_READY")
+  deliverableChecksum String?
   milestones      EscrowMilestone[]
   escrowLedger    EscrowLedger[]
 }

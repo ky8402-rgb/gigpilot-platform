@@ -51,6 +51,7 @@ import authRoutes from "./routes/auth.js";
 import freelancerBidsRoutes from "./routes/freelancerBids.js";
 import neonRoutes from "./routes/neon.js";
 import autoDispatchRoutes from "./routes/autoDispatchRoutes.js";
+import { runAutonomousContractorCycle } from "./server/autonomousFreelanceOrchestrator.js";
 import amplifyRoutes from "./server/amplifyRoutes.js";
 import devopsActionsRoutes from "./server/devopsActionsRoutes.js";
 import autoDeployRoutes from "./server/autoDeployRoutes.js";
@@ -2872,6 +2873,17 @@ export async function runHourlyJobSyncWorker() {
 }
 
 // Register background task: runs exactly once every hour (0 * * * *)
+
+// Provider-confirmed autonomous contractor execution loop.
+// Disabled by default; when enabled it only processes funded, externally accepted contracts.
+if (process.env.AUTONOMOUS_EXECUTION_ENABLED === 'true') {
+  cron.schedule('*/5 * * * *', () => {
+    runAutonomousContractorCycle(3).catch((err) => {
+      console.error('[AutonomousFreelance] Execution cycle failed:', err?.message || err);
+    });
+  });
+}
+
 cron.schedule('0 * * * *', () => {
   console.log('[node-cron] Triggering scheduled hourly job sync task (0 * * * *)');
   runHourlyJobSyncWorker();

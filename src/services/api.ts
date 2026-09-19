@@ -509,6 +509,19 @@ export interface PlatformConnectionStatus {
   };
 }
 
+export async function getAutonomousFreelanceReadiness(): Promise<any> {
+  const res = await secureFetch(apiUrl('/api/autonomous-freelance/readiness'));
+  return safeResponseJson(res);
+}
+
+export async function runAutonomousFreelanceCycle(maxJobs = 3): Promise<any> {
+  const res = await secureFetch(apiUrl('/api/autonomous-freelance/run'), {
+    method: 'POST',
+    body: JSON.stringify({ maxJobs })
+  });
+  return safeResponseJson(res);
+}
+
 export async function getPlatformStatus(): Promise<PlatformConnectionStatus> {
   try {
     const res = await fetch(apiUrl('/api/platform/status'));
