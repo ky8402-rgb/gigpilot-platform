@@ -725,7 +725,7 @@ export const WorkOrderCloserTool: React.FC<WorkOrderCloserToolProps> = ({
                     <div className="p-2.5 rounded-xl bg-slate-900/80 border border-slate-800">
                       <div className="text-slate-500 text-[10px]">Recommended Payout Route</div>
                       <div className="text-purple-300 font-bold text-sm mt-0.5 uppercase">
-                        {riskEvaluation.recommendedPayoutMethod === 'bank_wire' ? 'Payoneer {accounts?.payoneerBank?.bankName || 'USD account'} Checking' : 'PayPal'}
+                        {riskEvaluation.recommendedPayoutMethod === 'bank_wire' ? `Payoneer ${accounts?.payoneerBank?.bankName || 'USD account'} Checking` : 'PayPal'}
                       </div>
                     </div>
                   </div>
