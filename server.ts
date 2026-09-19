@@ -4,16 +4,15 @@ import express from "express";
 import cookieParser from "cookie-parser";
 import path from "path";
 import fs from "fs";
+import crypto from "crypto";
 
 // Precedence for user-saved Freelancer tokens over container placeholder envs
 try {
   const cfgPath = path.join(process.cwd(), 'bidding_config.json');
   if (fs.existsSync(cfgPath)) {
     const cfg = JSON.parse(fs.readFileSync(cfgPath, 'utf-8'));
-    if (cfg.freelancerAccessToken && cfg.freelancerAccessToken !== '3PKsiB3m736mE0wnirnHeLTUzLP1xc') {
-      process.env.FREELANCER_ACCESS_TOKEN = cfg.freelancerAccessToken;
-      process.env.FREELANCER_AUTH_TOKEN = cfg.freelancerAccessToken;
-      process.env.FREELANCER_SESSION = cfg.freelancerAccessToken;
+    if (cfg.freelancerAccessToken && cfg.freelancerAccessToken.trim().length > 0) {
+      process.env.FREELANCER_ACCESS_TOKEN = cfg.freelancerAccessToken.trim();
     }
   }
 } catch (_) {}
@@ -51,12 +50,12 @@ import authRoutes from "./routes/auth.js";
 import freelancerBidsRoutes from "./routes/freelancerBids.js";
 import neonRoutes from "./routes/neon.js";
 import autoDispatchRoutes from "./routes/autoDispatchRoutes.js";
+import { runAutonomousContractorCycle } from "./server/autonomousFreelanceOrchestrator.js";
 import amplifyRoutes from "./server/amplifyRoutes.js";
 import devopsActionsRoutes from "./server/devopsActionsRoutes.js";
 import autoDeployRoutes from "./server/autoDeployRoutes.js";
 import godaddyRoutes from "./server/godaddyRoutes.js";
 import cloudflareRoutes from "./server/cloudflareRoutes.js";
-import { masterAgentRouter } from "./routes/masterAgentRoutes.js";
 import { sentientRouter } from "./server/sentientRoutes.js";
 import { aiRouter } from "./server/aiRoutes.js";
 import { workerMonitor } from "./server/workerMonitor.js";
@@ -69,13 +68,6 @@ import {
   autoSolvePendingSoftwareQueue,
   deliverWorkOrderToClient
 } from "./server/workExecutionEngine.js";
-import {
-  generateDeliverableTestSuites,
-  runSandboxedJestSuite,
-  executeAutonomousTestVerification,
-  getDeliverableQualityReport,
-  isDeliverableQualityCertified
-} from "./server/autonomousTestEngine.js";
 import { getLearningKnowledgeBase, resetLearningsToBaseline } from "./server/workLearningMemory.js";
 import { getAllConversations, getConversationById, addMessageToConversation, generateClientReply, createConversation, toggleAutoResponder } from "./server/clientMessagingEngine.js";
 import { getPaymentCollectionLinks, recordCollectedPayment, getPaymentSummary } from "./server/paymentCollectionService.js";
@@ -192,7 +184,9 @@ app.use((req, res, next) => {
 const parseAllowedOrigins = (): string[] => {
   const envOrigins = process.env.CORS_ALLOWED_ORIGINS;
   if (!envOrigins || envOrigins.trim() === "" || envOrigins.trim() === "*") {
-    return ["*"];
+    const defaults = ["https://main.d2qe2q720fbn3x.amplifyapp.com"];
+    if (process.env.NODE_ENV !== "production") defaults.push("http://localhost:3000", "http://localhost:5173");
+    return defaults;
   }
   return envOrigins.split(",").map((o) => o.trim()).filter(Boolean);
 };
@@ -205,19 +199,8 @@ const isOriginAllowed = (origin: string, allowedOrigins: string[]): boolean => {
     const url = new URL(origin);
     const host = url.hostname;
 
-    // Always permit Amplify subdomains (*.amplifyapp.com), wildcard IP domains (*.sslip.io, *.nip.io), custom domains, Vercel, and local development
-    if (
-      host.endsWith(".amplifyapp.com") ||
-      host.endsWith(".sslip.io") ||
-      host.endsWith(".nip.io") ||
-      host === "gigpilot.com" ||
-      host.endsWith(".gigpilot.com") ||
-      host.endsWith(".vercel.app") ||
-      host === "localhost" ||
-      host === "127.0.0.1"
-    ) {
-      return true;
-    }
+    // Only explicitly configured origins are trusted in production.
+    // Do not trust arbitrary Amplify/Vercel/IP subdomains.
 
     // Match wildcard rules in allowedOrigins (e.g. *.gigpilot.com or https://*.amplifyapp.com)
     for (const rule of allowedOrigins) {
@@ -426,10 +409,6 @@ app.use(aiRouter);
 // 17. Sentient Freelancer Autopilot Engine
 app.use("/api", sentientRouter);
 
-// 18. Autonomous Master Agent (Escrow Funding, Milestone Release & Automated Payout Pipeline)
-app.use("/api/master-agent", masterAgentRouter);
-app.use("/api", masterAgentRouter);
-
 // Compatibility aliases for /api/bids, /api/Bid (Prisma model case), /api/Bids, and /api/leads list
 app.use(["/api/bids", "/api/Bid", "/api/Bids"], freelancerBidsRoutes);
 
@@ -529,6 +508,9 @@ app.get(["/api/automated-payouts", "/api/revenue/payouts"], async (_req, res) =>
 });
 
 app.post(["/api/revenue/simulate-won", "/api/bids/simulate-won"], async (req, res) => {
+  if (process.env.NODE_ENV === 'production') {
+    return res.status(404).json({ success: false, error: 'NOT_AVAILABLE_IN_PRODUCTION' });
+  }
   try {
     const { executeAutonomousCashOut, getRevenueIntelligenceStats, recordBidOutcome } = await import("./server/revenueEngine.js");
     const bidId = req.body?.bidId || `won_proj_${Date.now()}`;
@@ -739,7 +721,7 @@ app.get("/api/health", async (req, res) => {
     const payPalMode = payPalCfg.mode;
     const hasPayPalCredentials = Boolean(payPalClientId && payPalSecret);
     const freelancerToken = (process.env.FREELANCER_ACCESS_TOKEN || '').trim();
-    const hasFreelancer = Boolean(freelancerToken && freelancerToken.length > 0 && freelancerToken !== '3PKsiB3m736mE0wnirnHeLTUzLP1xc');
+    const hasFreelancer = Boolean(freelancerToken && freelancerToken.length > 0);
     const sqlitePath = path.join(process.cwd(), 'bids.db');
     const sqliteExists = fs.existsSync(sqlitePath);
 
@@ -790,8 +772,8 @@ app.get("/api/health", async (req, res) => {
         },
         paypal: {
           name: 'PayPal Merchant Gateway',
-          configured: true,
-          status: fullCheck.checks.paypal.status === 'healthy' ? 'active' : 'degraded',
+          configured: hasPayPalCredentials,
+          status: hasPayPalCredentials && fullCheck.checks.paypal.status === 'healthy' ? 'active' : (hasPayPalCredentials ? 'degraded' : 'unconfigured'),
           mode: payPalMode,
           receiverEmail: payPalEmail,
           payPalMeUsername: payPalMe,
@@ -1933,9 +1915,12 @@ app.post("/api/platform/bid", async (req, res) => {
       milestones
     });
 
-    res.json({ success: true, ...result });
+    if (!result.success) {
+      return res.status(409).json({ success: false, ...result });
+    }
+    return res.json({ success: true, ...result });
   } catch (err: any) {
-    res.status(500).json({ success: false, error: err.message });
+    return res.status(500).json({ success: false, error: err.message });
   }
 });
 
@@ -2078,42 +2063,14 @@ app.post("/api/work-orders/accept", (req, res) => {
 });
 
 // Complete Live Work Order
-app.post("/api/work-orders/complete", (req, res) => {
-  try {
-    const { orderId } = req.body;
-    const completed = completeLiveOrder(orderId);
-    if (completed) {
-      logActivityEvent({
-        source: (completed.platform as any) || 'System',
-        type: 'ORDER_STATE_SYNC',
-        status: 'success',
-        method: 'POST',
-        endpoint: '/api/work-orders/complete',
-        statusCode: 200,
-        summary: `Work Order #${completed.id} Completed: Payout $${completed.amount.toFixed(2)} USD released for "${completed.title}"`,
-        headers: { 'content-type': 'application/json' },
-        requestPayload: req.body,
-        responsePayload: { orderId: completed.id, status: 'completed', payout: completed.amount },
-        stateDiff: {
-          action: 'ESCROW_PAYOUT_RELEASED',
-          entityType: 'balance',
-          amountUsd: completed.amount,
-          details: `Milestone approved for "${completed.title}". Added $${completed.amount.toFixed(2)} USD to earnings.`
-        },
-        tags: ['order', 'completed', completed.platform.toLowerCase()]
-      });
-
-      return res.json({
-        success: true,
-        order: completed,
-        payoutAmount: completed.amount,
-        message: `Deliverables approved for "${completed.title}". Payout of $${completed.amount.toFixed(2)} USD recorded.`
-      });
-    }
-    res.status(404).json({ success: false, error: "Order not found" });
-  } catch (err: any) {
-    res.status(500).json({ success: false, error: err.message });
-  }
+app.post("/api/work-orders/complete", async (req, res) => {
+  // This endpoint previously converted any feed item into a fake completed/payout record.
+  // Real settlement is performed only by the completion worker after provider-confirmed payment/award state.
+  return res.status(409).json({
+    success: false,
+    error: "REAL_SETTLEMENT_REQUIRED",
+    message: "A live job listing cannot be marked completed or paid. A provider-confirmed award and customer payment/settlement record are required."
+  });
 });
 
 // =========================================================================
@@ -2256,107 +2213,6 @@ app.post("/api/work-orders/:orderId/deliver", async (req, res) => {
       requestPayment: requestPayment !== false,
     });
     res.json(result);
-  } catch (err: any) {
-    res.status(500).json({ success: false, error: err.message });
-  }
-});
-
-// =========================================================================
-// TOOL 1: AUTONOMOUS TEST ENGINE (JEST GENERATOR & SANDBOXED VERIFICATION)
-// =========================================================================
-
-// 1. Generate Jest test suites based on project structure & deliverables
-app.post("/api/tool1/test-engine/generate", async (req, res) => {
-  try {
-    const { orderId, deliverable, customPrompt } = req.body || {};
-    let targetDeliverable = deliverable;
-    if (!targetDeliverable && orderId) {
-      targetDeliverable = getOrderDeliverable(orderId);
-    }
-    if (!targetDeliverable) {
-      return res.status(400).json({ success: false, error: "No deliverable found for test synthesis. Please provide an orderId or deliverable." });
-    }
-
-    const generated = await generateDeliverableTestSuites(targetDeliverable, customPrompt);
-    res.json({
-      success: true,
-      orderId: targetDeliverable.orderId,
-      jobTitle: targetDeliverable.jobTitle,
-      ...generated
-    });
-  } catch (err: any) {
-    console.error("[TestEngine] Error generating Jest suites:", err);
-    res.status(500).json({ success: false, error: err.message || "Failed to synthesize Jest test suites" });
-  }
-});
-
-// 2. Run Jest test suites in sandboxed execution environment
-app.post("/api/tool1/test-engine/run", async (req, res) => {
-  try {
-    const { orderId, deliverable, suites } = req.body || {};
-    let targetDeliverable = deliverable;
-    if (!targetDeliverable && orderId) {
-      targetDeliverable = getOrderDeliverable(orderId);
-    }
-    if (!targetDeliverable) {
-      return res.status(400).json({ success: false, error: "No deliverable found to execute tests against." });
-    }
-
-    const report = await executeAutonomousTestVerification(targetDeliverable, suites);
-    res.json({
-      success: true,
-      report
-    });
-  } catch (err: any) {
-    console.error("[TestEngine] Error running sandboxed Jest suite:", err);
-    res.status(500).json({ success: false, error: err.message || "Sandboxed test execution failed" });
-  }
-});
-
-// 3. Retrieve deliverable quality report & verification certificate
-app.get("/api/tool1/test-engine/report/:orderId", (req, res) => {
-  try {
-    const orderId = req.params.orderId;
-    const report = getDeliverableQualityReport(orderId);
-    const isCertified = isDeliverableQualityCertified(orderId);
-    res.json({
-      success: true,
-      orderId,
-      report,
-      isCertified
-    });
-  } catch (err: any) {
-    res.status(500).json({ success: false, error: err.message });
-  }
-});
-
-// 4. Quality Gate Check for Client Handoff
-app.post("/api/tool1/test-engine/verify-handoff", async (req, res) => {
-  try {
-    const { orderId, forceRunIfMissing } = req.body || {};
-    if (!orderId) {
-      return res.status(400).json({ success: false, error: "orderId is required" });
-    }
-
-    let report = getDeliverableQualityReport(orderId);
-    if (!report && forceRunIfMissing) {
-      const del = getOrderDeliverable(orderId);
-      if (del) {
-        report = await executeAutonomousTestVerification(del);
-      }
-    }
-
-    const isCertified = !!report?.certificate?.isQualityApproved;
-    res.json({
-      success: true,
-      orderId,
-      isCertified,
-      qualityScore: report?.qualityScore || 0,
-      certificate: report?.certificate || null,
-      message: isCertified
-        ? "Deliverable passed all sandboxed Jest tests and is certified for client handoff."
-        : "Deliverable requires test execution or resolution of test failures before handoff."
-    });
   } catch (err: any) {
     res.status(500).json({ success: false, error: err.message });
   }
@@ -2838,109 +2694,78 @@ app.get("/api/payments/summary", (req, res) => {
 });
 
 // Process / Record Bid Earnings Withdrawal with robust DB and Marketplace API try-catch handling
-app.post(["/api/bids/withdraw", "/api/bids/:id/withdraw", "/api/freelancer/withdraw"], withdrawRateLimiter, async (req, res) => {
+app.post(["/api/bids/withdraw", "/api/bids/:id/withdraw", "/api/freelancer/withdraw"], withdrawRateLimiter, authMiddleware, async (req, res) => {
   try {
     const rawBidId = req.params.id || req.body?.bidId;
     const bidId = rawBidId ? String(rawBidId) : 'all';
     const amount = Number(req.body?.amount ?? 0);
     const platform = String(req.body?.platform || 'freelancer').toLowerCase();
-    const payoutMethod = String(req.body?.payoutMethod || 'paypal');
+    const payoutMethod = String(req.body?.payoutMethod || '').toLowerCase();
 
-    console.log(`[API /api/bids/withdraw] Request received. bidId: "${bidId}", Amount: $${amount}, Platform: "${platform}", PayoutMethod: "${payoutMethod}"`);
+    if (!Number.isFinite(amount) || amount <= 0) {
+      return res.status(400).json({ success: false, error: 'A positive withdrawal amount is required.' });
+    }
+    if (!['paypal', 'payoneer'].includes(payoutMethod)) {
+      return res.status(400).json({ success: false, error: 'Unsupported payout method. Use paypal or payoneer.' });
+    }
 
-    // Invalidate Redis/memory cache on withdrawal
-    await clearBidsCache();
-
-    // Parameter validation check
-    if (isNaN(amount) || amount < 0) {
-      const valError = `Invalid withdrawal amount provided: ${req.body?.amount}. Amount must be a positive number.`;
-      console.error(`[API /api/bids/withdraw] Validation error: ${valError}`);
-      return res.status(400).json({
+    // Never claim a withdrawal happened unless a real provider API confirms it.
+    if (payoutMethod === 'payoneer') {
+      return res.status(503).json({
         success: false,
-        error: valError,
-        bidId,
-        timestamp: new Date().toISOString()
+        error: 'PAYONEER_PROVIDER_NOT_CONFIGURED',
+        message: 'Payoneer settlement is intentionally disabled until an official Payoneer payout API integration and credentials are configured.'
       });
     }
 
-    const withdrawalUrls: Record<string, string> = {
-      freelancer: 'https://www.freelancer.com/payments/withdraw.php',
-      upwork: 'https://www.upwork.com/nx/navigator/payments/withdraw',
-      fiverr: 'https://www.fiverr.com/balance/withdraw',
-      remoteok: 'https://remoteok.com'
-    };
-
-    const targetUrl = withdrawalUrls[platform] || withdrawalUrls.freelancer;
-    let dbStatus = 'unmodified';
-    let dbErrorDetails: string | null = null;
-
-    // 1. Safe Database Interaction wrapped in dedicated try-catch
-    try {
-      if (bidId && bidId !== 'all' && bidId !== 'platform_aggregate') {
-        const liveOrders = getAllLiveOrders();
-        const orderMatch = liveOrders.find(o => String(o.id) === String(bidId));
-        if (orderMatch) {
-          orderMatch.status = 'completed';
-          dbStatus = 'memory_updated';
-          console.log(`[API /api/bids/withdraw] Updated in-memory work order #${bidId} status to 'completed'.`);
-        } else {
-          dbStatus = 'order_not_in_memory';
-          console.log(`[API /api/bids/withdraw] Bid #${bidId} not found in in-memory live orders; flagged as non-blocking.`);
-        }
+    if (payoutMethod === 'paypal') {
+      const { createPayPalPayout, isPayPalConfigured } = await import('./server/paypal.js');
+      if (!isPayPalConfigured()) {
+        return res.status(503).json({ success: false, error: 'PAYPAL_NOT_CONFIGURED' });
       }
-    } catch (dbErr: any) {
-      dbErrorDetails = dbErr?.message || 'Database record lookup notice';
-      console.error(`[API /api/bids/withdraw] Database operation warning for Bid "${bidId}":`, dbErr);
-    }
+      const receiverEmail = String(process.env.PAYPAL_RECEIVER_EMAIL || '').trim();
+      if (!receiverEmail) {
+        return res.status(503).json({ success: false, error: 'PAYPAL_RECEIVER_EMAIL_NOT_CONFIGURED' });
+      }
 
-    // 2. Safe Marketplace API Call / State Sync wrapped in dedicated try-catch
-    let marketplaceStatus = 'ready';
-    try {
+      const payout = await createPayPalPayout({
+        receiverEmail,
+        amount,
+        note: `GigPilot withdrawal for bid ${bidId}`,
+        senderBatchId: `gp_withdraw_${crypto.createHash('sha256').update(`${platform}:${bidId}:${amount}`).digest('hex').slice(0, 32)}`
+      });
+
       logActivityEvent({
-        source: (platform.includes('upwork') ? 'Upwork' : 'Freelancer') as any,
-        type: 'ORDER_STATE_SYNC',
+        source: 'PayPal',
+        type: 'BANK_AUTO_TRANSFER',
         status: 'success',
         method: 'POST',
         endpoint: '/api/bids/withdraw',
         statusCode: 200,
-        summary: `Withdrawal initiated for Bid #${bidId}: $${amount.toFixed(2)} USD routed to ${platform.toUpperCase()} financial portal`,
-        headers: { 'content-type': 'application/json' },
-        requestPayload: req.body,
-        responsePayload: { bidId, amount, platform, withdrawalUrl: targetUrl },
-        stateDiff: {
-          action: 'ESCROW_PAYOUT_RELEASED',
-          entityType: 'transaction',
-          amountUsd: amount,
-          details: `Dispatched withdrawal intent for bid #${bidId} to ${platform.toUpperCase()} portal.`
-        },
-        tags: ['withdrawal', 'bid', platform]
+        summary: `Provider-confirmed PayPal payout initiated for bid #${bidId}: $${amount.toFixed(2)} USD`,
+        responsePayload: payout,
+        tags: ['withdrawal', 'bid', 'paypal', 'provider_confirmed_request']
       });
-      marketplaceStatus = 'logged';
-      console.log(`[API /api/bids/withdraw] Activity audit event recorded for Bid #${bidId}.`);
-    } catch (marketErr: any) {
-      console.error(`[API /api/bids/withdraw] Marketplace logging / state sync error for Bid #${bidId}:`, marketErr);
+
+      return res.status(202).json({
+        success: true,
+        status: 'PROVIDER_PENDING',
+        bidId,
+        amount,
+        platform,
+        payoutMethod,
+        payout,
+        message: 'PayPal accepted the payout request. Final settlement is reported only after provider confirmation.'
+      });
     }
 
-    return res.status(200).json({
-      success: true,
-      bidId,
-      amount,
-      platform,
-      payoutMethod,
-      withdrawalUrl: targetUrl,
-      dbStatus,
-      marketplaceStatus,
-      message: `Withdrawal request for $${amount.toFixed(2)} USD on ${platform.toUpperCase()} validated and routed successfully.`,
-      timestamp: new Date().toISOString()
-    });
+    return res.status(400).json({ success: false, error: 'Unsupported payout method.' });
   } catch (err: any) {
-    const errorMsg = err?.message || 'Internal server error processing withdrawal';
-    console.error("[API /api/bids/withdraw] Comprehensive Try-Catch caught unhandled error:", err);
-    return res.status(500).json({
+    console.error('[API /api/bids/withdraw] Provider payout error:', err);
+    return res.status(502).json({
       success: false,
-      error: `Failed to process withdrawal: ${errorMsg}`,
-      bidId: req.params?.id || req.body?.bidId || 'unknown',
-      timestamp: new Date().toISOString()
+      error: 'REAL_PAYOUT_FAILED',
+      details: err?.message || 'Provider rejected or did not confirm the payout request.'
     });
   }
 });
@@ -3019,6 +2844,17 @@ export async function runHourlyJobSyncWorker() {
 }
 
 // Register background task: runs exactly once every hour (0 * * * *)
+
+// Provider-confirmed autonomous contractor execution loop.
+// Disabled by default; when enabled it only processes funded, externally accepted contracts.
+if (process.env.AUTONOMOUS_EXECUTION_ENABLED === 'true') {
+  cron.schedule('*/5 * * * *', () => {
+    runAutonomousContractorCycle(3).catch((err) => {
+      console.error('[AutonomousFreelance] Execution cycle failed:', err?.message || err);
+    });
+  });
+}
+
 cron.schedule('0 * * * *', () => {
   console.log('[node-cron] Triggering scheduled hourly job sync task (0 * * * *)');
   runHourlyJobSyncWorker();

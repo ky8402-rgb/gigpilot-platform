@@ -212,7 +212,8 @@ jobs:
           if [ "$HTTP_CODE" = "200" ] || [ "$HTTP_CODE" = "202" ]; then
             echo "✔ EC2 backend webhook delivery succeeded (HTTP $HTTP_CODE)."
           else
-            echo "Notice: Webhook received HTTP $HTTP_CODE (SSH deployment handles execution)."
+            echo "ERROR: EC2 deployment could not be verified. Refusing a false-success deployment."
+            exit 1
           fi
 
       - name: Verify EC2 Backend Health
@@ -238,7 +239,8 @@ jobs:
             fi
             sleep 3
           done
-          echo "Health check verification completed (server warming up or deploying)."
+          echo "ERROR: EC2 backend health check did not return HTTP 200."
+          exit 1
 
       - name: Report EC2 Status to Step Summary
         env:

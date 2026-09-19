@@ -32,17 +32,6 @@ NC='\033[0m'
 BACKEND_URL="${VITE_BACKEND_URL:-https://3-222-149-9.sslip.io}"
 FRONTEND_URL="${FRONTEND_URL:-https://main.d2qe2q720fbn3x.amplifyapp.com}"
 EC2_HOST="${EC2_HOST:-3.222.149.9}"
-
-# Auto-remediate stale legacy host overrides from container env
-if [[ "$BACKEND_URL" == *"13-233-54-120"* ]]; then
-  BACKEND_URL="https://3-222-149-9.sslip.io"
-fi
-if [[ "$EC2_HOST" == "i-04837168e688a5c0b" ]]; then
-  EC2_HOST="3.222.149.9"
-fi
-if [[ "$FRONTEND_URL" == *"localhost"* ]]; then
-  FRONTEND_URL="https://main.d2qe2q720fbn3x.amplifyapp.com"
-fi
 EC2_USER="${EC2_USER:-ubuntu}"
 EC2_KEY_FILE="${EC2_KEY_FILE:-}"
 APP_DIR="${APP_DIR:-/home/ubuntu/gigpilot}"

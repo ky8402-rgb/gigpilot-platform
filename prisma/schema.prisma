@@ -72,6 +72,68 @@ model WorkOrder {
   dueDate         DateTime?
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
+  fundedAt        DateTime?
+  fundingProvider String?
+  fundingProviderTransactionId String?
+  clientApprovedAt DateTime?
+  escrowStatus    String   @default("UNFUNDED")
+  milestoneStatus String   @default("PENDING_APPROVAL")
+  externalProvider String?
+  externalProjectId String?
+  externalBidId String?
+  externalAcceptanceVerified Boolean @default(false)
+  externalAcceptedAt DateTime?
+  deliveryStatus String @default("NOT_READY")
+  deliverableChecksum String?
+  milestones      EscrowMilestone[]
+  escrowLedger    EscrowLedger[]
+}
+
+model EscrowMilestone {
+  id                  String   @id @default(cuid())
+  workOrderId         String
+  workOrder           WorkOrder @relation(fields: [workOrderId], references: [id], onDelete: Cascade)
+  amount              Float
+  currency            String   @default("USD")
+  status              String   @default("PENDING_APPROVAL")
+  deliverableChecksum String?
+  approvalTokenHash   String?
+  approvedAt          DateTime?
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+  escrowLedger        EscrowLedger[]
+  @@index([workOrderId, status])
+}
+
+model EscrowLedger {
+  id                    String   @id @default(cuid())
+  workOrderId           String
+  workOrder             WorkOrder @relation(fields: [workOrderId], references: [id], onDelete: Cascade)
+  milestoneId           String?
+  milestone             EscrowMilestone? @relation(fields: [milestoneId], references: [id], onDelete: SetNull)
+  provider              String
+  amount                Float
+  currency              String   @default("USD")
+  state                 String   @default("RESERVED")
+  providerReference     String?
+  providerTransactionId String?
+  idempotencyKey        String   @unique
+  createdAt             DateTime @default(now())
+  updatedAt             DateTime @updatedAt
+  @@index([workOrderId, state])
+  @@index([provider, providerReference])
+}
+
+model PaymentWebhookEvent {
+  id          String   @id @default(cuid())
+  provider    String
+  eventId     String   @unique
+  eventType   String
+  payload     Json
+  receivedAt  DateTime @default(now())
+  processedAt DateTime?
+  status      String   @default("RECEIVED")
+  @@index([provider, eventType])
 }
 
 model Proposal {
