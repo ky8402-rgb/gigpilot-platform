@@ -33,15 +33,15 @@ export const PayPalConnectModal: React.FC<PayPalConnectModalProps> = ({
 
   if (!isOpen) return null;
 
-  const PAYPAL_EMAIL = '${PAYPAL_RECEIVER_EMAIL}';
-  const PAYPAL_HANDLE = '${PAYPAL_ME_USERNAME}';
+  const PAYPAL_EMAIL = 'Configured server-side';
+  const PAYPAL_HANDLE = 'Configured server-side';
   const ACCOUNT_HOLDER = 'Kundan Kumar';
-  const BANK_NAME = '${PAYONEER_BANK_NAME}';
-  const BANK_ADDRESS = '${PAYONEER_BANK_ADDRESS}';
-  const ROUTING_ABA = '${PAYONEER_ROUTING_ABA}';
-  const ACCOUNT_NUMBER = '${PAYONEER_ACCOUNT_NUMBER}';
+  const BANK_NAME = 'Configured Payoneer account';
+  const BANK_ADDRESS = 'Configured server-side';
+  const ROUTING_ABA = 'Configured server-side';
+  const ACCOUNT_NUMBER = 'Configured server-side';
   const ACCOUNT_TYPE = 'CHECKING';
-  const SWIFT_CODE = '${PAYONEER_SWIFT}';
+  const SWIFT_CODE = 'Configured server-side';
 
   const handleCopy = (text: string, fieldName: string) => {
     navigator.clipboard.writeText(text);
@@ -104,7 +104,7 @@ export const PayPalConnectModal: React.FC<PayPalConnectModalProps> = ({
             }`}
           >
             <span className="text-[9px] bg-emerald-500/25 text-emerald-300 font-bold px-1 rounded border border-emerald-500/30">PRIMARY</span>
-            <span>🏦 Payoneer ${PAYONEER_BANK_NAME} (USD)</span>
+            <span>🏦 Payoneer Configured Payoneer account (USD)</span>
           </button>
 
           <button
@@ -187,7 +187,7 @@ export const PayPalConnectModal: React.FC<PayPalConnectModalProps> = ({
             <div className="flex items-center justify-between border-b border-slate-800 pb-2">
               <div className="font-bold text-white flex items-center gap-1.5">
                 <Building2 className="w-4 h-4 text-cyan-400" />
-                <span>Payoneer USD Checking Account (${PAYONEER_BANK_NAME} NY)</span>
+                <span>Payoneer USD Checking Account (Configured Payoneer account NY)</span>
               </div>
               <span className="text-[10px] text-emerald-400 uppercase font-mono">ACH &bull; WIRE &bull; SWIFT</span>
             </div>
