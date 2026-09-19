@@ -23,8 +23,7 @@ import {
   Wand2,
   Terminal,
   AlertCircle,
-  MessageSquare,
-  TestTube
+  MessageSquare
 } from 'lucide-react';
 import {
   executeWorkOrder,
@@ -41,7 +40,6 @@ import {
   LearningKnowledgeBase
 } from '../services/api';
 import { CodeExplanationChat } from './CodeExplanationChat';
-import { AutonomousTestEngine } from './AutonomousTestEngine';
 
 interface SoftwareJobAutonomousToolProps {
   liveOrders: any[];
@@ -63,7 +61,7 @@ export const SoftwareJobAutonomousTool: React.FC<SoftwareJobAutonomousToolProps>
   onRefreshOrders
 }) => {
   // Navigation inside Tool 1
-  const [activeSubTab, setActiveSubTab] = useState<'queue' | 'explainer' | 'testing' | 'learning' | 'delivery'>('queue');
+  const [activeSubTab, setActiveSubTab] = useState<'queue' | 'explainer' | 'learning' | 'delivery'>('queue');
 
   // Queue state
   const [autoDeliverOnComplete, setAutoDeliverOnComplete] = useState<boolean>(true);
@@ -447,18 +445,6 @@ export const SoftwareJobAutonomousTool: React.FC<SoftwareJobAutonomousToolProps>
           </button>
 
           <button
-            onClick={() => setActiveSubTab('testing')}
-            className={`px-4 py-2 rounded-xl text-xs font-bold font-mono flex items-center gap-2 transition-all cursor-pointer ${
-              activeSubTab === 'testing'
-                ? 'bg-blue-600 text-white shadow-md shadow-blue-600/30'
-                : 'bg-slate-900 hover:bg-slate-800 text-slate-400 hover:text-slate-200 border border-slate-800'
-            }`}
-          >
-            <TestTube className="w-3.5 h-3.5 text-blue-400" />
-            <span>3. Autonomous Test Engine</span>
-          </button>
-
-          <button
             onClick={() => setActiveSubTab('learning')}
             className={`px-4 py-2 rounded-xl text-xs font-bold font-mono flex items-center gap-2 transition-all cursor-pointer ${
               activeSubTab === 'learning'
@@ -467,7 +453,7 @@ export const SoftwareJobAutonomousTool: React.FC<SoftwareJobAutonomousToolProps>
             }`}
           >
             <BrainCircuit className="w-3.5 h-3.5 text-purple-400" />
-            <span>4. Auto-Learning Memory &amp; Self-Updating</span>
+            <span>3. Auto-Learning Memory &amp; Self-Updating</span>
           </button>
 
           <button
@@ -479,7 +465,7 @@ export const SoftwareJobAutonomousTool: React.FC<SoftwareJobAutonomousToolProps>
             }`}
           >
             <Send className="w-3.5 h-3.5 text-emerald-400" />
-            <span>5. Delivery Dispatch (Auto/Manual)</span>
+            <span>4. Delivery Dispatch (Auto/Manual)</span>
           </button>
         </div>
 
@@ -710,16 +696,6 @@ export const SoftwareJobAutonomousTool: React.FC<SoftwareJobAutonomousToolProps>
                 </div>
 
                 <div className="flex flex-wrap items-center gap-2">
-                  <button
-                    onClick={() => {
-                      setActiveSubTab('testing');
-                    }}
-                    className="px-3 py-1.5 rounded-xl bg-blue-600/20 hover:bg-blue-600 text-blue-300 hover:text-white border border-blue-500/40 text-xs font-bold font-mono transition-all flex items-center gap-1.5 cursor-pointer"
-                  >
-                    <TestTube className="w-3.5 h-3.5" />
-                    <span>Run Jest Tests</span>
-                  </button>
-
                   <button
                     onClick={() => {
                       setActiveSubTab('explainer');
@@ -1130,29 +1106,7 @@ export const SoftwareJobAutonomousTool: React.FC<SoftwareJobAutonomousToolProps>
       )}
 
       {/* ========================================================================= */}
-      {/* SUB-TAB 3: AUTONOMOUS TEST ENGINE & JEST SANDBOX VERIFIER */}
-      {/* ========================================================================= */}
-      {activeSubTab === 'testing' && (
-        <AutonomousTestEngine
-          order={selectedOrder || pendingSoftwareOrders[0] || liveOrders[0]}
-          deliverable={activeDeliverable}
-          liveOrders={liveOrders}
-          onSelectOrder={(ord) => {
-            setSelectedOrder(ord);
-            fetchWorkDeliverables(ord.id)
-              .then(del => { if (del) setActiveDeliverable(del); })
-              .catch(() => {});
-          }}
-          onProceedToDelivery={() => {
-            setActiveSubTab('delivery');
-            showToast('Deliverable certified! Proceeding to Client Handoff & Escrow Payout.', 'success');
-          }}
-          showToast={showToast}
-        />
-      )}
-
-      {/* ========================================================================= */}
-      {/* SUB-TAB 4: AUTO-LEARNING & SELF-UPDATING KNOWLEDGE BASE */}
+      {/* SUB-TAB 3: AUTO-LEARNING & SELF-UPDATING KNOWLEDGE BASE */}
       {/* ========================================================================= */}
       {activeSubTab === 'learning' && (
         <div className="space-y-6">

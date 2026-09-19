@@ -50,7 +50,6 @@ import {
   SettlementAccountsData,
   WorkExecutionDeliverable
 } from '../services/api';
-import { MasterAgentLifecycleTool } from './MasterAgentLifecycleTool';
 
 interface WorkOrderCloserToolProps {
   liveOrders: any[];
@@ -70,9 +69,12 @@ export const WorkOrderCloserTool: React.FC<WorkOrderCloserToolProps> = ({
   // Navigation sub-tabs within Tool 2
   const [activeTab, setActiveTab] = useState<'autonomous' | 'senior_engineer' | 'escrow_release' | 'settlement_ledger' | 'accounts_config'>('autonomous');
 
+  // Normalize the handoff payload so a missing/temporarily loading order list cannot crash Tool 2.
+  const safeLiveOrders = Array.isArray(liveOrders) ? liveOrders : [];
+
   // Selected order for closing
-  const completedOrders = liveOrders.filter(o => o.status === 'completed');
-  const allAvailableOrders = liveOrders;
+  const completedOrders = safeLiveOrders.filter(o => o && o.status === 'completed');
+  const allAvailableOrders = safeLiveOrders;
 
   const [selectedOrderId, setSelectedOrderId] = useState<string>(() => {
     if (handedOverOrderId) return String(handedOverOrderId);
@@ -88,7 +90,7 @@ export const WorkOrderCloserTool: React.FC<WorkOrderCloserToolProps> = ({
     }
   }, [handedOverOrderId]);
 
-  const selectedOrder = liveOrders.find(o => String(o.id) === String(selectedOrderId)) || {
+  const selectedOrder = safeLiveOrders.find(o => o && String(o.id) === String(selectedOrderId)) || {
     id: selectedOrderId,
     title: 'Full-Stack React & Node.js Platform Engineering',
     clientName: 'Apex Cloud Solutions',
@@ -334,9 +336,6 @@ export const WorkOrderCloserTool: React.FC<WorkOrderCloserToolProps> = ({
 
   return (
     <div id="tool-2-closer-container" className={`space-y-6 ${className}`}>
-      {/* Master Agent 5-Step Payment & Escrow Autonomous Pipeline */}
-      <MasterAgentLifecycleTool showToast={showToast} />
-
       {/* Top Banner: Tool 1 ➔ Tool 2 Handover Integration Pipeline */}
       <div className="rounded-3xl border border-indigo-500/30 bg-gradient-to-r from-[#0d1226] via-[#101735] to-[#0c1022] p-6 shadow-2xl relative overflow-hidden">
         <div className="absolute top-0 right-0 w-96 h-96 bg-indigo-500/10 rounded-full blur-3xl pointer-events-none -mr-20 -mt-20"></div>
@@ -535,7 +534,7 @@ export const WorkOrderCloserTool: React.FC<WorkOrderCloserToolProps> = ({
                 </h3>
                 <p className="text-xs text-slate-300 max-w-2xl leading-relaxed">
                   Continuously watches completed client work orders, verifies SHA-256 deliverable checksum integrity,
-                  evaluates dispute risk heuristics, and autonomously disburses funds to your Payoneer Citibank Checking
+                  evaluates dispute risk heuristics, and autonomously disburses funds to your Payoneer ${PAYONEER_BANK_NAME} Checking
                   or PayPal accounts with zero human intervention required.
                 </p>
               </div>
@@ -726,7 +725,7 @@ export const WorkOrderCloserTool: React.FC<WorkOrderCloserToolProps> = ({
                     <div className="p-2.5 rounded-xl bg-slate-900/80 border border-slate-800">
                       <div className="text-slate-500 text-[10px]">Recommended Payout Route</div>
                       <div className="text-purple-300 font-bold text-sm mt-0.5 uppercase">
-                        {riskEvaluation.recommendedPayoutMethod === 'bank_wire' ? 'Payoneer Citibank Checking' : 'PayPal'}
+                        {riskEvaluation.recommendedPayoutMethod === 'bank_wire' ? 'Payoneer ${PAYONEER_BANK_NAME} Checking' : 'PayPal'}
                       </div>
                     </div>
                   </div>
@@ -745,7 +744,7 @@ export const WorkOrderCloserTool: React.FC<WorkOrderCloserToolProps> = ({
 
                   <div className="pt-2 flex justify-end">
                     <button
-                      onClick={handleExecuteEscrowRelease}
+                      onClick={handleReleaseEscrow}
                       disabled={isReleasingEscrow}
                       className="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-mono font-bold transition-all flex items-center gap-2 cursor-pointer shadow-md shadow-emerald-600/20"
                     >
@@ -800,7 +799,7 @@ export const WorkOrderCloserTool: React.FC<WorkOrderCloserToolProps> = ({
                   <div className="flex items-center gap-2.5">
                     <div className="w-2 h-2 rounded-full bg-emerald-400" />
                     <div>
-                      <div className="text-xs font-bold text-white">Payoneer Citibank Checking (USD)</div>
+                      <div className="text-xs font-bold text-white">Payoneer ${PAYONEER_BANK_NAME} Checking (USD)</div>
                       <div className="text-[10px] font-mono text-slate-500">Primary route for tickets &ge; $200 (Zero Wire Fees)</div>
                     </div>
                   </div>
@@ -913,8 +912,8 @@ export const WorkOrderCloserTool: React.FC<WorkOrderCloserToolProps> = ({
                   id: 'evo_002',
                   category: 'Payout Optimization',
                   timestamp: new Date(Date.now() - 3600000).toISOString(),
-                  observation: 'Payoneer Citibank USD Checking account avoids international wire intermediary fees on tickets > $200.',
-                  actionTaken: 'Self-updated routing priority: set Payoneer Citibank checking as primary destination with PayPal auto-sweep.',
+                  observation: 'Payoneer ${PAYONEER_BANK_NAME} USD Checking account avoids international wire intermediary fees on tickets > $200.',
+                  actionTaken: 'Self-updated routing priority: set Payoneer ${PAYONEER_BANK_NAME} checking as primary destination with PayPal auto-sweep.',
                   confidenceImpact: +0.9
                 }
               ]).map((item) => (
@@ -1030,7 +1029,7 @@ export const WorkOrderCloserTool: React.FC<WorkOrderCloserToolProps> = ({
               <div className="flex items-center gap-2 text-slate-400">
                 <CreditCard className="w-4 h-4 text-emerald-400 shrink-0" />
                 <span>Embedded Payout Accounts:</span>
-                <span className="text-white font-bold">PayPal (kundank4@icloud.com / paypal.me/ky8402)</span>
+                <span className="text-white font-bold">PayPal (${PAYPAL_RECEIVER_EMAIL} / paypal.me/${PAYPAL_ME_USERNAME})</span>
                 <span className="text-slate-600">•</span>
                 <span className="text-white font-bold">UPI (chandimay@ybl)</span>
               </div>
@@ -1204,7 +1203,7 @@ export const WorkOrderCloserTool: React.FC<WorkOrderCloserToolProps> = ({
                   >
                     <div className="flex items-center justify-between">
                       <div className="flex items-center gap-1.5">
-                        <span className="text-xs font-bold text-white font-mono">Payoneer Citibank</span>
+                        <span className="text-xs font-bold text-white font-mono">Payoneer ${PAYONEER_BANK_NAME}</span>
                         <span className="text-[9px] bg-emerald-500/25 text-emerald-300 font-bold px-1.5 py-0.2 rounded border border-emerald-500/30">
                           PRIMARY
                         </span>
@@ -1216,10 +1215,10 @@ export const WorkOrderCloserTool: React.FC<WorkOrderCloserToolProps> = ({
                       </div>
                     </div>
                     <div className="text-[11px] text-slate-300 font-mono">
-                      Citibank •••• 8744 (USD Checking)
+                      ${PAYONEER_BANK_NAME} •••• 8744 (USD Checking)
                     </div>
                     <div className="text-[10px] text-emerald-400 font-mono">
-                      Routing: 031100209 &bull; SWIFT: CITIUS33
+                      Routing: ${PAYONEER_ROUTING_ABA} &bull; SWIFT: ${PAYONEER_SWIFT}
                     </div>
                   </div>
 
@@ -1240,7 +1239,7 @@ export const WorkOrderCloserTool: React.FC<WorkOrderCloserToolProps> = ({
                       </div>
                     </div>
                     <div className="text-[11px] text-slate-400 font-mono break-all">
-                      {accounts?.paypal.receiverEmail || 'kundank4@icloud.com'}
+                      {accounts?.paypal.receiverEmail || '${PAYPAL_RECEIVER_EMAIL}'}
                     </div>
                     <div className="text-[10px] text-blue-400 font-mono">
                       Auto-Sweeps to Payoneer
@@ -1437,7 +1436,7 @@ export const WorkOrderCloserTool: React.FC<WorkOrderCloserToolProps> = ({
               <div className="flex items-center justify-between">
                 <span className="text-xs font-bold text-emerald-400 font-mono uppercase flex items-center gap-1.5">
                   <Building2 className="w-4 h-4 text-emerald-400" />
-                  Primary Collection: Payoneer (Citibank)
+                  Primary Collection: Payoneer (${PAYONEER_BANK_NAME})
                 </span>
                 <span className="px-2 py-0.5 rounded bg-emerald-950 text-emerald-300 border border-emerald-500/40 text-[10px] font-mono font-bold">
                   PRIMARY
@@ -1451,7 +1450,7 @@ export const WorkOrderCloserTool: React.FC<WorkOrderCloserToolProps> = ({
                 </div>
                 <div className="flex justify-between border-b border-slate-800/80 pb-1.5">
                   <span className="text-slate-500">Bank Name:</span>
-                  <span className="text-white font-bold">Citibank</span>
+                  <span className="text-white font-bold">${PAYONEER_BANK_NAME}</span>
                 </div>
                 <div className="flex justify-between border-b border-slate-800/80 pb-1.5">
                   <span className="text-slate-500">Bank Address:</span>
@@ -1459,7 +1458,7 @@ export const WorkOrderCloserTool: React.FC<WorkOrderCloserToolProps> = ({
                 </div>
                 <div className="flex justify-between border-b border-slate-800/80 pb-1.5">
                   <span className="text-slate-500">Account Number:</span>
-                  <span className="text-white font-bold tracking-wider">70589110002638744</span>
+                  <span className="text-white font-bold tracking-wider">${PAYONEER_ACCOUNT_NUMBER}</span>
                 </div>
                 <div className="flex justify-between border-b border-slate-800/80 pb-1.5">
                   <span className="text-slate-500">Account Type:</span>
@@ -1467,11 +1466,11 @@ export const WorkOrderCloserTool: React.FC<WorkOrderCloserToolProps> = ({
                 </div>
                 <div className="flex justify-between border-b border-slate-800/80 pb-1.5">
                   <span className="text-slate-500">Routing (ABA):</span>
-                  <span className="text-amber-400 font-bold">031100209</span>
+                  <span className="text-amber-400 font-bold">${PAYONEER_ROUTING_ABA}</span>
                 </div>
                 <div className="flex justify-between items-center pt-1">
                   <span className="text-slate-500">SWIFT / BIC:</span>
-                  <span className="text-emerald-400 font-bold">CITIUS33</span>
+                  <span className="text-emerald-400 font-bold">${PAYONEER_SWIFT}</span>
                 </div>
               </div>
             </div>
@@ -1491,25 +1490,25 @@ export const WorkOrderCloserTool: React.FC<WorkOrderCloserToolProps> = ({
               <div className="space-y-2 text-xs font-mono text-slate-300">
                 <div className="flex justify-between border-b border-slate-800/80 pb-1.5">
                   <span className="text-slate-500">Receiver Email:</span>
-                  <span className="text-white font-bold">{accounts?.paypal.receiverEmail || 'kundank4@icloud.com'}</span>
+                  <span className="text-white font-bold">{accounts?.paypal.receiverEmail || '${PAYPAL_RECEIVER_EMAIL}'}</span>
                 </div>
                 <div className="flex justify-between border-b border-slate-800/80 pb-1.5">
                   <span className="text-slate-500">Account User:</span>
-                  <span className="text-slate-300">{accounts?.paypal.userEmail || 'ky8402@gmail.com'}</span>
+                  <span className="text-slate-300">{accounts?.paypal.userEmail || '${PAYPAL_ME_USERNAME}@gmail.com'}</span>
                 </div>
                 <div className="flex justify-between border-b border-slate-800/80 pb-1.5">
                   <span className="text-slate-500">PayPal.Me Handle:</span>
-                  <span className="text-blue-400 font-bold">@{accounts?.paypal.username || 'ky8402'}</span>
+                  <span className="text-blue-400 font-bold">@{accounts?.paypal.username || '${PAYPAL_ME_USERNAME}'}</span>
                 </div>
                 <div className="flex justify-between items-center pt-1">
                   <span className="text-slate-500">Settlement URL:</span>
                   <a
-                    href={accounts?.paypal.url || 'https://paypal.me/ky8402'}
+                    href={accounts?.paypal.url || '${PAYPAL_ME_URL}'}
                     target="_blank"
                     rel="noreferrer"
                     className="text-indigo-400 hover:text-indigo-300 flex items-center gap-1 text-[11px]"
                   >
-                    <span>paypal.me/{accounts?.paypal.username || 'ky8402'}</span>
+                    <span>paypal.me/{accounts?.paypal.username || '${PAYPAL_ME_USERNAME}'}</span>
                     <ExternalLink className="w-3 h-3" />
                   </a>
                 </div>

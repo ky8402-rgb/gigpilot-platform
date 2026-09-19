@@ -15,10 +15,10 @@ export interface SignatureVerificationResult {
 }
 
 // Default runtime signing secret fallback
-let runtimeWebhookSecret: string = process.env.WEBHOOK_SIGNING_SECRET || process.env.PAYPAL_WEBHOOK_ID || 'whsec_standard_live_secure_key_369';
+let runtimeWebhookSecret: string = (process.env.WEBHOOK_SIGNING_SECRET || '').trim();
 
 export function getEffectiveWebhookSecret(): string {
-  return process.env.WEBHOOK_SIGNING_SECRET || process.env.PAYPAL_WEBHOOK_ID || runtimeWebhookSecret;
+  return (process.env.WEBHOOK_SIGNING_SECRET || '').trim() || runtimeWebhookSecret;
 }
 
 export function setRuntimeWebhookSecret(newSecret: string): void {

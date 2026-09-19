@@ -24,7 +24,9 @@ import {
   getAllInvoices
 } from '../backend/invoices.js';
 import { logActivityEvent } from '../server/activityLogger.js';
-import { prisma, initializeWorkOrderFromPayPal } from '../server/db.js';
+import { authMiddleware } from '../server/authMiddleware.js';
+import { prisma } from '../server/db.js';
+import { recordVerifiedPayPalFunding, createMilestoneApprovalToken, approveMilestone, releaseApprovedMilestone } from '../server/realEscrowSettlement.js';
 
 // Verify boot-time credentials
 verifyBootCredentials();
@@ -59,7 +61,7 @@ router.get('/config', (req, res) => {
  * POST /api/paypal/config
  * Update PayPal configuration at runtime
  */
-router.post('/config', (req, res) => {
+router.post('/config', authMiddleware, (req, res) => {
   try {
     const { clientId, clientSecret, mode, receiverEmail, paypalMeUsername, currency } = req.body;
     const updated = updatePayPalConfig({
@@ -269,19 +271,7 @@ const handleCaptureOrder = async (req: express.Request, res: express.Response) =
     const payerName = capture.payerName || clientName || 'Verified PayPal Client';
     const payerEmail = capture.payerEmail || clientEmail || 'client@paypal-direct.com';
 
-    // Automatically initialize and persist WorkOrder in PostgreSQL using DATABASE_URL
-    const dbResult = await initializeWorkOrderFromPayPal({
-      orderId,
-      captureId: capture.captureId,
-      amount: capturedAmount,
-      currency: capture.currency || 'USD',
-      clientName: payerName,
-      clientEmail: payerEmail,
-      title: title || `Client Milestone Deliverable (${orderId})`,
-      description: description || `Standard freelance work order created upon PayPal payment ${orderId}`,
-      userId
-    });
-
+    // Do not create a funded WorkOrder from the synchronous capture response. The authoritative PayPal webhook must be verified and persisted first.
     logActivityEvent({
       source: 'PayPal',
       type: 'PAYMENT_RECEIVED',
@@ -295,14 +285,14 @@ const handleCaptureOrder = async (req: express.Request, res: express.Response) =
         captureId: capture.captureId,
         amount: capturedAmount,
         currency: capture.currency,
-        workOrderId: dbResult?.workOrder?.id || dbResult?.simulatedOrder?.id
+        workOrderId: undefined
       },
       stateDiff: {
-        action: 'WORK_ORDER_INITIALIZED_PAYPAL',
+        action: 'PAYPAL_CAPTURE_PROVIDER_CONFIRMED_AWAITING_WEBHOOK',
         entityType: 'work_order',
-        entityId: dbResult?.workOrder?.id || dbResult?.simulatedOrder?.id,
+        entityId: undefined,
         amountUsd: capturedAmount,
-        details: `Captured $${capturedAmount.toFixed(2)} USD via PayPal REST API. Initialized active Work Order in PostgreSQL database.`
+        details: `Captured ${capturedAmount.toFixed(2)} USD via PayPal REST API. Awaiting authoritative verified webhook before funding a Work Order.`
       },
       tags: ['paypal', 'payment', 'completed', 'work_order']
     });
@@ -312,8 +302,8 @@ const handleCaptureOrder = async (req: express.Request, res: express.Response) =
       capture,
       amount: capturedAmount,
       currency: capture.currency,
-      workOrder: dbResult.workOrder || dbResult.simulatedOrder,
-      message: `Successfully captured $${capturedAmount.toFixed(2)} USD via PayPal and initialized Work Order in PostgreSQL`
+      workOrder: null,
+      message: `PayPal capture confirmed by the provider. Work Order funding will occur only after the authoritative verified PayPal webhook is processed.`
     });
   } catch (err: any) {
     console.error('PayPal capture-order error:', err);
@@ -418,7 +408,7 @@ router.get('/work-orders', async (req, res) => {
  * POST /api/paypal/payout
  * Send automated payout to collaborator / subcontractor
  */
-router.post('/payout', async (req, res) => {
+router.post('/payout', authMiddleware, async (req, res) => {
   try {
     const { receiverEmail, amount, note, recipientName } = req.body;
     const numericAmount = Number(amount);
@@ -533,45 +523,16 @@ router.post('/invoice/:id/cancel', (req, res) => {
  */
 router.post('/webhook', async (req, res) => {
   try {
-    // 1. Mandatory signature verification — reject unsigned requests with HTTP 401
     const isValid = await verifyPayPalV2Webhook(req.headers, req.body);
-    if (!isValid) {
-      console.warn('[PayPal Webhook] Unauthorized: Signature verification failed or headers missing');
-      return res.status(401).json({
-        ok: false,
-        error: 'Unauthorized: Missing or invalid PayPal webhook signature headers'
-      });
-    }
+    if (!isValid) return res.status(401).json({ ok: false, error: 'Unauthorized: PayPal provider signature verification failed' });
 
     const event = req.body;
-    const eventType = event?.event_type || 'CHECKOUT.ORDER.APPROVED';
-    const resource = event?.resource || {};
-    const amount = parseFloat(resource?.amount?.value || resource?.gross_amount?.value || '0');
-    const orderId = resource?.id || resource?.supplementary_data?.related_ids?.order_id || `ORD-${Date.now()}`;
-    const captureId = resource?.id?.startsWith('CAP-') ? resource.id : undefined;
-    const invoiceId = resource?.id || resource?.parent_payment || resource?.invoice_id;
-
-    if (eventType === 'INVOICING.INVOICE.PAID' || eventType === 'PAYMENT.SALE.COMPLETED') {
-      if (invoiceId) {
-        markInvoicePaid(invoiceId, { transactionId: resource.transaction_id || resource.id });
-      }
-    } else if (eventType === 'INVOICING.INVOICE.CANCELLED') {
-      if (invoiceId) {
-        cancelInvoice(invoiceId, 'Cancelled via PayPal event');
-      }
-    } else if (eventType === 'PAYMENT.CAPTURE.COMPLETED' || eventType === 'CHECKOUT.ORDER.APPROVED') {
-      await initializeWorkOrderFromPayPal({
-        orderId,
-        captureId,
-        amount: amount > 0 ? amount : 50,
-        currency: resource?.amount?.currency_code || 'USD',
-        clientName: resource?.payer?.name?.given_name ? `${resource.payer.name.given_name} ${resource.payer.name.surname || ''}`.trim() : 'PayPal Payer',
-        clientEmail: resource?.payer?.email_address,
-        title: `Live PayPal Order #${orderId}`,
-        description: 'Auto-initialized from verified PayPal webhook notification'
-      });
+    const eventType = String(event?.event_type || '');
+    if (eventType === 'CHECKOUT.ORDER.APPROVED') {
+      return res.json({ status: 'accepted', received: true, eventType, funded: false });
     }
 
+    const funding = await recordVerifiedPayPalFunding(event);
     logActivityEvent({
       source: 'PayPal',
       type: 'WEBHOOK_INCOMING',
@@ -579,15 +540,53 @@ router.post('/webhook', async (req, res) => {
       method: 'POST',
       endpoint: '/api/paypal/webhook',
       statusCode: 200,
-      summary: `PayPal Webhook Event: ${eventType} ${amount > 0 ? `($${amount.toFixed(2)} USD)` : ''}`,
+      summary: `Verified PayPal funding event: ${eventType}`,
       requestPayload: event,
-      tags: ['paypal', 'webhook', eventType.toLowerCase()]
+      stateDiff: funding,
+      tags: ['paypal', 'webhook', 'provider_verified', eventType.toLowerCase()]
     });
-
-    res.json({ status: 'success', received: true, eventType });
+    return res.json({ status: 'success', received: true, eventType, funding });
   } catch (err: any) {
     console.error('PayPal webhook error:', err);
-    res.status(500).json({ error: err.message });
+    return res.status(500).json({ ok: false, error: err.message || 'PAYPAL_WEBHOOK_PROCESSING_FAILED' });
+  }
+});
+
+
+/**
+ * Create, approve and release a funded milestone using persisted provider state.
+ */
+router.post('/work-orders/:workOrderId/milestones', authMiddleware, async (req, res) => {
+  try {
+    const result = await createMilestoneApprovalToken(req.params.workOrderId, Number(req.body?.amount || 0) || undefined);
+    res.status(201).json({ success: true, ...result });
+  } catch (err: any) {
+    res.status(409).json({ success: false, error: err.message });
+  }
+});
+
+router.post('/work-orders/:workOrderId/milestones/:milestoneId/approve', authMiddleware, async (req, res) => {
+  try {
+    const result = await approveMilestone(
+      req.params.workOrderId,
+      req.params.milestoneId,
+      String(req.body?.approvalToken || ''),
+      req.body?.deliverableChecksum
+    );
+    res.json({ success: true, milestone: result, settlement: 'RELEASE_PENDING' });
+  } catch (err: any) {
+    res.status(409).json({ success: false, error: err.message });
+  }
+});
+
+router.post('/work-orders/:workOrderId/milestones/:milestoneId/release', authMiddleware, async (req, res) => {
+  try {
+    const provider = String(req.body?.provider || 'paypal') as 'paypal' | 'payoneer';
+    const receiverEmail = String(req.body?.receiverEmail || '').trim();
+    const result = await releaseApprovedMilestone(req.params.workOrderId, req.params.milestoneId, provider, receiverEmail);
+    res.status(result.status === 'SETTLED' ? 200 : 202).json({ success: result.status === 'SETTLED', ...result });
+  } catch (err: any) {
+    res.status(409).json({ success: false, error: err.message });
   }
 });
 
