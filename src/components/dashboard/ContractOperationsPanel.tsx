@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from "react";
 import { Activity, AlertTriangle, CheckCircle2, Clock3, RefreshCw } from "lucide-react";
-import { fetchContractOperationsSummary, ContractOperationsSummary } from "../services/api";
+import { fetchContractOperationsSummary, ContractOperationsSummary } from "../../services/api";
 
 const stateLabels: Record<string,string> = {
   DISCOVERED:"Discovered", QUALIFIED:"Qualified", PROPOSAL_READY:"Proposal ready",
