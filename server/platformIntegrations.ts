@@ -206,6 +206,7 @@ export async function fetchUpworkJobsFromApi(query: string = ''): Promise<Normal
  * Fetch and sync scraping jobs from Contra marketplace
  */
 export async function fetchContraJobsFromApi(query: string = ''): Promise<NormalizedWorkOrder[]> {
+  const contraKey = (process.env.CONTRA_API_KEY || '').trim();
   if (!contraKey) return [];
   try {
     const response = await axios.get('https://api.contra.com/api/v1/opportunities', {
