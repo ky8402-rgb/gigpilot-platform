@@ -1895,12 +1895,9 @@ app.post("/api/platform/jobs/sync", async (req, res) => {
   try {
     const { query } = req.body;
     const result = await fetchLivePlatformJobs(query || '');
-    if (!result.success) {
-      return res.status(409).json({ success: false, ...result });
-    }
-    return res.json({ success: true, ...result });
+    res.json({ success: true, ...result });
   } catch (err: any) {
-    return res.status(500).json({ success: false, error: err.message });
+    res.status(500).json({ success: false, error: err.message });
   }
 });
 
