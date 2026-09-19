@@ -284,7 +284,7 @@ export const PayPalSettlementModal: React.FC<PayPalSettlementModalProps> = ({
                     </div>
                     <div className="flex justify-between">
                       <span>Verified Email:</span>
-                      <span className="text-white font-mono">{balanceData?.email || 'kundank4@icloud.com'}</span>
+                      <span className="text-white font-mono">{balanceData?.email || 'configured server-side'}</span>
                     </div>
                   </div>
                 </div>
@@ -325,13 +325,13 @@ export const PayPalSettlementModal: React.FC<PayPalSettlementModalProps> = ({
                 </h3>
                 <div className="flex flex-col sm:flex-row items-center gap-3">
                   <div className="flex-1 w-full bg-[#0a0d14] border border-[#2a3147] px-3 py-2.5 rounded-xl font-mono text-xs text-[#00cfe8] flex items-center justify-between">
-                    <span>https://paypal.me/ky8402</span>
-                    <span className="text-[10px] text-slate-400">Handle: ky8402</span>
+                    <span>https://paypal.me/configured server-side</span>
+                    <span className="text-[10px] text-slate-400">Handle: configured server-side</span>
                   </div>
                   <button
                     onClick={() => {
-                      navigator.clipboard.writeText('https://paypal.me/ky8402');
-                      if (showToast) showToast('Copied https://paypal.me/ky8402 to clipboard!', 'success');
+                      navigator.clipboard.writeText('https://paypal.me/configured server-side');
+                      if (showToast) showToast('Copied https://paypal.me/configured server-side to clipboard!', 'success');
                     }}
                     className="w-full sm:w-auto px-4 py-2.5 rounded-xl bg-[#003087] hover:bg-[#0070ba] text-white text-xs font-bold transition flex items-center justify-center gap-1.5 shrink-0"
                   >
@@ -339,7 +339,7 @@ export const PayPalSettlementModal: React.FC<PayPalSettlementModalProps> = ({
                     <span>Copy Link</span>
                   </button>
                   <a
-                    href="https://paypal.me/ky8402"
+                    href="https://paypal.me/configured server-side"
                     target="_blank"
                     rel="noopener noreferrer"
                     className="w-full sm:w-auto px-4 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-white text-xs font-bold transition flex items-center justify-center gap-1.5 shrink-0"
