@@ -184,7 +184,9 @@ app.use((req, res, next) => {
 const parseAllowedOrigins = (): string[] => {
   const envOrigins = process.env.CORS_ALLOWED_ORIGINS;
   if (!envOrigins || envOrigins.trim() === "" || envOrigins.trim() === "*") {
-    return ["*"];
+    const defaults = ["https://main.d2qe2q720fbn3x.amplifyapp.com"];
+    if (process.env.NODE_ENV !== "production") defaults.push("http://localhost:3000", "http://localhost:5173");
+    return defaults;
   }
   return envOrigins.split(",").map((o) => o.trim()).filter(Boolean);
 };
@@ -197,19 +199,8 @@ const isOriginAllowed = (origin: string, allowedOrigins: string[]): boolean => {
     const url = new URL(origin);
     const host = url.hostname;
 
-    // Always permit Amplify subdomains (*.amplifyapp.com), wildcard IP domains (*.sslip.io, *.nip.io), custom domains, Vercel, and local development
-    if (
-      host.endsWith(".amplifyapp.com") ||
-      host.endsWith(".sslip.io") ||
-      host.endsWith(".nip.io") ||
-      host === "gigpilot.com" ||
-      host.endsWith(".gigpilot.com") ||
-      host.endsWith(".vercel.app") ||
-      host === "localhost" ||
-      host === "127.0.0.1"
-    ) {
-      return true;
-    }
+    // Only explicitly configured origins are trusted in production.
+    // Do not trust arbitrary Amplify/Vercel/IP subdomains.
 
     // Match wildcard rules in allowedOrigins (e.g. *.gigpilot.com or https://*.amplifyapp.com)
     for (const rule of allowedOrigins) {
