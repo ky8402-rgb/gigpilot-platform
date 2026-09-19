@@ -13,6 +13,8 @@ interface RetryItem {
 
 const retryQueue: Map<string, RetryItem> = new Map();
 const MAX_RETRY_ATTEMPTS = 3;
+const STALLED_CONTRACT_THRESHOLD_MS = 6 * 60 * 60 * 1000;
+const stalledRemediationQueue = new Map<string, { workOrderId: string; attempts: number; nextAttemptAt: number; reason: string }>();
 
 export function getPayoutRetryQueueStats(): {
   waiting: number;
@@ -66,6 +68,92 @@ export function enqueuePayoutRetry(workOrderId: string, errorMsg: string) {
   });
 }
 
+
+
+/**
+ * Create a bounded self-healing remediation task for a genuinely stalled contract.
+ * This never changes contract/payment state by itself; it only schedules diagnostics.
+ */
+export function enqueueStalledContractRemediation(workOrderId: string, reason: string) {
+  const existing = stalledRemediationQueue.get(workOrderId);
+  const attempts = existing ? existing.attempts + 1 : 1;
+  if (attempts > MAX_RETRY_ATTEMPTS) {
+    stalledRemediationQueue.delete(workOrderId);
+    triggerAISupportIncident({
+      category: 'CONTRACT_STALLED',
+      severity: 'high',
+      title: `Contract ${workOrderId} remains stalled after remediation retries`,
+      errorMessage: reason,
+      context: { workOrderId, attempts, reason },
+    }).catch(() => {});
+    return;
+  }
+  const delayMs = Math.pow(2, attempts) * 30_000;
+  stalledRemediationQueue.set(workOrderId, {
+    workOrderId,
+    attempts,
+    nextAttemptAt: Date.now() + delayMs,
+    reason,
+  });
+  logActivityEvent({
+    source: 'SelfHealing',
+    type: 'CONTRACT_REMEDIATION_SCHEDULED',
+    status: 'warning',
+    summary: `Scheduled stalled-contract diagnostic ${attempts}/${MAX_RETRY_ATTEMPTS} for ${workOrderId}`,
+    tags: ['self_healing', 'contract_stalled', `attempt_${attempts}`],
+  });
+}
+
+async function scanStalledContracts() {
+  const res = await safeExecutePgQuery(
+    `SELECT id, status, updated_at, escrow_status, delivery_status, external_acceptance_verified
+     FROM work_orders
+     WHERE status NOT IN ('COMPLETED', 'CANCELLED')
+       AND updated_at < NOW() - INTERVAL '6 hours'`
+  );
+  if (!res?.rows?.length) return 0;
+  let discovered = 0;
+  for (const row of res.rows) {
+    const reasons: string[] = [];
+    if (row.escrow_status === 'RELEASE_PENDING') reasons.push('provider settlement pending');
+    if (row.delivery_status === 'READY_FOR_PROVIDER_DELIVERY') reasons.push('provider delivery confirmation pending');
+    if (row.external_acceptance_verified === false) reasons.push('provider acceptance pending');
+    if (!reasons.length) reasons.push('no lifecycle progress recorded for more than 6 hours');
+    if (!stalledRemediationQueue.has(row.id)) {
+      enqueueStalledContractRemediation(row.id, reasons.join('; '));
+      discovered++;
+    }
+  }
+  return discovered;
+}
+
+async function processStalledRemediationQueue() {
+  let processed = 0;
+  for (const [workOrderId, item] of stalledRemediationQueue.entries()) {
+    if (Date.now() < item.nextAttemptAt) continue;
+    processed++;
+    const check = await safeExecutePgQuery(
+      `SELECT id, status, updated_at FROM work_orders WHERE id = $1 LIMIT 1`,
+      [workOrderId]
+    );
+    const row = check?.rows?.[0];
+    if (!row || ['COMPLETED', 'CANCELLED'].includes(row.status) || Date.now() - new Date(row.updated_at).getTime() < STALLED_CONTRACT_THRESHOLD_MS) {
+      stalledRemediationQueue.delete(workOrderId);
+      continue;
+    }
+    logActivityEvent({
+      source: 'SelfHealing',
+      type: 'CONTRACT_REMEDIATION_DIAGNOSTIC',
+      status: 'warning',
+      summary: `Diagnostic pass requested for stalled WorkOrder ${workOrderId}: ${item.reason}`,
+      tags: ['self_healing', 'diagnostic', 'contract_stalled'],
+    });
+    stalledRemediationQueue.delete(workOrderId);
+    enqueueStalledContractRemediation(workOrderId, item.reason);
+  }
+  return processed;
+}
+
 /**
  * Process all items in retry queue ready for execution
  */
@@ -107,8 +195,14 @@ export async function runSelfHealingDiagnostics(): Promise<{
   retriesProcessed: number;
   failedTransactionsCount: number;
   stuckWorkOrdersCount: number;
+  stalledContractsDetected: number;
+  stalledRemediationsProcessed: number;
   activeTicketsCount: number;
 }> {
+  // 0. Detect stalled contracts and schedule bounded diagnostics
+  const stalledDetected = await scanStalledContracts();
+  const stalledProcessed = await processStalledRemediationQueue();
+
   // 1. Auto-approve work orders past deadline
   const autoApproveRes = await checkAndAutoApproveOverdueWorkOrders();
 
@@ -135,6 +229,8 @@ export async function runSelfHealingDiagnostics(): Promise<{
     retriesProcessed: retryRes.processed,
     failedTransactionsCount: failedOrders.length,
     stuckWorkOrdersCount: autoApproveRes.scannedCount,
+    stalledContractsDetected: stalledDetected,
+    stalledRemediationsProcessed: stalledProcessed,
     activeTicketsCount: activeSupportTickets.length,
   };
 }

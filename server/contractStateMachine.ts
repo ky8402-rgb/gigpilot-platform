@@ -115,3 +115,21 @@ export async function getContractOperationsSummary() {
     operations,
   };
 }
+
+import { enqueueStalledContractRemediation } from "./retryWorker.js";
+
+export async function detectAndScheduleStalledContracts(limit = 100) {
+  const operations = await getContractOperations(limit);
+  const threshold = Date.now() - 6 * 60 * 60 * 1000;
+  let scheduled = 0;
+  for (const operation of operations) {
+    if (["SETTLED", "BLOCKED"].includes(operation.state)) continue;
+    if (new Date(operation.updatedAt).getTime() >= threshold) continue;
+    const reason = operation.blockingReasons.length
+      ? operation.blockingReasons.join("; ")
+      : `No lifecycle progress recorded in state ${operation.state}`;
+    enqueueStalledContractRemediation(operation.id, reason);
+    scheduled++;
+  }
+  return { scheduled };
+}
