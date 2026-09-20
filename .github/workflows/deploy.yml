@@ -12,7 +12,26 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  validate:
+    name: Validate & Build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Source Code
+        uses: actions/checkout@v4
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - name: Install Dependencies
+        run: npm ci
+      - name: Typecheck
+        run: npm run lint
+      - name: Build Application
+        run: npm run build
+
   deploy-amplify:
+    needs: validate
     name: 🚀 Deploy Frontend (AWS Amplify - gigpilot-platform)
     runs-on: ubuntu-latest
     steps:
@@ -75,6 +94,7 @@ jobs:
           echo "- **Live URL:** [https://main.$AMPLIFY_APP_ID.amplifyapp.com](https://main.$AMPLIFY_APP_ID.amplifyapp.com)" >> $GITHUB_STEP_SUMMARY
 
   deploy-ec2:
+    needs: validate
     name: 🛡️ Deploy Backend (AWS EC2 - gigpilot-backend)
     runs-on: ubuntu-latest
     steps:
@@ -94,7 +114,6 @@ jobs:
           aws-region: 'us-east-1'
 
       - name: Deploy via SSH (Direct EC2 Execution)
-        continue-on-error: true
         env:
           SSH_KEY: ${{ secrets.EC2_SSH_KEY }}
           EC2_HOST: ${{ secrets.EC2_HOST || '3.222.149.9' }}
@@ -174,10 +193,10 @@ jobs:
           
           SIG_HEADER=()
           if [ -n "$WEBHOOK_SECRET" ]; then
-            SIG=$(node -e "
+            SIG=$(PAYLOAD="$PAYLOAD" WEBHOOK_SECRET="$WEBHOOK_SECRET" node -e "
               const crypto = require('crypto');
               const hmac = crypto.createHmac('sha256', process.env.WEBHOOK_SECRET);
-              hmac.update(Buffer.from(process.env.PAYLOAD));
+              hmac.update(Buffer.from(process.env.PAYLOAD, 'utf8'));
               console.log('sha256=' + hmac.digest('hex'));
             ")
             SIG_HEADER=(-H "X-Hub-Signature-256: $SIG")
@@ -239,7 +258,8 @@ jobs:
             fi
             sleep 3
           done
-          echo "Health check verification completed (server warming up or deploying)."
+          echo "EC2 health check FAILED after 5 attempts." >&2
+          exit 1
 
       - name: Report EC2 Status to Step Summary
         env:
