@@ -411,6 +411,23 @@ export async function fetchLivePlatformJobs(query: string = ''): Promise<{
   return { jobs: liveWorkOrders, source: 'cached_stream', platformsChecked };
 }
 
+let cachedFreelancerSelfUserId: string | null = null;
+
+async function resolveFreelancerSelfUserId(token: string, base: string): Promise<string> {
+  const configured = String(process.env.FREELANCER_USER_ID || '').trim();
+  if (configured) return configured;
+  if (cachedFreelancerSelfUserId) return cachedFreelancerSelfUserId;
+  const response = await axios.get(`${base}/users/0.1/self/`, {
+    headers: { Authorization: `Bearer ${token}`, Accept: 'application/json' },
+    timeout: 10000
+  });
+  const self = response.data?.result?.user || response.data?.result;
+  const userId = self?.id ?? self?.user_id;
+  if (!userId) throw new Error('FREELANCER_SELF_USER_ID_UNCONFIRMED: Provider did not return the authenticated user id.');
+  cachedFreelancerSelfUserId = String(userId);
+  return cachedFreelancerSelfUserId;
+}
+
 /** Submit only a real, provider-confirmed proposal. Never synthesize an external bid id. */
 export async function submitPlatformBid(orderId: number | string, proposalData: {
   bidAmount: number;
@@ -429,9 +446,10 @@ export async function submitPlatformBid(orderId: number | string, proposalData: 
     const projectId = String(targetOrder.externalId || targetOrder.id).replace(/^fl_/, '');
     const base = (process.env.FREELANCER_API_BASE_URL || process.env.FREELANCER_API_BASE || process.env.FREELANCER_API_URL || 'https://www.freelancer.com/api').replace(/\/+$/, '');
     try {
+      const bidderId = await resolveFreelancerSelfUserId(token, base);
       const response = await axios.post(`${base}/projects/0.1/bids/`, {
         project_id: Number(projectId),
-        bidder_id: null,
+        bidder_id: Number(bidderId),
         amount: Number(proposalData.bidAmount),
         period: Math.max(1, Number(proposalData.deliveryDays) || 5),
         description: proposalData.coverLetter,
