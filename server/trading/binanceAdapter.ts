@@ -630,6 +630,54 @@ export class BinanceAdapter {
   }
 
   /**
+   * Private Signed: Withdraw USDT from Binance Spot to the owner wallet.
+   * Disabled unless ENABLE_REAL_WITHDRAWALS=true and the API key has withdrawal permission.
+   */
+  public async withdrawUSDT(params: {
+    amount: number;
+    address: string;
+    network: 'ETH' | 'MATIC' | 'SOL';
+  }): Promise<{ success: boolean; id?: string; error?: string }> {
+    if (process.env.ENABLE_REAL_WITHDRAWALS !== 'true') {
+      return { success: false, error: 'Real withdrawals are disabled. Set ENABLE_REAL_WITHDRAWALS=true to explicitly enable them.' };
+    }
+    if (!this.apiKey || !this.apiSecret) {
+      return { success: false, error: 'Binance API credentials missing.' };
+    }
+    if (!Number.isFinite(params.amount) || params.amount <= 0) {
+      return { success: false, error: 'Withdrawal amount must be a positive finite number.' };
+    }
+    if (params.network === 'SOL' && !/^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(params.address)) {
+      return { success: false, error: 'Invalid Solana destination address.' };
+    }
+    if (params.network !== 'SOL' && !/^0x[a-fA-F0-9]{40}$/.test(params.address)) {
+      return { success: false, error: 'Invalid EVM destination address.' };
+    }
+
+    const { queryString, signature } = this.signQuery({
+      coin: 'USDT',
+      address: params.address,
+      amount: params.amount.toFixed(6),
+      network: params.network
+    });
+
+    const res = await fetch(`${this.baseUrl}/sapi/v1/capital/withdraw/apply?${queryString}&signature=${signature}`, {
+      method: 'POST',
+      headers: {
+        'X-MBX-APIKEY': this.apiKey,
+        'User-Agent': 'GigPilot-Quant/2.5'
+      }
+    });
+
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok || !data.id) {
+      return { success: false, error: data.msg || `HTTP ${res.status}` };
+    }
+
+    return { success: true, id: String(data.id) };
+  }
+
+  /**
    * Private Signed: Cancel real order on Binance Spot
    */
   public async cancelRealOrder(symbol: string, orderId: string): Promise<{ success: boolean; error?: string }> {
