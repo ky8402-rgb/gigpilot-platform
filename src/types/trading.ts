@@ -395,6 +395,7 @@ export interface BinanceAccountState {
   todayPnLUsd: number;
   todayPnLPct: number;
   openOrdersCount: number;
+  openOrders: Order[];
   recentTrades: Fill[];
   transactions: BinanceTransaction[];
   canTrade: boolean;
