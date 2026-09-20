@@ -18,7 +18,7 @@ import {
   TrendingUp,
   Clock
 } from 'lucide-react';
-import { BinanceAccountState, BinanceAssetWithUsd, Fill } from '../../types/trading';
+import { BinanceAccountState, BinanceAssetWithUsd, Order } from '../../types/trading';
 import { fetchLiveAssets, updateBinanceKeys } from '../../services/tradingService';
 
 interface AssetDashboardProps {
@@ -374,7 +374,44 @@ export const AssetDashboard: React.FC<AssetDashboardProps> = ({
         </div>
       </div>
 
-      {/* 5. BINANCE TRANSACTION HISTORY */}
+      {/* 5. LIVE BINANCE OPEN ORDERS */}
+      <div className="bg-slate-900/90 border border-slate-800 rounded-xl overflow-hidden shadow-xl">
+        <div className="p-4 border-b border-slate-800 bg-slate-950/40 flex items-center justify-between">
+          <div>
+            <h2 className="text-sm font-bold text-slate-200 uppercase tracking-wider">Live Binance Open Orders</h2>
+            <p className="text-[11px] text-slate-500 mt-1">Directly synchronized from Binance Spot REST, independent of GigPilot's local order cache.</p>
+          </div>
+          <span className="text-[11px] text-slate-400 font-mono">{account?.openOrders?.length || 0} open</span>
+        </div>
+        <div className="overflow-x-auto">
+          <table className="w-full text-left text-xs text-slate-300">
+            <thead className="bg-slate-950/80 text-[11px] font-semibold text-slate-400 uppercase tracking-wider border-b border-slate-800">
+              <tr>
+                <th className="py-3 px-4">Order ID</th><th className="py-3 px-4">Symbol</th><th className="py-3 px-4">Side</th><th className="py-3 px-4">Type</th><th className="py-3 px-4 text-right">Price</th><th className="py-3 px-4 text-right">Qty</th><th className="py-3 px-4">Status</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-800/60 font-mono">
+              {!account?.openOrders?.length ? (
+                <tr><td colSpan={7} className="py-8 text-center text-slate-500 font-sans">No open Binance Spot orders.</td></tr>
+              ) : (
+                account.openOrders.map((order: Order) => (
+                  <tr key={order.id} className="hover:bg-slate-800/40">
+                    <td className="py-2.5 px-4 text-slate-400">{order.id}</td>
+                    <td className="py-2.5 px-4 font-bold text-slate-200">{order.symbol}</td>
+                    <td className="py-2.5 px-4">{order.side}</td>
+                    <td className="py-2.5 px-4">{order.type}</td>
+                    <td className="py-2.5 px-4 text-right">{order.price.toLocaleString('en-US', { maximumFractionDigits: 12 })}</td>
+                    <td className="py-2.5 px-4 text-right">{order.amount.toLocaleString('en-US', { maximumFractionDigits: 12 })}</td>
+                    <td className="py-2.5 px-4 text-emerald-400">{order.status}</td>
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      {/* 6. BINANCE TRANSACTION HISTORY */}
       <div className="bg-slate-900/90 border border-slate-800 rounded-xl overflow-hidden shadow-xl">
         <div className="p-4 border-b border-slate-800 bg-slate-950/40 flex items-center justify-between"><div><h2 className="text-sm font-bold text-slate-200 uppercase tracking-wider">Transaction History</h2><p className="text-[11px] text-slate-500 mt-1">Deposits, withdrawals, trades and fees from Binance. Trades include Binance order IDs.</p></div><span className="text-[11px] text-slate-500 font-mono">Last 30 days</span></div>
         <div className="overflow-x-auto"><table className="w-full text-left text-xs text-slate-300"><thead className="bg-slate-950/80 text-[11px] font-semibold text-slate-400 uppercase tracking-wider border-b border-slate-800"><tr><th className="py-3 px-4">Type</th><th className="py-3 px-4">Asset</th><th className="py-3 px-4 text-right">Amount</th><th className="py-3 px-4 text-right">Value (USD)</th><th className="py-3 px-4">Status</th><th className="py-3 px-4">Timestamp</th><th className="py-3 px-4">Binance Order ID / TxID</th></tr></thead>
@@ -409,7 +446,7 @@ export const AssetDashboard: React.FC<AssetDashboardProps> = ({
             </div>
 
             <p className="text-xs text-slate-400 leading-relaxed">
-              Enter your personal Binance Spot API credentials. For production, inject keys through AWS secret management; runtime-entered keys are memory-only and are never written to disk.
+              Enter your personal Binance Spot API credentials. For production, inject keys through AWS secret management; runtime-entered keys are encrypted at rest on the backend and are never exposed back to the browser.
             </p>
 
             <div className="p-3 bg-slate-950 border border-slate-800 rounded-lg text-xs space-y-1">
