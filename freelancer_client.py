@@ -20,7 +20,7 @@ class FreelancerClient:
             "Content-Type": "application/json",
             "User-Agent": "FreelanceAutoBidder/1.0 (+https://3-222-149-9.sslip.io)"
         }
-        if self.access_token and self.access_token != "3PKsiB3m736mE0wnirnHeLTUzLP1xc":
+        if self.access_token and self.access_token != "<redacted-demo-token>":
             self.headers["Authorization"] = f"Bearer {self.access_token}"
             self.headers["Cookie"] = f"freelancer_session={self.access_token}; auth_token={self.access_token}"
 
