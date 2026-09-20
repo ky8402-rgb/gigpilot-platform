@@ -72,6 +72,9 @@ export class BinanceAdapter {
   private priceCache: Map<string, { price: number; time: number }> = new Map();
   private lastAccountState: BinanceAccountState | null = null;
   private lastAccountFetchTime = 0;
+  // Signed Binance requests can fail when the EC2 clock is skewed. Cache a short-lived server-time offset.
+  private binanceTimeOffsetMs = 0;
+  private lastTimeSyncMs = 0;
   private readonly credentialsPath = path.join(process.cwd(), '.binance-credentials.enc.json');
 
   constructor() {
@@ -322,8 +325,23 @@ export class BinanceAdapter {
   /**
    * Helper: Sign request for Binance private endpoints
    */
+  private async syncBinanceClock(force = false): Promise<void> {
+    if (!force && Date.now() - this.lastTimeSyncMs < 300000) return;
+    try {
+      const started = Date.now();
+      const res = await fetch(this.baseUrl + '/api/v3/time', { headers: { 'User-Agent': 'GigPilot-Quant/2.5' } });
+      if (!res.ok) throw new Error('HTTP ' + res.status);
+      const data = await res.json() as { serverTime: number };
+      const midpoint = started + Math.floor((Date.now() - started) / 2);
+      this.binanceTimeOffsetMs = Number(data.serverTime) - midpoint;
+      this.lastTimeSyncMs = Date.now();
+    } catch (err) {
+      console.warn('[BinanceAdapter] Binance clock sync failed:', err);
+    }
+  }
+
   private signQuery(params: Record<string, any> = {}): { queryString: string; signature: string } {
-    const timestamp = Date.now();
+    const timestamp = Date.now() + this.binanceTimeOffsetMs;
     const queryParts = Object.entries(params)
       .filter(([_, v]) => v !== undefined && v !== null)
       .map(([k, v]) => `${encodeURIComponent(k)}=${encodeURIComponent(v)}`);
@@ -376,15 +394,29 @@ export class BinanceAdapter {
     }
 
     try {
-      const { queryString, signature } = this.signQuery();
-      const res = await fetch(`${this.baseUrl}/api/v3/account?${queryString}&signature=${signature}`, {
+      await this.syncBinanceClock();
+      let { queryString, signature } = this.signQuery();
+      let res = await fetch(`${this.baseUrl}/api/v3/account?${queryString}&signature=${signature}`, {
         headers: {
           'X-MBX-APIKEY': this.apiKey,
           'User-Agent': 'GigPilot-Quant/2.5'
         }
       });
 
-      const data = await res.json();
+      let data = await res.json();
+
+      // Retry once after a forced clock sync for Binance error -1021.
+      if (!res.ok && data?.code === -1021) {
+        await this.syncBinanceClock(true);
+        ({ queryString, signature } = this.signQuery());
+        res = await fetch(`${this.baseUrl}/api/v3/account?${queryString}&signature=${signature}`, {
+          headers: {
+            'X-MBX-APIKEY': this.apiKey,
+            'User-Agent': 'GigPilot-Quant/2.5'
+          }
+        });
+        data = await res.json().catch(() => ({}));
+      }
 
       if (!res.ok) {
         const errorMsg = data?.msg || `Binance API error HTTP ${res.status}`;
