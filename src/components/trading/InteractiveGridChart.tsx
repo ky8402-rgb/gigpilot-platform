@@ -357,7 +357,7 @@ export const InteractiveGridChart: React.FC<InteractiveGridChartProps> = ({
           </div>
           <div className="bg-slate-950/60 border border-slate-800 px-2.5 py-1 rounded">
             <span className="text-slate-500 block text-[10px]">24H VOLATILITY</span>
-            <span className="font-bold text-emerald-400">{indicators.volatility24h.toFixed(2)}%</span>
+            <span className="font-bold text-emerald-400">{indicators.volatility24h?.toFixed(2) ?? '—'}%</span>
           </div>
         </div>
       )}
