@@ -361,6 +361,7 @@ export class BinanceAdapter {
           todayPnLPct: 0,
           openOrdersCount: 0,
           recentTrades: [],
+          transactions: [],
           canTrade: false,
           canWithdraw: false,
           canDeposit: false,
