@@ -1,6 +1,6 @@
 import { prisma } from './db.js';
 import { executeWorkOrderDeliverable } from './workExecutionEngine.js';
-import { getPlatformStatus } from './platformIntegrations.js';
+import { getPlatformStatus, isAutonomousExecutionEnabled } from './platformIntegrations.js';
 import { getFreelancerBidStatus, deliverFreelancerWorkPackage } from './freelancerService.js';
 import { logActivityEvent } from './activityLogger.js';
 
@@ -107,7 +107,7 @@ export async function syncFreelancerContractAcceptances(): Promise<{ scanned: nu
  * Public job listings and merely-submitted proposals can never enter this path.
  */
 export async function runAutonomousContractorCycle(maxJobs = 3) {
-  if (process.env.AUTONOMOUS_EXECUTION_ENABLED !== 'true') {
+  if (!isAutonomousExecutionEnabled()) {
     return { success: false, processed: 0, results: [], error: 'AUTONOMOUS_EXECUTION_DISABLED' };
   }
 
