@@ -11,7 +11,8 @@ import {
   RefreshCw,
   Sliders,
   Sparkles,
-  AlertTriangle
+  AlertTriangle,
+  Power
 } from 'lucide-react';
 import { AutonomyLevel, MarketRegime, TradingMode } from '../../types/trading';
 
@@ -28,10 +29,16 @@ interface HeaderNavProps {
   tradingMode: TradingMode;
   onChangeTradingMode: (mode: TradingMode) => void;
   killSwitchActive: boolean;
+  globalKillSwitchActive?: boolean;
   onTriggerKillSwitch: (reason: string) => void;
   onDeactivateKillSwitch: () => void;
+  onToggleGlobalKillSwitch?: (active: boolean) => void;
+  botsDisabled?: boolean;
+  activeBotsCount?: number;
   marketRegime: MarketRegime;
   latencyMs?: number;
+  isLiveConnected?: boolean;
+  onReconnect?: () => void;
 }
 
 export const HeaderNav: React.FC<HeaderNavProps> = ({
@@ -43,13 +50,21 @@ export const HeaderNav: React.FC<HeaderNavProps> = ({
   tradingMode,
   onChangeTradingMode,
   killSwitchActive,
+  globalKillSwitchActive,
   onTriggerKillSwitch,
   onDeactivateKillSwitch,
+  onToggleGlobalKillSwitch,
+  botsDisabled,
+  activeBotsCount,
   marketRegime,
-  latencyMs = 24
+  latencyMs = 24,
+  isLiveConnected = false,
+  onReconnect
 }) => {
+  const isKillActive = globalKillSwitchActive !== undefined ? globalKillSwitchActive : killSwitchActive;
+  const areBotsHalted = botsDisabled !== undefined ? botsDisabled : (isKillActive || autonomyLevel === 0);
   const [showKillModal, setShowKillModal] = useState(false);
-  const [killReason, setKillReason] = useState('Manual emergency stop triggered by operator');
+  const [killReason, setKillReason] = useState('Emergency stop: Disabling all active trading bots');
   const [showPairDropdown, setShowPairDropdown] = useState(false);
   const [showAutonomyDropdown, setShowAutonomyDropdown] = useState(false);
 
@@ -214,38 +229,143 @@ export const HeaderNav: React.FC<HeaderNavProps> = ({
           </div>
         </div>
 
-        {/* Right: Emergency KILL SWITCH & Operator Badge */}
+        {/* Right: Prominent Global Kill Switch & Operator Badge */}
         <div className="flex items-center gap-3">
           {/* Latency & Health */}
-          <div className="hidden lg:flex items-center gap-1.5 text-[11px] font-mono text-slate-400 bg-slate-900/80 px-2 py-1 rounded border border-slate-800">
-            <span className="w-2 h-2 rounded-full bg-emerald-400 animate-ping" />
-            <span>{latencyMs}ms</span>
-            <span className="text-slate-600">|</span>
-            <span className="text-slate-300">AUTHORIZED OWNER</span>
+          <div className="hidden sm:flex items-center gap-1.5 text-[11px] font-mono bg-slate-900/80 px-2 py-1 rounded border border-slate-800">
+            {isLiveConnected ? (
+              <>
+                <span className="w-2 h-2 rounded-full bg-emerald-400 animate-ping" />
+                <span className="text-emerald-400 font-bold">LIVE ENGINE</span>
+                <span className="text-slate-600">|</span>
+                <span className="text-slate-400">{latencyMs}ms</span>
+              </>
+            ) : (
+              <>
+                <span className="w-2 h-2 rounded-full bg-amber-400 animate-pulse" />
+                <span className="text-amber-400 font-bold">SIMULATION</span>
+                {onReconnect && (
+                  <button
+                    onClick={onReconnect}
+                    className="ml-1 text-[10px] text-amber-300 hover:text-white underline font-semibold cursor-pointer"
+                  >
+                    Connect Live
+                  </button>
+                )}
+              </>
+            )}
+            <span className="text-slate-600 hidden lg:inline">|</span>
+            <span className="text-slate-300 hidden lg:inline">OWNER</span>
           </div>
 
-          {/* GLOBAL EMERGENCY KILL SWITCH */}
-          {killSwitchActive ? (
-            <button
-              onClick={onDeactivateKillSwitch}
-              className="flex items-center gap-2 px-3.5 py-1.5 bg-amber-500 hover:bg-amber-400 text-slate-950 font-black text-xs font-mono rounded-md shadow-lg shadow-amber-500/20 animate-bounce transition-all uppercase"
+          {/* PROMINENT GLOBAL KILL SWITCH TOGGLE BUTTON */}
+          <div
+            id="global-kill-switch-control"
+            className={`flex items-center gap-3 px-3.5 py-1.5 rounded-lg border transition-all select-none shadow-md ${
+              isKillActive
+                ? 'bg-gradient-to-r from-rose-950 via-red-950 to-rose-900/90 border-rose-500 ring-2 ring-rose-500/50 shadow-rose-950/80 animate-pulse'
+                : 'bg-slate-900/95 hover:bg-slate-850 border-rose-600/40 hover:border-rose-500/80'
+            }`}
+          >
+            {/* Kill Switch Status Info */}
+            <div
+              className="flex flex-col text-left cursor-pointer"
+              onClick={() => {
+                if (isKillActive) {
+                  if (onToggleGlobalKillSwitch) {
+                    onToggleGlobalKillSwitch(false);
+                  } else {
+                    onDeactivateKillSwitch();
+                  }
+                } else {
+                  setShowKillModal(true);
+                }
+              }}
+              title={isKillActive ? 'Kill switch is active. Click to resume.' : 'Click to inspect or arm emergency shutdown'}
             >
-              <ShieldAlert className="w-4 h-4" />
-              <span>KILL SWITCH ACTIVE (CLICK TO RESUME)</span>
-            </button>
-          ) : (
+              <div className="flex items-center gap-1.5">
+                <ShieldAlert className={`w-4 h-4 ${isKillActive ? 'text-rose-400 animate-bounce' : 'text-rose-500'}`} />
+                <span className="font-mono text-xs font-black uppercase tracking-wider text-white">
+                  GLOBAL KILL SWITCH
+                </span>
+                {isKillActive && (
+                  <span className="px-1.5 py-0.2 rounded text-[9px] font-mono font-extrabold bg-rose-600 text-white animate-pulse uppercase tracking-wider">
+                    ENGAGED
+                  </span>
+                )}
+              </div>
+              <div className="flex items-center gap-1.5 mt-0.5">
+                <span
+                  className={`w-1.5 h-1.5 rounded-full ${
+                    isKillActive ? 'bg-rose-400 animate-ping' : 'bg-emerald-400'
+                  }`}
+                />
+                <span
+                  className={`text-[10px] font-mono font-bold tracking-tight ${
+                    isKillActive ? 'text-rose-300 font-extrabold' : 'text-slate-400'
+                  }`}
+                >
+                  {isKillActive
+                    ? 'ALL ACTIVE TRADING BOTS DISABLED'
+                    : areBotsHalted
+                    ? 'GLOBAL_KILL_SWITCH_ACTIVE: FALSE · BOTS HALTED'
+                    : `GLOBAL_KILL_SWITCH_ACTIVE: FALSE · BOTS ACTIVE (${activeBotsCount ?? 1})`}
+                </span>
+              </div>
+            </div>
+
+            {/* Prominent Mechanical Slider Toggle Button */}
             <button
-              onClick={() => setShowKillModal(true)}
-              className="flex items-center gap-2 px-3.5 py-1.5 bg-rose-600 hover:bg-rose-500 text-white font-extrabold text-xs font-mono rounded-md shadow-lg shadow-rose-600/30 transition-all border border-rose-400/40 uppercase tracking-wider"
+              id="global-kill-switch-toggle-btn"
+              type="button"
+              role="switch"
+              aria-checked={isKillActive}
+              title={
+                isKillActive
+                  ? 'GLOBAL_KILL_SWITCH_ACTIVE is TRUE. Click to toggle OFF and restore bot execution.'
+                  : 'Click to toggle Global Kill Switch ON (sets GLOBAL_KILL_SWITCH_ACTIVE to true and disables all active trading bots).'
+              }
+              onClick={(e) => {
+                e.stopPropagation();
+                if (isKillActive) {
+                  if (onToggleGlobalKillSwitch) {
+                    onToggleGlobalKillSwitch(false);
+                  } else {
+                    onDeactivateKillSwitch();
+                  }
+                } else {
+                  if (onToggleGlobalKillSwitch) {
+                    onToggleGlobalKillSwitch(true);
+                  } else {
+                    onTriggerKillSwitch('Global Kill Switch toggled ON via header: All active trading bots disabled');
+                  }
+                }
+              }}
+              className={`relative inline-flex h-7 w-13 shrink-0 cursor-pointer rounded-full border-2 transition-all duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-rose-500 focus:ring-offset-2 focus:ring-offset-slate-900 ${
+                isKillActive
+                  ? 'bg-rose-600 border-rose-400 shadow-inner'
+                  : 'bg-slate-700/80 hover:bg-slate-600 border-slate-600'
+              }`}
             >
-              <AlertTriangle className="w-4 h-4" />
-              <span>EMERGENCY KILL SWITCH</span>
+              <span className="sr-only">Toggle Global Kill Switch</span>
+              <span
+                aria-hidden="true"
+                className={`pointer-events-none inline-block h-6 w-6 transform rounded-full bg-white shadow-md ring-0 transition duration-200 ease-in-out flex items-center justify-center ${
+                  isKillActive ? 'translate-x-6 bg-slate-100' : 'translate-x-0.5 bg-slate-200'
+                }`}
+              >
+                {isKillActive ? (
+                  <ShieldAlert className="w-3.5 h-3.5 text-rose-600" />
+                ) : (
+                  <Power className="w-3.5 h-3.5 text-slate-700" />
+                )}
+              </span>
             </button>
-          )}
+          </div>
         </div>
       </div>
 
-      {/* Kill Switch Confirmation Modal */}
+      {/* Kill Switch Confirmation & Audit Modal */}
       {showKillModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4">
           <div className="bg-slate-900 border border-rose-600/60 rounded-xl max-w-md w-full p-6 shadow-2xl text-slate-100">
@@ -253,19 +373,20 @@ export const HeaderNav: React.FC<HeaderNavProps> = ({
               <ShieldAlert className="w-8 h-8 text-rose-500" />
               <div>
                 <h3 className="font-extrabold text-lg text-white font-mono">ENGAGE GLOBAL KILL SWITCH?</h3>
-                <p className="text-xs text-rose-300">Instant circuit breaker & market order cancellation</p>
+                <p className="text-xs text-rose-300">Set GLOBAL_KILL_SWITCH_ACTIVE = true & halt all trading bots</p>
               </div>
             </div>
 
-            <p className="text-sm text-slate-300 mb-4 leading-relaxed">
-              Engaging the emergency Kill Switch will immediately:
+            <p className="text-sm text-slate-300 mb-3 leading-relaxed">
+              Toggling the Global Kill Switch to <strong className="text-rose-400">ACTIVE</strong> will immediately:
             </p>
             <ul className="text-xs space-y-1.5 text-slate-300 mb-5 pl-2 list-disc list-inside">
+              <li><strong className="text-rose-400">Set GLOBAL_KILL_SWITCH_ACTIVE to true</strong></li>
+              <li><strong className="text-rose-400">Disable all active trading bots</strong> (Autonomy reduced to Level 0 · Observe)</li>
               <li><strong className="text-rose-400">Cancel all open grid & limit orders</strong> across all pairs</li>
-              <li>Halt the autonomous strategy engine & auto-rebalancing loop</li>
-              <li>Block all incoming order execution attempts</li>
-              <li>Disable automatic profit sweeping</li>
-              <li>Record timestamped audit snapshot for post-mortem review</li>
+              <li>Block any incoming algorithmic execution orders</li>
+              <li>Halt automated profit sweeping and rebalancing loops</li>
+              <li>Record timestamped cryptographic audit trail</li>
             </ul>
 
             <div className="mb-5">
@@ -287,12 +408,17 @@ export const HeaderNav: React.FC<HeaderNavProps> = ({
               </button>
               <button
                 onClick={() => {
-                  onTriggerKillSwitch(killReason);
+                  if (onToggleGlobalKillSwitch) {
+                    onToggleGlobalKillSwitch(true);
+                  } else {
+                    onTriggerKillSwitch(killReason);
+                  }
                   setShowKillModal(false);
                 }}
-                className="px-5 py-2 rounded bg-rose-600 hover:bg-rose-500 text-white font-bold text-xs font-mono uppercase tracking-wider shadow-lg shadow-rose-600/40 transition-all"
+                className="px-5 py-2 rounded bg-rose-600 hover:bg-rose-500 text-white font-bold text-xs font-mono uppercase tracking-wider shadow-lg shadow-rose-600/40 transition-all flex items-center gap-1.5"
               >
-                Confirm & Engage Kill Switch
+                <Power className="w-3.5 h-3.5" />
+                <span>Toggle ON & Disable Bots</span>
               </button>
             </div>
           </div>

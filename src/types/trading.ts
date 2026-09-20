@@ -321,6 +321,9 @@ export interface MasterTradingState {
   activeSymbol: string;
   autonomyLevel: AutonomyLevel;
   tradingMode: TradingMode;
+  GLOBAL_KILL_SWITCH_ACTIVE?: boolean;
+  botsDisabled?: boolean;
+  activeBotsCount?: number;
   killSwitch: {
     isActive: boolean;
     triggeredAt?: string;

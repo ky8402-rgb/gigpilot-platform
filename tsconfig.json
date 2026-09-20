@@ -33,5 +33,11 @@
     },
     "allowImportingTsExtensions": true,
     "noEmit": true
-  }
+  },
+  "include": [
+    "src/**/*",
+    "server.ts",
+    "server/trading/**/*",
+    "server/worker.ts"
+  ]
 }

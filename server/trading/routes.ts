@@ -14,11 +14,16 @@ tradingRouter.get('/state', (req: Request, res: Response) => {
     const openOrders = store.exchange.getOpenOrders(store.activeSymbol);
     const indicators = pairState ? computeAllIndicators(pairState.candles, pairState.orderBook) : null;
 
+    const isKillActive = store.GLOBAL_KILL_SWITCH_ACTIVE || store.killSwitch.getState().isActive;
+
     return res.json({
       success: true,
       activeSymbol: store.activeSymbol,
       autonomyLevel: store.autonomyLevel,
       tradingMode: store.tradingMode,
+      GLOBAL_KILL_SWITCH_ACTIVE: isKillActive,
+      botsDisabled: store.activeBotsDisabled || isKillActive,
+      activeBotsCount: isKillActive ? 0 : (store.autonomyLevel > 0 ? 1 : 0),
       killSwitch: store.killSwitch.getState(),
       capital: store.capital,
       currentRegime: store.currentRegime,
@@ -113,9 +118,12 @@ tradingRouter.post('/mode', (req: Request, res: Response) => {
 // 7. Global Kill Switch
 tradingRouter.post('/kill-switch/trigger', (req: Request, res: Response) => {
   const { reason } = req.body;
-  globalTradingStore.triggerEmergencyKillSwitch(reason || 'Manual emergency halt from terminal');
+  globalTradingStore.triggerEmergencyKillSwitch(reason || 'Manual emergency halt: Disabling all active trading bots');
   res.json({
     success: true,
+    GLOBAL_KILL_SWITCH_ACTIVE: true,
+    botsDisabled: true,
+    autonomyLevel: globalTradingStore.autonomyLevel,
     killSwitch: globalTradingStore.killSwitch.getState()
   });
 });
@@ -124,6 +132,28 @@ tradingRouter.post('/kill-switch/deactivate', (req: Request, res: Response) => {
   globalTradingStore.deactivateKillSwitch();
   res.json({
     success: true,
+    GLOBAL_KILL_SWITCH_ACTIVE: false,
+    botsDisabled: false,
+    autonomyLevel: globalTradingStore.autonomyLevel,
+    killSwitch: globalTradingStore.killSwitch.getState()
+  });
+});
+
+tradingRouter.post('/kill-switch/toggle', (req: Request, res: Response) => {
+  const { active, reason } = req.body;
+  const shouldActivate = active !== undefined ? Boolean(active) : !globalTradingStore.GLOBAL_KILL_SWITCH_ACTIVE;
+  
+  if (shouldActivate) {
+    globalTradingStore.triggerEmergencyKillSwitch(reason || 'Manual operator toggle: Disabling all active trading bots');
+  } else {
+    globalTradingStore.deactivateKillSwitch();
+  }
+
+  res.json({
+    success: true,
+    GLOBAL_KILL_SWITCH_ACTIVE: globalTradingStore.GLOBAL_KILL_SWITCH_ACTIVE,
+    botsDisabled: globalTradingStore.activeBotsDisabled,
+    autonomyLevel: globalTradingStore.autonomyLevel,
     killSwitch: globalTradingStore.killSwitch.getState()
   });
 });

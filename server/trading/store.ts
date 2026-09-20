@@ -29,6 +29,9 @@ export class TradingStore {
 
   public activeSymbol: string = 'BTC/USDT';
   public autonomyLevel: AutonomyLevel = 1; // Default LEVEL 1 (PAPER TRADING)
+  public previousAutonomyLevel: AutonomyLevel = 1;
+  public GLOBAL_KILL_SWITCH_ACTIVE: boolean = false;
+  public activeBotsDisabled: boolean = false;
   public tradingMode: TradingMode = 'PAPER';
   public currentRegime: MarketRegime;
   public activeGrid: GridConfiguration | null = null;
@@ -243,20 +246,28 @@ export class TradingStore {
     }
   }
 
-  public triggerEmergencyKillSwitch(reason = 'Manual operator emergency shutdown'): void {
+  public triggerEmergencyKillSwitch(reason = 'Manual operator emergency shutdown: Disabling all active trading bots'): void {
+    this.GLOBAL_KILL_SWITCH_ACTIVE = true;
+    this.activeBotsDisabled = true;
+    this.previousAutonomyLevel = this.autonomyLevel;
+    this.autonomyLevel = 0; // Disable all active bots (Level 0 = Observe only, zero orders)
     const cancelledCount = this.exchange.cancelAllOrders();
     this.killSwitch.activate('OWNER', reason, cancelledCount, false);
     this.logAudit(
       'OWNER',
       'GLOBAL_KILL_SWITCH_ENGAGED',
-      { reason, cancelledOrdersCount: cancelledCount },
+      { reason, cancelledOrdersCount: cancelledCount, GLOBAL_KILL_SWITCH_ACTIVE: true, botsDisabled: true },
       'SUCCESS'
     );
   }
 
   public deactivateKillSwitch(): void {
+    this.GLOBAL_KILL_SWITCH_ACTIVE = false;
+    this.activeBotsDisabled = false;
     this.killSwitch.deactivate();
-    this.logAudit('OWNER', 'GLOBAL_KILL_SWITCH_DEACTIVATED', {}, 'SUCCESS');
+    // Restore previous autonomy level if available
+    this.autonomyLevel = this.previousAutonomyLevel > 0 ? this.previousAutonomyLevel : 1;
+    this.logAudit('OWNER', 'GLOBAL_KILL_SWITCH_DEACTIVATED', { GLOBAL_KILL_SWITCH_ACTIVE: false, botsRestored: true }, 'SUCCESS');
     
     // Re-seed grid
     if (this.activeGrid) {
