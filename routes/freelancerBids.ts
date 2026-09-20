@@ -639,7 +639,7 @@ router.get('/auth-status', async (req, res) => {
   } catch (err: any) {
     console.warn('[Freelancer Auth Status] Check error:', err.message);
     const hasToken = Boolean(
-      (process.env.FREELANCER_ACCESS_TOKEN && process.env.FREELANCER_ACCESS_TOKEN.trim() !== '3PKsiB3m736mE0wnirnHeLTUzLP1xc') ||
+      (process.env.FREELANCER_ACCESS_TOKEN && process.env.FREELANCER_ACCESS_TOKEN.trim() !== '<redacted-demo-token>') ||
       process.env.FREELANCER_AUTH_TOKEN ||
       process.env.FREELANCER_SESSION
     );
@@ -819,7 +819,7 @@ router.get('/live-feed', async (req, res) => {
       success: true,
       projects,
       authenticated: Boolean(
-        (process.env.FREELANCER_ACCESS_TOKEN && process.env.FREELANCER_ACCESS_TOKEN.trim() !== '3PKsiB3m736mE0wnirnHeLTUzLP1xc') ||
+        (process.env.FREELANCER_ACCESS_TOKEN && process.env.FREELANCER_ACCESS_TOKEN.trim() !== '<redacted-demo-token>') ||
         process.env.FREELANCER_AUTH_TOKEN ||
         process.env.FREELANCER_SESSION
       )
