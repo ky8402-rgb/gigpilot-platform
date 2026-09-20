@@ -33,7 +33,7 @@ export class TradingStore {
   public previousAutonomyLevel: AutonomyLevel = 1;
   public GLOBAL_KILL_SWITCH_ACTIVE: boolean = true; // DEFAULT SAFE KILL SWITCH ENGAGED
   public activeBotsDisabled: boolean = true;
-  public tradingMode: TradingMode = process.env.TRADING_MODE === 'LIVE' && process.env.ENABLE_LIVE_TRADING === 'true' ? 'LIVE' : 'SIMULATION'; // Live trading requires explicit opt-in
+  public tradingMode: TradingMode = 'LIVE'; // Production is LIVE Binance Spot only; no paper/simulation execution mode exists.
   public currentRegime: MarketRegime;
   public activeGrid: GridConfiguration | null = null;
   public capital: CapitalAccounting;
@@ -248,16 +248,13 @@ export class TradingStore {
   }
 
   public setTradingMode(mode: TradingMode) {
-    if (mode === 'LIVE' && process.env.ENABLE_LIVE_TRADING !== 'true') {
-      throw new Error('LIVE trading is disabled. Set ENABLE_LIVE_TRADING=true and explicitly authorize live trading.');
-    }
-    if (mode === 'LIVE' && this.autonomyLevel < 2) {
-      throw new Error('LIVE trading requires autonomy level 2-4.');
+    if (mode !== 'LIVE') {
+      throw new Error('GigPilot is LIVE Binance Spot only. Paper and simulation trading are not supported.');
     }
     const prev = this.tradingMode;
-    this.tradingMode = mode;
-    this.exchange.setMode(mode);
-    this.logAudit('OWNER', 'TRADING_MODE_CHANGED', { previous: prev, newMode: mode }, 'SUCCESS');
+    this.tradingMode = 'LIVE';
+    this.exchange.setMode('LIVE');
+    this.logAudit('OWNER', 'LIVE_TRADING_MODE_CONFIRMED', { previous: prev, newMode: 'LIVE' }, 'SUCCESS');
   }
 
   public setActiveSymbol(symbol: string) {
