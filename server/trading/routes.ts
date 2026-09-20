@@ -658,7 +658,7 @@ tradingRouter.post('/auth/logout', (req: Request, res: Response) => {
 });
 
 // 20. Real Live Exchange Assets & Spot Balances (Binance Spot)
-tradingRouter.get('/assets', async (req: Request, res: Response) => {
+tradingRouter.get('/assets', requireOwner, async (req: Request, res: Response) => {
   try {
     const force = req.query.refresh === 'true';
     const accountState = await binanceAdapter.getRealAccountState(force);
