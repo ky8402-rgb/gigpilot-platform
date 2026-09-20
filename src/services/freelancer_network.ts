@@ -55,7 +55,7 @@ freelancerNetwork.interceptors.request.use(
       ).trim();
     }
 
-    if (token && token.length > 0 && token !== '3PKsiB3m736mE0wnirnHeLTUzLP1xc') {
+    if (token && token.length > 0 && token !== '<redacted-demo-token>') {
       config.headers.set('Authorization', `Bearer ${token}`);
     }
 
