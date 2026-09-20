@@ -470,7 +470,7 @@ export async function placeManualOrder(order: {
       status: 'OPEN',
       isGridOrder: false,
       strategyId: 'MANUAL_OWNER',
-      mode: 'PAPER',
+      mode: 'LIVE',
       feesPaid: 0,
       slippageBps: 0,
       latencyMs: 14,
