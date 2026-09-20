@@ -99,6 +99,12 @@ jobs:
           EC2_HOST: ${{ secrets.EC2_HOST || '3.222.149.9' }}
           EC2_USER: ${{ secrets.EC2_USER || 'ubuntu' }}
           EC2_INSTANCE_ID: 'i-02f24350d31f5aa51'
+          PAYPAL_CLIENT_ID: ${{ secrets.PAYPAL_CLIENT_ID }}
+          PAYPAL_CLIENT_SECRET: ${{ secrets.PAYPAL_CLIENT_SECRET || secrets.PAYPAL_SECRET }}
+          PAYPAL_RECEIVER_EMAIL: ${{ secrets.PAYPAL_RECEIVER_EMAIL }}
+          PAYPAL_MODE: ${{ secrets.PAYPAL_MODE || 'live' }}
+          FREELANCER_ACCESS_TOKEN: ${{ secrets.FREELANCER_ACCESS_TOKEN || secrets.FREELANCER_OAUTH_TOKEN }}
+          FREELANCER_USER_ID: ${{ secrets.FREELANCER_USER_ID }}
         run: |
           echo "=========================================================="
           echo "Deploying to AWS EC2 via Secure SSH ($EC2_USER@$EC2_HOST)..."
@@ -143,7 +149,17 @@ jobs:
 
           if [ "$SSH_CONNECTED" -eq 1 ]; then
             echo "Executing remote production deployment on EC2 via scripts/deploy-ec2.sh..."
-            ssh -o StrictHostKeyChecking=no -o ConnectTimeout=20 -i "$SSH_KEY_FILE" "$EC2_USER@$EC2_HOST" 'bash -s' < scripts/deploy-ec2.sh
+            # Forward only already-configured GitHub Actions secrets to the remote deployment
+            # process. Nothing is committed to the repository and values are never echoed.
+            REMOTE_ENV_PREFIX=""
+            for NAME in PAYPAL_CLIENT_ID PAYPAL_CLIENT_SECRET PAYPAL_RECEIVER_EMAIL PAYPAL_MODE FREELANCER_ACCESS_TOKEN FREELANCER_USER_ID; do
+              VALUE="${!NAME:-}"
+              if [ -n "$VALUE" ]; then
+                printf -v QUOTED '%q' "$VALUE"
+                REMOTE_ENV_PREFIX+="$NAME=$QUOTED "
+              fi
+            done
+            ssh -o StrictHostKeyChecking=no -o ConnectTimeout=20 -i "$SSH_KEY_FILE" "$EC2_USER@$EC2_HOST" "$REMOTE_ENV_PREFIX bash -s" < scripts/deploy-ec2.sh
             echo "✔ SSH deployment command finished successfully."
           else
             echo "SSH direct connection could not be established. Falling back to signed push webhook."
