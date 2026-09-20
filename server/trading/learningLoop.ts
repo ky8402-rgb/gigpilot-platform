@@ -44,22 +44,6 @@ export class LearningLoopEngine {
         orderFillRatePct: 91.5,
         capitalUtilizationPct: 65.0
       },
-      paperTradingResults: {
-        netProfit: 412.30,
-        grossProfit: 468.20,
-        totalFees: 55.90,
-        roiPct: 4.12,
-        sharpeRatio: 2.38,
-        sortinoRatio: 2.95,
-        maxDrawdownPct: 3.6,
-        winRatePct: 76.5,
-        profitFactor: 2.05,
-        tradesCount: 52,
-        avgTradeProfitUsd: 7.92,
-        avgHoldingTimeMinutes: 52,
-        orderFillRatePct: 89.2,
-        capitalUtilizationPct: 62.0
-      },
       validationScore: 92,
       expectedEffect: 'Captures daily volatility swings while keeping inventory neutral',
       actualEffect: 'Exceeded baseline profit targets with stable low drawdown in sideways chop'
@@ -103,22 +87,6 @@ export class LearningLoopEngine {
           avgHoldingTimeMinutes: 64,
           orderFillRatePct: 94.0,
           capitalUtilizationPct: 58.0
-        },
-        paperTradingResults: {
-          netProfit: 465.10,
-          grossProfit: 502.80,
-          totalFees: 37.70,
-          roiPct: 4.65,
-          sharpeRatio: 2.71,
-          sortinoRatio: 3.52,
-          maxDrawdownPct: 3.2,
-          winRatePct: 82.5,
-          profitFactor: 2.48,
-          tradesCount: 40,
-          avgTradeProfitUsd: 11.62,
-          avgHoldingTimeMinutes: 61,
-          orderFillRatePct: 93.5,
-          capitalUtilizationPct: 56.5
         },
         validationScore: 96,
         expectedEffect: 'Higher net profit due to 32% lower fee drag from wider grid levels'
@@ -192,8 +160,8 @@ export class LearningLoopEngine {
     }
 
     const champ = this.championStrategy;
-    const cMetrics = challenger.paperTradingResults || challenger.backtestResults;
-    const chMetrics = champ.paperTradingResults || champ.backtestResults;
+    const cMetrics = challenger.backtestResults;
+    const chMetrics = champ.backtestResults;
 
     // Strict Promotion Criteria:
     // 1. Higher Sharpe Ratio
