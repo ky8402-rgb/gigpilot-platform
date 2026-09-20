@@ -171,22 +171,6 @@ export const DEFAULT_CHAMPION_STRATEGY: StrategyVersion = {
     orderFillRatePct: 91.5,
     capitalUtilizationPct: 65
   },
-  paperTradingResults: {
-    netProfit: 412.30,
-    grossProfit: 468.20,
-    totalFees: 55.90,
-    roiPct: 4.12,
-    sharpeRatio: 2.38,
-    sortinoRatio: 2.95,
-    maxDrawdownPct: 3.6,
-    winRatePct: 76.5,
-    profitFactor: 2.05,
-    tradesCount: 52,
-    avgTradeProfitUsd: 7.92,
-    avgHoldingTimeMinutes: 52,
-    orderFillRatePct: 89.2,
-    capitalUtilizationPct: 62
-  },
   validationScore: 94,
   expectedEffect: 'Captures daily volatility swings while keeping inventory delta-neutral',
   actualEffect: 'Exceeded baseline profit targets with stable low drawdown in sideways chop'
@@ -260,7 +244,7 @@ export function generateDefaultOrders(symbol: string = 'BTC/USDT', price: number
       isGridOrder: true,
       gridLevelId: `grid-${symbol.toLowerCase()}-${idx}`,
       strategyId: 'STRAT-GRID-001',
-      mode: 'PAPER',
+      mode: 'LIVE',
       feesPaid: 0,
       slippageBps: 0,
       latencyMs: 24,
@@ -283,7 +267,7 @@ export function generateDefaultOrders(symbol: string = 'BTC/USDT', price: number
       isGridOrder: true,
       gridLevelId: `grid-${symbol.toLowerCase()}-${idx + 10}`,
       strategyId: 'STRAT-GRID-001',
-      mode: 'PAPER',
+      mode: 'LIVE',
       feesPaid: 0,
       slippageBps: 0,
       latencyMs: 18,
@@ -318,8 +302,8 @@ export function generateDefaultMasterState(symbol: string = 'BTC/USDT'): MasterT
   return {
     success: true,
     activeSymbol: symbol,
-    autonomyLevel: 1, // LEVEL 1 PAPER TRADING
-    tradingMode: 'PAPER',
+    autonomyLevel: 1, // OWNER-CONTROLLED LIVE TRADING
+    tradingMode: 'LIVE',
     GLOBAL_KILL_SWITCH_ACTIVE: false,
     botsDisabled: false,
     activeBotsCount: 1,
