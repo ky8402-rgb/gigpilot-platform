@@ -93,7 +93,7 @@ tradingRouter.get('/pair/:symbol', (req: Request, res: Response) => {
 });
 
 // 4. Select Active Pair
-tradingRouter.post('/pair/select', (req: Request, res: Response) => {
+tradingRouter.post('/pair/select', requireOwner, (req: Request, res: Response) => {
   const { symbol } = req.body;
   if (!symbol) return res.status(400).json({ success: false, error: 'Symbol required' });
 
@@ -167,7 +167,7 @@ tradingRouter.post('/kill-switch/toggle', requireOwner, (req: Request, res: Resp
 });
 
 // 8. Configure Grid
-tradingRouter.post('/grid/configure', requireOwner, (req: Request, res: Response) => {
+tradingRouter.post('/grid/configure', requireOwner, async (req: Request, res: Response) => {
   const store = globalTradingStore;
   const {
     upperBoundary,
@@ -181,6 +181,14 @@ tradingRouter.post('/grid/configure', requireOwner, (req: Request, res: Response
 
   const pairState = store.exchange.getPairState(store.activeSymbol);
   if (!pairState) return res.status(400).json({ success: false, error: 'No active pair state' });
+
+  const killActive = store.GLOBAL_KILL_SWITCH_ACTIVE || store.killSwitch.getState().isActive;
+  if (killActive) {
+    return res.status(403).json({ success: false, error: 'Cannot configure/execute a grid while the global kill switch is active.' });
+  }
+  if (store.tradingMode === 'LIVE' && store.autonomyLevel < 2) {
+    return res.status(403).json({ success: false, error: 'LIVE grid execution requires autonomy level 2-4.' });
+  }
 
   store.exchange.cancelAllOrders(store.activeSymbol);
 
@@ -199,17 +207,33 @@ tradingRouter.post('/grid/configure', requireOwner, (req: Request, res: Response
 
   store.activeGrid = newGrid;
 
-  // Place in exchange
+  // Every generated grid order still passes through the independent risk gateway.
   for (const lvl of newGrid.activeLevels) {
-    store.exchange.placeOrder({
-      symbol: newGrid.symbol,
-      side: lvl.side,
-      type: 'GRID_LIMIT',
-      price: lvl.price,
-      amount: lvl.orderSize,
-      isGridOrder: true,
-      gridLevelId: lvl.id
-    });
+    const validation = store.risk.validateOrder(
+      {
+        symbol: newGrid.symbol,
+        side: lvl.side,
+        price: lvl.price,
+        amount: lvl.orderSize,
+        isGridOrder: true
+      },
+      store.capital,
+      store.exchange.getPositions(),
+      store.exchange.getOpenOrders().length
+    );
+
+    if (validation.allowed) {
+      await store.exchange.placeOrder({
+        symbol: newGrid.symbol,
+        side: lvl.side,
+        type: 'GRID_LIMIT',
+        price: lvl.price,
+        amount: lvl.orderSize,
+        isGridOrder: true,
+        gridLevelId: lvl.id,
+        strategyId: store.learningLoop.getChampion().id
+      });
+    }
   }
 
   store.logAudit('OWNER', 'GRID_MANUALLY_CONFIGURED', {
