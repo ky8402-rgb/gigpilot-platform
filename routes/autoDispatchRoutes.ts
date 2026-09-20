@@ -9,6 +9,7 @@ import { logActivityEvent } from '../server/activityLogger.js';
 import { checkExternalLinkHealth, getFreelancerProjectUrl } from '../server/freelancerApi.js';
 import { getAutonomousReadiness, runAutonomousContractorCycle } from '../server/autonomousFreelanceOrchestrator.js';
 import { runAutonomousBidCycle } from '../server/autonomousBidWorker.js';
+import { prisma } from '../server/db.js';
 import { scanAndRetryMissingExternalJobs, syncJobToFreelancer, enqueueFreelancerJobSync, triggerWorkOrderFreelancerSync } from '../server/freelancerRetryQueue.js';
 
 const router = express.Router();
