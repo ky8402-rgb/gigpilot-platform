@@ -55,6 +55,26 @@ export class RiskEngine {
     currentPositions: Position[],
     openOrdersCount: number
   ): { allowed: boolean; reason?: string; event?: RiskEvent } {
+    if (!Number.isFinite(proposedOrder.price) || !Number.isFinite(proposedOrder.amount) || proposedOrder.price <= 0 || proposedOrder.amount <= 0) {
+      const event = this.recordEvent(
+        'INVALID_ORDER_PARAMETERS',
+        'ORDER_REJECTED',
+        'Order price and amount must be finite positive numbers.',
+        proposedOrder
+      );
+      return { allowed: false, reason: 'Invalid order price or amount', event };
+    }
+
+    if (!Number.isFinite(capital.totalEquity) || capital.totalEquity <= 0) {
+      const event = this.recordEvent(
+        'INVALID_CAPITAL_STATE',
+        'ORDER_REJECTED',
+        'Trading capital is unavailable or invalid; order gateway is fail-closed.',
+        proposedOrder
+      );
+      return { allowed: false, reason: 'Invalid or unavailable capital state', event };
+    }
+
     const orderCostUsd = proposedOrder.price * proposedOrder.amount;
 
     // 1. Circuit breaker check
