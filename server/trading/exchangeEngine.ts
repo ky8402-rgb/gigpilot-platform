@@ -233,6 +233,14 @@ export class ExchangeEngine {
       placedAt: new Date().toISOString()
     };
 
+    // LIVE mode is fail-closed: never create a local OPEN order when the real exchange is unavailable.
+    if (this.mode === 'LIVE' && !binanceAdapter.isKeyConfigured()) {
+      order.status = 'REJECTED';
+      order.rejectionReason = 'LIVE trading requires configured Binance Spot API credentials.';
+      this.orderHistory.unshift(order);
+      return order;
+    }
+
     // If Binance account is configured and mode is LIVE, dispatch to Binance
     if (this.mode === 'LIVE' && binanceAdapter.isKeyConfigured()) {
       try {
