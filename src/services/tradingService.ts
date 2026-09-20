@@ -851,6 +851,7 @@ export async function fetchLiveAssets(forceRefresh = false): Promise<{ success: 
         todayPnLUsd: 0,
         todayPnLPct: 0,
         openOrdersCount: 0,
+        openOrders: [],
         recentTrades: [],
         transactions: [],
         canTrade: false,
