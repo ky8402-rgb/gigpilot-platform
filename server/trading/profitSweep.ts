@@ -1,5 +1,4 @@
 import { CapitalAccounting, DestinationWallet, ProfitSweep } from './types.js';
-import crypto from 'crypto';
 
 export class ProfitSweepSubsystem {
   private destinationWallet: DestinationWallet;
@@ -138,9 +137,5 @@ export class ProfitSweepSubsystem {
       error: 'Real profit-sweep executor is intentionally unavailable in this build; no funds were moved.'
     };
 
-    this.sweepsHistory.unshift(sweep);
-    if (this.sweepsHistory.length > 100) this.sweepsHistory.pop();
-
-    return { success: true, sweep };
   }
 }
