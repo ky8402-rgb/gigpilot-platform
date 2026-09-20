@@ -409,7 +409,7 @@ export const AssetDashboard: React.FC<AssetDashboardProps> = ({
             </div>
 
             <p className="text-xs text-slate-400 leading-relaxed">
-              Enter your personal Binance Spot API credentials. Keys are saved securely server-side for personal algorithmic execution.
+              Enter your personal Binance Spot API credentials. For production, inject keys through AWS secret management; runtime-entered keys are memory-only and are never written to disk.
             </p>
 
             <div className="p-3 bg-slate-950 border border-slate-800 rounded-lg text-xs space-y-1">
