@@ -93,6 +93,23 @@ jobs:
           echo "- **Auto-Deploy Status:** ✅ Triggered on push to \`${GITHUB_REF_NAME}\`" >> $GITHUB_STEP_SUMMARY
           echo "- **Live URL:** [https://main.$AMPLIFY_APP_ID.amplifyapp.com](https://main.$AMPLIFY_APP_ID.amplifyapp.com)" >> $GITHUB_STEP_SUMMARY
 
+      - name: Verify Amplify Frontend
+        env:
+          AMPLIFY_APP_ID: ${{ secrets.AMPLIFY_APP_ID || 'd2qe2q720fbn3x' }}
+        run: |
+          FRONTEND_URL="https://main.$AMPLIFY_APP_ID.amplifyapp.com"
+          for i in 1 2 3 4 5 6 7 8; do
+            STATUS=$(curl -L -s -o /dev/null -w "%{http_code}" "$FRONTEND_URL" --max-time 10 || true)
+            if [ "$STATUS" = "200" ] || [ "$STATUS" = "304" ]; then
+              echo "✔ Amplify frontend reachable at $FRONTEND_URL (HTTP $STATUS)."
+              exit 0
+            fi
+            echo "Amplify frontend not ready yet (HTTP $STATUS), retry $i/8..."
+            sleep 5
+          done
+          echo "Amplify frontend verification FAILED." >&2
+          exit 1
+
   deploy-ec2:
     needs: validate
     name: 🛡️ Deploy Backend (AWS EC2 - gigpilot-backend)
