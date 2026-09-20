@@ -693,6 +693,24 @@ tradingRouter.get('/binance/status', (req: Request, res: Response) => {
   });
 });
 
+tradingRouter.get('/binance/diagnostics', requireOwner, async (req: Request, res: Response) => {
+  try {
+    const accountState = await binanceAdapter.getRealAccountState(true);
+    const restrictions = await binanceAdapter.getApiRestrictions();
+    return res.json({
+      success: true,
+      accountStatus: accountState.status,
+      message: accountState.message,
+      serverIp: accountState.serverIp,
+      baseUrl: binanceAdapter.getBaseUrl(),
+      keyMask: binanceAdapter.getKeyMask(),
+      restrictions
+    });
+  } catch (err: any) {
+    return res.status(500).json({ success: false, error: err.message || 'Binance diagnostics failed' });
+  }
+});
+
 tradingRouter.post('/binance/update-keys', requireOwner, async (req: Request, res: Response) => {
   try {
     const { apiKey, apiSecret, baseUrl } = req.body || {};
@@ -702,6 +720,22 @@ tradingRouter.post('/binance/update-keys', requireOwner, async (req: Request, re
 
     binanceAdapter.updateCredentials(apiKey, apiSecret, baseUrl);
     const testState = await binanceAdapter.getRealAccountState(true);
+    const restrictions = await binanceAdapter.getApiRestrictions();
+
+    if (testState.status !== 'CONNECTED') {
+      globalTradingStore.logAudit('OWNER', 'BINANCE_KEYS_VALIDATION_FAILED', {
+        keyMask: binanceAdapter.getKeyMask(),
+        status: testState.status,
+        message: testState.message
+      }, 'FAILED');
+      return res.status(testState.status === 'RESTRICTED' ? 403 : 502).json({
+        success: false,
+        message: 'Binance credentials were saved, but the Spot account could not be read.',
+        error: testState.message,
+        accountState: testState,
+        restrictions
+      });
+    }
 
     globalTradingStore.logAudit('OWNER', 'BINANCE_KEYS_UPDATED', {
       keyMask: binanceAdapter.getKeyMask(),
@@ -710,8 +744,9 @@ tradingRouter.post('/binance/update-keys', requireOwner, async (req: Request, re
 
     return res.json({
       success: true,
-      message: 'Binance API credentials updated successfully.',
-      accountState: testState
+      message: 'Binance API credentials validated and connected to Spot.',
+      accountState: testState,
+      restrictions
     });
   } catch (err: any) {
     return res.status(500).json({ success: false, error: err.message });
