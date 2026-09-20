@@ -784,31 +784,53 @@ router.get('/autonomous-freelance/readiness', async (_req, res) => {
 router.get('/autonomous-freelance/earning-status', async (_req, res) => {
   try {
     const readiness = getAutonomousReadiness();
-    const rows = await prisma.$queryRawUnsafe<Array<{submitted: bigint; accepted: bigint; funded: bigint; delivered: bigint; settled: bigint}>>(
-      `SELECT
-        COUNT(*) FILTER (WHERE "externalProvider" = 'Freelancer' AND "externalBidId" IS NOT NULL) AS submitted,
-        COUNT(*) FILTER (WHERE "externalProvider" = 'Freelancer' AND "externalAcceptanceVerified" = true) AS accepted,
-        COUNT(*) FILTER (WHERE "externalProvider" = 'Freelancer' AND "escrowStatus" = 'FUNDED') AS funded,
-        COUNT(*) FILTER (WHERE "externalProvider" = 'Freelancer' AND "deliveryStatus" = 'PROVIDER_DELIVERED') AS delivered,
-        COUNT(*) FILTER (WHERE "externalProvider" = 'Freelancer' AND "escrowStatus" = 'SETTLED') AS settled
-      FROM "WorkOrder"`
-    );
-    const counts = rows[0] || { submitted: 0n, accepted: 0n, funded: 0n, delivered: 0n, settled: 0n };
-    const submitted = Number(counts.submitted);
-    const accepted = Number(counts.accepted);
-    const funded = Number(counts.funded);
-    const delivered = Number(counts.delivered);
-    const settled = Number(counts.settled);
+    const funnel = { submitted: 0, accepted: 0, funded: 0, delivered: 0, settled: 0 };
+    let telemetryError = '';
+
+    try {
+      const rows = await prisma.$queryRawUnsafe<Array<{submitted: bigint; accepted: bigint; funded: bigint; delivered: bigint; settled: bigint}>>(
+        `SELECT
+          COUNT(*) FILTER (WHERE "externalProvider" = 'Freelancer' AND "externalBidId" IS NOT NULL) AS submitted,
+          COUNT(*) FILTER (WHERE "externalProvider" = 'Freelancer' AND "externalAcceptanceVerified" = true) AS accepted,
+          COUNT(*) FILTER (WHERE "externalProvider" = 'Freelancer' AND "escrowStatus" = 'FUNDED') AS funded,
+          COUNT(*) FILTER (WHERE "externalProvider" = 'Freelancer' AND "deliveryStatus" = 'PROVIDER_DELIVERED') AS delivered,
+          COUNT(*) FILTER (WHERE "externalProvider" = 'Freelancer' AND "escrowStatus" = 'SETTLED') AS settled
+        FROM "WorkOrder"`
+      );
+      const row = rows[0];
+      if (row) {
+        funnel.submitted = Number(row.submitted);
+        funnel.accepted = Number(row.accepted);
+        funnel.funded = Number(row.funded);
+        funnel.delivered = Number(row.delivered);
+        funnel.settled = Number(row.settled);
+      }
+    } catch (telemetryErr: any) {
+      telemetryError = telemetryErr?.message || 'WORK_ORDER_TELEMETRY_UNAVAILABLE';
+      console.warn('[EarningStatus] WorkOrder telemetry unavailable:', telemetryError);
+    }
+
     return res.json({
       success: true,
       readyForRealEarning: readiness.ready,
       readiness,
-      funnel: { submitted, accepted, funded, delivered, settled },
+      funnel,
+      funnelTelemetryAvailable: !telemetryError,
+      ...(telemetryError ? { funnelTelemetryError: telemetryError } : {}),
       revenuePolicy: 'Only provider-confirmed funded, delivered, and settled work counts as real revenue.',
       generatedAt: new Date().toISOString(),
     });
   } catch (err: any) {
-    return res.status(500).json({ success: false, error: err?.message || 'EARNING_STATUS_FAILED' });
+    return res.status(200).json({
+      success: true,
+      readyForRealEarning: false,
+      readiness: { ready: false, blockers: ['EARNING_READINESS_CHECK_FAILED'], capabilities: {} },
+      funnel: { submitted: 0, accepted: 0, funded: 0, delivered: 0, settled: 0 },
+      funnelTelemetryAvailable: false,
+      funnelTelemetryError: err?.message || 'EARNING_STATUS_FAILED',
+      revenuePolicy: 'Only provider-confirmed funded, delivered, and settled work counts as real revenue.',
+      generatedAt: new Date().toISOString(),
+    });
   }
 });
 
