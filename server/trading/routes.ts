@@ -436,6 +436,18 @@ tradingRouter.post('/profit-sweep/wallet', requireOwner, (req: Request, res: Res
   res.json({ success: true, wallet: updated });
 });
 
+tradingRouter.post('/profit-sweep/wallet/confirm', requireOwner, (req: Request, res: Response) => {
+  const { address } = req.body || {};
+  if (!address) return res.status(400).json({ success: false, error: 'Address is required.' });
+  try {
+    const wallet = globalTradingStore.sweeper.confirmWallet(String(address));
+    globalTradingStore.logAudit('OWNER', 'DESTINATION_WALLET_CONFIRMED', { address }, 'SUCCESS');
+    return res.json({ success: true, wallet });
+  } catch (err: any) {
+    return res.status(400).json({ success: false, error: err.message || 'Wallet confirmation failed.' });
+  }
+});
+
 tradingRouter.post('/profit-sweep/execute', requireOwner, (req: Request, res: Response) => {
   const store = globalTradingStore;
   if (store.killSwitch.getState().isActive) {
