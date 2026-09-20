@@ -8,6 +8,7 @@ import { tradingRouter } from "./server/trading/routes.js";
 import { githubRoutes } from "./server/githubRoutes.js";
 import { pushAndDeployAll } from "./server/githubService.js";
 import { globalTradingStore } from "./server/trading/store.js";
+import { ownerAuth } from "./server/trading/ownerAuth.js";
 
 const app = express();
 const PORT = 3000;
@@ -18,17 +19,22 @@ app.use(express.json({ limit: "10mb" }));
 app.use(express.urlencoded({ extended: true, limit: "10mb" }));
 app.use(cookieParser());
 
-// Permissive CORS for Multi-Cloud & Local Testing
+// Restricted CORS: only the configured frontend and local development origins are accepted.
 app.use((req, res, next) => {
   const origin = req.headers.origin;
-  res.header("Access-Control-Allow-Origin", origin || "*");
+  const allowed = new Set([
+    process.env.FRONTEND_ORIGIN || "https://main.d2qe2q720fbn3x.amplifyapp.com",
+    "http://localhost:5173",
+    "http://localhost:3000"
+  ]);
+  if (origin && allowed.has(origin)) {
+    res.header("Access-Control-Allow-Origin", origin);
+    res.header("Vary", "Origin");
+    res.header("Access-Control-Allow-Credentials", "true");
+  }
   res.header("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS, PATCH");
   res.header("Access-Control-Allow-Headers", "Origin, X-Requested-With, Content-Type, Accept, Authorization, X-GitHub-Event, X-GitHub-Delivery, X-Hub-Signature-256");
-  res.header("Access-Control-Allow-Credentials", "true");
-
-  if (req.method === "OPTIONS") {
-    return res.sendStatus(200);
-  }
+  if (req.method === "OPTIONS") return res.sendStatus(204);
   next();
 });
 
@@ -68,8 +74,13 @@ app.use("/api/trading", tradingRouter);
 // 3. GitOps, GitHub Webhooks & CI/CD Deployment Router
 app.use("/api/github", githubRoutes);
 
-// 4. On-Demand Deployment Trigger Endpoint
+// 4. On-Demand Deployment Trigger Endpoint (owner-authenticated)
 app.post("/api/deploy", async (req, res) => {
+  const authHeader = req.headers.authorization;
+  const token = authHeader?.startsWith("Bearer ") ? authHeader.substring(7) : null;
+  if (process.env.REQUIRE_OWNER_AUTH !== "false" && (!token || !ownerAuth.verifyToken(token))) {
+    return res.status(401).json({ success: false, error: "Owner authentication required." });
+  }
   try {
     const { commitMessage, branch, skipAmplify, skipEc2 } = req.body || {};
     const result = await pushAndDeployAll({
