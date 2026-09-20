@@ -14,25 +14,48 @@ import {
   TradingMode
 } from '../types/trading';
 
-const BASE_API = '/api/trading';
+export function getBaseApi(): string {
+  // 1. Explicit Vite environment variable
+  const envUrl = (import.meta as any).env?.VITE_BACKEND_URL || (import.meta as any).env?.VITE_API_URL || (import.meta as any).env?.VITE_API_BASE_URL;
+  if (envUrl && typeof envUrl === 'string' && envUrl.trim().length > 0) {
+    return `${envUrl.replace(/\/$/, '')}/api/trading`;
+  }
+
+  // 2. AWS Amplify CloudFront static domain -> Direct to AWS EC2 backend
+  if (typeof window !== 'undefined' && window.location.hostname.includes('amplifyapp.com')) {
+    return 'https://3-222-149-9.sslip.io/api/trading';
+  }
+
+  // 3. Co-located Express server (Local dev, Cloud Run, EC2 standalone)
+  return '/api/trading';
+}
+
+const BASE_API = getBaseApi();
 
 /**
- * Resilient JSON fetch helper with retry, timeout, and content-type validation.
- * Guaranteed never to fail with "Unexpected token '<', <!doctype... is not valid JSON".
+ * Resilient JSON fetch helper with retry, timeout, content-type validation,
+ * and automatic failover from static SPA hosting to live EC2 backend.
  */
 async function fetchJson<T>(url: string, options?: RequestInit): Promise<T> {
   let attempts = 0;
   const maxAttempts = 3;
+  let activeUrl = url;
 
   while (attempts < maxAttempts) {
     attempts++;
     try {
-      const res = await fetch(url, options);
+      const res = await fetch(activeUrl, options);
       const contentType = res.headers.get('content-type') || '';
 
       if (!contentType.includes('application/json')) {
+        // If relative URL returned HTML (SPA fallback), immediately failover to live EC2 backend
+        if (activeUrl.startsWith('/api/')) {
+          activeUrl = `https://3-222-149-9.sslip.io${activeUrl}`;
+          continue;
+        }
+
         const text = await res.text();
-        console.warn(`[tradingService] Attempt ${attempts}/${maxAttempts}: expected JSON from ${url}, got ${contentType}:`, text.slice(0, 100));
+        console.warn(`[tradingService] Attempt ${attempts}/${maxAttempts}: expected JSON from ${activeUrl}, got ${contentType}:`, text.slice(0, 100));
         if (attempts < maxAttempts) {
           await new Promise(r => setTimeout(r, 600 * attempts));
           continue;
@@ -46,6 +69,9 @@ async function fetchJson<T>(url: string, options?: RequestInit): Promise<T> {
       }
       return data;
     } catch (err: any) {
+      if (activeUrl.startsWith('/api/')) {
+        activeUrl = `https://3-222-149-9.sslip.io${activeUrl}`;
+      }
       if (attempts >= maxAttempts) {
         throw err;
       }
