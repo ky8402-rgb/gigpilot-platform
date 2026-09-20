@@ -940,12 +940,12 @@ export async function fetchPayPalLiveBalance(): Promise<PayPalLiveBalanceResult>
   } catch (e: any) {
     return {
       success: false,
-      accountId: '98UNBJBN67H6W',
-      merchantName: 'Kundan Kumar',
-      email: 'kundank4@icloud.com',
-      paypalMeUsername: 'ky8402',
-      availableBalance: 0.00,
-      totalBalance: 0.00,
+      accountId: '',
+      merchantName: '',
+      email: '',
+      paypalMeUsername: '',
+      availableBalance: 0,
+      totalBalance: 0,
       withheldBalance: 0.00,
       currency: 'USD',
       asOfTime: new Date().toISOString(),
