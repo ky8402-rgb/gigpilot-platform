@@ -16,7 +16,6 @@ export function runWorkerHealthAndHeal() {
   let workerScript = 'dist/worker.cjs';
   if (!fs.existsSync(workerScript)) {
     if (fs.existsSync('server/worker.ts')) workerScript = 'server/worker.ts';
-    else if (fs.existsSync('sentient-freelancer/backend/worker.js')) workerScript = 'sentient-freelancer/backend/worker.js';
   }
 
   // 1. Check PM2 status

@@ -18,8 +18,6 @@ if [ -f "dist/worker.cjs" ]; then
   WORKER_SCRIPT="dist/worker.cjs"
 elif [ -f "server/worker.ts" ]; then
   WORKER_SCRIPT="server/worker.ts"
-elif [ -f "sentient-freelancer/backend/worker.js" ]; then
-  WORKER_SCRIPT="sentient-freelancer/backend/worker.js"
 fi
 
 # Detect running process via PM2
@@ -125,10 +123,6 @@ else
       nohup npx tsx server/worker.ts >> "$LOG_FILE" 2>&1 &
       ACTIVE_PID=$!
       TYPE="standalone_tsx"
-    elif [ -f "sentient-freelancer/backend/worker.js" ]; then
-      nohup node sentient-freelancer/backend/worker.js >> "$LOG_FILE" 2>&1 &
-      ACTIVE_PID=$!
-      TYPE="standalone_sentient"
     fi
   fi
 

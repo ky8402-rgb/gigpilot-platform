@@ -73,7 +73,7 @@ else
     echo -e "  Response: $HEALTH_BODY"
     FAILED=$((FAILED + 1))
   else
-    SERVICE=$(echo "$HEALTH_BODY" | grep -o '"service":"[^"]*"' | cut -d'"' -f4 || echo "sentient-freelancer")
+    SERVICE=$(echo "$HEALTH_BODY" | grep -o '"service":"[^"]*"' | cut -d'"' -f4 || echo "gigpilot-platform")
     MEM_MODE=$(echo "$HEALTH_BODY" | grep -o '"memory":"[^"]*"' | cut -d'"' -f4 || echo "active")
     QUEUE_DEPTH=$(echo "$HEALTH_BODY" | grep -o '"queueDepth":[0-9]*' | cut -d':' -f2 || echo "0")
     PENDING_APP=$(echo "$HEALTH_BODY" | grep -o '"pendingApprovals":[0-9]*' | cut -d':' -f2 || echo "0")

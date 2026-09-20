@@ -26,7 +26,7 @@ fi
 echo "Working directory: $(pwd)"
 git fetch --all --prune
 # Stash and reset any runtime logs so merge/pull succeeds cleanly
-git checkout -- RUN_LOG.md sentient-freelancer/RUN_LOG.md 2>/dev/null || true
+git checkout -- RUN_LOG.md 2>/dev/null || true
 git stash --include-untracked 2>/dev/null || true
 git checkout main || git checkout master
 git reset --hard origin/main || git pull origin main || git pull origin master

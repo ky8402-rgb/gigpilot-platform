@@ -428,7 +428,7 @@ jobs:
 
             echo "Working directory: $(pwd)"
             git fetch --all --prune
-            git checkout -- RUN_LOG.md sentient-freelancer/RUN_LOG.md 2>/dev/null || true
+            git checkout -- RUN_LOG.md 2>/dev/null || true
             git stash --include-untracked 2>/dev/null || true
             git checkout main || git checkout master
             git reset --hard origin/main || git pull origin main || git pull origin master

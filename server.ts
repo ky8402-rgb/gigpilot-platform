@@ -51,8 +51,8 @@ app.get("/api/health", (req, res) => {
       tradingMode: store.tradingMode,
       killSwitchActive: store.killSwitch.getState().isActive,
       circuitBreakerActive: store.risk.isCircuitBreakerActive(),
-      totalEquityUsd: store.capital.totalPortfolioEquityUsd,
-      netProfitUsd: store.capital.netRealizedProfitUsd,
+      totalEquityUsd: store.capital.totalEquity,
+      netProfitUsd: store.capital.netRealizedProfit,
     },
     system: {
       nodeVersion: process.version,
