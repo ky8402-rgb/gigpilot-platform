@@ -36,6 +36,11 @@ export function getAutonomousReadiness(): AutonomousReadiness {
   }
   if (!status.paypal.connected) {
     blockers.push('PayPal client credentials are not configured for real settlement.');
+  } else if (status.paypal.mode !== 'live') {
+    blockers.push('PayPal is not configured in live production mode.');
+  }
+  if (!String(status.paypal.receiverEmail || '').trim()) {
+    blockers.push('PAYPAL_RECEIVER_EMAIL is not configured for provider-confirmed payout destination.');
   }
 
   // Acceptance and delivery adapters are provider-backed. Execution is still gated

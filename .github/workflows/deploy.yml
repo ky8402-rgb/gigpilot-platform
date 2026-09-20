@@ -242,6 +242,29 @@ jobs:
           echo "ERROR: EC2 backend health check did not return HTTP 200."
           exit 1
 
+      - name: Audit Real Earning Readiness (No Synthetic Revenue)
+        env:
+          EC2_HOST: ${{ secrets.EC2_HOST || '3.222.149.9' }}
+        run: |
+          EARNING_URL="https://${EC2_HOST//./-}.sslip.io/api/autonomous-freelance/earning-status"
+          echo "Auditing real earning readiness at $EARNING_URL..."
+          RESPONSE=$(curl -k -fsS "$EARNING_URL" --max-time 10 || true)
+          if [ -z "$RESPONSE" ]; then
+            echo "⚠ Earning readiness endpoint unavailable; deployment remains healthy but real earning state is unverified."
+            exit 0
+          fi
+          echo "$RESPONSE" | node -e '
+            let input=""; process.stdin.on("data",d=>input+=d); process.stdin.on("end",()=>{
+              try {
+                const x=JSON.parse(input);
+                const r=x.readiness||{};
+                const f=x.funnel||{};
+                console.log(`Real earning ready: ${Boolean(x.readyForRealEarning)}`);
+                console.log(`Funnel: submitted=${f.submitted||0}, accepted=${f.accepted||0}, funded=${f.funded||0}, delivered=${f.delivered||0}, settled=${f.settled||0}`);
+                if (Array.isArray(r.blockers) && r.blockers.length) console.log(`Blockers: ${r.blockers.join(" | ")}`);
+              } catch { console.log("Earning readiness response was not valid JSON."); }
+            });
+          '
       - name: Report EC2 Status to Step Summary
         env:
           EC2_HOST: ${{ secrets.EC2_HOST || '3.222.149.9' }}
