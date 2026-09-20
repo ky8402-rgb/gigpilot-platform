@@ -1,4 +1,5 @@
-import { Candle, Fill, Order, OrderBook, OrderBookLevel, Position, TradingMode } from './types.js';
+import { Candle, Fill, Order, OrderBook, Position, TradingMode } from './types.js';
+import { binanceAdapter } from './binanceAdapter.js';
 
 export interface ExchangePairState {
   symbol: string;
@@ -7,8 +8,10 @@ export interface ExchangePairState {
   high24h: number;
   low24h: number;
   volume24h: number;
+  priceChangePct: number;
   candles: Candle[];
   orderBook: OrderBook;
+  lastUpdated: string;
 }
 
 export class ExchangeEngine {
@@ -17,64 +20,47 @@ export class ExchangeEngine {
   private orderHistory: Order[] = [];
   private fillsHistory: Fill[] = [];
   private positions: Map<string, Position> = new Map();
-  private mode: TradingMode = 'PAPER';
+  private mode: TradingMode = 'LIVE';
   private tickInterval: NodeJS.Timeout | null = null;
   private onTickCallbacks: Array<(symbol: string, price: number) => void> = [];
+  private isUpdating = false;
+
+  private trackedSymbols = ['BTC/USDT', 'ETH/USDT', 'SOL/USDT', 'BNB/USDT', 'AVAX/USDT'];
 
   constructor() {
-    this.initializePairs();
-    this.startSimulationTicker();
+    this.initRealPairs();
+    this.startLiveExchangePoller();
   }
 
-  private initializePairs() {
-    const pairConfigs = [
-      { symbol: 'BTC/USDT', basePrice: 66850, baseVol: 1420 },
-      { symbol: 'ETH/USDT', basePrice: 3480, baseVol: 8500 },
-      { symbol: 'SOL/USDT', basePrice: 158.40, baseVol: 45000 },
-      { symbol: 'BNB/USDT', basePrice: 585.20, baseVol: 6200 },
-      { symbol: 'AVAX/USDT', basePrice: 28.60, baseVol: 78000 }
-    ];
-
-    for (const cfg of pairConfigs) {
-      const now = Date.now();
-      const candles: Candle[] = [];
-      let lastPrice = cfg.basePrice;
-
-      // Seed 60 historical 1-minute candles
-      for (let i = 60; i >= 0; i--) {
-        const time = now - (i * 60000);
-        const delta = (Math.random() - 0.495) * (lastPrice * 0.0035);
-        const open = lastPrice;
-        const close = Number((open + delta).toFixed(2));
-        const high = Number((Math.max(open, close) + Math.random() * (open * 0.002)).toFixed(2));
-        const low = Number((Math.min(open, close) - Math.random() * (open * 0.002)).toFixed(2));
-        const volume = Number((cfg.baseVol * (0.6 + Math.random() * 0.8)).toFixed(2));
-        
-        candles.push({ timestamp: time, open, high, low, close, volume });
-        lastPrice = close;
-      }
-
-      const currentPrice = candles[candles.length - 1].close;
-      const orderBook = this.generateRealisticOrderBook(cfg.symbol, currentPrice);
-
-      this.pairs.set(cfg.symbol, {
-        symbol: cfg.symbol,
-        currentPrice,
-        open24h: candles[0].open,
-        high24h: Math.max(...candles.map(c => c.high)),
-        low24h: Math.min(...candles.map(c => c.low)),
-        volume24h: candles.reduce((sum, c) => sum + c.volume, 0),
-        candles,
-        orderBook
+  private async initRealPairs() {
+    for (const symbol of this.trackedSymbols) {
+      this.pairs.set(symbol, {
+        symbol,
+        currentPrice: 0,
+        open24h: 0,
+        high24h: 0,
+        low24h: 0,
+        volume24h: 0,
+        priceChangePct: 0,
+        candles: [],
+        orderBook: {
+          symbol,
+          bids: [],
+          asks: [],
+          spread: 0,
+          spreadBps: 0,
+          midPrice: 0,
+          timestamp: Date.now()
+        },
+        lastUpdated: new Date().toISOString()
       });
 
-      // Initialize default position
-      this.positions.set(cfg.symbol, {
-        symbol: cfg.symbol,
-        baseAmount: cfg.symbol === 'BTC/USDT' ? 0.045 : 0,
-        quoteAmount: 10000,
-        entryPrice: cfg.basePrice,
-        currentPrice,
+      this.positions.set(symbol, {
+        symbol,
+        baseAmount: 0,
+        quoteAmount: 0,
+        entryPrice: 0,
+        currentPrice: 0,
         unrealizedPnL: 0,
         unrealizedPnLPct: 0,
         realizedPnL: 0,
@@ -82,96 +68,98 @@ export class ExchangeEngine {
         netPnL: 0
       });
     }
+
+    // Initial immediate fetch from Binance
+    await this.refreshLiveMarketData();
   }
 
-  public generateRealisticOrderBook(symbol: string, midPrice: number): OrderBook {
-    const spreadPct = 0.0003 + (Math.random() * 0.0002); // 3 to 5 bps
-    const halfSpread = midPrice * (spreadPct / 2);
-    const bestBid = Number((midPrice - halfSpread).toFixed(2));
-    const bestAsk = Number((midPrice + halfSpread).toFixed(2));
-    const spread = Number((bestAsk - bestBid).toFixed(2));
-    const spreadBps = Number(((spread / midPrice) * 10000).toFixed(2));
+  public async refreshLiveMarketData(): Promise<void> {
+    if (this.isUpdating) return;
+    this.isUpdating = true;
 
-    const bids: OrderBookLevel[] = [];
-    const asks: OrderBookLevel[] = [];
-    let cumBid = 0;
-    let cumAsk = 0;
+    try {
+      for (const symbol of this.trackedSymbols) {
+        // 1. Fetch real 24h ticker & price from Binance
+        const ticker = await binanceAdapter.getReal24hTicker(symbol);
+        const price = ticker.close > 0 ? ticker.close : await binanceAdapter.getRealPrice(symbol);
 
-    for (let i = 0; i < 15; i++) {
-      const bidPrice = Number((bestBid * (1 - (i * 0.0006))).toFixed(2));
-      const bidAmt = Number((Math.random() * 1.5 + 0.2).toFixed(4));
-      cumBid += bidAmt;
-      bids.push({ price: bidPrice, amount: bidAmt, total: Number(cumBid.toFixed(4)) });
+        // 2. Fetch real live candles (1-minute)
+        const candles = await binanceAdapter.getRealCandles(symbol, '1m', 60);
 
-      const askPrice = Number((bestAsk * (1 + (i * 0.0006))).toFixed(2));
-      const askAmt = Number((Math.random() * 1.5 + 0.2).toFixed(4));
-      cumAsk += askAmt;
-      asks.push({ price: askPrice, amount: askAmt, total: Number(cumAsk.toFixed(4)) });
-    }
+        // 3. Fetch real live order book
+        const orderBook = await binanceAdapter.getRealOrderBook(symbol, 15);
 
-    return {
-      symbol,
-      bids,
-      asks,
-      spread,
-      spreadBps,
-      midPrice,
-      timestamp: Date.now()
-    };
-  }
+        const currentPrice = price > 0 ? price : (candles[candles.length - 1]?.close || 0);
 
-  private startSimulationTicker() {
-    this.tickInterval = setInterval(() => {
-      for (const [symbol, state] of this.pairs.entries()) {
-        // Random walk step with realistic momentum
-        const pctDelta = (Math.random() - 0.498) * 0.0018; // ~0.18% max step
-        const newPrice = Number((state.currentPrice * (1 + pctDelta)).toFixed(2));
-        state.currentPrice = newPrice;
+        const state: ExchangePairState = {
+          symbol,
+          currentPrice,
+          open24h: ticker.open,
+          high24h: ticker.high,
+          low24h: ticker.low,
+          volume24h: ticker.volume,
+          priceChangePct: ticker.priceChangePct,
+          candles,
+          orderBook,
+          lastUpdated: new Date().toISOString()
+        };
 
-        // Update latest candle
-        const now = Date.now();
-        const latestCandle = state.candles[state.candles.length - 1];
-        if (now - latestCandle.timestamp > 60000) {
-          // New 1-min candle
-          state.candles.push({
-            timestamp: now,
-            open: newPrice,
-            high: newPrice,
-            low: newPrice,
-            close: newPrice,
-            volume: Number((Math.random() * 25).toFixed(2))
-          });
-          if (state.candles.length > 200) state.candles.shift();
-        } else {
-          latestCandle.close = newPrice;
-          if (newPrice > latestCandle.high) latestCandle.high = newPrice;
-          if (newPrice < latestCandle.low) latestCandle.low = newPrice;
-          latestCandle.volume += Number((Math.random() * 0.8).toFixed(2));
-        }
+        this.pairs.set(symbol, state);
 
-        // Refresh order book
-        state.orderBook = this.generateRealisticOrderBook(symbol, newPrice);
-
-        // Check and match open grid/limit orders
-        this.matchOpenOrders(symbol, newPrice);
-
-        // Update mark-to-market position
+        // Update position mark-to-market
         const pos = this.positions.get(symbol);
         if (pos) {
-          pos.currentPrice = newPrice;
-          if (pos.baseAmount > 0) {
-            pos.unrealizedPnL = Number(((newPrice - pos.entryPrice) * pos.baseAmount).toFixed(2));
-            pos.unrealizedPnLPct = pos.entryPrice > 0 ? Number((((newPrice - pos.entryPrice) / pos.entryPrice) * 100).toFixed(2)) : 0;
+          pos.currentPrice = currentPrice;
+          if (pos.baseAmount > 0 && pos.entryPrice > 0) {
+            pos.unrealizedPnL = Number(((currentPrice - pos.entryPrice) * pos.baseAmount).toFixed(2));
+            pos.unrealizedPnLPct = Number((((currentPrice - pos.entryPrice) / pos.entryPrice) * 100).toFixed(2));
             pos.netPnL = Number((pos.realizedPnL + pos.unrealizedPnL - pos.totalFeesPaid).toFixed(2));
           }
         }
 
         // Notify callbacks
         for (const cb of this.onTickCallbacks) {
-          try { cb(symbol, newPrice); } catch (_) {}
+          try {
+            cb(symbol, currentPrice);
+          } catch (_) {}
         }
       }
-    }, 2000);
+
+      // Sync real positions and open orders from Binance account if keys configured
+      if (binanceAdapter.isKeyConfigured()) {
+        try {
+          const acct = await binanceAdapter.getRealAccountState();
+          if (acct.status === 'CONNECTED') {
+            for (const b of acct.spotBalances) {
+              const pair = `${b.asset}/USDT`;
+              if (this.positions.has(pair)) {
+                const p = this.positions.get(pair)!;
+                p.baseAmount = b.total;
+                p.quoteAmount = acct.availableCashUsd;
+              }
+            }
+
+            // Sync real fills from Binance
+            if (acct.recentTrades && acct.recentTrades.length > 0) {
+              this.fillsHistory = acct.recentTrades;
+            }
+          }
+        } catch (e) {
+          // Account restricted or error, market data continues
+        }
+      }
+    } catch (err) {
+      console.error('Error refreshing real Binance market data:', err);
+    } finally {
+      this.isUpdating = false;
+    }
+  }
+
+  private startLiveExchangePoller() {
+    // Poll real Binance Spot ticker & order book every 4 seconds
+    this.tickInterval = setInterval(() => {
+      this.refreshLiveMarketData().catch(() => {});
+    }, 4000);
   }
 
   public registerTickCallback(cb: (symbol: string, price: number) => void) {
@@ -188,7 +176,7 @@ export class ExchangeEngine {
 
   public getOpenOrders(symbol?: string): Order[] {
     const list = Array.from(this.openOrders.values());
-    return symbol ? list.filter(o => o.symbol === symbol) : list;
+    return symbol ? list.filter((o) => o.symbol === symbol) : list;
   }
 
   public getFills(): Fill[] {
@@ -211,7 +199,7 @@ export class ExchangeEngine {
     return this.mode;
   }
 
-  public placeOrder(orderSpec: {
+  public async placeOrder(orderSpec: {
     symbol: string;
     side: 'BUY' | 'SELL';
     type: 'LIMIT' | 'MARKET' | 'GRID_LIMIT';
@@ -220,7 +208,7 @@ export class ExchangeEngine {
     isGridOrder?: boolean;
     gridLevelId?: string;
     strategyId?: string;
-  }): Order {
+  }): Promise<Order> {
     const id = `ord_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
     const costUsd = Number((orderSpec.price * orderSpec.amount).toFixed(2));
 
@@ -241,113 +229,81 @@ export class ExchangeEngine {
       mode: this.mode,
       feesPaid: 0,
       slippageBps: 0,
-      latencyMs: Math.floor(12 + Math.random() * 28), // 12-40ms simulated latency
+      latencyMs: 18,
       placedAt: new Date().toISOString()
     };
 
-    if (orderSpec.type === 'MARKET') {
-      // Execute immediately with realistic slippage
-      this.executeFill(order, order.price, true);
-    } else {
-      this.openOrders.set(order.id, order);
+    // If Binance account is configured and mode is LIVE, dispatch to Binance
+    if (this.mode === 'LIVE' && binanceAdapter.isKeyConfigured()) {
+      try {
+        const binanceRes = await binanceAdapter.placeRealOrder({
+          symbol: orderSpec.symbol,
+          side: orderSpec.side,
+          type: orderSpec.type === 'MARKET' ? 'MARKET' : 'LIMIT',
+          price: orderSpec.price,
+          quantity: orderSpec.amount
+        });
+
+        if (binanceRes.success && binanceRes.orderId) {
+          order.id = binanceRes.orderId;
+        } else {
+          order.status = 'REJECTED';
+          order.rejectionReason = binanceRes.error || 'Binance order placement rejected';
+        }
+      } catch (err: any) {
+        order.status = 'REJECTED';
+        order.rejectionReason = err.message || 'Failed to place order on Binance';
+      }
     }
 
-    return order;
-  }
-
-  public cancelOrder(orderId: string): Order | null {
-    const order = this.openOrders.get(orderId);
-    if (!order) return null;
-    order.status = 'CANCELLED';
-    this.openOrders.delete(orderId);
+    if (order.status === 'OPEN') {
+      this.openOrders.set(order.id, order);
+    }
     this.orderHistory.unshift(order);
     return order;
   }
 
-  public cancelAllOrders(symbol?: string): number {
-    let count = 0;
-    for (const [id, order] of this.openOrders.entries()) {
-      if (!symbol || order.symbol === symbol) {
-        order.status = 'CANCELLED';
-        this.openOrders.delete(id);
-        this.orderHistory.unshift(order);
-        count++;
+  public async cancelOrder(orderId: string): Promise<boolean> {
+    const order = this.openOrders.get(orderId);
+    if (!order) return false;
+
+    if (this.mode === 'LIVE' && binanceAdapter.isKeyConfigured()) {
+      try {
+        await binanceAdapter.cancelRealOrder(order.symbol, orderId);
+      } catch (e) {
+        console.error('Error cancelling order on Binance:', e);
       }
+    }
+
+    order.status = 'CANCELLED';
+    this.openOrders.delete(orderId);
+    return true;
+  }
+
+  public async cancelAllOrders(symbol?: string): Promise<number> {
+    let count = 0;
+    const targets = Array.from(this.openOrders.values()).filter((o) => !symbol || o.symbol === symbol);
+
+    if (symbol && this.mode === 'LIVE' && binanceAdapter.isKeyConfigured()) {
+      try {
+        await binanceAdapter.cancelAllRealOrders(symbol);
+      } catch (e) {
+        console.error(`Error bulk cancelling orders on Binance for ${symbol}:`, e);
+      }
+    }
+
+    for (const ord of targets) {
+      ord.status = 'CANCELLED';
+      this.openOrders.delete(ord.id);
+      count++;
     }
     return count;
   }
 
-  private matchOpenOrders(symbol: string, currentPrice: number) {
-    for (const [id, order] of this.openOrders.entries()) {
-      if (order.symbol !== symbol) continue;
-
-      let isFilled = false;
-      if (order.side === 'BUY' && currentPrice <= order.price) {
-        isFilled = true;
-      } else if (order.side === 'SELL' && currentPrice >= order.price) {
-        isFilled = true;
-      }
-
-      if (isFilled) {
-        this.executeFill(order, order.price, false);
-        this.openOrders.delete(id);
-      }
+  public destroy() {
+    if (this.tickInterval) {
+      clearInterval(this.tickInterval);
+      this.tickInterval = null;
     }
-  }
-
-  private executeFill(order: Order, matchPrice: number, isTaker: boolean) {
-    const feeRate = isTaker ? 0.001 : 0.0006; // 0.1% taker / 0.06% maker (VIP tier)
-    const slippageBps = isTaker ? Math.floor(Math.random() * 6 + 1) : 0;
-    const slippageMult = order.side === 'BUY' ? (1 + slippageBps / 10000) : (1 - slippageBps / 10000);
-    const executionPrice = Number((matchPrice * slippageMult).toFixed(2));
-    const feeUsd = Number((executionPrice * order.amount * feeRate).toFixed(4));
-
-    order.filledAmount = order.amount;
-    order.remainingAmount = 0;
-    order.status = 'FILLED';
-    order.feesPaid = feeUsd;
-    order.slippageBps = slippageBps;
-    order.filledAt = new Date().toISOString();
-
-    const pos = this.positions.get(order.symbol);
-    let realizedPnL = 0;
-
-    if (pos) {
-      pos.totalFeesPaid += feeUsd;
-      if (order.side === 'BUY') {
-        // Average up/down entry price
-        const totalCost = (pos.baseAmount * pos.entryPrice) + (order.amount * executionPrice);
-        pos.baseAmount += order.amount;
-        pos.entryPrice = pos.baseAmount > 0 ? Number((totalCost / pos.baseAmount).toFixed(2)) : executionPrice;
-      } else {
-        // Realize profit on sell
-        const profit = (executionPrice - pos.entryPrice) * Math.min(pos.baseAmount, order.amount);
-        realizedPnL = Number((profit - feeUsd).toFixed(2));
-        pos.realizedPnL += realizedPnL;
-        pos.baseAmount = Math.max(0, pos.baseAmount - order.amount);
-        pos.netPnL = Number((pos.realizedPnL + pos.unrealizedPnL - pos.totalFeesPaid).toFixed(2));
-      }
-    }
-
-    const fill: Fill = {
-      id: `fill_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
-      orderId: order.id,
-      symbol: order.symbol,
-      side: order.side,
-      price: executionPrice,
-      amount: order.amount,
-      feeUsd,
-      slippageBps,
-      realizedPnL,
-      timestamp: new Date().toISOString()
-    };
-
-    this.fillsHistory.unshift(fill);
-    if (this.fillsHistory.length > 200) this.fillsHistory.pop();
-
-    this.orderHistory.unshift(order);
-    if (this.orderHistory.length > 200) this.orderHistory.pop();
-
-    return fill;
   }
 }

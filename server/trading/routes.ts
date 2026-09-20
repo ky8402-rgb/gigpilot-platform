@@ -2,6 +2,8 @@ import { Router, Request, Response } from 'express';
 import { globalTradingStore } from './store.js';
 import { generateAdaptiveGrid } from './adaptiveGridEngine.js';
 import { computeAllIndicators } from './indicators.js';
+import { ownerAuth } from './ownerAuth.js';
+import { binanceAdapter } from './binanceAdapter.js';
 
 export const tradingRouter = Router();
 
@@ -215,7 +217,7 @@ tradingRouter.post('/grid/configure', (req: Request, res: Response) => {
 });
 
 // 9. Manual Order Placement (Validated via Independent Risk Engine)
-tradingRouter.post('/order/place', (req: Request, res: Response) => {
+tradingRouter.post('/order/place', async (req: Request, res: Response) => {
   const store = globalTradingStore;
   if (store.killSwitch.getState().isActive) {
     return res.status(403).json({ success: false, error: 'Cannot place orders: Kill Switch is ACTIVE' });
@@ -245,7 +247,7 @@ tradingRouter.post('/order/place', (req: Request, res: Response) => {
     });
   }
 
-  const order = store.exchange.placeOrder({
+  const order = await store.exchange.placeOrder({
     symbol,
     side,
     type,
@@ -337,7 +339,15 @@ tradingRouter.post('/script/execute', (req: Request, res: Response) => {
   const result = store.scripting.executeUserScript(code, {
     symbol: store.activeSymbol,
     candles: pairState?.candles || [],
-    orderBook: pairState?.orderBook || store.exchange.generateRealisticOrderBook(store.activeSymbol, 65000),
+    orderBook: pairState?.orderBook || store.exchange.getPairState(store.activeSymbol)?.orderBook || {
+      symbol: store.activeSymbol,
+      bids: [],
+      asks: [],
+      spread: 0,
+      spreadBps: 0,
+      midPrice: 0,
+      timestamp: Date.now()
+    },
     position,
     balance: store.capital.availableCash,
     marketRegime: store.currentRegime.regime
@@ -527,6 +537,142 @@ tradingRouter.get('/stream', (req: Request, res: Response) => {
   globalTradingStore.exchange.registerTickCallback(sendTick);
 
   req.on('close', () => {
-    // Client disconnected
+    // client disconnected
   });
 });
+
+// 19. Single Owner Authentication & Google Authenticator (TOTP)
+function extractToken(req: Request): string | null {
+  const authHeader = req.headers.authorization;
+  if (authHeader && authHeader.startsWith('Bearer ')) {
+    return authHeader.substring(7);
+  }
+  return (req.query.token as string) || (req.headers['x-owner-token'] as string) || null;
+}
+
+function isOwner(req: Request): boolean {
+  const token = extractToken(req);
+  return token ? ownerAuth.verifyToken(token) : false;
+}
+
+tradingRouter.get('/auth/status', (req: Request, res: Response) => {
+  const authenticated = isOwner(req);
+  return res.json({
+    success: true,
+    ...ownerAuth.getStatus(authenticated),
+    GLOBAL_KILL_SWITCH_ACTIVE: globalTradingStore.GLOBAL_KILL_SWITCH_ACTIVE,
+    tradingMode: globalTradingStore.tradingMode
+  });
+});
+
+tradingRouter.post('/auth/setup-init', async (req: Request, res: Response) => {
+  try {
+    const { email } = req.body || {};
+    const setupData = await ownerAuth.initiateTotpSetup(email);
+    return res.json({
+      success: true,
+      ...setupData
+    });
+  } catch (err: any) {
+    return res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+tradingRouter.post('/auth/setup-complete', (req: Request, res: Response) => {
+  try {
+    const { password, totpCode, email } = req.body || {};
+    const result = ownerAuth.completeSetup(password, totpCode, email);
+    if (!result.success) {
+      return res.status(400).json(result);
+    }
+    globalTradingStore.logAudit('OWNER', 'OWNER_ACCOUNT_SETUP_COMPLETED', { email }, 'SUCCESS');
+    return res.json(result);
+  } catch (err: any) {
+    return res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+tradingRouter.post('/auth/login', (req: Request, res: Response) => {
+  try {
+    const { email, password, totpCode, emergencyPin } = req.body || {};
+    if (!email) {
+      return res.status(400).json({ success: false, error: 'Owner email is required.' });
+    }
+    const result = ownerAuth.login({ email, password, totpCode, emergencyPin });
+    if (!result.success) {
+      globalTradingStore.logAudit('OWNER', 'LOGIN_ATTEMPT_FAILED', { email, error: result.error }, 'REJECTED');
+      return res.status(401).json(result);
+    }
+    globalTradingStore.logAudit('OWNER', 'OWNER_LOGIN_SUCCESSFUL', { email }, 'SUCCESS');
+    return res.json(result);
+  } catch (err: any) {
+    return res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+tradingRouter.post('/auth/logout', (req: Request, res: Response) => {
+  globalTradingStore.logAudit('OWNER', 'OWNER_LOGOUT', {}, 'SUCCESS');
+  return res.json({ success: true, message: 'Logged out successfully' });
+});
+
+// 20. Real Live Exchange Assets & Spot Balances (Binance Spot)
+tradingRouter.get('/assets', async (req: Request, res: Response) => {
+  try {
+    const force = req.query.refresh === 'true';
+    const accountState = await binanceAdapter.getRealAccountState(force);
+    
+    // Sync store capital with real Binance account numbers
+    if (accountState.status === 'CONNECTED') {
+      globalTradingStore.capital.totalEquity = accountState.totalEquityUsd;
+      globalTradingStore.capital.availableCash = accountState.availableCashUsd;
+      globalTradingStore.capital.lockedInOrders = accountState.lockedInOrdersUsd;
+      globalTradingStore.capital.tradingCapital = accountState.totalEquityUsd;
+    }
+
+    return res.json({
+      success: true,
+      assets: accountState
+    });
+  } catch (err: any) {
+    console.error('Error in /api/trading/assets:', err);
+    return res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// 21. Binance Connection Status & Dynamic API Key Management
+tradingRouter.get('/binance/status', (req: Request, res: Response) => {
+  return res.json({
+    success: true,
+    apiKeyConfigured: binanceAdapter.isKeyConfigured(),
+    keyMask: binanceAdapter.getKeyMask(),
+    serverIp: binanceAdapter.getServerIp(),
+    baseUrl: binanceAdapter.getBaseUrl(),
+    status: binanceAdapter.isKeyConfigured() ? 'CONFIGURED' : 'UNCONFIGURED'
+  });
+});
+
+tradingRouter.post('/binance/update-keys', async (req: Request, res: Response) => {
+  try {
+    const { apiKey, apiSecret, baseUrl } = req.body || {};
+    if (!apiKey || !apiSecret) {
+      return res.status(400).json({ success: false, error: 'Both API Key and API Secret are required.' });
+    }
+
+    binanceAdapter.updateCredentials(apiKey, apiSecret, baseUrl);
+    const testState = await binanceAdapter.getRealAccountState(true);
+
+    globalTradingStore.logAudit('OWNER', 'BINANCE_KEYS_UPDATED', {
+      keyMask: binanceAdapter.getKeyMask(),
+      status: testState.status
+    }, 'SUCCESS');
+
+    return res.json({
+      success: true,
+      message: 'Binance API credentials updated successfully.',
+      accountState: testState
+    });
+  } catch (err: any) {
+    return res.status(500).json({ success: false, error: err.message });
+  }
+});
+

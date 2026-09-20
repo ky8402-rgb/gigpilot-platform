@@ -12,7 +12,11 @@ import {
   Sliders,
   Sparkles,
   AlertTriangle,
-  Power
+  Power,
+  KeyRound,
+  ShieldCheck,
+  Wallet,
+  LogOut
 } from 'lucide-react';
 import { AutonomyLevel, MarketRegime, TradingMode } from '../../types/trading';
 
@@ -39,6 +43,11 @@ interface HeaderNavProps {
   latencyMs?: number;
   isLiveConnected?: boolean;
   onReconnect?: () => void;
+  isOwnerAuthenticated?: boolean;
+  ownerEmail?: string;
+  onOpenOwnerAuth?: () => void;
+  onLogoutOwner?: () => void;
+  onNavigateToAssets?: () => void;
 }
 
 export const HeaderNav: React.FC<HeaderNavProps> = ({
@@ -59,7 +68,12 @@ export const HeaderNav: React.FC<HeaderNavProps> = ({
   marketRegime,
   latencyMs = 24,
   isLiveConnected = false,
-  onReconnect
+  onReconnect,
+  isOwnerAuthenticated = false,
+  ownerEmail = 'ky8402@gmail.com',
+  onOpenOwnerAuth,
+  onLogoutOwner,
+  onNavigateToAssets
 }) => {
   const isKillActive = globalKillSwitchActive !== undefined ? globalKillSwitchActive : killSwitchActive;
   const areBotsHalted = botsDisabled !== undefined ? botsDisabled : (isKillActive || autonomyLevel === 0);
@@ -254,9 +268,47 @@ export const HeaderNav: React.FC<HeaderNavProps> = ({
                 )}
               </>
             )}
-            <span className="text-slate-600 hidden lg:inline">|</span>
-            <span className="text-slate-300 hidden lg:inline">OWNER</span>
           </div>
+
+          {/* Quick Assets Tab Button */}
+          {onNavigateToAssets && (
+            <button
+              onClick={onNavigateToAssets}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-900 hover:bg-slate-800 text-slate-200 text-xs font-semibold border border-slate-800 hover:border-amber-500/50 transition shadow-sm"
+              title="View live Binance spot assets & balances"
+            >
+              <Wallet className="w-3.5 h-3.5 text-amber-400" />
+              <span className="hidden sm:inline">Binance Assets</span>
+            </button>
+          )}
+
+          {/* Owner 2FA Status & Authentication Button */}
+          {isOwnerAuthenticated ? (
+            <div className="flex items-center gap-2 px-2.5 py-1.5 rounded-lg bg-emerald-950/50 border border-emerald-800/80 text-emerald-300 text-xs font-mono">
+              <ShieldCheck className="w-4 h-4 text-emerald-400" />
+              <div className="hidden xl:flex flex-col text-[10px] leading-tight">
+                <span className="font-bold text-emerald-200">OWNER VERIFIED</span>
+                <span className="text-slate-400 truncate max-w-[120px]">{ownerEmail}</span>
+              </div>
+              {onLogoutOwner && (
+                <button
+                  onClick={onLogoutOwner}
+                  className="p-1 hover:text-white transition"
+                  title="Logout Owner Session"
+                >
+                  <LogOut className="w-3.5 h-3.5" />
+                </button>
+              )}
+            </div>
+          ) : (
+            <button
+              onClick={onOpenOwnerAuth}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-amber-500/10 hover:bg-amber-500/20 text-amber-300 border border-amber-500/40 text-xs font-semibold transition"
+            >
+              <KeyRound className="w-3.5 h-3.5 text-amber-400" />
+              <span>Owner 2FA Login</span>
+            </button>
+          )}
 
           {/* PROMINENT GLOBAL KILL SWITCH TOGGLE BUTTON */}
           <div

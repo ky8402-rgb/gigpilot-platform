@@ -1,10 +1,10 @@
-import { 
-  AuditLog, 
-  AutonomyLevel, 
-  CapitalAccounting, 
-  GridConfiguration, 
-  MarketRegime, 
-  TradingMode 
+import {
+  AuditLog,
+  AutonomyLevel,
+  CapitalAccounting,
+  GridConfiguration,
+  MarketRegime,
+  TradingMode
 } from './types.js';
 import { ExchangeEngine } from './exchangeEngine.js';
 import { RiskEngine } from './riskEngine.js';
@@ -16,6 +16,7 @@ import { ScriptingSandboxEngine } from './scriptingEngine.js';
 import { SelfUpdaterManager } from './selfUpdater.js';
 import { detectMarketRegime } from './marketRegime.js';
 import { generateAdaptiveGrid, checkRebalanceNeeded } from './adaptiveGridEngine.js';
+import { binanceAdapter } from './binanceAdapter.js';
 
 export class TradingStore {
   public exchange: ExchangeEngine;
@@ -28,16 +29,16 @@ export class TradingStore {
   public updater: SelfUpdaterManager;
 
   public activeSymbol: string = 'BTC/USDT';
-  public autonomyLevel: AutonomyLevel = 1; // Default LEVEL 1 (PAPER TRADING)
+  public autonomyLevel: AutonomyLevel = 0; // Default LEVEL 0 (SAFETY: Observe only, zero orders)
   public previousAutonomyLevel: AutonomyLevel = 1;
-  public GLOBAL_KILL_SWITCH_ACTIVE: boolean = false;
-  public activeBotsDisabled: boolean = false;
-  public tradingMode: TradingMode = 'PAPER';
+  public GLOBAL_KILL_SWITCH_ACTIVE: boolean = true; // DEFAULT SAFE KILL SWITCH ENGAGED
+  public activeBotsDisabled: boolean = true;
+  public tradingMode: TradingMode = 'LIVE'; // Real live trading on personal Binance account
   public currentRegime: MarketRegime;
   public activeGrid: GridConfiguration | null = null;
   public capital: CapitalAccounting;
   public auditLogs: AuditLog[] = [];
-  public ownerAuthenticated: boolean = true; // Authorized single-user owner
+  public ownerAuthenticated: boolean = false;
 
   constructor() {
     this.exchange = new ExchangeEngine();
@@ -49,60 +50,59 @@ export class TradingStore {
     this.scripting = new ScriptingSandboxEngine();
     this.updater = new SelfUpdaterManager();
 
-    // Initial Capital Accounting
-    this.capital = {
-      initialCapital: 10000.00,
-      totalEquity: 12480.50,
-      tradingCapital: 10000.00,
-      availableCash: 7240.20,
-      lockedInOrders: 2759.80,
-      profitReserve: 300.00,
-      eligibleRealizedProfit: 2180.50,
-      withdrawableProfit: 1880.50,
-      totalSweptProfit: 1500.00,
-      netRealizedProfit: 2480.50,
-      unrealizedProfit: 320.10,
-      grossProfit: 2795.80,
-      totalTradingFees: 215.30,
-      totalSlippageCost: 35.20,
-      totalFundingCosts: 64.80,
-      totalWithdrawalCosts: 5.00,
-      roiPct: 24.8,
-      annualizedReturnPct: 58.4,
-      sharpeRatio: 2.52,
-      sortinoRatio: 3.28,
-      maxDrawdownPct: 4.2,
-      currentDrawdownPct: 1.1,
-      winRatePct: 79.2,
-      profitFactor: 2.34,
-      totalTrades: 214,
-      winningTrades: 169,
-      losingTrades: 45
-    };
-
-    // Calculate initial regime
-    const btcState = this.exchange.getPairState(this.activeSymbol);
-    this.currentRegime = detectMarketRegime(
-      btcState?.candles || [], 
-      btcState?.orderBook
+    // Kill switch initialized to ACTIVE per user requirement
+    this.killSwitch.activate(
+      'RISK_ENGINE',
+      'GLOBAL_KILL_SWITCH_ACTIVE=true on startup: Live real fund protection engaged. All automated bots paused.',
+      0,
+      false
     );
 
-    // Initialize initial adaptive grid
-    if (btcState) {
-      this.activeGrid = generateAdaptiveGrid({
-        symbol: this.activeSymbol,
-        currentPrice: btcState.currentPrice,
-        totalAllocatedUsd: 3500,
-        levelsCount: 20,
-        spacingType: 'GEOMETRIC',
-        volatilityAdjustment: true,
-        trendProtection: true,
-        regime: this.currentRegime
-      });
+    // Initial Capital Accounting (All values derived from real exchange)
+    this.capital = {
+      initialCapital: 0.0,
+      totalEquity: 0.0,
+      tradingCapital: 0.0,
+      availableCash: 0.0,
+      lockedInOrders: 0.0,
+      profitReserve: 0.0,
+      eligibleRealizedProfit: 0.0,
+      withdrawableProfit: 0.0,
+      totalSweptProfit: 0.0,
+      netRealizedProfit: 0.0,
+      unrealizedProfit: 0.0,
+      grossProfit: 0.0,
+      totalTradingFees: 0.0,
+      totalSlippageCost: 0.0,
+      totalFundingCosts: 0.0,
+      totalWithdrawalCosts: 0.0,
+      roiPct: 0.0,
+      annualizedReturnPct: 0.0,
+      sharpeRatio: 0.0,
+      sortinoRatio: 0.0,
+      maxDrawdownPct: 0.0,
+      currentDrawdownPct: 0.0,
+      winRatePct: 0.0,
+      profitFactor: 0.0,
+      totalTrades: 0,
+      winningTrades: 0,
+      losingTrades: 0
+    };
 
-      // Place initial grid limit orders in exchange engine
-      this.placeGridOrdersInExchange(this.activeGrid);
-    }
+    // Initialize initial default regime
+    this.currentRegime = {
+      regime: 'RANGE_BOUND_LOW_VOL',
+      confidence: 0.85,
+      atr: 420.0,
+      rsi: 51.2,
+      adx: 18.5,
+      bbBandwidth: 2.1,
+      orderBookImbalance: 0.05,
+      trendDirection: 'NEUTRAL',
+      recommendedGridSpacing: 0.45,
+      suggestedAction: 'Awaiting operator release of GLOBAL_KILL_SWITCH to initiate live grid allocation.',
+      detectedAt: new Date().toISOString()
+    };
 
     this.logAudit(
       'AUTONOMOUS_AGENT',
@@ -110,12 +110,16 @@ export class TradingStore {
       {
         mode: this.tradingMode,
         autonomyLevel: this.autonomyLevel,
-        pair: this.activeSymbol,
-        initialCapital: this.capital.initialCapital,
-        championStrategy: this.learningLoop.getChampion().id
+        GLOBAL_KILL_SWITCH_ACTIVE: this.GLOBAL_KILL_SWITCH_ACTIVE,
+        activeBotsDisabled: this.activeBotsDisabled,
+        exchange: 'BINANCE_SPOT',
+        note: 'Live Binance Spot architecture loaded with zero simulation.'
       },
       'SUCCESS'
     );
+
+    // Sync real Binance account capital
+    this.syncCapitalFromBinance();
 
     // Hook exchange tick event for regime updates and autonomous rebalancing
     this.exchange.registerTickCallback((symbol, price) => {
@@ -123,13 +127,40 @@ export class TradingStore {
         this.handlePriceTick(price);
       }
     });
+
+    // Periodic capital sync from Binance (every 10 seconds)
+    setInterval(() => {
+      this.syncCapitalFromBinance().catch(() => {});
+    }, 10000);
+  }
+
+  public async syncCapitalFromBinance(): Promise<void> {
+    try {
+      const acct = await binanceAdapter.getRealAccountState();
+      if (acct.status === 'CONNECTED') {
+        this.capital.totalEquity = acct.totalEquityUsd;
+        this.capital.availableCash = acct.availableCashUsd;
+        this.capital.lockedInOrders = acct.lockedInOrdersUsd;
+        this.capital.tradingCapital = acct.totalEquityUsd;
+        if (this.capital.initialCapital === 0 && acct.totalEquityUsd > 0) {
+          this.capital.initialCapital = acct.totalEquityUsd;
+        }
+
+        // Update real trades count
+        if (acct.recentTrades && acct.recentTrades.length > 0) {
+          this.capital.totalTrades = acct.recentTrades.length;
+        }
+      }
+    } catch (e) {
+      // Handled gracefully in adapter
+    }
   }
 
   private placeGridOrdersInExchange(grid: GridConfiguration) {
-    if (this.killSwitch.getState().isActive) return;
+    if (this.GLOBAL_KILL_SWITCH_ACTIVE || this.killSwitch.getState().isActive) return;
+    if (this.autonomyLevel < 2) return; // Only place in exchange if authorized
 
     for (const lvl of grid.activeLevels) {
-      // Validate with risk engine first
       const validation = this.risk.validateOrder(
         {
           symbol: grid.symbol,
@@ -159,22 +190,18 @@ export class TradingStore {
   }
 
   private handlePriceTick(currentPrice: number) {
-    if (this.killSwitch.getState().isActive) return;
+    const pairState = this.exchange.getPairState(this.activeSymbol);
+    if (!pairState || pairState.candles.length === 0) return;
 
-    const btcState = this.exchange.getPairState(this.activeSymbol);
-    if (!btcState) return;
+    // Recalculate regime from real Binance candles & depth
+    this.currentRegime = detectMarketRegime(pairState.candles, pairState.orderBook);
 
-    // Recalculate regime every minute
-    this.currentRegime = detectMarketRegime(btcState.candles, btcState.orderBook);
-
-    // Check if grid needs dynamic rebalance
-    if (this.activeGrid && (this.autonomyLevel >= 1)) {
+    // If active grid exists and bots enabled
+    if (!this.GLOBAL_KILL_SWITCH_ACTIVE && this.activeGrid && this.autonomyLevel >= 2) {
       const check = checkRebalanceNeeded(currentPrice, this.activeGrid);
       if (check.needed) {
-        // Cancel stale grid orders
         this.exchange.cancelAllOrders(this.activeSymbol);
 
-        // Regenerate grid with updated volatility & regime bounds
         this.activeGrid = generateAdaptiveGrid({
           symbol: this.activeSymbol,
           currentPrice,
@@ -202,20 +229,15 @@ export class TradingStore {
         );
       }
     }
-
-    // Update real-time capital accounting
-    const positions = this.exchange.getPositions();
-    const activePos = positions.find(p => p.symbol === this.activeSymbol);
-    if (activePos) {
-      this.capital.unrealizedProfit = activePos.unrealizedPnL;
-      this.capital.totalEquity = Number((this.capital.initialCapital + this.capital.netRealizedProfit + this.capital.unrealizedProfit).toFixed(2));
-      this.capital.roiPct = Number(((this.capital.totalEquity - this.capital.initialCapital) / this.capital.initialCapital * 100).toFixed(2));
-    }
   }
 
   public setAutonomyLevel(level: AutonomyLevel) {
+    if (this.GLOBAL_KILL_SWITCH_ACTIVE && level > 0) {
+      throw new Error('Cannot increase autonomy level while GLOBAL_KILL_SWITCH_ACTIVE is engaged. Disengage kill switch first.');
+    }
     const prev = this.autonomyLevel;
     this.autonomyLevel = level;
+    this.activeBotsDisabled = level === 0;
     this.logAudit('OWNER', 'AUTONOMY_LEVEL_CHANGED', { previous: prev, newLevel: level }, 'SUCCESS');
   }
 
@@ -229,29 +251,32 @@ export class TradingStore {
   public setActiveSymbol(symbol: string) {
     this.activeSymbol = symbol;
     const pairState = this.exchange.getPairState(symbol);
-    if (pairState) {
+    if (pairState && pairState.currentPrice > 0) {
       this.currentRegime = detectMarketRegime(pairState.candles, pairState.orderBook);
       this.activeGrid = generateAdaptiveGrid({
         symbol,
         currentPrice: pairState.currentPrice,
-        totalAllocatedUsd: 3500,
-        levelsCount: 20,
+        totalAllocatedUsd: Math.min(3500, this.capital.availableCash > 0 ? this.capital.availableCash * 0.5 : 1000),
+        levelsCount: 16,
         spacingType: 'GEOMETRIC',
         volatilityAdjustment: true,
         trendProtection: true,
         regime: this.currentRegime
       });
-      this.exchange.cancelAllOrders();
-      this.placeGridOrdersInExchange(this.activeGrid);
+
+      if (!this.GLOBAL_KILL_SWITCH_ACTIVE && this.autonomyLevel >= 2) {
+        this.exchange.cancelAllOrders();
+        this.placeGridOrdersInExchange(this.activeGrid);
+      }
     }
   }
 
-  public triggerEmergencyKillSwitch(reason = 'Manual operator emergency shutdown: Disabling all active trading bots'): void {
+  public async triggerEmergencyKillSwitch(reason = 'Manual operator emergency shutdown: Disabling all active trading bots'): Promise<void> {
     this.GLOBAL_KILL_SWITCH_ACTIVE = true;
     this.activeBotsDisabled = true;
     this.previousAutonomyLevel = this.autonomyLevel;
-    this.autonomyLevel = 0; // Disable all active bots (Level 0 = Observe only, zero orders)
-    const cancelledCount = this.exchange.cancelAllOrders();
+    this.autonomyLevel = 0; // Disable all bots
+    const cancelledCount = await this.exchange.cancelAllOrders();
     this.killSwitch.activate('OWNER', reason, cancelledCount, false);
     this.logAudit(
       'OWNER',
@@ -265,13 +290,26 @@ export class TradingStore {
     this.GLOBAL_KILL_SWITCH_ACTIVE = false;
     this.activeBotsDisabled = false;
     this.killSwitch.deactivate();
-    // Restore previous autonomy level if available
     this.autonomyLevel = this.previousAutonomyLevel > 0 ? this.previousAutonomyLevel : 1;
     this.logAudit('OWNER', 'GLOBAL_KILL_SWITCH_DEACTIVATED', { GLOBAL_KILL_SWITCH_ACTIVE: false, botsRestored: true }, 'SUCCESS');
-    
-    // Re-seed grid
-    if (this.activeGrid) {
-      this.placeGridOrdersInExchange(this.activeGrid);
+
+    // Generate fresh adaptive grid with real live price
+    const pairState = this.exchange.getPairState(this.activeSymbol);
+    if (pairState && pairState.currentPrice > 0) {
+      this.activeGrid = generateAdaptiveGrid({
+        symbol: this.activeSymbol,
+        currentPrice: pairState.currentPrice,
+        totalAllocatedUsd: Math.min(3500, this.capital.availableCash > 0 ? this.capital.availableCash * 0.5 : 1000),
+        levelsCount: 16,
+        spacingType: 'GEOMETRIC',
+        volatilityAdjustment: true,
+        trendProtection: true,
+        regime: this.currentRegime
+      });
+
+      if (this.autonomyLevel >= 2) {
+        this.placeGridOrdersInExchange(this.activeGrid);
+      }
     }
   }
 

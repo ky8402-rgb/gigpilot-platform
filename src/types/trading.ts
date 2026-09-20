@@ -351,3 +351,47 @@ export interface MasterTradingState {
   };
   serverTime: string;
 }
+
+export interface BinanceAssetWithUsd {
+  asset: string;
+  free: number;
+  locked: number;
+  total: number;
+  usdPrice: number;
+  usdValue: number;
+  allocationPct: number;
+  change24hPct?: number;
+}
+
+export interface BinanceAccountState {
+  status: 'CONNECTED' | 'RESTRICTED' | 'DISCONNECTED' | 'ERROR';
+  message: string;
+  serverIp: string;
+  timestamp: string;
+  totalEquityUsd: number;
+  availableCashUsd: number;
+  lockedInOrdersUsd: number;
+  spotBalances: BinanceAssetWithUsd[];
+  realizedProfitUsd: number;
+  unrealizedProfitUsd: number;
+  todayPnLUsd: number;
+  todayPnLPct: number;
+  openOrdersCount: number;
+  recentTrades: Fill[];
+  canTrade: boolean;
+  canWithdraw: boolean;
+  canDeposit: boolean;
+  accountType: string;
+  apiKeyConfigured: boolean;
+  keyMask: string;
+}
+
+export interface OwnerAuthStatus {
+  isAuthenticated: boolean;
+  isConfigured: boolean;
+  ownerEmail: string;
+  totpEnabled: boolean;
+  hasPassword: boolean;
+  GLOBAL_KILL_SWITCH_ACTIVE?: boolean;
+}
+

@@ -9,6 +9,7 @@ coverage/
 !.env.production
 .dev.env.json
 .dev.pid
+.owner-auth-config.json
 __pycache__/
 *.pyc
 .cache/

@@ -27,7 +27,10 @@ import {
   fetchRiskData,
   fetchUpdatesHistory,
   fetchAuditLogs,
-  isEngineLiveConnected
+  isEngineLiveConnected,
+  fetchOwnerAuthStatus,
+  logoutOwner,
+  getStoredOwnerToken
 } from '../../services/tradingService';
 import {
   generateDefaultMasterState,
@@ -52,6 +55,8 @@ import { ProfitSweepView } from './ProfitSweepView';
 import { WebResearchView } from './WebResearchView';
 import { RiskAndSafetyView } from './RiskAndSafetyView';
 import { CanaryAndAuditView } from './CanaryAndAuditView';
+import { AssetDashboard } from './AssetDashboard';
+import { OwnerAuthModal } from './OwnerAuthModal';
 
 import {
   BarChart2,
@@ -65,11 +70,13 @@ import {
   RefreshCw,
   Cpu,
   Wifi,
-  WifiOff
+  WifiOff,
+  Coins
 } from 'lucide-react';
 
 export type ActiveTerminalTab =
   | 'TERMINAL'
+  | 'ASSETS'
   | 'ADAPTIVE_GRID'
   | 'LEARNING_LOOP'
   | 'SCRIPTING_IDE'
@@ -78,7 +85,11 @@ export type ActiveTerminalTab =
   | 'RISK_SAFETY'
   | 'SYSTEM_CANARY';
 
-export const TradingDashboard: React.FC = () => {
+export interface TradingDashboardProps {
+  onLogout?: () => void;
+}
+
+export const TradingDashboard: React.FC<TradingDashboardProps> = ({ onLogout }) => {
   const [activeTab, setActiveTab] = useState<ActiveTerminalTab>('TERMINAL');
   // Initialize with complete, realistic master state immediately so the app never blocks on loading
   const [state, setState] = useState<MasterTradingState>(() => generateDefaultMasterState());
@@ -112,9 +123,12 @@ export const TradingDashboard: React.FC = () => {
   }));
   const [updatesHistory, setUpdatesHistory] = useState<any[]>(() => DEFAULT_SYSTEM_UPDATES);
   const [auditLogs, setAuditLogs] = useState<any[]>(() => DEFAULT_AUDIT_LOGS);
-  const [globalKillSwitchActive, setGlobalKillSwitchActive] = useState<boolean>(false);
+  const [globalKillSwitchActive, setGlobalKillSwitchActive] = useState<boolean>(true);
   const [isLiveConnected, setIsLiveConnected] = useState<boolean>(false);
   const [refreshing, setRefreshing] = useState(false);
+  const [isOwnerAuth, setIsOwnerAuth] = useState<boolean>(() => !!getStoredOwnerToken());
+  const [ownerEmail, setOwnerEmail] = useState<string>('ky8402@gmail.com');
+  const [showAuthModal, setShowAuthModal] = useState<boolean>(false);
   const stateRef = useRef(state);
   stateRef.current = state;
 
@@ -175,36 +189,21 @@ export const TradingDashboard: React.FC = () => {
     return () => clearInterval(interval);
   }, [loadFullState]);
 
-  // Client-side simulation price tick when operating in standalone or offline mode
+  // Check and sync Owner 2FA authentication state
   useEffect(() => {
-    if (isLiveConnected) return;
+    fetchOwnerAuthStatus().then((status) => {
+      setIsOwnerAuth(status.isAuthenticated);
+      if (status.ownerEmail) setOwnerEmail(status.ownerEmail);
+    }).catch(() => {});
+  }, []);
 
-    const simTick = setInterval(() => {
-      const currentState = stateRef.current;
-      if (!currentState || currentState.GLOBAL_KILL_SWITCH_ACTIVE || currentState.botsDisabled) return;
-
-      const drift = (Math.random() - 0.495) * 0.0012; // slight micro-drift
-      setState(prev => {
-        if (!prev) return prev;
-        const currentPrice = prev.position?.currentPrice || 66520;
-        const newPrice = Number((currentPrice * (1 + drift)).toFixed(2));
-        const pnlDelta = (newPrice - (prev.position?.entryPrice || currentPrice)) * (prev.position?.baseAmount || 0.05);
-
-        return {
-          ...prev,
-          serverTime: new Date().toISOString(),
-          position: prev.position ? {
-            ...prev.position,
-            currentPrice: newPrice,
-            unrealizedPnL: Number(pnlDelta.toFixed(2)),
-            unrealizedPnLPct: Number(((pnlDelta / 3500) * 100).toFixed(2))
-          } : undefined
-        };
-      });
-    }, 2000);
-
-    return () => clearInterval(simTick);
-  }, [isLiveConnected]);
+  const handleLogoutOwner = async () => {
+    await logoutOwner();
+    setIsOwnerAuth(false);
+    if (onLogout) {
+      onLogout();
+    }
+  };
 
   const handleToggleGlobalKillSwitch = async (activate?: boolean) => {
     const nextActive = activate !== undefined ? activate : !globalKillSwitchActive;
@@ -278,16 +277,21 @@ export const TradingDashboard: React.FC = () => {
           setRefreshing(true);
           loadFullState();
         }}
+        isOwnerAuthenticated={isOwnerAuth}
+        ownerEmail={ownerEmail}
+        onOpenOwnerAuth={() => setShowAuthModal(true)}
+        onLogoutOwner={handleLogoutOwner}
+        onNavigateToAssets={() => setActiveTab('ASSETS')}
       />
 
-      {/* Offline / Simulation Notification Bar (Non-blocking) */}
+      {/* Backend Synchronization Notification Bar */}
       {!isLiveConnected && (
         <div className="bg-gradient-to-r from-amber-950/70 via-slate-900 to-amber-950/70 border-b border-amber-500/30 px-4 py-1.5 text-amber-200 font-mono text-[11px] flex flex-wrap items-center justify-between gap-2 z-20">
           <div className="flex items-center gap-2">
             <span className="w-2 h-2 rounded-full bg-amber-400 animate-pulse" />
-            <span className="font-bold text-amber-300">AUTONOMOUS CLIENT ENGINE RUNNING:</span>
+            <span className="font-bold text-amber-300">BACKEND EXCHANGE GATEWAY CONNECTING:</span>
             <span className="text-slate-300">
-              Operating with full client-side execution loop. All controls, charts, indicators, and Global Kill Switch are fully functional.
+              Live spot market prices, balances, and orders stream directly from Binance Spot REST API.
             </span>
           </div>
           <button
@@ -299,7 +303,7 @@ export const TradingDashboard: React.FC = () => {
             className="px-2.5 py-0.5 bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border border-amber-500/40 text-[10px] font-bold uppercase tracking-wider rounded transition-all flex items-center gap-1 cursor-pointer"
           >
             <RefreshCw className={`w-3 h-3 ${refreshing ? 'animate-spin' : ''}`} />
-            <span>{refreshing ? 'Connecting...' : 'Connect to Live Server'}</span>
+            <span>{refreshing ? 'Connecting...' : 'Sync Live Gateway'}</span>
           </button>
         </div>
       )}
@@ -348,6 +352,18 @@ export const TradingDashboard: React.FC = () => {
             >
               <BarChart2 className="w-3.5 h-3.5" />
               <span>Grid Terminal</span>
+            </button>
+
+            <button
+              onClick={() => setActiveTab('ASSETS')}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-mono font-bold transition-all ${
+                activeTab === 'ASSETS'
+                  ? 'bg-amber-950/80 text-amber-300 border border-amber-600/80 shadow'
+                  : 'text-slate-400 hover:text-slate-200'
+              }`}
+            >
+              <Coins className="w-3.5 h-3.5 text-amber-400" />
+              <span>Binance Assets</span>
             </button>
 
             <button
@@ -490,6 +506,14 @@ export const TradingDashboard: React.FC = () => {
           </div>
         )}
 
+        {activeTab === 'ASSETS' && (
+          <AssetDashboard
+            onNavigateToTrade={() => setActiveTab('TERMINAL')}
+            isOwnerAuthenticated={isOwnerAuth}
+            onOpenOwnerLogin={() => setShowAuthModal(true)}
+          />
+        )}
+
         {activeTab === 'ADAPTIVE_GRID' && (
           <AdaptiveGridConfigurator
             currentPrice={pairDetails?.currentPrice || 66850}
@@ -557,6 +581,16 @@ export const TradingDashboard: React.FC = () => {
           />
         )}
       </main>
+
+      {/* 5. Single Owner Authentication & TOTP Modal */}
+      <OwnerAuthModal
+        isOpen={showAuthModal}
+        onClose={() => setShowAuthModal(false)}
+        onAuthSuccess={() => {
+          setIsOwnerAuth(true);
+          loadFullState();
+        }}
+      />
     </div>
   );
 };

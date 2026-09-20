@@ -1,11 +1,13 @@
 import {
   AuditLog,
   AutonomyLevel,
+  BinanceAccountState,
   CapitalAccounting,
   DestinationWallet,
   GridConfiguration,
   MasterTradingState,
   Order,
+  OwnerAuthStatus,
   ProfitSweep,
   ResearchItem,
   RiskRuleConfig,
@@ -92,6 +94,26 @@ export function getCandidateBaseUrls(): string[] {
   return [...new Set(urls)];
 }
 
+const OWNER_TOKEN_STORAGE_KEY = 'gigpilot_owner_token';
+
+export function getStoredOwnerToken(): string | null {
+  try {
+    return localStorage.getItem(OWNER_TOKEN_STORAGE_KEY);
+  } catch {
+    return null;
+  }
+}
+
+export function setStoredOwnerToken(token: string | null): void {
+  try {
+    if (token) {
+      localStorage.setItem(OWNER_TOKEN_STORAGE_KEY, token);
+    } else {
+      localStorage.removeItem(OWNER_TOKEN_STORAGE_KEY);
+    }
+  } catch {}
+}
+
 /**
  * Resilient multi-endpoint HTTP fetch with timeout and automatic failover.
  * Never throws an uncaught fatal error that crashes the UI.
@@ -99,6 +121,21 @@ export function getCandidateBaseUrls(): string[] {
 async function fetchWithFailover<T>(endpointPath: string, options?: RequestInit): Promise<T> {
   const candidates = getCandidateBaseUrls();
   let lastError: any = null;
+
+  const mergedHeaders: Record<string, string> = {
+    Accept: 'application/json',
+    ...(options?.headers as Record<string, string> || {})
+  };
+
+  const token = getStoredOwnerToken();
+  if (token) {
+    mergedHeaders['Authorization'] = `Bearer ${token}`;
+  }
+
+  const mergedOptions: RequestInit = {
+    ...options,
+    headers: mergedHeaders
+  };
 
   for (const baseUrl of candidates) {
     const cleanEndpoint = endpointPath.startsWith('/') ? endpointPath : `/${endpointPath}`;
@@ -109,7 +146,7 @@ async function fetchWithFailover<T>(endpointPath: string, options?: RequestInit)
       const timeoutId = setTimeout(() => controller.abort(), 3500);
 
       const res = await fetch(targetUrl, {
-        ...options,
+        ...mergedOptions,
         signal: controller.signal
       });
       clearTimeout(timeoutId);
@@ -786,3 +823,155 @@ export async function fetchAuditLogs(): Promise<{ logs: AuditLog[] }> {
     return { logs: fallbackAuditLogs };
   }
 }
+
+// ==========================================
+// REAL BINANCE ASSETS & OWNER AUTHENTICATION
+// ==========================================
+
+export async function fetchLiveAssets(forceRefresh = false): Promise<{ success: boolean; assets: BinanceAccountState }> {
+  try {
+    return await fetchWithFailover<{ success: boolean; assets: BinanceAccountState }>(`/assets${forceRefresh ? '?refresh=true' : ''}`);
+  } catch (err: any) {
+    return {
+      success: false,
+      assets: {
+        status: 'DISCONNECTED',
+        message: err.message || 'Failed to reach Binance assets API',
+        serverIp: '3.222.149.9',
+        timestamp: new Date().toISOString(),
+        totalEquityUsd: 0,
+        availableCashUsd: 0,
+        lockedInOrdersUsd: 0,
+        spotBalances: [],
+        realizedProfitUsd: 0,
+        unrealizedProfitUsd: 0,
+        todayPnLUsd: 0,
+        todayPnLPct: 0,
+        openOrdersCount: 0,
+        recentTrades: [],
+        canTrade: false,
+        canWithdraw: false,
+        canDeposit: false,
+        accountType: 'SPOT',
+        apiKeyConfigured: false,
+        keyMask: 'NOT CONFIGURED'
+      }
+    };
+  }
+}
+
+export async function fetchBinanceStatus(): Promise<{
+  success: boolean;
+  apiKeyConfigured: boolean;
+  keyMask: string;
+  serverIp: string;
+  baseUrl: string;
+  status: string;
+}> {
+  try {
+    return await fetchWithFailover('/binance/status');
+  } catch {
+    return {
+      success: true,
+      apiKeyConfigured: false,
+      keyMask: 'NOT CONFIGURED',
+      serverIp: '3.222.149.9',
+      baseUrl: 'https://api.binance.com',
+      status: 'UNCONFIGURED'
+    };
+  }
+}
+
+export async function updateBinanceKeys(
+  apiKey: string,
+  apiSecret: string,
+  baseUrl?: string
+): Promise<{ success: boolean; message: string; accountState?: any; error?: string }> {
+  try {
+    return await fetchWithFailover('/binance/update-keys', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ apiKey, apiSecret, baseUrl })
+    });
+  } catch (err: any) {
+    return { success: false, message: '', error: err.message || 'Failed to update Binance credentials' };
+  }
+}
+
+export async function fetchOwnerAuthStatus(): Promise<OwnerAuthStatus> {
+  try {
+    const res = await fetchWithFailover<OwnerAuthStatus & { success: boolean }>('/auth/status');
+    return {
+      isAuthenticated: res.isAuthenticated,
+      isConfigured: res.isConfigured,
+      ownerEmail: res.ownerEmail || 'ky8402@gmail.com',
+      totpEnabled: res.totpEnabled,
+      hasPassword: res.hasPassword,
+      GLOBAL_KILL_SWITCH_ACTIVE: res.GLOBAL_KILL_SWITCH_ACTIVE
+    };
+  } catch {
+    return {
+      isAuthenticated: !!getStoredOwnerToken(),
+      isConfigured: false,
+      ownerEmail: 'ky8402@gmail.com',
+      totpEnabled: false,
+      hasPassword: false,
+      GLOBAL_KILL_SWITCH_ACTIVE: true
+    };
+  }
+}
+
+export async function initiateOwnerTotpSetup(email?: string): Promise<{
+  success: boolean;
+  secret: string;
+  otpauthUrl: string;
+  qrCodeDataUrl: string;
+  error?: string;
+}> {
+  return await fetchWithFailover('/auth/setup-init', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ email })
+  });
+}
+
+export async function completeOwnerSetup(
+  password: string,
+  totpCode: string,
+  email?: string
+): Promise<{ success: boolean; token?: string; error?: string }> {
+  const res = await fetchWithFailover<{ success: boolean; token?: string; error?: string }>('/auth/setup-complete', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ password, totpCode, email })
+  });
+  if (res.success && res.token) {
+    setStoredOwnerToken(res.token);
+  }
+  return res;
+}
+
+export async function loginOwner(credentials: {
+  email: string;
+  password?: string;
+  totpCode?: string;
+  emergencyPin?: string;
+}): Promise<{ success: boolean; token?: string; error?: string }> {
+  const res = await fetchWithFailover<{ success: boolean; token?: string; error?: string }>('/auth/login', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(credentials)
+  });
+  if (res.success && res.token) {
+    setStoredOwnerToken(res.token);
+  }
+  return res;
+}
+
+export async function logoutOwner(): Promise<void> {
+  try {
+    await fetchWithFailover('/auth/logout', { method: 'POST' });
+  } catch {}
+  setStoredOwnerToken(null);
+}
+
