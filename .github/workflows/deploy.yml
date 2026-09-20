@@ -271,7 +271,7 @@ jobs:
         run: |
           BID_URL="https://${EC2_HOST//./-}.sslip.io/api/autonomous-freelance/bid-cycle"
           echo "Starting provider-backed autonomous bid cycle at $BID_URL..."
-          RESPONSE=$(curl -k -sS -X POST "$BID_URL" -H "Content-Type: application/json" --max-time 30 || true)
+          RESPONSE=$(curl -k -sS -X POST "$BID_URL" -H "Content-Type: application/json" --max-time 90 || true)
           if [ -z "$RESPONSE" ]; then
             echo "⚠ Autonomous bid cycle returned no response; scheduled worker will retry."
             exit 0
@@ -286,6 +286,22 @@ jobs:
               } catch { console.log("Bid cycle response was not valid JSON."); }
             });
           '
+      - name: Verify Earning Funnel After Bid Cycle
+        env:
+          EC2_HOST: ${{ secrets.EC2_HOST || '3.222.149.9' }}
+        run: |
+          EARNING_URL="https://${EC2_HOST//./-}.sslip.io/api/autonomous-freelance/earning-status"
+          RESPONSE=$(curl -k -sS "$EARNING_URL" --max-time 15 || true)
+          if [ -n "$RESPONSE" ]; then
+            echo "$RESPONSE" | node -e '
+              let input=""; process.stdin.on("data",d=>input+=d); process.stdin.on("end",()=>{
+                try { const x=JSON.parse(input); const f=x.funnel||{}; console.log(`Post-bid funnel: submitted=${f.submitted||0}, accepted=${f.accepted||0}, funded=${f.funded||0}, delivered=${f.delivered||0}, settled=${f.settled||0}`); }
+                catch { console.log("Post-bid earning status was not valid JSON."); }
+              });
+            '
+          else
+            echo "⚠ Post-bid earning status unavailable."
+          fi
       - name: Report EC2 Status to Step Summary
         env:
           EC2_HOST: ${{ secrets.EC2_HOST || '3.222.149.9' }}
