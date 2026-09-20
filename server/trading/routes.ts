@@ -115,11 +115,11 @@ tradingRouter.post('/autonomy', requireOwner, (req: Request, res: Response) => {
 // 6. Trading Mode
 tradingRouter.post('/mode', requireOwner, (req: Request, res: Response) => {
   const { mode } = req.body;
-  if (!['SIMULATION', 'PAPER', 'LIVE'].includes(mode)) {
-    return res.status(400).json({ success: false, error: 'Invalid mode' });
+  if (mode !== 'LIVE') {
+    return res.status(400).json({ success: false, error: 'GigPilot is LIVE Binance Spot only; paper and simulation modes have been removed.' });
   }
 
-  globalTradingStore.setTradingMode(mode);
+  globalTradingStore.setTradingMode('LIVE');
   res.json({ success: true, tradingMode: globalTradingStore.tradingMode });
 });
 
