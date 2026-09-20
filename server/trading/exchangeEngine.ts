@@ -139,7 +139,15 @@ export class ExchangeEngine {
               }
             }
 
-            // Sync real fills from Binance
+            // Sync real Binance open orders into the engine so the terminal never
+            // reports an empty local order book when orders exist at Binance.
+            const liveOrders = await binanceAdapter.getRealOpenOrders();
+            this.openOrders.clear();
+            for (const liveOrder of liveOrders) {
+              this.openOrders.set(liveOrder.id, liveOrder);
+            }
+
+            // Sync real fills from Binance.
             if (acct.recentTrades && acct.recentTrades.length > 0) {
               this.fillsHistory = acct.recentTrades;
             }
