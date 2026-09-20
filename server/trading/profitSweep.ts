@@ -23,11 +23,26 @@ export class ProfitSweepSubsystem {
   }
 
   public updateWallet(wallet: Partial<DestinationWallet>): DestinationWallet {
+    const chain = wallet.chain || this.destinationWallet.chain;
+    if (!['ethereum', 'polygon', 'solana'].includes(chain)) {
+      throw new Error('Supported sweep chains are ethereum, polygon, and solana.');
+    }
     this.destinationWallet = {
       ...this.destinationWallet,
       ...wallet,
+      chain,
+      isWhitelisted: false,
       lastVerifiedAt: new Date().toISOString()
     };
+    return this.getWallet();
+  }
+
+  public confirmWallet(address: string): DestinationWallet {
+    if (address !== this.destinationWallet.address) {
+      throw new Error('Wallet confirmation does not match the configured destination address.');
+    }
+    this.destinationWallet.isWhitelisted = true;
+    this.destinationWallet.lastVerifiedAt = new Date().toISOString();
     return this.getWallet();
   }
 
@@ -109,28 +124,18 @@ export class ProfitSweepSubsystem {
       };
     }
 
-    const networkFeeUsd = this.destinationWallet.chain === 'solana' ? 0.05 : 2.50;
-    const netTransferred = amount - networkFeeUsd;
+    // Safety invariant: this subsystem must never manufacture a transaction hash
+    // or mark funds as transferred unless a real exchange withdrawal executor is wired in.
+    if (process.env.REAL_SWEEP_EXECUTOR_ENABLED !== 'true') {
+      return {
+        success: false,
+        error: 'Real profit-sweep executor is not configured; no funds were moved.'
+      };
+    }
 
-    const txHash = '0x' + crypto.randomBytes(32).toString('hex');
-    const auditSignature = crypto
-      .createHmac('sha256', 'quant_audit_secret')
-      .update(`${txHash}:${amount}:${this.destinationWallet.address}:${Date.now()}`)
-      .digest('hex');
-
-    const sweep: ProfitSweep = {
-      id: `swp_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
-      timestamp: new Date().toISOString(),
-      destinationWallet: this.destinationWallet.address,
-      chain: this.destinationWallet.chain,
-      grossSweepAmount: Number(amount.toFixed(2)),
-      networkFeeUsd,
-      netTransferredUsd: Number(netTransferred.toFixed(2)),
-      reserveRetainedUsd: eligibility.reserveRetained,
-      status: 'CONFIRMED',
-      txHash,
-      auditSignature,
-      operator
+    return {
+      success: false,
+      error: 'Real profit-sweep executor is intentionally unavailable in this build; no funds were moved.'
     };
 
     this.sweepsHistory.unshift(sweep);
