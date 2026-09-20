@@ -1,5 +1,5 @@
 export type AutonomyLevel = 0 | 1 | 2 | 3 | 4;
-export type TradingMode = 'SIMULATION' | 'PAPER' | 'LIVE';
+export type TradingMode = 'LIVE';
 
 export type MarketRegimeType = 
   | 'RANGE_BOUND_LOW_VOL' 
@@ -241,7 +241,6 @@ export interface StrategyVersion {
     rebalanceIntervalSec: number;
   };
   backtestResults: StrategyPerformanceMetrics;
-  paperTradingResults?: StrategyPerformanceMetrics;
   liveResults?: StrategyPerformanceMetrics;
   validationScore: number;
   expectedEffect: string;
