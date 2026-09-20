@@ -777,6 +777,34 @@ router.get('/autonomous-freelance/readiness', async (_req, res) => {
 });
 
 /**
+ * GET /api/autonomous-freelance/earning-status
+ * Provider-grounded operational counters. No synthetic revenue is reported.
+ */
+router.get('/autonomous-freelance/earning-status', async (_req, res) => {
+  try {
+    const readiness = getAutonomousReadiness();
+    const [submitted, accepted, funded, delivered, settled] = await Promise.all([
+      prisma.workOrder.count({ where: { externalProvider: { equals: 'Freelancer', mode: 'insensitive' }, externalBidId: { not: null } } }),
+      prisma.workOrder.count({ where: { externalProvider: { equals: 'Freelancer', mode: 'insensitive' }, externalAcceptanceVerified: true } }),
+      prisma.workOrder.count({ where: { externalProvider: { equals: 'Freelancer', mode: 'insensitive' }, escrowStatus: 'FUNDED' } }),
+      prisma.workOrder.count({ where: { externalProvider: { equals: 'Freelancer', mode: 'insensitive' }, deliveryStatus: 'PROVIDER_DELIVERED' } }),
+      prisma.workOrder.count({ where: { externalProvider: { equals: 'Freelancer', mode: 'insensitive' }, escrowStatus: 'SETTLED' } }),
+    ]);
+    return res.json({
+      success: true,
+      readyForRealEarning: readiness.ready,
+      readiness,
+      funnel: { submitted, accepted, funded, delivered, settled },
+      revenuePolicy: 'Only provider-confirmed funded, delivered, and settled work counts as real revenue.',
+      generatedAt: new Date().toISOString(),
+    });
+  } catch (err: any) {
+    return res.status(500).json({ success: false, error: err?.message || 'EARNING_STATUS_FAILED' });
+  }
+});
+
+
+/**
  * POST /api/autonomous-freelance/run
  * Executes only provider-confirmed + funded contracts.
  */
