@@ -24,12 +24,6 @@ else
 fi
 
 echo "Working directory: $(pwd)"
-# Load only the host's existing runtime environment; no credentials are committed.
-if [ -f ".env" ]; then
-  set -a
-  source .env
-  set +a
-fi
 git fetch --all --prune
 # Stash and reset any runtime logs so merge/pull succeeds cleanly
 git checkout -- RUN_LOG.md sentient-freelancer/RUN_LOG.md 2>/dev/null || true
@@ -39,40 +33,6 @@ git reset --hard origin/main || git pull origin main || git pull origin master
 
 echo "Installing production build dependencies..."
 npm install --prefer-offline || npm install --legacy-peer-deps
-
-echo "Applying production PostgreSQL migrations..."
-if [ -z "${DATABASE_URL:-}" ]; then
-  echo "ERROR: DATABASE_URL is required for production deployment."
-  exit 1
-fi
-
-# Existing production databases may predate Prisma migration history. In that case,
-# baseline the known initial migration without changing application data, then apply
-# all newer migrations normally. Never use db push or reset in production.
-MIGRATE_LOG="$(mktemp)"
-trap 'rm -f "$MIGRATE_LOG"' EXIT
-if npx prisma migrate deploy 2>&1 | tee "$MIGRATE_LOG"; then
-  :
-elif grep -q "Error: P3005" "$MIGRATE_LOG"; then
-  echo "Detected an existing non-empty database without Prisma migration history; baselining the initial migration."
-  npx prisma migrate resolve --applied 20260831000000_add_bid_performance_indexes
-  npx prisma migrate deploy
-else
-  echo "ERROR: Prisma production migration failed for a reason other than an uninitialized migration history."
-  cat "$MIGRATE_LOG"
-  exit 1
-fi
-# Defensive production repair: apply the provider-backed autonomous WorkOrder columns
-# directly as idempotent SQL as well as through Prisma migration history. This protects
-# existing production databases whose migration table was previously baselined or drifted.
-REPAIR_SQL="prisma/migrations/20260920100000_repair_autonomous_freelance_columns/migration.sql"
-if [ -f "$REPAIR_SQL" ]; then
-  echo "Verifying provider-backed autonomous freelance schema..."
-  npx prisma db execute --schema prisma/schema.prisma --file "$REPAIR_SQL"
-  echo "✔ Autonomous freelance schema repair applied idempotently."
-fi
-
-npx prisma generate
 
 echo "Building application bundles (Vite + esbuild)..."
 npm run build

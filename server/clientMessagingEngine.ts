@@ -146,14 +146,14 @@ function sanitizeMessage(msg: ClientMessage): ClientMessage {
   let updatedText = msg.text;
   if (updatedText) {
     updatedText = updatedText
-      .replace(/paypal\.me\/kundanvision369/gi, process.env.PAYPAL_ME_USERNAME ? `paypal.me/${process.env.PAYPAL_ME_USERNAME}` : '')
-      .replace(/kundanvision369@okhdfcbank/gi, process.env.PAYONEER_ACCOUNT_NUMBER ? '[configured settlement account]' : '');
+      .replace(/paypal\.me\/kundanvision369/gi, 'paypal.me/ky8402')
+      .replace(/kundanvision369@okhdfcbank/gi, 'chandimay@ybl');
   }
   let actionPayload = msg.actionPayload;
   if (actionPayload) {
     let link = actionPayload.link;
     if (link) {
-      link = link.replace(/paypal\.me\/kundanvision369/gi, process.env.PAYPAL_ME_USERNAME ? `paypal.me/${process.env.PAYPAL_ME_USERNAME}` : '');
+      link = link.replace(/paypal\.me\/kundanvision369/gi, 'paypal.me/ky8402');
     }
     actionPayload = { ...actionPayload, link };
   }
@@ -315,7 +315,7 @@ Tone: ${params.tone || 'professional, confident, clear, and action-oriented'}
 ${params.userPrompt ? `Special instructions from freelancer: "${params.userPrompt}"` : ''}
 
 Draft the reply. Be polite, technically competent, reassuring, and guide the client toward next steps (milestone approval, review, or payment release).
-If referencing PayPal or sending an invoice/payment link, always use Kundan's verified PayPal handle: a server-generated PayPal payment link using the configured payment destination. Never invent another handle.
+If referencing PayPal or sending an invoice/payment link, always use Kundan's verified PayPal handle: https://paypal.me/ky8402/${conv.projectBudget || 250}USD (receiver email: kundank4@icloud.com). Never invent another handle.
 Keep the reply under 120 words. No robotic phrasing. Return ONLY the message text without quotes.`;
 
       const result = await generateContentResilient({

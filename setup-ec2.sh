@@ -172,17 +172,17 @@ FRONTEND_URL=${FRONTEND_URL}
 CORS_ALLOWED_ORIGINS="${FRONTEND_URL},https://*.amplifyapp.com,http://localhost:3000,http://127.0.0.1:3000,https://${DOMAIN}"
 
 # Neon PostgreSQL Database Connection (Serverless Pooler)
-DATABASE_URL=<set-in-aws-secret-store>
+DATABASE_URL="${NEON_DATABASE_URL}"
 
 # Redis / Render / ElastiCache Connection
-REDIS_URL=<set-in-aws-secret-store>
+REDIS_URL=redis://red-daarifid0e5s7392b3k0:6379
 
 # PayPal Payment Gateway & Virtual Terminal (Sandbox / Production Mode)
-PAYPAL_CLIENT_ID=<set-in-aws-secret-store>
-PAYPAL_CLIENT_SECRET=<set-in-aws-secret-store>
+PAYPAL_CLIENT_ID=BAAv8rRenc5jlfD6eH_8pvgcU250jXTZCnyPKdBby13EAYRKhCempoPQ3Hj41GEfe2qBMu1P8ZslnbdkIc
+PAYPAL_CLIENT_SECRET=EH8CcxBIVPvFhoAKbL-HN8l_jSdOYzlGA2oahgGs1wPV7bogYK_TE4hIOjPtzOVj-mOUUXVy8uMIt6-N
 PAYPAL_MODE=sandbox
-PAYPAL_RECEIVER_EMAIL=<set-in-aws-secret-store>
-PAYPAL_ME_USERNAME=<set-in-aws-secret-store>
+PAYPAL_RECEIVER_EMAIL=kundank4@icloud.com
+PAYPAL_ME_USERNAME=ky8402
 
 # Self-Healing, Python ML Microservice & Telemetry
 ML_SERVICE_URL=http://127.0.0.1:8000

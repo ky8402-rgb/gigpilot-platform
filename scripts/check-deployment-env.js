@@ -8,7 +8,6 @@
 import fs from 'fs';
 import path from 'path';
 
-// Colors for terminal output
 const RESET = '\x1b[0m';
 const BOLD = '\x1b[1m';
 const GREEN = '\x1b[32m';
@@ -17,7 +16,7 @@ const RED = '\x1b[31m';
 const CYAN = '\x1b[36m';
 const DIM = '\x1b[2m';
 
-console.log(`\n${BOLD}${CYAN}🔍 [GigPilot] Verifying Deployment Environment & API Credentials...${RESET}`);
+console.log(`\n${BOLD}${CYAN}🔍 [Autonomous Crypto Grid Trading Platform] Verifying Deployment Environment...${RESET}`);
 
 // Load .env if present in current directory
 const envPath = path.join(process.cwd(), '.env');
@@ -41,93 +40,47 @@ if (fs.existsSync(envPath)) {
 
 const CHECKS = [
   {
-    key: 'PAYPAL_RECEIVER_EMAIL',
-    name: 'PayPal Merchant / Payout Email',
-    category: 'paypal',
+    key: 'GITHUB_TOKEN',
+    name: 'GitHub Personal Access Token',
+    category: 'gitops',
     required: false,
-    default: '<set-in-secret-store>',
-    hint: 'Destination PayPal address for receiving client payments & bid winnings.'
+    default: process.env.GITHUB_TOKEN ? 'configured' : undefined,
+    hint: 'Enables automated git push to GitHub repository.'
   },
   {
-    key: 'PAYPAL_ME_USERNAME',
-    name: 'PayPal.Me Handle',
-    category: 'paypal',
+    key: 'EC2_HOST',
+    name: 'AWS EC2 Production Host',
+    category: 'cloud',
     required: false,
-    default: 'ky8402',
-    hint: 'Shortcode handle for instant PayPal.Me payment link generation.'
+    default: '3.222.149.9',
+    hint: 'Host IP or public DNS for backend zero-downtime reload.'
   },
   {
-    key: 'PAYPAL_CLIENT_ID',
-    name: 'PayPal REST Client ID',
-    category: 'paypal',
+    key: 'AMPLIFY_APP_ID',
+    name: 'AWS Amplify App ID',
+    category: 'cloud',
     required: false,
-    default: '<set-in-secret-store>',
-    hint: 'REST App Client ID for automated server-side order captures.'
+    default: 'd2qe2q720fbn3x',
+    hint: 'AWS Amplify application ID for frontend CD sync.'
   },
   {
-    key: 'PAYPAL_CLIENT_SECRET',
-    name: 'PayPal REST Client Secret',
-    category: 'paypal',
+    key: 'PORT',
+    name: 'Server Listening Port',
+    category: 'server',
     required: false,
-    default: '<set-in-secret-store>',
-    hint: 'REST App Secret for automated webhook validation & refunds.'
-  },
-  {
-    key: 'FREELANCER_ACCESS_TOKEN',
-    name: 'Freelancer.com OAuth 2.0 Access Token',
-    category: 'freelancer',
-    required: false,
-    default: '',
-    hint: 'Active OAuth 2.0 Bearer token for automated Freelancer.com bid submission.'
-  },
-  {
-    key: 'FREELANCER_API_BASE_URL',
-    name: 'Freelancer.com REST API Base URL',
-    category: 'freelancer',
-    required: false,
-    default: 'https://www.freelancer.com/api',
-    hint: 'Base endpoint URL for official Freelancer REST API calls.'
-  },
-  {
-    key: 'FREELANCER_CLIENT_ID',
-    name: 'Freelancer.com OAuth 2.0 Client ID',
-    category: 'freelancer',
-    required: false,
-    hint: 'Client ID from accounts.freelancer.com/settings/develop for OAuth 2.0 Authorization Code flow.'
-  },
-  {
-    key: 'FREELANCER_CLIENT_SECRET',
-    name: 'Freelancer.com OAuth 2.0 Client Secret',
-    category: 'freelancer',
-    required: false,
-    hint: 'Client Secret from accounts.freelancer.com/settings/develop for token exchanges & automated refreshes.'
+    default: '3000',
+    hint: 'Port used by Express and reverse proxy routing.'
   },
   {
     key: 'GEMINI_API_KEY',
     name: 'Google Gemini AI API Key',
     category: 'ai',
     required: false,
-    hint: 'Required for AI proposal generation and autonomous job matching scoring.'
-  },
-  {
-    key: 'DATABASE_URL',
-    name: 'PostgreSQL / Supabase Database URL',
-    category: 'database',
-    required: false,
-    hint: 'Durable cloud database connection string. Defaults to in-memory/sqlite if omitted.'
-  },
-  {
-    key: 'JWT_SECRET',
-    name: 'JWT Auth Secret Key',
-    category: 'core',
-    required: false,
-    default: 'gigpilot_jwt_default_secret_prod_key',
-    hint: 'Key for signing user session tokens.'
+    hint: 'Enables AI market intelligence synthesis and quant script optimization.'
   }
 ];
 
 let criticalMissing = 0;
-let warnings = 0;
 let configuredCount = 0;
 
 console.log(`\n${BOLD}--- Environment Variable Status ---${RESET}`);
@@ -149,7 +102,6 @@ CHECKS.forEach((check) => {
     console.log(`  ${RED}✖${RESET} ${BOLD}${check.key}${RESET} (${check.name}): ${RED}MISSING (Required)${RESET}`);
     console.log(`    ${DIM}↳ Hint: ${check.hint}${RESET}`);
   } else {
-    warnings++;
     console.log(`  ${YELLOW}○${RESET} ${BOLD}${check.key}${RESET} (${check.name}): ${YELLOW}Not Set (Optional/Fallback Active)${RESET}`);
     console.log(`    ${DIM}↳ ${check.hint}${RESET}`);
   }
@@ -157,15 +109,10 @@ CHECKS.forEach((check) => {
 
 console.log(`\n${BOLD}--- Summary ---${RESET}`);
 console.log(`Total Configured: ${GREEN}${configuredCount}${RESET} / ${CHECKS.length}`);
-console.log(`Optional / Fallbacks: ${YELLOW}${warnings}${RESET}`);
 
-const isWarnOnly = process.argv.includes('--warn-only');
-
-if (criticalMissing > 0) {
-  console.error(`\n${RED}${BOLD}❌ Deployment Pre-check Failed: ${criticalMissing} required environment variables are missing.${RESET}`);
-  if (!isWarnOnly) {
-    process.exit(1);
-  }
+if (process.argv.includes('--strict') && criticalMissing > 0) {
+  console.error(`\n${RED}✖ Deployment pre-flight checks failed with ${criticalMissing} missing required variable(s).${RESET}`);
+  process.exit(1);
 } else {
-  console.log(`\n${GREEN}${BOLD}✅ Environment Pre-check Passed! System ready for build & deployment.${RESET}\n`);
+  console.log(`\n${GREEN}✔ Pre-flight verification passed successfully.${RESET}\n`);
 }

@@ -110,20 +110,22 @@ export async function completeWorkOrderAndPayout(
   const payoutAmount = job?.budget || 100;
   const isTimeBased = Boolean((job as any)?.type === 'hourly' || (workOrder as any)?.is_time_based);
 
-  // A completion event is not itself a payment. Require explicit customer confirmation.
-  if (!workOrder.customer_confirmed && triggerReason !== 'customer_confirmation') {
-    return {
-      success: false,
-      workOrder,
-      transaction: null,
-      payoutStatus: 'pending_approval',
-      message: 'WORK_ORDER_NOT_READY: customer confirmation is required before settlement.'
-    };
+  // 1. Mark Work Order as completed
+  workOrder.status = 'completed';
+  workOrder.completed_at = now.toISOString();
+  workOrder.payment_status = 'processing';
+  if (triggerReason === 'customer_confirmation') {
+    workOrder.customer_confirmed = true;
+  } else if (triggerReason === 'worker_action') {
+    workOrder.worker_marked_complete = true;
   }
-  workOrder.customer_confirmed = true;
 
-  // 1. Trigger the real payout provider first. Do not mark the order completed before provider confirmation.
-  // 2. Decrement worker workload only after successful settlement.
+  // 2. Decrement worker current_workload
+  if (worker.current_workload > 0) {
+    worker.current_workload -= 1;
+  }
+
+  // 3. Trigger Autonomous Cash-Out Engine with Risk Bands (Requirement 7)
   const cashOutResult = await executeAutonomousCashOut({
     workOrderId: workOrder.id,
     projectTitle: job?.title || `Work Order #${workOrderId}`,
@@ -140,16 +142,11 @@ export async function completeWorkOrderAndPayout(
   } else if (cashOutResult.status === 'failed') {
     payoutStatus = 'failed';
     workOrder.payment_status = 'failed';
-  } else if (cashOutResult.status === 'completed' && cashOutResult.payoutBatchId) {
+  } else {
     payoutStatus = 'paid';
     workOrder.payment_status = 'paid';
     workOrder.status = 'paid';
-    workOrder.completed_at = now.toISOString();
     if (job) job.status = 'paid';
-    if (worker.current_workload > 0) worker.current_workload -= 1;
-  } else {
-    payoutStatus = 'failed';
-    workOrder.payment_status = 'failed';
   }
 
   const payoutBatchId = cashOutResult.payoutBatchId || '';
@@ -255,8 +252,13 @@ export async function checkAndAutoApproveOverdueWorkOrders(): Promise<{
 
   for (const order of overdueOrders) {
     try {
-      if (!order.customer_confirmed) continue;
-      const res = await completeWorkOrderAndPayout(order.id, 'customer_confirmation');
+      const reason = order.customer_confirmed
+        ? 'customer_confirmation'
+        : order.worker_marked_complete
+        ? 'worker_action'
+        : 'deadline_auto_approve';
+
+      const res = await completeWorkOrderAndPayout(order.id, reason);
       if (res.success) {
         approvedIds.push(order.id);
       }

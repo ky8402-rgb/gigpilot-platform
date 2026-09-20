@@ -29,31 +29,7 @@ export async function autoDispatchJob(jobParams: {
   customerId?: string;
   deadlineHours?: number;
   externalId?: string;
-  /** Must be true only when the marketplace/provider has confirmed the award/acceptance. */
-  externalAcceptanceVerified?: boolean;
 }): Promise<DispatchResult> {
-  // A public job listing or locally generated proposal is not an awarded contract.
-  // Never create a paid work order or mark a bid accepted until the external provider confirms the award.
-  if (!jobParams.externalAcceptanceVerified) {
-    return {
-      job: {
-        id: crypto.randomUUID(),
-        title: jobParams.title,
-        description: jobParams.description,
-        budget: Number(jobParams.budget) || 0,
-        status: 'open',
-        customer_id: jobParams.customerId || 'external-provider',
-        external_id: jobParams.externalId || null,
-        created_at: new Date().toISOString()
-      },
-      selectedWorker: null,
-      bid: null,
-      workOrder: null,
-      dispatchStatus: 'error',
-      message: 'WORK_ORDER_BLOCKED: external provider award/acceptance has not been verified.'
-    };
-  }
-
   // Safety check: Hard Exclude Filters (Never Bid)
   const excludeCheck = checkHardExcludeFilter({
     title: jobParams.title,

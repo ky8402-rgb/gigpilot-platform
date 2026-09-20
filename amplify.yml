@@ -11,6 +11,7 @@ frontend:
         - echo "VITE_API_BASE_URL=${BACKEND_URL}" >> .env.production
         - if [ -n "$FREELANCER_CLIENT_ID" ]; then echo "VITE_FREELANCER_CLIENT_ID=${FREELANCER_CLIENT_ID}" >> .env.production; fi
         - if [ -n "$FREELANCER_API_BASE_URL" ]; then echo "VITE_FREELANCER_API_BASE_URL=${FREELANCER_API_BASE_URL}" >> .env.production; fi
+        - if [ -n "$FREELANCER_ACCESS_TOKEN" ]; then echo "FREELANCER_ACCESS_TOKEN=${FREELANCER_ACCESS_TOKEN}" >> .env.production; fi
         - npm ci || npm install --legacy-peer-deps
     build:
       commands:

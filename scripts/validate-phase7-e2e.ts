@@ -219,7 +219,7 @@ async function runPhase7Validation() {
     status: 'SUCCESS',
     risk: 'LOW',
     metadata: {
-      freelancerApiToken: '<redacted-demo-token>',
+      freelancerApiToken: '3PKsiB3m736mE0wnirnHeLTUzLP1xc',
       secretKey: 'top_secret_credential_value',
     },
   });
