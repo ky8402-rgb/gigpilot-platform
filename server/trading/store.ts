@@ -61,7 +61,7 @@ export class TradingStore {
 
     // Initial Capital Accounting (All values derived from real exchange)
     this.capital = {
-      initialCapital: 0.0,
+      initialCapital: Number(process.env.INITIAL_TRADING_CAPITAL_USD) > 0 ? Number(process.env.INITIAL_TRADING_CAPITAL_USD) : 0.0,
       totalEquity: 0.0,
       tradingCapital: 0.0,
       availableCash: 0.0,
@@ -143,6 +143,11 @@ export class TradingStore {
         this.capital.availableCash = acct.availableCashUsd;
         this.capital.lockedInOrders = acct.lockedInOrdersUsd;
         this.capital.tradingCapital = acct.totalEquityUsd;
+        this.capital.withdrawableProfit = acct.withdrawableProfitUsd;
+        this.capital.profitReserve = acct.profitReserveBufferUsd;
+        if (this.capital.initialCapital === 0 && acct.initialTradingCapitalUsd > 0) {
+          this.capital.initialCapital = acct.initialTradingCapitalUsd;
+        }
         if (this.capital.initialCapital === 0 && acct.totalEquityUsd > 0) {
           this.capital.initialCapital = acct.totalEquityUsd;
         }
