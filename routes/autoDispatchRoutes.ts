@@ -785,11 +785,11 @@ router.get('/autonomous-freelance/earning-status', async (_req, res) => {
   try {
     const readiness = getAutonomousReadiness();
     const [submitted, accepted, funded, delivered, settled] = await Promise.all([
-      prisma.workOrder.count({ where: { externalProvider: { equals: 'Freelancer', mode: 'insensitive' }, externalBidId: { not: null } } }),
-      prisma.workOrder.count({ where: { externalProvider: { equals: 'Freelancer', mode: 'insensitive' }, externalAcceptanceVerified: true } }),
-      prisma.workOrder.count({ where: { externalProvider: { equals: 'Freelancer', mode: 'insensitive' }, escrowStatus: 'FUNDED' } }),
-      prisma.workOrder.count({ where: { externalProvider: { equals: 'Freelancer', mode: 'insensitive' }, deliveryStatus: 'PROVIDER_DELIVERED' } }),
-      prisma.workOrder.count({ where: { externalProvider: { equals: 'Freelancer', mode: 'insensitive' }, escrowStatus: 'SETTLED' } }),
+      prisma.workOrder.count({ where: { externalProvider: 'Freelancer', externalBidId: { not: null } } }),
+      prisma.workOrder.count({ where: { externalProvider: 'Freelancer', externalAcceptanceVerified: true } }),
+      prisma.workOrder.count({ where: { externalProvider: 'Freelancer', escrowStatus: 'FUNDED' } }),
+      prisma.workOrder.count({ where: { externalProvider: 'Freelancer', deliveryStatus: 'PROVIDER_DELIVERED' } }),
+      prisma.workOrder.count({ where: { externalProvider: 'Freelancer', escrowStatus: 'SETTLED' } }),
     ]);
     return res.json({
       success: true,
