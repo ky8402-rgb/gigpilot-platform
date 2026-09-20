@@ -352,6 +352,22 @@ export interface MasterTradingState {
   serverTime: string;
 }
 
+export interface BinanceTransaction {
+  id: string;
+  type: 'DEPOSIT' | 'WITHDRAWAL' | 'TRADE' | 'FEE';
+  asset: string;
+  amount: number;
+  valueUsd: number;
+  status: string;
+  timestamp: string;
+  orderId?: string;
+  tradeId?: string;
+  txId?: string;
+  symbol?: string;
+  side?: 'BUY' | 'SELL';
+  feeUsd?: number;
+}
+
 export interface BinanceAssetWithUsd {
   asset: string;
   free: number;
@@ -371,6 +387,9 @@ export interface BinanceAccountState {
   totalEquityUsd: number;
   availableCashUsd: number;
   lockedInOrdersUsd: number;
+  withdrawableProfitUsd: number;
+  initialTradingCapitalUsd: number;
+  profitReserveBufferUsd: number;
   spotBalances: BinanceAssetWithUsd[];
   realizedProfitUsd: number;
   unrealizedProfitUsd: number;
@@ -378,6 +397,7 @@ export interface BinanceAccountState {
   todayPnLPct: number;
   openOrdersCount: number;
   recentTrades: Fill[];
+  transactions: BinanceTransaction[];
   canTrade: boolean;
   canWithdraw: boolean;
   canDeposit: boolean;
