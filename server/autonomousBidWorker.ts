@@ -1,5 +1,5 @@
 import { prisma } from './db.js';
-import { fetchLivePlatformJobs, submitPlatformBid, isAutonomousBiddingEnabled, type NormalizedWorkOrder } from './platformIntegrations.js';
+import { fetchFreelancerJobsFromApi, submitPlatformBid, isAutonomousBiddingEnabled, type NormalizedWorkOrder } from './platformIntegrations.js';
 import { checkHardExcludeFilter } from './autoBidFilters.js';
 import { logActivityEvent } from './activityLogger.js';
 
@@ -47,9 +47,8 @@ export async function runAutonomousBidCycle(): Promise<{
     return { enabled: true, scanned: 0, submitted: 0, skipped: 0, errors: 1, results: [{ error: 'FREELANCER_NOT_CONFIGURED' }] };
   }
 
-  const { jobs } = await fetchLivePlatformJobs('');
+  const jobs = await fetchFreelancerJobsFromApi('data extraction python automation transcription image');
   const candidates = jobs
-    .filter((job) => job.platform === 'Freelancer')
     .filter((job) => checkHardExcludeFilter({ title: job.title, description: job.description || '' }).shouldSkip === false)
     .filter((job) => Number(job.externalId || job.id))
     .sort((a, b) => scoreJob(b) - scoreJob(a))
@@ -115,5 +114,5 @@ export async function runAutonomousBidCycle(): Promise<{
     await new Promise((resolve) => setTimeout(resolve, MIN_BID_INTERVAL_MS));
   }
 
-  return { enabled: true, scanned: jobs.filter((j) => j.platform === 'Freelancer').length, submitted, skipped, errors, results };
+  return { enabled: true, scanned: jobs.length, submitted, skipped, errors, results };
 }
