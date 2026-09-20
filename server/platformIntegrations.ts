@@ -103,6 +103,26 @@ let liveWorkOrders: NormalizedWorkOrder[] = [];
 /**
  * Check connectivity and credentials status for all integrated platforms
  */
+/**
+ * In production, activate the autonomous loop automatically when a real
+ * Freelancer credential is present. Explicit false still disables it.
+ * Bidding is provider-backed; execution only touches awarded + funded work.
+ */
+export function isAutonomousAutoActivationEnabled(): boolean {
+  return process.env.AUTONOMOUS_AUTO_ACTIVATE !== 'false' &&
+    (process.env.NODE_ENV === 'production' || process.env.AUTONOMOUS_AUTO_ACTIVATE === 'true');
+}
+
+export function isAutonomousBiddingEnabled(): boolean {
+  const token = String(process.env.FREELANCER_ACCESS_TOKEN || process.env.FREELANCER_API_KEY || process.env.FREELANCER_OAUTH_TOKEN || '').trim();
+  return process.env.AUTONOMOUS_BIDDING_ENABLED === 'true' || (isAutonomousAutoActivationEnabled() && Boolean(token));
+}
+
+export function isAutonomousExecutionEnabled(): boolean {
+  const token = String(process.env.FREELANCER_ACCESS_TOKEN || process.env.FREELANCER_API_KEY || process.env.FREELANCER_OAUTH_TOKEN || '').trim();
+  return process.env.AUTONOMOUS_EXECUTION_ENABLED === 'true' || (isAutonomousAutoActivationEnabled() && Boolean(token));
+}
+
 export function getPlatformStatus(): PlatformStatus {
   const upworkToken = process.env.UPWORK_OAUTH_TOKEN;
   const contraKey = process.env.CONTRA_API_KEY;
@@ -113,8 +133,8 @@ export function getPlatformStatus(): PlatformStatus {
   const paypalMeUser = process.env.PAYPAL_ME_USERNAME || '';
   const isPaypalLive = process.env.PAYPAL_MODE === 'live';
   const freelancerCredentialsConfigured = Boolean(flToken && flToken.trim().length > 0);
-  const biddingEnabled = process.env.AUTONOMOUS_BIDDING_ENABLED === 'true';
-  const executionEnabled = process.env.AUTONOMOUS_EXECUTION_ENABLED === 'true';
+  const biddingEnabled = isAutonomousBiddingEnabled();
+  const executionEnabled = isAutonomousExecutionEnabled();
 
   return {
     upwork: {
