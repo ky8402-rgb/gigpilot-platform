@@ -93,6 +93,279 @@ jobs:
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY || secrets.AWS }}
           aws-region: 'us-east-1'
 
+      - name: Load configured runtime credentials from AWS Secrets Manager (optional)
+        env:
+          GITHUB_PAYPAL_CLIENT_ID: ${{ secrets.PAYPAL_CLIENT_ID }}
+          GITHUB_PAYPAL_CLIENT_SECRET: ${{ secrets.PAYPAL_CLIENT_SECRET || secrets.PAYPAL_SECRET }}
+          GITHUB_PAYPAL_RECEIVER_EMAIL: ${{ secrets.PAYPAL_RECEIVER_EMAIL }}
+          GITHUB_PAYPAL_MODE: ${{ secrets.PAYPAL_MODE }}
+          GITHUB_FREELANCER_ACCESS_TOKEN: ${{ secrets.FREELANCER_ACCESS_TOKEN || secrets.FREELANCER_OAUTH_TOKEN }}
+          GITHUB_FREELANCER_USER_ID: ${{ secrets.FREELANCER_USER_ID }}
+          AWS_RUNTIME_SECRET_ID: ${{ vars.AWS_RUNTIME_SECRET_ID }}
+        run: |
+          set +e
+          for NAME in GITHUB_PAYPAL_CLIENT_ID GITHUB_PAYPAL_CLIENT_SECRET GITHUB_PAYPAL_RECEIVER_EMAIL GITHUB_PAYPAL_MODE GITHUB_FREELANCER_ACCESS_TOKEN GITHUB_FREELANCER_USER_ID; do
+            VALUE="${!NAME:-}"
+            [ -z "$VALUE" ] && continue
+            case "$NAME" in
+              GITHUB_PAYPAL_CLIENT_ID) KEY=PAYPAL_CLIENT_ID ;;
+              GITHUB_PAYPAL_CLIENT_SECRET) KEY=PAYPAL_CLIENT_SECRET ;;
+              GITHUB_PAYPAL_RECEIVER_EMAIL) KEY=PAYPAL_RECEIVER_EMAIL ;;
+              GITHUB_PAYPAL_MODE) KEY=PAYPAL_MODE ;;
+              GITHUB_FREELANCER_ACCESS_TOKEN) KEY=FREELANCER_ACCESS_TOKEN ;;
+              GITHUB_FREELANCER_USER_ID) KEY=FREELANCER_USER_ID ;;
+            esac
+            echo "::add-mask::$VALUE"
+            printf '%s=%s\n' "$KEY" "$VALUE" >> "$GITHUB_ENV"
+          done
+          SECRET_NAME="$AWS_RUNTIME_SECRET_ID"
+          if [ -z "$SECRET_NAME" ] && command -v aws >/dev/null 2>&1; then
+            SECRET_NAME=$(aws secretsmanager list-secrets --region us-east-1 --query 'SecretList[].Name' --output text 2>/dev/null | tr '\t' '\n' | grep -Ei 'gigpilot|paypal|freelancer' | head -n1 || true)
+          fi
+          if [ -n "$SECRET_NAME" ] && command -v aws >/dev/null 2>&1; then
+            SECRET_JSON=$(aws secretsmanager get-secret-value --region us-east-1 --secret-id "$SECRET_NAME" --query SecretString --output text 2>/dev/null || true)
+            if [ -n "$SECRET_JSON" ] && [ "$SECRET_JSON" != "None" ]; then
+              while IFS=        env:
+          SSH_KEY: ${{ secrets.EC2_SSH_KEY }}
+          EC2_HOST: ${{ secrets.EC2_HOST || '3.222.149.9' }}
+          EC2_USER: ${{ secrets.EC2_USER || 'ubuntu' }}
+          EC2_INSTANCE_ID: 'i-02f24350d31f5aa51'
+        run: |
+          echo "=========================================================="
+          echo "Deploying to AWS EC2 via Secure SSH ($EC2_USER@$EC2_HOST)..."
+          echo "=========================================================="
+          
+          SSH_CONNECTED=0
+          mkdir -p ~/.ssh
+          
+          # 1. Attempt using configured EC2_SSH_KEY
+          if [ -n "$SSH_KEY" ]; then
+            echo "Normalizing and preparing EC2_SSH_KEY..."
+            python3 scripts/prepare_ec2_key.py || true
+            
+            if [ -f ~/.ssh/id_rsa ] && [ -s ~/.ssh/id_rsa ]; then
+              echo "Testing SSH connection with EC2_SSH_KEY..."
+              if ssh -o StrictHostKeyChecking=no -o ConnectTimeout=10 -i ~/.ssh/id_rsa "$EC2_USER@$EC2_HOST" "echo SSH_OK" 2>/dev/null | grep -q "SSH_OK"; then
+                echo "✔ Verified SSH access using EC2_SSH_KEY."
+                SSH_KEY_FILE=~/.ssh/id_rsa
+                SSH_CONNECTED=1
+              else
+                echo "Notice: Static SSH key could not authenticate or needs EC2 Instance Connect."
+              fi
+            fi
+          fi
+
+          # 2. Fallback to AWS EC2 Instance Connect if AWS credentials exist
+          if [ "$SSH_CONNECTED" -eq 0 ] && command -v aws >/dev/null 2>&1; then
+            echo "Attempting AWS EC2 Instance Connect push..."
+            ssh-keygen -t rsa -b 2048 -f ~/.ssh/ec2_connect -N "" -q
+            if aws ec2-instance-connect send-ssh-public-key \
+                --instance-id "$EC2_INSTANCE_ID" \
+                --instance-os-user "$EC2_USER" \
+                --ssh-public-key file://~/.ssh/ec2_connect.pub \
+                --region us-east-1 2>/dev/null; then
+              echo "✔ Successfully pushed temporary SSH key via EC2 Instance Connect."
+              SSH_KEY_FILE=~/.ssh/ec2_connect
+              SSH_CONNECTED=1
+            else
+              echo "EC2 Instance Connect push not available or IAM permission pending."
+            fi
+          fi
+
+          if [ "$SSH_CONNECTED" -eq 1 ]; then
+            echo "Executing remote production deployment on EC2 via scripts/deploy-ec2.sh..."
+            # Forward only already-configured GitHub Actions secrets to the remote deployment
+            # process. Nothing is committed to the repository and values are never echoed.
+            REMOTE_ENV_PREFIX=""
+            for NAME in PAYPAL_CLIENT_ID PAYPAL_CLIENT_SECRET PAYPAL_RECEIVER_EMAIL PAYPAL_MODE FREELANCER_ACCESS_TOKEN FREELANCER_USER_ID; do
+              VALUE="${!NAME:-}"
+              if [ -n "$VALUE" ]; then
+                printf -v QUOTED '%q' "$VALUE"
+                REMOTE_ENV_PREFIX+="$NAME=$QUOTED "
+              fi
+            done
+            ssh -o StrictHostKeyChecking=no -o ConnectTimeout=20 -i "$SSH_KEY_FILE" "$EC2_USER@$EC2_HOST" "$REMOTE_ENV_PREFIX bash -s" < scripts/deploy-ec2.sh
+            echo "✔ SSH deployment command finished successfully."
+          else
+            echo "SSH direct connection could not be established. Falling back to signed push webhook."
+          fi
+
+      - name: Trigger EC2 Push-to-Deploy Webhook (Parallel / Fallback)
+        env:
+          EC2_HOST: ${{ secrets.EC2_HOST || '3.222.149.9' }}
+          WEBHOOK_SECRET: ${{ secrets.GITHUB_WEBHOOK_SECRET || secrets.WEBHOOK_SECRET }}
+          COMMIT_MSG: ${{ github.event.head_commit.message }}
+        run: |
+          WEBHOOK_URL="https://${EC2_HOST//./-}.sslip.io/api/github/webhook"
+          echo "Target Webhook: $WEBHOOK_URL"
+          
+          PAYLOAD=$(node -e "
+            const p = {
+              ref: 'refs/heads/' + (process.env.GITHUB_REF_NAME || 'main'),
+              after: process.env.GITHUB_SHA || '',
+              head_commit: {
+                id: process.env.GITHUB_SHA || '',
+                message: process.env.COMMIT_MSG || 'Automated CI/CD deployment',
+                author: { name: process.env.GITHUB_ACTOR || 'github-actions' }
+              }
+            };
+            console.log(JSON.stringify(p));
+          ")
+          
+          SIG_HEADER=()
+          if [ -n "$WEBHOOK_SECRET" ]; then
+            SIG=$(node -e "
+              const crypto = require('crypto');
+              const hmac = crypto.createHmac('sha256', process.env.WEBHOOK_SECRET);
+              hmac.update(Buffer.from(process.env.PAYLOAD));
+              console.log('sha256=' + hmac.digest('hex'));
+            ")
+            SIG_HEADER=(-H "X-Hub-Signature-256: $SIG")
+          fi
+          
+          echo "Dispatching deployment webhook..."
+          HTTP_CODE=$(curl -k -sS -o /tmp/resp.json -w "%{http_code}" \
+            -X POST "$WEBHOOK_URL" \
+            -H "Content-Type: application/json" \
+            -H "X-GitHub-Event: push" \
+            -H "X-GitHub-Delivery: gha-${GITHUB_RUN_ID}" \
+            "${SIG_HEADER[@]}" \
+            -d "$PAYLOAD" \
+            --max-time 15 || echo "000")
+            
+          echo "HTTPS Response: $HTTP_CODE"
+          cat /tmp/resp.json 2>/dev/null || true
+          
+          if [ "$HTTP_CODE" != "200" ] && [ "$HTTP_CODE" != "202" ]; then
+            echo "Trying HTTP port 3000..."
+            HTTP_CODE=$(curl -sS -o /tmp/resp.json -w "%{http_code}" \
+              -X POST "http://${EC2_HOST}:3000/api/github/webhook" \
+              -H "Content-Type: application/json" \
+              -H "X-GitHub-Event: push" \
+              -H "X-GitHub-Delivery: gha-${GITHUB_RUN_ID}" \
+              "${SIG_HEADER[@]}" \
+              -d "$PAYLOAD" \
+              --max-time 15 || echo "000")
+            echo "HTTP 3000 Response: $HTTP_CODE"
+            cat /tmp/resp.json 2>/dev/null || true
+          fi
+
+          if [ "$HTTP_CODE" = "200" ] || [ "$HTTP_CODE" = "202" ]; then
+            echo "✔ EC2 backend webhook delivery succeeded (HTTP $HTTP_CODE)."
+          else
+            echo "ERROR: EC2 deployment could not be verified. Refusing a false-success deployment."
+            exit 1
+          fi
+
+      - name: Verify EC2 Backend Health
+        env:
+          EC2_HOST: ${{ secrets.EC2_HOST || '3.222.149.9' }}
+        run: |
+          HEALTH_URL="https://${EC2_HOST//./-}.sslip.io/api/health"
+          FALLBACK_URL="http://${EC2_HOST}:3000/api/health"
+          echo "Pinging EC2 Health at $HEALTH_URL..."
+          
+          for i in 1 2 3 4 5; do
+            echo "Health verification attempt $i/5..."
+            STATUS=$(curl -k -s -o /dev/null -w "%{http_code}" "$HEALTH_URL" --max-time 5 || true)
+            if [ "$STATUS" = "200" ]; then
+              echo "✔ EC2 backend HTTPS health check passed (HTTP 200)!"
+              exit 0
+            fi
+            
+            FALLBACK_STATUS=$(curl -s -o /dev/null -w "%{http_code}" "$FALLBACK_URL" --max-time 5 || true)
+            if [ "$FALLBACK_STATUS" = "200" ]; then
+              echo "✔ EC2 backend HTTP:3000 health check passed (HTTP 200)!"
+              exit 0
+            fi
+            sleep 3
+          done
+          echo "ERROR: EC2 backend health check did not return HTTP 200."
+          exit 1
+
+      - name: Audit Real Earning Readiness (No Synthetic Revenue)
+        env:
+          EC2_HOST: ${{ secrets.EC2_HOST || '3.222.149.9' }}
+        run: |
+          EARNING_URL="https://${EC2_HOST//./-}.sslip.io/api/autonomous-freelance/earning-status"
+          echo "Auditing real earning readiness at $EARNING_URL..."
+          RESPONSE=$(curl -k -fsS "$EARNING_URL" --max-time 10 || true)
+          if [ -z "$RESPONSE" ]; then
+            echo "⚠ Earning readiness endpoint unavailable; deployment remains healthy but real earning state is unverified."
+            exit 0
+          fi
+          echo "$RESPONSE" | node -e '
+            let input=""; process.stdin.on("data",d=>input+=d); process.stdin.on("end",()=>{
+              try {
+                const x=JSON.parse(input);
+                const r=x.readiness||{};
+                const f=x.funnel||{};
+                console.log(`Real earning ready: ${Boolean(x.readyForRealEarning)}`);
+                console.log(`Funnel: submitted=${f.submitted||0}, accepted=${f.accepted||0}, funded=${f.funded||0}, delivered=${f.delivered||0}, settled=${f.settled||0}`);
+                if (Array.isArray(r.blockers) && r.blockers.length) console.log(`Blockers: ${r.blockers.join(" | ")}`);
+              } catch { console.log("Earning readiness response was not valid JSON."); }
+            });
+          '
+      - name: Start Provider-Backed Autonomous Bid Cycle
+        env:
+          EC2_HOST: ${{ secrets.EC2_HOST || '3.222.149.9' }}
+        run: |
+          BID_URL="https://${EC2_HOST//./-}.sslip.io/api/autonomous-freelance/bid-cycle"
+          echo "Starting provider-backed autonomous bid cycle at $BID_URL..."
+          RESPONSE=$(curl -k -sS -X POST "$BID_URL" -H "Content-Type: application/json" --max-time 90 || true)
+          if [ -z "$RESPONSE" ]; then
+            echo "⚠ Autonomous bid cycle returned no response; scheduled worker will retry."
+            exit 0
+          fi
+          echo "$RESPONSE" | node -e '
+            let input=""; process.stdin.on("data",d=>input+=d); process.stdin.on("end",()=>{
+              try {
+                const x=JSON.parse(input);
+                console.log(`Bid cycle enabled: ${Boolean(x.enabled ?? x.success)}`);
+                console.log(`Scanned=${x.scanned||0}, submitted=${x.submitted||0}, skipped=${x.skipped||0}, errors=${x.errors||0}`);
+                if (Array.isArray(x.results)) x.results.slice(0,3).forEach(r=>console.log(JSON.stringify(r)));
+              } catch { console.log("Bid cycle response was not valid JSON."); }
+            });
+          '
+      - name: Verify Earning Funnel After Bid Cycle
+        env:
+          EC2_HOST: ${{ secrets.EC2_HOST || '3.222.149.9' }}
+        run: |
+          EARNING_URL="https://${EC2_HOST//./-}.sslip.io/api/autonomous-freelance/earning-status"
+          RESPONSE=$(curl -k -sS "$EARNING_URL" --max-time 15 || true)
+          if [ -n "$RESPONSE" ]; then
+            echo "$RESPONSE" | node -e '
+              let input=""; process.stdin.on("data",d=>input+=d); process.stdin.on("end",()=>{
+                try { const x=JSON.parse(input); const f=x.funnel||{}; console.log(`Post-bid funnel: submitted=${f.submitted||0}, accepted=${f.accepted||0}, funded=${f.funded||0}, delivered=${f.delivered||0}, settled=${f.settled||0}`); }
+                catch { console.log("Post-bid earning status was not valid JSON."); }
+              });
+            '
+          else
+            echo "⚠ Post-bid earning status unavailable."
+          fi
+      - name: Report EC2 Status to Step Summary
+        env:
+          EC2_HOST: ${{ secrets.EC2_HOST || '3.222.149.9' }}
+        run: |
+          echo "### 🛡️ AWS EC2 Backend Auto-Deploy" >> $GITHUB_STEP_SUMMARY
+          echo "- **App Name:** gigpilot-backend" >> $GITHUB_STEP_SUMMARY
+          echo "- **EC2 Host:** \`$EC2_HOST\`" >> $GITHUB_STEP_SUMMARY
+          echo "- **Branch:** \`${GITHUB_REF_NAME}\`" >> $GITHUB_STEP_SUMMARY
+          echo "- **Deployment Strategy:** SSH direct pull & PM2 restart + Signed Webhook fallback" >> $GITHUB_STEP_SUMMARY
+          echo "- **Health Endpoint:** [https://${EC2_HOST//./-}.sslip.io/api/health](https://${EC2_HOST//./-}.sslip.io/api/health)" >> $GITHUB_STEP_SUMMARY
+\t' read -r KEY VALUE; do
+                [ -z "$VALUE" ] && continue
+                echo "::add-mask::$VALUE"
+                printf '%s=%s\n' "$KEY" "$VALUE" >> "$GITHUB_ENV"
+              done < <(SECRET_JSON="$SECRET_JSON" node scripts/load-runtime-secrets.js)
+            fi
+          fi
+          if [ -n "${PAYPAL_CLIENT_ID:-}" ] && [ -n "${PAYPAL_CLIENT_SECRET:-}" ]; then
+            echo "Runtime PayPal credentials are available to the deployment process."
+          else
+            echo "No PayPal client credentials were found in configured secret stores; settlement remains fail-closed."
+          fi
+
       - name: Deploy via SSH (Direct EC2 Execution)
         env:
           SSH_KEY: ${{ secrets.EC2_SSH_KEY }}
