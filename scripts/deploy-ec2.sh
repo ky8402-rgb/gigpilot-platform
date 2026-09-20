@@ -17,31 +17,24 @@ if [ -z "$APP_DIR" ]; then
   echo "Creating application directory at /home/ubuntu/gigpilot..."
   mkdir -p /home/ubuntu/gigpilot
   APP_DIR="/home/ubuntu/gigpilot"
-  cd "$APP_DIR"
-  git clone https://github.com/ky8402-rgb/gigpilot-platform.git . || true
-else
-  cd "$APP_DIR"
 fi
 
+cd "$APP_DIR"
 echo "Working directory: $(pwd)"
 
-# Abort any conflicted merge, rebase, or dirty index first
-git merge --abort 2>/dev/null || true
-git rebase --abort 2>/dev/null || true
-git cherry-pick --abort 2>/dev/null || true
-git reset --hard 2>/dev/null || true
-git clean -fd 2>/dev/null || true
-
-# Fetch latest from remote
-git fetch origin main --prune
-
-# Force checkout and hard reset to latest origin/main
-git checkout -B main origin/main
-git reset --hard origin/main
-git clean -fd
+# CI uploads the already-validated source tree directly to EC2.
+if [ -n "${DEPLOY_SOURCE_DIR:-}" ] && [ -d "$DEPLOY_SOURCE_DIR" ]; then
+  echo "Installing source tree from CI upload: $DEPLOY_SOURCE_DIR"
+  find "$APP_DIR" -mindepth 1 -maxdepth 1 ! -name ".env" ! -name ".env.production" ! -name ".env.local" ! -name "node_modules" -exec rm -rf {} +
+  cp -a "$DEPLOY_SOURCE_DIR"/. "$APP_DIR"/
+  rm -rf "$DEPLOY_SOURCE_DIR"
+else
+  echo "ERROR: DEPLOY_SOURCE_DIR was not provided. Refusing an unauthenticated GitHub pull."
+  exit 1
+fi
 
 echo "Installing production build dependencies..."
-npm install --prefer-offline || npm install --legacy-peer-deps
+npm ci --prefer-offline || npm ci --legacy-peer-deps
 
 echo "Building application bundles (Vite + esbuild)..."
 npm run build
