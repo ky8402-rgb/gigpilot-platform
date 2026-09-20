@@ -24,12 +24,21 @@ else
 fi
 
 echo "Working directory: $(pwd)"
-git fetch --all --prune
-# Stash and reset any runtime logs so merge/pull succeeds cleanly
-git checkout -- RUN_LOG.md 2>/dev/null || true
-git stash --include-untracked 2>/dev/null || true
-git checkout main || git checkout master
-git reset --hard origin/main || git pull origin main || git pull origin master
+
+# Abort any conflicted merge, rebase, or dirty index first
+git merge --abort 2>/dev/null || true
+git rebase --abort 2>/dev/null || true
+git cherry-pick --abort 2>/dev/null || true
+git reset --hard 2>/dev/null || true
+git clean -fd 2>/dev/null || true
+
+# Fetch latest from remote
+git fetch origin main --prune
+
+# Force checkout and hard reset to latest origin/main
+git checkout -B main origin/main
+git reset --hard origin/main
+git clean -fd
 
 echo "Installing production build dependencies..."
 npm install --prefer-offline || npm install --legacy-peer-deps

@@ -1115,8 +1115,17 @@ export async function executePushToDeploy(options: {
       GIT_SSH_COMMAND: 'ssh -o StrictHostKeyChecking=accept-new -o BatchMode=yes',
     };
 
-    // Step 1: Fetch and pull latest changes
-    addLog(`Running git fetch origin ${options.branch}...`);
+    // Step 1: Clean any conflicted index, abort merges, fetch and sync
+    addLog(`Preparing clean git state and fetching origin ${options.branch}...`);
+    try {
+      await execPromise('git merge --abort 2>/dev/null || true', { env });
+      await execPromise('git rebase --abort 2>/dev/null || true', { env });
+      await execPromise('git reset --hard 2>/dev/null || true', { env });
+      await execPromise('git clean -fd 2>/dev/null || true', { env });
+    } catch {
+      // ignore
+    }
+
     try {
       const { stdout: fetchOut, stderr: fetchErr } = await execPromise(`git fetch origin ${options.branch}`, { env });
       if (fetchOut || fetchErr) addLog(`Fetch output: ${(fetchOut || fetchErr).trim()}`);
@@ -1124,9 +1133,15 @@ export async function executePushToDeploy(options: {
       addLog(`Fetch note: ${fetchE.message}`);
     }
 
-    addLog(`Running git pull origin ${options.branch}...`);
-    const { stdout: pullOut, stderr: pullErr } = await execPromise(`git pull origin ${options.branch} --rebase`, { env });
-    addLog(`Pull result: ${(pullOut || pullErr || 'Already up to date').trim()}`);
+    addLog(`Synchronizing branch to latest origin/${options.branch}...`);
+    try {
+      const { stdout: pullOut, stderr: pullErr } = await execPromise(`git checkout -B ${options.branch} origin/${options.branch} && git reset --hard origin/${options.branch}`, { env });
+      addLog(`Pull result: ${(pullOut || pullErr || 'Already up to date').trim()}`);
+    } catch (syncErr: any) {
+      addLog(`Reset fallback, trying git pull: ${syncErr.message}`);
+      const { stdout: fallbackOut } = await execPromise(`git pull origin ${options.branch} --force`, { env });
+      addLog(`Fallback result: ${(fallbackOut || 'Updated').trim()}`);
+    }
 
     // Step 2: Build project artifacts if build script exists
     addLog('Checking build requirements and compiling production bundle...');

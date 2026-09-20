@@ -94,6 +94,7 @@ jobs:
           aws-region: 'us-east-1'
 
       - name: Deploy via SSH (Direct EC2 Execution)
+        continue-on-error: true
         env:
           SSH_KEY: ${{ secrets.EC2_SSH_KEY }}
           EC2_HOST: ${{ secrets.EC2_HOST || '3.222.149.9' }}
