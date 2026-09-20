@@ -53,6 +53,7 @@ export interface BinanceAccountState {
   todayPnLUsd: number;
   todayPnLPct: number;
   openOrdersCount: number;
+  openOrders: Order[];
   recentTrades: Fill[];
   transactions: BinanceTransaction[];
   canTrade: boolean;
@@ -67,7 +68,7 @@ export class BinanceAdapter {
   private apiKey: string;
   private apiSecret: string;
   private baseUrl: string = 'https://api.binance.com';
-  private serverIp: string = '3.222.149.9';
+  private serverIp: string = process.env.BINANCE_SERVER_IP || process.env.PUBLIC_IP || '3.222.149.9';
   private priceCache: Map<string, { price: number; time: number }> = new Map();
   private lastAccountState: BinanceAccountState | null = null;
   private lastAccountFetchTime = 0;
@@ -130,6 +131,7 @@ export class BinanceAdapter {
     this.apiSecret = apiSecret.trim();
     if (baseUrl) this.baseUrl = baseUrl.trim();
     this.persistEncryptedCredentials();
+    this.lastAccountState = null;
     this.lastAccountFetchTime = 0; // Force refresh
   }
 
@@ -361,6 +363,7 @@ export class BinanceAdapter {
         todayPnLUsd: 0,
         todayPnLPct: 0,
         openOrdersCount: 0,
+        openOrders: [],
         recentTrades: [],
         transactions: [],
         canTrade: false,
@@ -497,22 +500,30 @@ export class BinanceAdapter {
       // Sort by USD value descending
       spotBalances.sort((a, b) => b.usdValue - a.usdValue);
 
-      // Fetch real open orders count
-      let openOrdersCount = 0;
+      // Fetch the actual Spot open orders, not the app's local order cache.
+      let openOrders: Order[] = [];
       try {
-        const openOrders = await this.getRealOpenOrders();
-        openOrdersCount = openOrders.length;
-      } catch {
-        openOrdersCount = 0;
+        openOrders = await this.getRealOpenOrders();
+      } catch (err) {
+        console.error('[BinanceAdapter] Failed to fetch live Spot open orders:', err);
       }
+      const openOrdersCount = openOrders.length;
 
-      // Fetch real trades for P&L tracking
-      let recentTrades: Fill[] = [];
-      try {
-        recentTrades = await this.getRealTrades('BTCUSDT', 20);
-      } catch {
-        recentTrades = [];
-      }
+      // Fetch recent fills across held/tracked Spot symbols instead of BTC only.
+      const tradeSymbols = Array.from(new Set([
+        ...spotBalances
+          .filter((b) => b.usdValue > 0 && !['USDT', 'USDC', 'FDUSD', 'USD', 'BUSD'].includes(b.asset))
+          .map((b) => `${b.asset}USDT`),
+        'BTCUSDT', 'ETHUSDT', 'SOLUSDT', 'BNBUSDT', 'AVAXUSDT'
+      ])).slice(0, 20);
+
+      const tradeLists = await Promise.all(tradeSymbols.map(async (symbol) => {
+        try { return await this.getRealTrades(symbol, 50); } catch { return []; }
+      }));
+      const recentTrades = tradeLists
+        .flat()
+        .sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime())
+        .slice(0, 100);
 
       const calculatedState: BinanceAccountState = {
         status: 'CONNECTED',
@@ -531,6 +542,7 @@ export class BinanceAdapter {
         todayPnLUsd: 0,
         todayPnLPct: 0,
         openOrdersCount,
+        openOrders,
         recentTrades,
         transactions: await this.getTransactionHistory(spotBalances),
         canTrade: !!data.canTrade,
@@ -563,6 +575,7 @@ export class BinanceAdapter {
         todayPnLUsd: 0,
         todayPnLPct: 0,
         openOrdersCount: 0,
+        openOrders: [],
         recentTrades: [],
         transactions: [],
         canTrade: false,
@@ -575,6 +588,22 @@ export class BinanceAdapter {
     }
   }
 
+  /**
+   * Private Signed: Current Binance API-key restrictions for diagnostics.
+   * This never returns the API secret.
+   */
+  public async getApiRestrictions(): Promise<Record<string, any> | null> {
+    if (!this.apiKey || !this.apiSecret) return null;
+    try {
+      const { queryString, signature } = this.signQuery();
+      const url = this.baseUrl + '/sapi/v1/account/apiRestrictions?' + queryString + '&signature=' + signature;
+      const res = await fetch(url, { headers: { 'X-MBX-APIKEY': this.apiKey, 'User-Agent': 'GigPilot-Quant/2.5' } });
+      const data = await res.json().catch(() => ({}));
+      return res.ok ? data : { errorCode: data?.code, errorMessage: data?.msg };
+    } catch (err: any) {
+      return { errorMessage: err?.message || 'Unable to query Binance API restrictions' };
+    }
+  }
   /**
    * Private Signed: Real Open Orders from Binance
    */
