@@ -1,5 +1,5 @@
 import { prisma } from './db.js';
-import { fetchLivePlatformJobs, submitPlatformBid, type NormalizedWorkOrder } from './platformIntegrations.js';
+import { fetchLivePlatformJobs, submitPlatformBid, isAutonomousBiddingEnabled, type NormalizedWorkOrder } from './platformIntegrations.js';
 import { checkHardExcludeFilter } from './autoBidFilters.js';
 import { logActivityEvent } from './activityLogger.js';
 
@@ -39,7 +39,7 @@ export async function runAutonomousBidCycle(): Promise<{
   errors: number;
   results: Array<Record<string, unknown>>;
 }> {
-  const enabled = process.env.AUTONOMOUS_BIDDING_ENABLED === 'true';
+  const enabled = isAutonomousBiddingEnabled();
   if (!enabled) return { enabled: false, scanned: 0, submitted: 0, skipped: 0, errors: 0, results: [] };
 
   const token = String(process.env.FREELANCER_ACCESS_TOKEN || process.env.FREELANCER_API_KEY || process.env.FREELANCER_OAUTH_TOKEN || '').trim();
