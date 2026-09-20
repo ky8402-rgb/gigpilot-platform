@@ -62,6 +62,16 @@ else
   cat "$MIGRATE_LOG"
   exit 1
 fi
+# Defensive production repair: apply the provider-backed autonomous WorkOrder columns
+# directly as idempotent SQL as well as through Prisma migration history. This protects
+# existing production databases whose migration table was previously baselined or drifted.
+REPAIR_SQL="prisma/migrations/20260920100000_repair_autonomous_freelance_columns/migration.sql"
+if [ -f "$REPAIR_SQL" ]; then
+  echo "Verifying provider-backed autonomous freelance schema..."
+  npx prisma db execute --schema prisma/schema.prisma --file "$REPAIR_SQL"
+  echo "✔ Autonomous freelance schema repair applied idempotently."
+fi
+
 npx prisma generate
 
 echo "Building application bundles (Vite + esbuild)..."
