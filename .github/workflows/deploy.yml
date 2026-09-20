@@ -179,8 +179,20 @@ jobs:
           fi
 
           if [ "$SSH_CONNECTED" -eq 1 ]; then
+            echo "Uploading validated source tree to EC2..."
+            DEPLOY_SOURCE_DIR="/tmp/gigpilot-deploy-${GITHUB_SHA}"
+            tar \
+              --exclude="./.git" \
+              --exclude="./node_modules" \
+              --exclude="./dist" \
+              --exclude="./.env" \
+              --exclude="./.env.*" \
+              -czf - . | \
+              ssh -o StrictHostKeyChecking=no -o ConnectTimeout=20 -i "$SSH_KEY_FILE" "$EC2_USER@$EC2_HOST" "rm -rf \"$DEPLOY_SOURCE_DIR\" && mkdir -p \"$DEPLOY_SOURCE_DIR\" && tar -xzf - -C \"$DEPLOY_SOURCE_DIR\""
+            echo "✔ Validated source tree uploaded to EC2."
+
             echo "Executing remote production deployment on EC2 via scripts/deploy-ec2.sh..."
-            ssh -o StrictHostKeyChecking=no -o ConnectTimeout=20 -i "$SSH_KEY_FILE" "$EC2_USER@$EC2_HOST" 'bash -s' < scripts/deploy-ec2.sh
+            ssh -o StrictHostKeyChecking=no -o ConnectTimeout=20 -i "$SSH_KEY_FILE" "$EC2_USER@$EC2_HOST" "DEPLOY_SOURCE_DIR=\"$DEPLOY_SOURCE_DIR\" bash -s" < scripts/deploy-ec2.sh
             echo "✔ SSH deployment command finished successfully."
           else
             echo "SSH direct connection could not be established. Falling back to signed push webhook."
