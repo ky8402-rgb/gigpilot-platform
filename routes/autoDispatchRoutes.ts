@@ -784,13 +784,21 @@ router.get('/autonomous-freelance/readiness', async (_req, res) => {
 router.get('/autonomous-freelance/earning-status', async (_req, res) => {
   try {
     const readiness = getAutonomousReadiness();
-    const [submitted, accepted, funded, delivered, settled] = await Promise.all([
-      prisma.workOrder.count({ where: { externalProvider: 'Freelancer', externalBidId: { not: null } } }),
-      prisma.workOrder.count({ where: { externalProvider: 'Freelancer', externalAcceptanceVerified: true } }),
-      prisma.workOrder.count({ where: { externalProvider: 'Freelancer', escrowStatus: 'FUNDED' } }),
-      prisma.workOrder.count({ where: { externalProvider: 'Freelancer', deliveryStatus: 'PROVIDER_DELIVERED' } }),
-      prisma.workOrder.count({ where: { externalProvider: 'Freelancer', escrowStatus: 'SETTLED' } }),
-    ]);
+    const rows = await prisma.$queryRawUnsafe<Array<{submitted: bigint; accepted: bigint; funded: bigint; delivered: bigint; settled: bigint}>>(
+      `SELECT
+        COUNT(*) FILTER (WHERE "externalProvider" = 'Freelancer' AND "externalBidId" IS NOT NULL) AS submitted,
+        COUNT(*) FILTER (WHERE "externalProvider" = 'Freelancer' AND "externalAcceptanceVerified" = true) AS accepted,
+        COUNT(*) FILTER (WHERE "externalProvider" = 'Freelancer' AND "escrowStatus" = 'FUNDED') AS funded,
+        COUNT(*) FILTER (WHERE "externalProvider" = 'Freelancer' AND "deliveryStatus" = 'PROVIDER_DELIVERED') AS delivered,
+        COUNT(*) FILTER (WHERE "externalProvider" = 'Freelancer' AND "escrowStatus" = 'SETTLED') AS settled
+      FROM "WorkOrder"`
+    );
+    const counts = rows[0] || { submitted: 0n, accepted: 0n, funded: 0n, delivered: 0n, settled: 0n };
+    const submitted = Number(counts.submitted);
+    const accepted = Number(counts.accepted);
+    const funded = Number(counts.funded);
+    const delivered = Number(counts.delivered);
+    const settled = Number(counts.settled);
     return res.json({
       success: true,
       readyForRealEarning: readiness.ready,
