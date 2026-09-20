@@ -33,7 +33,7 @@ export class TradingStore {
   public previousAutonomyLevel: AutonomyLevel = 1;
   public GLOBAL_KILL_SWITCH_ACTIVE: boolean = true; // DEFAULT SAFE KILL SWITCH ENGAGED
   public activeBotsDisabled: boolean = true;
-  public tradingMode: TradingMode = 'LIVE'; // Real live trading on personal Binance account
+  public tradingMode: TradingMode = process.env.TRADING_MODE === 'LIVE' && process.env.ENABLE_LIVE_TRADING === 'true' ? 'LIVE' : 'SIMULATION'; // Live trading requires explicit opt-in
   public currentRegime: MarketRegime;
   public activeGrid: GridConfiguration | null = null;
   public capital: CapitalAccounting;
@@ -42,6 +42,7 @@ export class TradingStore {
 
   constructor() {
     this.exchange = new ExchangeEngine();
+    this.exchange.setMode(this.tradingMode);
     this.risk = new RiskEngine();
     this.killSwitch = new EmergencyKillSwitch();
     this.sweeper = new ProfitSweepSubsystem();
@@ -242,6 +243,12 @@ export class TradingStore {
   }
 
   public setTradingMode(mode: TradingMode) {
+    if (mode === 'LIVE' && process.env.ENABLE_LIVE_TRADING !== 'true') {
+      throw new Error('LIVE trading is disabled. Set ENABLE_LIVE_TRADING=true and explicitly authorize live trading.');
+    }
+    if (mode === 'LIVE' && this.autonomyLevel < 2) {
+      throw new Error('LIVE trading requires autonomy level 2-4.');
+    }
     const prev = this.tradingMode;
     this.tradingMode = mode;
     this.exchange.setMode(mode);
