@@ -1,12 +1,26 @@
 import crypto from 'crypto';
-import fs from 'fs';
-import path from 'path';
 import { Candle, Fill, Order, OrderBook, OrderBookLevel } from './types.js';
 
 export interface BinanceBalanceItem {
   asset: string;
   free: string;
   locked: string;
+}
+
+export interface BinanceTransaction {
+  id: string;
+  type: 'DEPOSIT' | 'WITHDRAWAL' | 'TRADE' | 'FEE';
+  asset: string;
+  amount: number;
+  valueUsd: number;
+  status: string;
+  timestamp: string;
+  orderId?: string;
+  tradeId?: string;
+  txId?: string;
+  symbol?: string;
+  side?: 'BUY' | 'SELL';
+  feeUsd?: number;
 }
 
 export interface BinanceAssetWithUsd {
@@ -28,6 +42,9 @@ export interface BinanceAccountState {
   totalEquityUsd: number;
   availableCashUsd: number;
   lockedInOrdersUsd: number;
+  withdrawableProfitUsd: number;
+  initialTradingCapitalUsd: number;
+  profitReserveBufferUsd: number;
   spotBalances: BinanceAssetWithUsd[];
   realizedProfitUsd: number;
   unrealizedProfitUsd: number;
@@ -35,6 +52,7 @@ export interface BinanceAccountState {
   todayPnLPct: number;
   openOrdersCount: number;
   recentTrades: Fill[];
+  transactions: BinanceTransaction[];
   canTrade: boolean;
   canWithdraw: boolean;
   canDeposit: boolean;
@@ -42,8 +60,6 @@ export interface BinanceAccountState {
   apiKeyConfigured: boolean;
   keyMask: string;
 }
-
-const BINANCE_CONFIG_FILE = path.join(process.cwd(), '.binance-quant-keys.json');
 
 export class BinanceAdapter {
   private apiKey: string;
@@ -55,21 +71,11 @@ export class BinanceAdapter {
   private lastAccountFetchTime = 0;
 
   constructor() {
-    // Load from env or persistent config file
-    let savedKeys: any = {};
-    if (fs.existsSync(BINANCE_CONFIG_FILE)) {
-      try {
-        savedKeys = JSON.parse(fs.readFileSync(BINANCE_CONFIG_FILE, 'utf-8'));
-      } catch (e) {
-        console.error('Error loading saved binance keys:', e);
-      }
-    }
-
-    this.apiKey = savedKeys.apiKey || process.env.BINANCE_API_KEY || '';
-    this.apiSecret = savedKeys.apiSecret || process.env.BINANCE_API_SECRET || '';
-    if (savedKeys.baseUrl) {
-      this.baseUrl = savedKeys.baseUrl;
-    }
+    // Credentials are loaded only from environment/secret injection.
+    // Never persist Binance API secrets to the application filesystem.
+    this.apiKey = process.env.BINANCE_API_KEY || '';
+    this.apiSecret = process.env.BINANCE_API_SECRET || '';
+    if (process.env.BINANCE_API_BASE_URL) this.baseUrl = process.env.BINANCE_API_BASE_URL;
   }
 
   public updateCredentials(apiKey: string, apiSecret: string, baseUrl?: string): void {
@@ -77,28 +83,6 @@ export class BinanceAdapter {
     this.apiSecret = apiSecret.trim();
     if (baseUrl) this.baseUrl = baseUrl.trim();
     this.lastAccountFetchTime = 0; // Force refresh
-    this.saveConfig();
-  }
-
-  private saveConfig(): void {
-    try {
-      fs.writeFileSync(
-        BINANCE_CONFIG_FILE,
-        JSON.stringify(
-          {
-            apiKey: this.apiKey,
-            apiSecret: this.apiSecret,
-            baseUrl: this.baseUrl,
-            updatedAt: new Date().toISOString()
-          },
-          null,
-          2
-        ),
-        'utf-8'
-      );
-    } catch (e) {
-      console.error('Failed to save binance config:', e);
-    }
   }
 
   public getKeyMask(): string {
@@ -117,6 +101,16 @@ export class BinanceAdapter {
 
   public getServerIp(): string {
     return this.serverIp;
+  }
+
+  private getInitialTradingCapitalUsd(): number {
+    const n = Number(process.env.INITIAL_TRADING_CAPITAL_USD);
+    return Number.isFinite(n) && n > 0 ? n : 0;
+  }
+
+  private getProfitReserveBufferUsd(): number {
+    const n = Number(process.env.PROFIT_RESERVE_BUFFER_USD);
+    return Number.isFinite(n) && n >= 0 ? n : 0;
   }
 
   // Format pair e.g. "BTC/USDT" to "BTCUSDT"
@@ -310,6 +304,9 @@ export class BinanceAdapter {
         totalEquityUsd: 0,
         availableCashUsd: 0,
         lockedInOrdersUsd: 0,
+        withdrawableProfitUsd: 0,
+        initialTradingCapitalUsd: this.getInitialTradingCapitalUsd(),
+        profitReserveBufferUsd: this.getProfitReserveBufferUsd(),
         spotBalances: [],
         realizedProfitUsd: 0,
         unrealizedProfitUsd: 0,
@@ -317,6 +314,7 @@ export class BinanceAdapter {
         todayPnLPct: 0,
         openOrdersCount: 0,
         recentTrades: [],
+        transactions: [],
         canTrade: false,
         canWithdraw: false,
         canDeposit: false,
@@ -374,6 +372,7 @@ export class BinanceAdapter {
       const nonZero = rawBalances.filter((b) => parseFloat(b.free) > 0 || parseFloat(b.locked) > 0);
 
       // Fetch prices for all non-zero assets in parallel
+      const changeMap: Record<string, number> = {};
       const priceMap: Record<string, number> = {
         USDT: 1.0,
         USD: 1.0,
@@ -388,11 +387,12 @@ export class BinanceAdapter {
         try {
           const tickerRes = await fetch(`${this.baseUrl}/api/v3/ticker/price`);
           if (tickerRes.ok) {
-            const allPrices = (await tickerRes.json()) as Array<{ symbol: string; price: string }>;
+            const allPrices = (await tickerRes.json()) as Array<{ symbol: string; price: string; priceChangePercent?: string }>;
             for (const item of allPrices) {
               for (const asset of cryptoAssetsToPrice) {
                 if (item.symbol === `${asset}USDT` || item.symbol === `${asset}FDUSD`) {
                   priceMap[asset] = parseFloat(item.price);
+                  if (item.priceChangePercent != null) changeMap[asset] = parseFloat(item.priceChangePercent);
                 }
               }
             }
@@ -426,9 +426,16 @@ export class BinanceAdapter {
           total,
           usdPrice,
           usdValue,
-          allocationPct: 0 // Will compute below
+          allocationPct: 0,
+          change24hPct: changeMap[b.asset] ?? 0
         };
       });
+
+      const initialTradingCapitalUsd = this.getInitialTradingCapitalUsd();
+      const profitReserveBufferUsd = this.getProfitReserveBufferUsd();
+      const withdrawableProfitUsd = initialTradingCapitalUsd > 0
+        ? Math.max(0, totalEquityUsd - initialTradingCapitalUsd - profitReserveBufferUsd)
+        : 0;
 
       // Compute allocation percentages
       spotBalances.forEach((b) => {
@@ -461,6 +468,9 @@ export class BinanceAdapter {
         serverIp: this.serverIp,
         timestamp: new Date().toISOString(),
         totalEquityUsd: Number(totalEquityUsd.toFixed(2)),
+        withdrawableProfitUsd: Number(withdrawableProfitUsd.toFixed(2)),
+        initialTradingCapitalUsd,
+        profitReserveBufferUsd,
         availableCashUsd: Number(availableCashUsd.toFixed(2)),
         lockedInOrdersUsd: Number(lockedInOrdersUsd.toFixed(2)),
         spotBalances,
@@ -470,6 +480,7 @@ export class BinanceAdapter {
         todayPnLPct: 0,
         openOrdersCount,
         recentTrades,
+        transactions: await this.getTransactionHistory(spotBalances),
         canTrade: !!data.canTrade,
         canWithdraw: !!data.canWithdraw,
         canDeposit: !!data.canDeposit,
@@ -491,6 +502,9 @@ export class BinanceAdapter {
         totalEquityUsd: 0,
         availableCashUsd: 0,
         lockedInOrdersUsd: 0,
+        withdrawableProfitUsd: 0,
+        initialTradingCapitalUsd: this.getInitialTradingCapitalUsd(),
+        profitReserveBufferUsd: this.getProfitReserveBufferUsd(),
         spotBalances: [],
         realizedProfitUsd: 0,
         unrealizedProfitUsd: 0,
@@ -498,6 +512,7 @@ export class BinanceAdapter {
         todayPnLPct: 0,
         openOrdersCount: 0,
         recentTrades: [],
+        transactions: [],
         canTrade: false,
         canWithdraw: false,
         canDeposit: false,
@@ -557,6 +572,89 @@ export class BinanceAdapter {
   /**
    * Private Signed: Real historical trade fills from Binance
    */
+  public async getTransactionHistory(assets: BinanceAssetWithUsd[] = []): Promise<BinanceTransaction[]> {
+    if (!this.apiKey || !this.apiSecret) return [];
+    const transactions: BinanceTransaction[] = [];
+    const now = Date.now();
+    const startTime = now - 30 * 24 * 60 * 60 * 1000;
+
+    const signedGet = async (pathName: string, params: Record<string, any> = {}) => {
+      const { queryString, signature } = this.signQuery(params);
+      const res = await fetch(`${this.baseUrl}${pathName}?${queryString}&signature=${signature}`, {
+        headers: { 'X-MBX-APIKEY': this.apiKey, 'User-Agent': 'GigPilot-Quant/2.5' }
+      });
+      if (!res.ok) return null;
+      return await res.json().catch(() => null);
+    };
+
+    try {
+      const deposits = await signedGet('/sapi/v1/capital/deposit/hisrec', { startTime, limit: 100 });
+      if (Array.isArray(deposits)) for (const d of deposits) {
+        transactions.push({
+          id: `deposit:${d.id || d.txId || d.insertTime}`,
+          type: 'DEPOSIT',
+          asset: String(d.coin || ''),
+          amount: Number(d.amount || 0),
+          valueUsd: Number(d.amount || 0),
+          status: String(d.status ?? 'UNKNOWN'),
+          timestamp: new Date(Number(d.insertTime || d.completeTime || now)).toISOString(),
+          txId: d.txId ? String(d.txId) : undefined
+        });
+      }
+    } catch {}
+
+    try {
+      const withdrawals = await signedGet('/sapi/v1/capital/withdraw/history', { startTime, limit: 100 });
+      if (Array.isArray(withdrawals)) for (const w of withdrawals) {
+        transactions.push({
+          id: `withdrawal:${w.id || w.txId || w.applyTime}`,
+          type: 'WITHDRAWAL',
+          asset: String(w.coin || ''),
+          amount: Number(w.amount || 0),
+          valueUsd: Number(w.amount || 0),
+          status: String(w.status ?? 'UNKNOWN'),
+          timestamp: new Date(w.applyTime || now).toISOString(),
+          txId: w.txId ? String(w.txId) : undefined
+        });
+      }
+    } catch {}
+
+    const symbols = assets
+      .filter(a => a.usdValue > 0 && !['USDT','USDC','FDUSD','USD','BUSD'].includes(a.asset))
+      .slice(0, 12)
+      .map(a => `${a.asset}USDT`);
+
+    const tradeResults = await Promise.all(symbols.map(async (symbol) => {
+      try {
+        const list = await signedGet('/api/v3/myTrades', { symbol, startTime, limit: 100 });
+        return Array.isArray(list) ? list : [];
+      } catch { return []; }
+    }));
+
+    for (const list of tradeResults) for (const t of list) {
+      const price = Number(t.price || 0);
+      const qty = Number(t.qty || 0);
+      transactions.push({
+        id: `trade:${t.id}`,
+        type: 'TRADE',
+        asset: String(t.commissionAsset || ''),
+        amount: qty,
+        valueUsd: price * qty,
+        status: 'FILLED',
+        timestamp: new Date(Number(t.time || now)).toISOString(),
+        orderId: String(t.orderId),
+        tradeId: String(t.id),
+        symbol: this.denormalizeSymbol(String(t.symbol || '')),
+        side: t.isBuyer ? 'BUY' : 'SELL',
+        feeUsd: Number(t.commission || 0)
+      });
+    }
+
+    return transactions
+      .sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime())
+      .slice(0, 200);
+  }
+
   public async getRealTrades(symbol = 'BTCUSDT', limit = 50): Promise<Fill[]> {
     if (!this.apiKey || !this.apiSecret) return [];
 
