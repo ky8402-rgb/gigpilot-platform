@@ -385,13 +385,13 @@ export class BinanceAdapter {
 
       if (cryptoAssetsToPrice.length > 0) {
         try {
-          const tickerRes = await fetch(`${this.baseUrl}/api/v3/ticker/price`);
+          const tickerRes = await fetch(`${this.baseUrl}/api/v3/ticker/24hr`);
           if (tickerRes.ok) {
-            const allPrices = (await tickerRes.json()) as Array<{ symbol: string; price: string; priceChangePercent?: string }>;
+            const allPrices = (await tickerRes.json()) as Array<{ symbol: string; price: string; lastPrice?: string; priceChangePercent?: string }>;
             for (const item of allPrices) {
               for (const asset of cryptoAssetsToPrice) {
                 if (item.symbol === `${asset}USDT` || item.symbol === `${asset}FDUSD`) {
-                  priceMap[asset] = parseFloat(item.price);
+                  priceMap[asset] = parseFloat(item.lastPrice || item.price);
                   if (item.priceChangePercent != null) changeMap[asset] = parseFloat(item.priceChangePercent);
                 }
               }
