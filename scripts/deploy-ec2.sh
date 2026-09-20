@@ -25,7 +25,7 @@ echo "Working directory: $(pwd)"
 # CI uploads the already-validated source tree directly to EC2.
 if [ -n "${DEPLOY_SOURCE_DIR:-}" ] && [ -d "$DEPLOY_SOURCE_DIR" ]; then
   echo "Installing source tree from CI upload: $DEPLOY_SOURCE_DIR"
-  find "$APP_DIR" -mindepth 1 -maxdepth 1 ! -name ".env" ! -name ".env.production" ! -name ".env.local" ! -name "node_modules" -exec rm -rf {} +
+  find "$APP_DIR" -mindepth 1 -maxdepth 1 ! -name ".env" ! -name ".env.production" ! -name ".env.local" ! -name ".owner-auth-config.json" ! -name ".binance-credentials.enc.json" ! -name "node_modules" -exec rm -rf {} +
   cp -a "$DEPLOY_SOURCE_DIR"/. "$APP_DIR"/
   rm -rf "$DEPLOY_SOURCE_DIR"
 else
