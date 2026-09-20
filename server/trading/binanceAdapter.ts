@@ -1,4 +1,6 @@
 import crypto from 'crypto';
+import fs from 'fs';
+import path from 'path';
 import { Candle, Fill, Order, OrderBook, OrderBookLevel } from './types.js';
 
 export interface BinanceBalanceItem {
@@ -69,19 +71,65 @@ export class BinanceAdapter {
   private priceCache: Map<string, { price: number; time: number }> = new Map();
   private lastAccountState: BinanceAccountState | null = null;
   private lastAccountFetchTime = 0;
+  private readonly credentialsPath = path.join(process.cwd(), '.binance-credentials.enc.json');
 
   constructor() {
-    // Credentials are loaded only from environment/secret injection.
-    // Never persist Binance API secrets to the application filesystem.
     this.apiKey = process.env.BINANCE_API_KEY || '';
     this.apiSecret = process.env.BINANCE_API_SECRET || '';
     if (process.env.BINANCE_API_BASE_URL) this.baseUrl = process.env.BINANCE_API_BASE_URL;
+
+    // Prefer AWS/EC2-injected environment credentials. If the UI was used to
+    // configure keys, restore the encrypted-at-rest copy so a PM2 restart does
+    // not silently disconnect the Spot account.
+    if (!this.apiKey || !this.apiSecret) this.loadEncryptedCredentials();
+  }
+
+  private getCredentialEncryptionKey(): Buffer {
+    const seed = process.env.OWNER_SESSION_SECRET || process.env.JWT_SECRET;
+    if (!seed) throw new Error('OWNER_SESSION_SECRET or JWT_SECRET is required to persist Binance credentials securely.');
+    return crypto.createHash('sha256').update(seed).digest();
+  }
+
+  private loadEncryptedCredentials(): void {
+    try {
+      if (!fs.existsSync(this.credentialsPath)) return;
+      const stored = JSON.parse(fs.readFileSync(this.credentialsPath, 'utf8')) as { iv: string; tag: string; data: string; baseUrl?: string };
+      const decipher = crypto.createDecipheriv('aes-256-gcm', this.getCredentialEncryptionKey(), Buffer.from(stored.iv, 'hex'));
+      decipher.setAuthTag(Buffer.from(stored.tag, 'hex'));
+      const plaintext = Buffer.concat([decipher.update(Buffer.from(stored.data, 'base64')), decipher.final()]).toString('utf8');
+      const credentials = JSON.parse(plaintext) as { apiKey: string; apiSecret: string; baseUrl?: string };
+      this.apiKey = credentials.apiKey || '';
+      this.apiSecret = credentials.apiSecret || '';
+      if (credentials.baseUrl) this.baseUrl = credentials.baseUrl;
+    } catch (err) {
+      console.error('[BinanceAdapter] Failed to restore encrypted credentials:', err);
+      this.apiKey = '';
+      this.apiSecret = '';
+    }
+  }
+
+  private persistEncryptedCredentials(): void {
+    try {
+      const iv = crypto.randomBytes(12);
+      const cipher = crypto.createCipheriv('aes-256-gcm', this.getCredentialEncryptionKey(), iv);
+      const plaintext = JSON.stringify({ apiKey: this.apiKey, apiSecret: this.apiSecret, baseUrl: this.baseUrl });
+      const encrypted = Buffer.concat([cipher.update(plaintext, 'utf8'), cipher.final()]);
+      fs.writeFileSync(this.credentialsPath, JSON.stringify({
+        version: 1,
+        iv: iv.toString('hex'),
+        tag: cipher.getAuthTag().toString('hex'),
+        data: encrypted.toString('base64')
+      }), { encoding: 'utf8', mode: 0o600 });
+    } catch (err) {
+      console.error('[BinanceAdapter] Failed to persist encrypted credentials:', err);
+    }
   }
 
   public updateCredentials(apiKey: string, apiSecret: string, baseUrl?: string): void {
     this.apiKey = apiKey.trim();
     this.apiSecret = apiSecret.trim();
     if (baseUrl) this.baseUrl = baseUrl.trim();
+    this.persistEncryptedCredentials();
     this.lastAccountFetchTime = 0; // Force refresh
   }
 
