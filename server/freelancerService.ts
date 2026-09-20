@@ -46,19 +46,17 @@ export function getSavedConfigToken(): string {
   return '';
 }
 
-const DUMMY_PLACEHOLDER_TOKEN = '3PKsiB3m736mE0wnirnHeLTUzLP1xc';
-
 export function resolveActiveFreelancerToken(): string {
   const saved = getSavedConfigToken();
-  if (saved && saved !== DUMMY_PLACEHOLDER_TOKEN) {
+  if (saved) {
     return saved;
   }
   const env1 = (process.env.FREELANCER_ACCESS_TOKEN || '').trim();
-  if (env1 && env1 !== DUMMY_PLACEHOLDER_TOKEN) return env1;
+  if (env1) return env1;
   const env2 = (process.env.FREELANCER_AUTH_TOKEN || '').trim();
-  if (env2 && env2 !== DUMMY_PLACEHOLDER_TOKEN) return env2;
+  if (env2) return env2;
   const env3 = (process.env.FREELANCER_SESSION || '').trim();
-  if (env3 && env3 !== DUMMY_PLACEHOLDER_TOKEN) return env3;
+  if (env3) return env3;
   return '';
 }
 
@@ -88,7 +86,7 @@ export function getFreelancerRequestHeaders(customHeaders: Record<string, string
   const isLiveToken = Boolean(
     candidateToken &&
     candidateToken.length > 0 &&
-    candidateToken !== '3PKsiB3m736mE0wnirnHeLTUzLP1xc'
+    candidateToken.length > 0
   );
 
   const headers: Record<string, string> = {
@@ -224,7 +222,7 @@ export async function verifyFreelancerAuthStatus(): Promise<{
   const isConfigured = Boolean(
     tokenString &&
     tokenString.length > 0 &&
-    tokenString !== '3PKsiB3m736mE0wnirnHeLTUzLP1xc'
+    tokenString.length > 0
   );
 
   if (!isConfigured) {
@@ -312,14 +310,6 @@ export async function testFreelancerToken(candidateToken: string): Promise<{
     };
   }
 
-  if (token === '3PKsiB3m736mE0wnirnHeLTUzLP1xc') {
-    return {
-      valid: false,
-      status: 'missing',
-      latencyMs: 0,
-      message: 'This is the sample demo token. Please paste your official Personal Access Token from https://accounts.freelancer.com/settings/develop.',
-    };
-  }
 
   const startTime = Date.now();
   try {

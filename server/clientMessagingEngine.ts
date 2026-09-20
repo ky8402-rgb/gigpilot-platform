@@ -315,7 +315,7 @@ Tone: ${params.tone || 'professional, confident, clear, and action-oriented'}
 ${params.userPrompt ? `Special instructions from freelancer: "${params.userPrompt}"` : ''}
 
 Draft the reply. Be polite, technically competent, reassuring, and guide the client toward next steps (milestone approval, review, or payment release).
-If referencing PayPal or sending an invoice/payment link, always use Kundan's verified PayPal handle: https://paypal.me/ky8402/${conv.projectBudget || 250}USD (receiver email: kundank4@icloud.com). Never invent another handle.
+If referencing PayPal or sending an invoice/payment link, always use Kundan's verified PayPal handle: a server-generated PayPal payment link using the configured payment destination. Never invent another handle.
 Keep the reply under 120 words. No robotic phrasing. Return ONLY the message text without quotes.`;
 
       const result = await generateContentResilient({

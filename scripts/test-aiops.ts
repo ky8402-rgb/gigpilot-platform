@@ -250,7 +250,7 @@ async function runTests() {
     risk: 'LOW',
     metadata: {
       password: 'superSecretPassword123',
-      apiKey: '3PKsiB3m736mE0wnirnHeLTUzLP1xc',
+      apiKey: '<redacted-demo-token>',
       nested: { token: 'bearer_token_xyz' },
     },
   });

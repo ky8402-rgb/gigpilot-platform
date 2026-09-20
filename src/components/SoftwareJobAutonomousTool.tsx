@@ -522,8 +522,8 @@ export const SoftwareJobAutonomousTool: React.FC<SoftwareJobAutonomousToolProps>
               className="bg-slate-950 text-slate-200 border border-slate-700 rounded-lg px-2 py-0.5 text-[10px] font-mono cursor-pointer focus:border-purple-500 outline-none"
               title="Escrow release disbursement route"
             >
-              <option value="paypal">PayPal (kundank4@icloud.com)</option>
-              <option value="upi">UPI (chandimay@ybl)</option>
+              <option value="paypal">PayPal (configured server-side)</option>
+              
             </select>
           </div>
         </div>

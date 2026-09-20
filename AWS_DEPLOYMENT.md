@@ -1,6 +1,6 @@
 # Deploying GigPilot to Amazon Web Services (AWS)
 
-This guide provides step-by-step instructions to deploy **GigPilot Platform** (`ky8402-rgb/gigpilot-platform`) on AWS.
+This guide provides step-by-step instructions to deploy **GigPilot Platform** (`<set-in-secret-store>-rgb/gigpilot-platform`) on AWS.
 
 > ⚠️ **IMPORTANT: AWS Free Tier Notice & App Runner Limitations**
 > - **Why App Runner fails on Free Tier accounts**:
@@ -307,10 +307,10 @@ Regardless of the method chosen, prepare these environment variables:
 | `PORT` | Web server listening port | `3000` |
 | `DATABASE_URL | PostgreSQL connection string | `<set-in-aws-secret-store>`postgresql://user:pass@host:5432/dbname` (Neon or AWS RDS) |
 | `GEMINI_API_KEY` | Google Gemini API Key | *(Your API Key)* |
-| `PAYPAL_CLIENT_ID | PayPal Live REST Client ID | `<set-in-aws-secret-store>`BAAv8rRenc5jlfD6eH_8pvgcU250jXTZCnyPKdBby13EAYRKhCempoPQ3Hj41GEfe2qBMu1P8ZslnbdkIc` |
+| `PAYPAL_CLIENT_ID | PayPal Live REST Client ID | `<set-in-aws-secret-store>`<set-in-secret-store>` |
 | `PAYPAL_CLIENT_SECRET | PayPal Live REST Client Secret | `<set-in-aws-secret-store>`<set-in-aws-secret-store>` |
-| `PAYPAL_RECEIVER_EMAIL | PayPal notification / payout email | `<set-in-aws-secret-store>`kundank4@icloud.com` |
-| `PAYPAL_ME_USERNAME | Direct PayPal.Me handle | `<set-in-aws-secret-store>`ky8402` |
+| `PAYPAL_RECEIVER_EMAIL | PayPal notification / payout email | `<set-in-aws-secret-store>`<set-in-secret-store>` |
+| `PAYPAL_ME_USERNAME | Direct PayPal.Me handle | `<set-in-aws-secret-store>`<set-in-secret-store>` |
 | `PAYPAL_MODE` | Payment mode | `live` |
 | `FREELANCER_ACCESS_TOKEN` | Freelancer.com API Bearer Token | *(Your Freelancer Token)* |
 | `JWT_SECRET` | Secret token for session signing | *(Any random 32+ char string)* |
@@ -329,7 +329,7 @@ AWS App Runner provides 100% automated backend deployment on every `git push`. T
 
 ### Step 2: Connect Repository & Enable Auto-Deploy
 1. Under **Repository type**, select **Source code repository**.
-2. Connect your GitHub account and select repository: **`ky8402-rgb/gigpilot-platform`**.
+2. Connect your GitHub account and select repository: **`<set-in-secret-store>-rgb/gigpilot-platform`**.
 3. Branch: **`main`**.
 4. Under **Deployment trigger**, select **Automatic** (this automatically triggers a new deployment on every Git push).
 
@@ -348,8 +348,8 @@ AWS App Runner provides 100% automated backend deployment on every `git push`. T
 Add your production variables in the App Runner console:
 - `NODE_ENV`: `production`
 - `DATABASE_URL | PostgreSQL connection string | `<set-in-aws-secret-store>`postgresql://neondb_owner:npg_L6xTbr0PsJuG@ep-green-bread-ae4bhk9u-pooler.c-2.us-east-2.aws.neon.tech/neondb?sslmode=require&channel_binding=require`
-- `PAYPAL_CLIENT_ID | PayPal Live REST Client ID | `<set-in-aws-secret-store>`BAAv8rRenc5jlfD6eH_8pvgcU250jXTZCnyPKdBby13EAYRKhCempoPQ3Hj41GEfe2qBMu1P8ZslnbdkIc`
-- `PAYPAL_CLIENT_SECRET | PayPal Live REST Client Secret | `<set-in-aws-secret-store>`EH8CcxBIVPvFhoAKbL-HN8l_jSdOYzlGA2oahgGs1wPV7bogYK_TE4hIOjPtzOVj-mOUUXVy8uMIt6-N`
+- `PAYPAL_CLIENT_ID | PayPal Live REST Client ID | `<set-in-aws-secret-store>`<set-in-secret-store>`
+- `PAYPAL_CLIENT_SECRET | PayPal Live REST Client Secret | `<set-in-aws-secret-store>`<set-in-secret-store>`
 - `PAYPAL_MODE`: `live`
 - `GEMINI_API_KEY`: *(Your Google Gemini API Key)*
 - `AUTO_HEAL_ENABLED`: `true`
@@ -384,7 +384,7 @@ AWS gives you **750 hours of free EC2 compute every single month for 12 months**
 
 ```bash
 #!/usr/bin/env bash
-curl -fsSL https://raw.githubusercontent.com/ky8402-rgb/gigpilot-platform/main/scripts/ec2-free-tier-setup.sh | bash
+curl -fsSL https://raw.githubusercontent.com/<set-in-secret-store>-rgb/gigpilot-platform/main/scripts/ec2-free-tier-setup.sh | bash
 ```
 
 9. Click **Launch instance**.
@@ -402,7 +402,7 @@ ssh -i your-key.pem ubuntu@<YOUR-EC2-PUBLIC-IP>
 
 #### Step 2: Run the automated setup script
 ```bash
-curl -fsSL https://raw.githubusercontent.com/ky8402-rgb/gigpilot-platform/main/scripts/ec2-free-tier-setup.sh | bash
+curl -fsSL https://raw.githubusercontent.com/<set-in-secret-store>-rgb/gigpilot-platform/main/scripts/ec2-free-tier-setup.sh | bash
 ```
 
 Update system and install Node.js 20:
@@ -415,7 +415,7 @@ sudo npm install -g pm2
 
 ### Step 3: Clone Repository and Build
 ```bash
-git clone https://github.com/ky8402-rgb/gigpilot-platform.git
+git clone https://github.com/<set-in-secret-store>-rgb/gigpilot-platform.git
 cd gigpilot-platform
 npm ci
 ```
@@ -429,8 +429,8 @@ DATABASE_URL=postgresql://neondb_owner:npg_L6xTbr0PsJuG@ep-green-bread-ae4bhk9u-
 GEMINI_API_KEY=your_gemini_key_here
 PAYPAL_CLIENT_ID=<set-in-aws-secret-store>
 PAYPAL_CLIENT_SECRET=<set-in-aws-secret-store>
-PAYPAL_RECEIVER_EMAIL=kundank4@icloud.com
-PAYPAL_ME_USERNAME=ky8402
+PAYPAL_RECEIVER_EMAIL=<set-in-secret-store>
+PAYPAL_ME_USERNAME=<set-in-secret-store>
 PAYPAL_MODE=live
 AUTO_HEAL_ENABLED=true
 ML_ENABLED=true

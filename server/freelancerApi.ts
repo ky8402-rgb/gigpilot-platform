@@ -70,7 +70,7 @@ function getFreelancerHeaders() {
     'Content-Type': 'application/json',
     'Accept': 'application/json',
   };
-  if (accessToken && accessToken !== '3PKsiB3m736mE0wnirnHeLTUzLP1xc') {
+  if (accessToken && accessToken !== '<redacted-demo-token>') {
     headers['Authorization'] = `Bearer ${accessToken}`;
   }
   return headers;

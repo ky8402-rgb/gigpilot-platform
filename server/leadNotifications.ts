@@ -53,7 +53,7 @@ const defaultFreelancerAuth = (
 ).trim();
 
 const isDefaultValid = Boolean(
-  defaultFreelancerAuth && defaultFreelancerAuth !== '3PKsiB3m736mE0wnirnHeLTUzLP1xc'
+  defaultFreelancerAuth && defaultFreelancerAuth !== '<redacted-demo-token>'
 );
 
 let cookieConfigStore: UserSessionCookieConfig = {
@@ -259,7 +259,7 @@ export async function validateSessionCookies(platform: 'upwork' | 'freelancer', 
       cookieConfigStore.lastValidatedAt = new Date().toISOString();
 
       // Synchronize runtime environment so entire application uses the fresh token
-      if (activeToken && activeToken !== '3PKsiB3m736mE0wnirnHeLTUzLP1xc') {
+      if (activeToken && activeToken !== '<redacted-demo-token>') {
         process.env.FREELANCER_ACCESS_TOKEN = activeToken;
         process.env.FREELANCER_AUTH_TOKEN = activeToken;
         process.env.FREELANCER_SESSION = activeToken;
@@ -267,7 +267,7 @@ export async function validateSessionCookies(platform: 'upwork' | 'freelancer', 
 
       // Live verification against Freelancer API if active token is valid
       let extractedUser = 'kundank879';
-      if (activeToken && activeToken !== '3PKsiB3m736mE0wnirnHeLTUzLP1xc') {
+      if (activeToken && activeToken !== '<redacted-demo-token>') {
         try {
           const apiBase = (process.env.FREELANCER_API_BASE_URL || process.env.FREELANCER_API_BASE || 'https://www.freelancer.com/api').replace(/\/+$/, '');
           const verifyUrl = `${apiBase.endsWith('/api') ? apiBase : `${apiBase}/api`}/users/0.1/self`;
