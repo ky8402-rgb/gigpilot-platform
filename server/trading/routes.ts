@@ -594,6 +594,9 @@ tradingRouter.get('/stream', (req: Request, res: Response) => {
 
 // 19. Single Owner Authentication & Google Authenticator (TOTP)
 function extractToken(req: Request): string | null {
+  const cookieToken = (req as any).cookies?.gigpilot_owner_session;
+  if (cookieToken) return String(cookieToken);
+
   const authHeader = req.headers.authorization;
   if (authHeader && authHeader.startsWith('Bearer ')) {
     return authHeader.substring(7);
@@ -659,13 +662,30 @@ tradingRouter.post('/auth/login', authRateLimit, (req: Request, res: Response) =
       return res.status(401).json(result);
     }
     globalTradingStore.logAudit('OWNER', 'OWNER_LOGIN_SUCCESSFUL', { email }, 'SUCCESS');
-    return res.json(result);
+
+    if (result.token) {
+      res.cookie('gigpilot_owner_session', result.token, {
+        httpOnly: true,
+        secure: process.env.NODE_ENV === 'production',
+        sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax',
+        maxAge: 12 * 60 * 60 * 1000,
+        path: '/'
+      });
+    }
+
+    return res.json({ success: true });
   } catch (err: any) {
     return res.status(500).json({ success: false, error: err.message });
   }
 });
 
 tradingRouter.post('/auth/logout', (req: Request, res: Response) => {
+  res.clearCookie('gigpilot_owner_session', {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === 'production',
+    sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax',
+    path: '/'
+  });
   globalTradingStore.logAudit('OWNER', 'OWNER_LOGOUT', {}, 'SUCCESS');
   return res.json({ success: true, message: 'Logged out successfully' });
 });
