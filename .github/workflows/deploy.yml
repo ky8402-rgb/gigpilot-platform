@@ -261,7 +261,8 @@ jobs:
           if [ "$HTTP_CODE" = "200" ] || [ "$HTTP_CODE" = "202" ]; then
             echo "✔ EC2 backend webhook delivery succeeded (HTTP $HTTP_CODE)."
           else
-            echo "Notice: Webhook received HTTP $HTTP_CODE (SSH deployment handles execution)."
+            echo "ERROR: Neither direct SSH deployment nor signed webhook deployment succeeded." >&2
+            exit 1
           fi
 
       - name: Verify EC2 Backend Health
