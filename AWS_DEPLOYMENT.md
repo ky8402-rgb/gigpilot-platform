@@ -307,8 +307,8 @@ Regardless of the method chosen, prepare these environment variables:
 | `PORT` | Web server listening port | `3000` |
 | `DATABASE_URL` | PostgreSQL connection string | `postgresql://user:pass@host:5432/dbname` (Neon or AWS RDS) |
 | `GEMINI_API_KEY` | Google Gemini API Key | *(Your API Key)* |
-| `PAYPAL_CLIENT_ID` | PayPal Live REST Client ID | `BAAv8rRenc5jlfD6eH_8pvgcU250jXTZCnyPKdBby13EAYRKhCempoPQ3Hj41GEfe2qBMu1P8ZslnbdkIc` |
-| `PAYPAL_CLIENT_SECRET` | PayPal Live REST Client Secret | `EH8CcxBIVPvFhoAKbL-HN8l_jSdOYzlGA2oahgGs1wPV7bogYK_TE4hIOjPtzOVj-mOUUXVy8uMIt6-N` |
+| `PAYPAL_CLIENT_ID` | PayPal Live REST Client ID | `<set-in-secure-environment>` |
+| `PAYPAL_CLIENT_SECRET` | PayPal Live REST Client Secret | `<set-in-secure-environment>` |
 | `PAYPAL_RECEIVER_EMAIL` | PayPal notification / payout email | `kundank4@icloud.com` |
 | `PAYPAL_ME_USERNAME` | Direct PayPal.Me handle | `ky8402` |
 | `PAYPAL_MODE` | Payment mode | `live` |
@@ -348,8 +348,8 @@ AWS App Runner provides 100% automated backend deployment on every `git push`. T
 Add your production variables in the App Runner console:
 - `NODE_ENV`: `production`
 DATABASE_URL=<set-in-secure-environment>
-- `PAYPAL_CLIENT_ID`: `BAAv8rRenc5jlfD6eH_8pvgcU250jXTZCnyPKdBby13EAYRKhCempoPQ3Hj41GEfe2qBMu1P8ZslnbdkIc`
-- `PAYPAL_CLIENT_SECRET`: `EH8CcxBIVPvFhoAKbL-HN8l_jSdOYzlGA2oahgGs1wPV7bogYK_TE4hIOjPtzOVj-mOUUXVy8uMIt6-N`
+- `PAYPAL_CLIENT_ID`: `<set-in-secure-environment>`
+- `PAYPAL_CLIENT_SECRET`: `<set-in-secure-environment>`
 - `PAYPAL_MODE`: `live`
 - `GEMINI_API_KEY`: *(Your Google Gemini API Key)*
 - `AUTO_HEAL_ENABLED`: `true`
