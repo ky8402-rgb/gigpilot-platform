@@ -97,21 +97,13 @@ export function getCandidateBaseUrls(): string[] {
 const OWNER_TOKEN_STORAGE_KEY = 'gigpilot_owner_token';
 
 export function getStoredOwnerToken(): string | null {
-  try {
-    return localStorage.getItem(OWNER_TOKEN_STORAGE_KEY);
-  } catch {
-    return null;
-  }
+  // Owner authentication is cookie-based; tokens are intentionally not exposed
+  // to JavaScript/localStorage where an XSS could steal them.
+  return null;
 }
 
-export function setStoredOwnerToken(token: string | null): void {
-  try {
-    if (token) {
-      localStorage.setItem(OWNER_TOKEN_STORAGE_KEY, token);
-    } else {
-      localStorage.removeItem(OWNER_TOKEN_STORAGE_KEY);
-    }
-  } catch {}
+export function setStoredOwnerToken(_token: string | null): void {
+  // Retained as a compatibility no-op for existing callers.
 }
 
 /**
@@ -127,13 +119,9 @@ async function fetchWithFailover<T>(endpointPath: string, options?: RequestInit)
     ...(options?.headers as Record<string, string> || {})
   };
 
-  const token = getStoredOwnerToken();
-  if (token) {
-    mergedHeaders['Authorization'] = `Bearer ${token}`;
-  }
-
   const mergedOptions: RequestInit = {
     ...options,
+    credentials: 'include',
     headers: mergedHeaders
   };
 
