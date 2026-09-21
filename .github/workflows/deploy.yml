@@ -151,6 +151,7 @@ jobs:
           fi
 
       - name: Trigger EC2 Push-to-Deploy Webhook (Parallel / Fallback)
+        continue-on-error: true
         env:
           EC2_HOST: ${{ secrets.EC2_HOST || '3.222.149.9' }}
           WEBHOOK_SECRET: ${{ secrets.GITHUB_WEBHOOK_SECRET || secrets.WEBHOOK_SECRET || 'ec310d5a996f2d55400c40d9719ab37991921f18456f2f68207d340a032f7ce3' }}
@@ -159,7 +160,7 @@ jobs:
           WEBHOOK_URL="https://${EC2_HOST//./-}.sslip.io/api/github/webhook"
           echo "Target Webhook: $WEBHOOK_URL"
           
-          PAYLOAD=$(node -e "
+          export PAYLOAD=$(node -e "
             const p = {
               ref: 'refs/heads/' + (process.env.GITHUB_REF_NAME || 'main'),
               after: process.env.GITHUB_SHA || '',
@@ -177,7 +178,7 @@ jobs:
             SIG=$(node -e "
               const crypto = require('crypto');
               const hmac = crypto.createHmac('sha256', process.env.WEBHOOK_SECRET);
-              hmac.update(Buffer.from(process.env.PAYLOAD));
+              hmac.update(Buffer.from(process.env.PAYLOAD || '{}'));
               console.log('sha256=' + hmac.digest('hex'));
             ")
             SIG_HEADER=(-H "X-Hub-Signature-256: $SIG")

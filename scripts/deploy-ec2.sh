@@ -5,55 +5,37 @@ echo "=========================================================="
 echo "🛡️ GigPilot EC2 Automated Production Deployment"
 echo "=========================================================="
 
-APP_DIR=""
-for dir in /home/ubuntu/gigpilot ~/gigpilot /opt/gigpilot /var/www/gigpilot; do
-  if [ -d "$dir" ] && [ -f "$dir/package.json" ]; then
-    APP_DIR="$dir"
-    break
-  fi
-done
+APP_DIR="/home/ubuntu/gigpilot"
 
-if [ -z "$APP_DIR" ]; then
-  echo "Creating application directory at /home/ubuntu/gigpilot..."
-  mkdir -p /home/ubuntu/gigpilot
-  APP_DIR="/home/ubuntu/gigpilot"
-  cd "$APP_DIR"
-  git clone https://github.com/ky8402-rgb/gigpilot-platform.git . || true
-else
-  cd "$APP_DIR"
+if [ -f "/home/ubuntu/.env" ]; then
+  cp -f /home/ubuntu/.env /tmp/gigpilot.env.bak 2>/dev/null || true
+elif [ -f "$APP_DIR/.env" ]; then
+  cp -f "$APP_DIR/.env" /tmp/gigpilot.env.bak 2>/dev/null || true
 fi
 
+if [ ! -d "$APP_DIR" ] || [ ! -f "$APP_DIR/package.json" ]; then
+  echo "Clean repository checkout required at $APP_DIR..."
+  rm -rf /tmp/gigpilot-fresh 2>/dev/null || true
+  git clone https://github.com/ky8402-rgb/gigpilot-platform.git /tmp/gigpilot-fresh
+  mkdir -p "$APP_DIR"
+  cp -rf /tmp/gigpilot-fresh/. "$APP_DIR/"
+  rm -rf /tmp/gigpilot-fresh
+fi
+
+cd "$APP_DIR"
 echo "Working directory: $(pwd)"
 
-# Abort any conflicted merge, rebase, or dirty index first
-if [ ! -d ".git" ]; then
-  echo "No .git directory found in $APP_DIR. Initializing git repository and linking remote..."
-  git init
-  git remote add origin https://github.com/ky8402-rgb/gigpilot-platform.git 2>/dev/null || git remote set-url origin https://github.com/ky8402-rgb/gigpilot-platform.git 2>/dev/null || true
-fi
+# Ensure origin is configured
+git remote set-url origin https://github.com/ky8402-rgb/gigpilot-platform.git 2>/dev/null || git remote add origin https://github.com/ky8402-rgb/gigpilot-platform.git 2>/dev/null || true
 
-# Preserve .env if present
-if [ -f ".env" ]; then
-  cp -f .env /tmp/gigpilot.env.bak 2>/dev/null || true
-fi
-
-git merge --abort 2>/dev/null || true
-git rebase --abort 2>/dev/null || true
-git cherry-pick --abort 2>/dev/null || true
-git reset --hard 2>/dev/null || true
-git clean -fd 2>/dev/null || true
-
-# Fetch latest from remote
-echo "Fetching origin main..."
-git fetch origin main --prune 2>/dev/null || git fetch origin main 2>/dev/null || true
-
-# Force checkout and hard reset to latest origin/main
+# Clean and update
+git fetch origin main --prune 2>/dev/null || true
 git checkout -B main origin/main 2>/dev/null || git checkout -f main 2>/dev/null || true
 git reset --hard origin/main 2>/dev/null || true
 
-# Restore .env if needed
-if [ -f "/tmp/gigpilot.env.bak" ] && [ ! -f ".env" ]; then
-  cp -f /tmp/gigpilot.env.bak .env 2>/dev/null || true
+# Restore .env
+if [ -f "/tmp/gigpilot.env.bak" ]; then
+  cp -f /tmp/gigpilot.env.bak "$APP_DIR/.env" 2>/dev/null || true
 fi
 
 echo "Installing production build dependencies..."
