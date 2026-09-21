@@ -53,6 +53,8 @@ export class BinanceAdapter {
   private priceCache: Map<string, { price: number; time: number }> = new Map();
   private lastAccountState: BinanceAccountState | null = null;
   private lastAccountFetchTime = 0;
+  private timeOffset = 0;
+  private lastTimeSync = 0;
 
   constructor() {
     // Load from env or persistent config file
@@ -70,6 +72,27 @@ export class BinanceAdapter {
     if (savedKeys.baseUrl) {
       this.baseUrl = savedKeys.baseUrl;
     }
+
+    // Initial background time sync
+    this.syncServerTime().catch(() => {});
+  }
+
+  /**
+   * Sync local time with Binance server time to avoid error -1021
+   */
+  public async syncServerTime(): Promise<number> {
+    try {
+      const res = await fetch(`${this.baseUrl}/api/v3/time`);
+      if (res.ok) {
+        const data = (await res.json()) as { serverTime: number };
+        this.timeOffset = data.serverTime - Date.now();
+        this.lastTimeSync = Date.now();
+        return this.timeOffset;
+      }
+    } catch (e) {
+      // Keep offset as 0
+    }
+    return 0;
   }
 
   public updateCredentials(apiKey: string, apiSecret: string, baseUrl?: string): void {
@@ -78,6 +101,7 @@ export class BinanceAdapter {
     if (baseUrl) this.baseUrl = baseUrl.trim();
     this.lastAccountFetchTime = 0; // Force refresh
     this.saveConfig();
+    this.syncServerTime().catch(() => {});
   }
 
   private saveConfig(): void {
@@ -279,7 +303,7 @@ export class BinanceAdapter {
    * Helper: Sign request for Binance private endpoints
    */
   private signQuery(params: Record<string, any> = {}): { queryString: string; signature: string } {
-    const timestamp = Date.now();
+    const timestamp = Date.now() + (this.timeOffset || 0);
     const queryParts = Object.entries(params)
       .filter(([_, v]) => v !== undefined && v !== null)
       .map(([k, v]) => `${encodeURIComponent(k)}=${encodeURIComponent(v)}`);
@@ -327,15 +351,28 @@ export class BinanceAdapter {
     }
 
     try {
-      const { queryString, signature } = this.signQuery();
-      const res = await fetch(`${this.baseUrl}/api/v3/account?${queryString}&signature=${signature}`, {
+      let { queryString, signature } = this.signQuery();
+      let res = await fetch(`${this.baseUrl}/api/v3/account?${queryString}&signature=${signature}`, {
         headers: {
           'X-MBX-APIKEY': this.apiKey,
           'User-Agent': 'GigPilot-Quant/2.5'
         }
       });
 
-      const data = await res.json();
+      let data = await res.json();
+
+      // If timestamp skew error, sync time and retry
+      if (!res.ok && data?.code === -1021) {
+        await this.syncServerTime();
+        const retrySign = this.signQuery();
+        res = await fetch(`${this.baseUrl}/api/v3/account?${retrySign.queryString}&signature=${retrySign.signature}`, {
+          headers: {
+            'X-MBX-APIKEY': this.apiKey,
+            'User-Agent': 'GigPilot-Quant/2.5'
+          }
+        });
+        data = await res.json();
+      }
 
       if (!res.ok) {
         const errorMsg = data?.msg || `Binance API error HTTP ${res.status}`;
@@ -586,6 +623,19 @@ export class BinanceAdapter {
   }
 
   /**
+   * Symbol precision and step rules for Binance Spot
+   */
+  public getSymbolRules(symbol: string): { priceDecimals: number; qtyDecimals: number; minNotional: number } {
+    const norm = this.normalizeSymbol(symbol);
+    if (norm.startsWith('BTC')) return { priceDecimals: 2, qtyDecimals: 5, minNotional: 5.0 };
+    if (norm.startsWith('ETH')) return { priceDecimals: 2, qtyDecimals: 4, minNotional: 5.0 };
+    if (norm.startsWith('SOL')) return { priceDecimals: 2, qtyDecimals: 3, minNotional: 5.0 };
+    if (norm.startsWith('BNB')) return { priceDecimals: 2, qtyDecimals: 3, minNotional: 5.0 };
+    if (norm.startsWith('AVAX')) return { priceDecimals: 2, qtyDecimals: 2, minNotional: 5.0 };
+    return { priceDecimals: 2, qtyDecimals: 4, minNotional: 5.0 };
+  }
+
+  /**
    * Private Signed: Place real order on Binance Spot
    */
   public async placeRealOrder(params: {
@@ -596,37 +646,76 @@ export class BinanceAdapter {
     quantity: number;
   }): Promise<{ success: boolean; orderId?: string; error?: string }> {
     if (!this.apiKey || !this.apiSecret) {
-      return { success: false, error: 'Binance API credentials missing.' };
+      return { success: false, error: 'Binance API credentials missing. Please configure your API key & secret.' };
+    }
+
+    const rules = this.getSymbolRules(params.symbol);
+    const formattedQty = Number(params.quantity.toFixed(rules.qtyDecimals));
+    if (formattedQty <= 0) {
+      return {
+        success: false,
+        error: `Order quantity (${params.quantity}) must be at least ${Math.pow(10, -rules.qtyDecimals)} for ${params.symbol}`
+      };
     }
 
     const payload: Record<string, any> = {
       symbol: this.normalizeSymbol(params.symbol),
       side: params.side,
       type: params.type,
-      quantity: params.quantity
+      quantity: formattedQty
     };
 
     if (params.type === 'LIMIT') {
-      if (!params.price) return { success: false, error: 'Price required for LIMIT orders' };
-      payload.price = params.price;
-      payload.timeInForce = 'GTC';
-    }
-
-    const { queryString, signature } = this.signQuery(payload);
-    const res = await fetch(`${this.baseUrl}/api/v3/order?${queryString}&signature=${signature}`, {
-      method: 'POST',
-      headers: {
-        'X-MBX-APIKEY': this.apiKey,
-        'User-Agent': 'GigPilot-Quant/2.5'
+      if (!params.price || params.price <= 0) {
+        return { success: false, error: 'Valid price is required for LIMIT orders' };
       }
-    });
+      const formattedPrice = Number(params.price.toFixed(rules.priceDecimals));
+      payload.price = formattedPrice;
+      payload.timeInForce = 'GTC';
 
-    const data = await res.json();
-    if (!res.ok) {
-      return { success: false, error: data.msg || `HTTP ${res.status}` };
+      const notional = formattedPrice * formattedQty;
+      if (notional < rules.minNotional) {
+        return {
+          success: false,
+          error: `Order value ($${notional.toFixed(2)}) is below Binance minimum notional of $${rules.minNotional.toFixed(2)} USD`
+        };
+      }
     }
 
-    return { success: true, orderId: String(data.orderId) };
+    try {
+      let { queryString, signature } = this.signQuery(payload);
+      let res = await fetch(`${this.baseUrl}/api/v3/order?${queryString}&signature=${signature}`, {
+        method: 'POST',
+        headers: {
+          'X-MBX-APIKEY': this.apiKey,
+          'User-Agent': 'GigPilot-Quant/2.5'
+        }
+      });
+
+      let data = await res.json();
+
+      // If timestamp skew occurred, re-sync time and retry once
+      if (!res.ok && data?.code === -1021) {
+        await this.syncServerTime();
+        const retrySign = this.signQuery(payload);
+        res = await fetch(`${this.baseUrl}/api/v3/order?${retrySign.queryString}&signature=${retrySign.signature}`, {
+          method: 'POST',
+          headers: {
+            'X-MBX-APIKEY': this.apiKey,
+            'User-Agent': 'GigPilot-Quant/2.5'
+          }
+        });
+        data = await res.json();
+      }
+
+      if (!res.ok) {
+        return { success: false, error: data.msg || `Binance HTTP ${res.status}` };
+      }
+
+      return { success: true, orderId: String(data.orderId) };
+    } catch (err: any) {
+      return { success: false, error: err.message || 'Failed to dispatch order to Binance' };
+    }
   }
 
   /**

@@ -44,6 +44,7 @@ export const AssetDashboard: React.FC<AssetDashboardProps> = ({
   const [showKeyModal, setShowKeyModal] = useState<boolean>(false);
   const [newApiKey, setNewApiKey] = useState<string>('');
   const [newApiSecret, setNewApiSecret] = useState<string>('');
+  const [selectedBaseUrl, setSelectedBaseUrl] = useState<string>('https://api.binance.com');
   const [updatingKeys, setUpdatingKeys] = useState<boolean>(false);
   const [keyUpdateFeedback, setKeyUpdateFeedback] = useState<string | null>(null);
 
@@ -89,9 +90,9 @@ export const AssetDashboard: React.FC<AssetDashboardProps> = ({
     setUpdatingKeys(true);
     setKeyUpdateFeedback(null);
     try {
-      const res = await updateBinanceKeys(newApiKey.trim(), newApiSecret.trim());
+      const res = await updateBinanceKeys(newApiKey.trim(), newApiSecret.trim(), selectedBaseUrl);
       if (res.success) {
-        setKeyUpdateFeedback('Success! Binance credentials applied.');
+        setKeyUpdateFeedback('Success! Binance credentials applied and verified.');
         setTimeout(() => {
           setShowKeyModal(false);
           setNewApiKey('');
@@ -505,21 +506,44 @@ export const AssetDashboard: React.FC<AssetDashboardProps> = ({
               Enter your personal Binance Spot API credentials. Keys are saved securely server-side for personal algorithmic execution.
             </p>
 
-            <div className="p-3 bg-slate-950 border border-slate-800 rounded-lg text-xs space-y-1">
-              <span className="text-slate-400">Server Whitelist IP:</span>
-              <div className="flex items-center justify-between">
-                <code className="text-amber-300 font-mono font-bold">{account?.serverIp || '3.222.149.9'}</code>
+            {/* Quick API Setup Guide & Safety Notice */}
+            <div className="p-3 bg-slate-950 border border-slate-800 rounded-lg text-[11px] space-y-1.5">
+              <div className="flex items-center justify-between text-slate-300 font-semibold">
+                <span>Personal Account Security Checklist:</span>
+                <span className="text-[10px] text-emerald-400 bg-emerald-950/50 px-1.5 py-0.5 rounded border border-emerald-800/40">PERSONAL USE ONLY</span>
+              </div>
+              <ul className="text-slate-400 list-disc list-inside space-y-0.5 leading-normal">
+                <li>Permissions needed: <strong className="text-slate-200">Enable Reading</strong> & <strong className="text-slate-200">Enable Spot & Margin Trading</strong></li>
+                <li>Leave <strong className="text-rose-400">Enable Withdrawals UNCHECKED</strong> (keeps your funds strictly protected)</li>
+                <li>Whitelist EC2 Server IP: <code className="text-amber-300 font-mono font-bold">{account?.serverIp || '3.222.149.9'}</code></li>
+              </ul>
+              <div className="flex items-center justify-between pt-1 border-t border-slate-800/80">
+                <span className="text-slate-400">Server IP Whitelist:</span>
                 <button
+                  type="button"
                   onClick={() => handleCopyIp(account?.serverIp || '3.222.149.9')}
-                  className="text-xs text-slate-400 hover:text-white flex items-center gap-1"
+                  className="text-xs text-amber-400 hover:text-amber-300 flex items-center gap-1 font-mono font-semibold"
                 >
                   {copiedIp ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
-                  <span>{copiedIp ? 'Copied' : 'Copy'}</span>
+                  <span>{copiedIp ? 'Copied' : account?.serverIp || '3.222.149.9'}</span>
                 </button>
               </div>
             </div>
 
-            <form onSubmit={handleSaveKeys} className="space-y-4">
+            <form onSubmit={handleSaveKeys} className="space-y-3.5">
+              <div>
+                <label className="block text-xs font-semibold text-slate-300 mb-1">Binance Endpoint / Region</label>
+                <select
+                  value={selectedBaseUrl}
+                  onChange={(e) => setSelectedBaseUrl(e.target.value)}
+                  className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-lg text-xs text-slate-100 font-mono focus:outline-none focus:border-amber-500"
+                >
+                  <option value="https://api.binance.com">Binance Global (https://api.binance.com)</option>
+                  <option value="https://api.binance.us">Binance US (https://api.binance.us)</option>
+                  <option value="https://testnet.binance.vision">Binance Testnet (https://testnet.binance.vision)</option>
+                </select>
+              </div>
+
               <div>
                 <label className="block text-xs font-semibold text-slate-300 mb-1">Binance API Key</label>
                 <input

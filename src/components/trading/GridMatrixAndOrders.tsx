@@ -303,8 +303,11 @@ export const GridMatrixAndOrders: React.FC<GridMatrixAndOrdersProps> = ({
         {activeTab === 'MANUAL' && (
           <form onSubmit={handleManualSubmit} className="p-2 space-y-3 font-mono text-xs">
             <div className="bg-slate-950 p-3 rounded-lg border border-slate-800">
-              <div className="text-[11px] text-slate-400 mb-2">
-                Manual orders are verified by the independent Risk Engine before execution.
+              <div className="flex items-center justify-between text-[11px] text-slate-400 mb-2">
+                <span>Manual Execution Ticket</span>
+                <span className="text-[10px] font-bold text-amber-400 bg-amber-950/60 border border-amber-800/60 px-2 py-0.5 rounded">
+                  BINANCE SPOT (PERSONAL)
+                </span>
               </div>
 
               <div className="grid grid-cols-2 gap-3 mb-3">
@@ -381,12 +384,18 @@ export const GridMatrixAndOrders: React.FC<GridMatrixAndOrdersProps> = ({
                 </div>
               </div>
 
-              <div className="text-[11px] text-slate-400 mb-3 flex justify-between">
+              <div className="text-[11px] text-slate-400 mb-2 flex justify-between">
                 <span>Estimated Value:</span>
                 <span className="text-white font-bold">
                   ${(Number(manualPrice) * Number(manualAmount)).toFixed(2)} USD
                 </span>
               </div>
+
+              {Number(manualPrice) * Number(manualAmount) > 0 && Number(manualPrice) * Number(manualAmount) < 5.0 && (
+                <div className="text-[10px] text-amber-400 bg-amber-950/40 border border-amber-800/50 p-1.5 rounded mb-3">
+                  ⚠️ Minimum notional for Binance Spot is $5.00 USD. Increase amount or price.
+                </div>
+              )}
 
               {orderError && (
                 <div className="p-2 rounded bg-rose-950/60 border border-rose-800/80 text-rose-300 text-[11px] mb-3 flex items-start gap-2">

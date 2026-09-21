@@ -161,7 +161,7 @@ tradingRouter.post('/kill-switch/toggle', (req: Request, res: Response) => {
 });
 
 // 8. Configure Grid
-tradingRouter.post('/grid/configure', (req: Request, res: Response) => {
+tradingRouter.post('/grid/configure', async (req: Request, res: Response) => {
   const store = globalTradingStore;
   const {
     upperBoundary,
@@ -195,7 +195,7 @@ tradingRouter.post('/grid/configure', (req: Request, res: Response) => {
 
   // Place in exchange
   for (const lvl of newGrid.activeLevels) {
-    store.exchange.placeOrder({
+    await store.exchange.placeOrder({
       symbol: newGrid.symbol,
       side: lvl.side,
       type: 'GRID_LIMIT',
@@ -255,24 +255,41 @@ tradingRouter.post('/order/place', async (req: Request, res: Response) => {
     amount: numAmount
   });
 
+  if (order.status === 'REJECTED') {
+    store.logAudit('OWNER', 'ORDER_REJECTED', {
+      symbol,
+      side,
+      price: numPrice,
+      amount: numAmount,
+      reason: order.rejectionReason || 'Rejected by Binance'
+    }, 'REJECTED');
+
+    return res.status(400).json({
+      success: false,
+      error: order.rejectionReason || 'Order was rejected by exchange',
+      order
+    });
+  }
+
   store.logAudit('OWNER', 'ORDER_PLACED', { orderId: order.id, symbol, side, price: numPrice, amount: numAmount }, 'SUCCESS');
 
   res.json({ success: true, order });
 });
 
 // 10. Cancel Order
-tradingRouter.post('/order/cancel', (req: Request, res: Response) => {
+tradingRouter.post('/order/cancel', async (req: Request, res: Response) => {
   const { orderId } = req.body;
-  const order = globalTradingStore.exchange.cancelOrder(orderId);
-  if (!order) return res.status(404).json({ success: false, error: 'Order not found or already filled' });
+  const success = await globalTradingStore.exchange.cancelOrder(orderId);
+  if (!success) return res.status(404).json({ success: false, error: 'Order not found or already filled' });
 
   globalTradingStore.logAudit('OWNER', 'ORDER_CANCELLED', { orderId }, 'SUCCESS');
-  res.json({ success: true, order });
+  res.json({ success: true, orderId });
 });
 
-tradingRouter.post('/order/cancel-all', (req: Request, res: Response) => {
-  const count = globalTradingStore.exchange.cancelAllOrders();
-  globalTradingStore.logAudit('OWNER', 'ALL_ORDERS_CANCELLED', { count }, 'SUCCESS');
+tradingRouter.post('/order/cancel-all', async (req: Request, res: Response) => {
+  const { symbol } = req.body;
+  const count = await globalTradingStore.exchange.cancelAllOrders(symbol);
+  globalTradingStore.logAudit('OWNER', 'ALL_ORDERS_CANCELLED', { count, symbol }, 'SUCCESS');
   res.json({ success: true, cancelledCount: count });
 });
 
@@ -660,6 +677,12 @@ tradingRouter.post('/binance/update-keys', async (req: Request, res: Response) =
 
     binanceAdapter.updateCredentials(apiKey, apiSecret, baseUrl);
     const testState = await binanceAdapter.getRealAccountState(true);
+
+    if (testState.status === 'CONNECTED') {
+      globalTradingStore.capital.totalEquity = testState.totalEquityUsd;
+      globalTradingStore.capital.availableCash = testState.availableCashUsd;
+      globalTradingStore.capital.lockedInOrders = testState.lockedInOrdersUsd;
+    }
 
     globalTradingStore.logAudit('OWNER', 'BINANCE_KEYS_UPDATED', {
       keyMask: binanceAdapter.getKeyMask(),
