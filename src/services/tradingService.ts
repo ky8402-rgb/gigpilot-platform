@@ -269,16 +269,12 @@ export async function selectActivePair(symbol: string) {
     });
     fallbackMasterState.activeSymbol = symbol;
     return res;
-  } catch {
-    fallbackMasterState.activeSymbol = symbol;
-    const pair = fallbackPairs.find(p => p.symbol === symbol);
-    if (pair) {
-      fallbackMasterState.activeGrid = generateDefaultGrid(symbol, pair.price);
-      fallbackMasterState.openOrders = generateDefaultOrders(symbol, pair.price);
-    }
-    return { success: true, symbol };
+  } catch (err: any) {
+    return { success: false, symbol, error: err.message || 'Failed to select active pair.' };
   }
 }
+
+export async function setAutonomyLevel}
 
 export async function setAutonomyLevel(level: AutonomyLevel) {
   try {
@@ -291,13 +287,12 @@ export async function setAutonomyLevel(level: AutonomyLevel) {
     fallbackMasterState.botsDisabled = level === 0;
     fallbackMasterState.activeBotsCount = level === 0 ? 0 : 1;
     return res;
-  } catch {
-    fallbackMasterState.autonomyLevel = level;
-    fallbackMasterState.botsDisabled = level === 0;
-    fallbackMasterState.activeBotsCount = level === 0 ? 0 : 1;
-    return { success: true, level };
+  } catch (err: any) {
+    return { success: false, level, error: err.message || 'Failed to change autonomy level.' };
   }
 }
+
+export async function setTradingMode}
 
 export async function setTradingMode(mode: TradingMode) {
   try {
@@ -308,11 +303,12 @@ export async function setTradingMode(mode: TradingMode) {
     });
     fallbackMasterState.tradingMode = mode;
     return res;
-  } catch {
-    fallbackMasterState.tradingMode = mode;
-    return { success: true, mode };
+  } catch (err: any) {
+    return { success: false, mode, error: err.message || 'Failed to change trading mode.' };
   }
 }
+
+export async function triggerKillSwitch}
 
 export async function triggerKillSwitch(reason?: string) {
   try {
@@ -327,27 +323,12 @@ export async function triggerKillSwitch(reason?: string) {
     fallbackMasterState.autonomyLevel = 0;
     fallbackMasterState.killSwitch.isActive = true;
     return res;
-  } catch {
-    fallbackMasterState.GLOBAL_KILL_SWITCH_ACTIVE = true;
-    fallbackMasterState.botsDisabled = true;
-    fallbackMasterState.activeBotsCount = 0;
-    fallbackMasterState.autonomyLevel = 0;
-    fallbackMasterState.killSwitch = {
-      isActive: true,
-      triggeredAt: new Date().toISOString(),
-      triggeredBy: reason || 'Manual Owner Trigger',
-      ordersCancelledCount: fallbackMasterState.openOrders.length,
-      positionsLiquidated: false
-    };
-    fallbackMasterState.openOrders = [];
-    return {
-      success: true,
-      GLOBAL_KILL_SWITCH_ACTIVE: true,
-      botsDisabled: true,
-      killSwitch: fallbackMasterState.killSwitch
-    };
+  } catch (err: any) {
+    return { success: false, error: err.message || 'Failed to activate kill switch on backend.' };
   }
 }
+
+export async function deactivateKillSwitch}
 
 export async function deactivateKillSwitch() {
   try {
@@ -361,20 +342,12 @@ export async function deactivateKillSwitch() {
     fallbackMasterState.autonomyLevel = 1;
     fallbackMasterState.killSwitch.isActive = false;
     return res;
-  } catch {
-    fallbackMasterState.GLOBAL_KILL_SWITCH_ACTIVE = false;
-    fallbackMasterState.botsDisabled = false;
-    fallbackMasterState.activeBotsCount = 1;
-    fallbackMasterState.autonomyLevel = 1;
-    fallbackMasterState.killSwitch.isActive = false;
-    return {
-      success: true,
-      GLOBAL_KILL_SWITCH_ACTIVE: false,
-      botsDisabled: false,
-      killSwitch: fallbackMasterState.killSwitch
-    };
+  } catch (err: any) {
+    return { success: false, error: err.message || 'Failed to release backend kill switch.' };
   }
 }
+
+export async function toggleGlobalKillSwitch}
 
 export async function toggleGlobalKillSwitch(active?: boolean, reason?: string) {
   try {
@@ -390,26 +363,12 @@ export async function toggleGlobalKillSwitch(active?: boolean, reason?: string) 
     fallbackMasterState.autonomyLevel = nextActive ? 0 : 1;
     fallbackMasterState.killSwitch.isActive = nextActive;
     return res;
-  } catch {
-    const nextActive = active !== undefined ? active : !fallbackMasterState.GLOBAL_KILL_SWITCH_ACTIVE;
-    fallbackMasterState.GLOBAL_KILL_SWITCH_ACTIVE = nextActive;
-    fallbackMasterState.botsDisabled = nextActive;
-    fallbackMasterState.activeBotsCount = nextActive ? 0 : 1;
-    fallbackMasterState.autonomyLevel = nextActive ? 0 : 1;
-    fallbackMasterState.killSwitch.isActive = nextActive;
-    if (nextActive) {
-      fallbackMasterState.openOrders = [];
-    } else {
-      fallbackMasterState.openOrders = generateDefaultOrders(fallbackMasterState.activeSymbol);
-    }
-    return {
-      success: true,
-      GLOBAL_KILL_SWITCH_ACTIVE: nextActive,
-      botsDisabled: nextActive,
-      killSwitch: fallbackMasterState.killSwitch
-    };
+  } catch (err: any) {
+    return { success: false, error: err.message || 'Failed to change backend kill switch state.' };
   }
 }
+
+export async function configureGrid}
 
 export async function configureGrid(config: {
   upperBoundary?: number;
@@ -428,16 +387,12 @@ export async function configureGrid(config: {
     });
     fallbackMasterState.activeGrid = res.grid;
     return res;
-  } catch {
-    const pair = fallbackPairs.find(p => p.symbol === fallbackMasterState.activeSymbol) || fallbackPairs[0];
-    const newGrid = generateDefaultGrid(pair.symbol, pair.price);
-    if (config.upperBoundary) newGrid.upperBoundary = config.upperBoundary;
-    if (config.lowerBoundary) newGrid.lowerBoundary = config.lowerBoundary;
-    if (config.levelsCount) newGrid.levelsCount = config.levelsCount;
-    fallbackMasterState.activeGrid = newGrid;
-    return { success: true, grid: newGrid };
+  } catch (err: any) {
+    return { success: false, error: err.message || 'Failed to configure live grid on backend.' };
   }
 }
+
+export async function placeManualOrder}
 
 export async function placeManualOrder(order: {
   symbol: string;
@@ -456,28 +411,8 @@ export async function placeManualOrder(order: {
       fallbackMasterState.openOrders.unshift(res.order);
     }
     return res;
-  } catch {
-    const newOrder: Order = {
-      id: `ord_manual_${Date.now()}`,
-      symbol: order.symbol,
-      side: order.side,
-      type: order.type === 'LIMIT' ? 'LIMIT' : 'MARKET',
-      price: order.price,
-      amount: order.amount,
-      filledAmount: 0,
-      remainingAmount: order.amount,
-      costUsd: Number((order.price * order.amount).toFixed(2)),
-      status: 'OPEN',
-      isGridOrder: false,
-      strategyId: 'MANUAL_OWNER',
-      mode: 'LIVE',
-      feesPaid: 0,
-      slippageBps: 0,
-      latencyMs: 14,
-      placedAt: new Date().toISOString()
-    };
-    fallbackMasterState.openOrders.unshift(newOrder);
-    return { success: true, order: newOrder };
+  } catch (err: any) {
+    return { success: false, error: err.message || 'Live order placement could not be confirmed by backend.' };
   }
 }
 
