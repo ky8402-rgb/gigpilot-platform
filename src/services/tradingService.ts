@@ -473,8 +473,8 @@ export async function promoteChallenger(challengerId: string) {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ challengerId })
     });
-  } catch {
-    return { success: true, reason: 'Challenger strategy successfully promoted to Champion in simulated engine' };
+  } catch (err: any) {
+    return { success: false, reason: err.message || 'Strategy promotion could not be confirmed by backend.' };
   }
 }
 
@@ -491,24 +491,8 @@ export async function createStrategyVariant(params: {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(params)
     });
-  } catch {
-    const challenger: StrategyVersion = {
-      ...DEFAULT_CHAMPION_STRATEGY,
-      id: `STRAT-CHALLENGER-${Date.now().toString().slice(-4)}`,
-      name: params.name,
-      version: 'v1.5.0-variant',
-      status: 'CHALLENGER',
-      reasonForChange: params.reasonForChange,
-      parameters: {
-        ...DEFAULT_CHAMPION_STRATEGY.parameters,
-        ...params.parameters
-      },
-      validationScore: 88,
-      expectedEffect: params.expectedEffect,
-      actualEffect: 'Pending walk-forward verification'
-    };
-    fallbackStrategies.push(challenger);
-    return { success: true, challenger };
+  } catch (err: any) {
+    return { success: false, error: err.message || 'Strategy variant creation could not be confirmed by backend.' };
   }
 }
 
@@ -528,18 +512,15 @@ export async function executeUserScript(code: string) {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ code })
     });
-  } catch {
+  } catch (err: any) {
     return {
-      success: true,
+      success: false,
       result: {
-        success: true,
-        logs: [
-          '[Simulated Sandbox] Initialized execution environment',
-          `[Simulated Sandbox] Code analyzed: ${code.slice(0, 40)}...`,
-          '[Simulated Sandbox] Execution verified with zero memory leaks.'
-        ],
+        success: false,
+        logs: [],
         ordersGenerated: [],
-        executionTimeMs: 12
+        executionTimeMs: 0,
+        error: err.message || 'Script execution could not be confirmed by backend.'
       }
     };
   }
@@ -561,25 +542,8 @@ export async function analyzeResearchIntelligence(title: string, content: string
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ title, content, source })
     });
-  } catch {
-    const item: ResearchItem = {
-      id: `res-${Date.now()}`,
-      timestamp: new Date().toISOString(),
-      category: 'FACT',
-      title,
-      source,
-      summary: content.slice(0, 180),
-      sentiment: 'NEUTRAL',
-      impactScore: 85,
-      quantitativeAdjustment: {
-        recommendedGridWidthModifier: 1.0,
-        riskLevel: 'LOW',
-        notes: 'Continue maintaining active grid boundaries with dynamic volatility scaling.'
-      },
-      verifiedByAi: true
-    };
-    fallbackResearch.unshift(item);
-    return { success: true, item };
+  } catch (err: any) {
+    return { success: false, error: err.message || 'Research analysis could not be confirmed by backend.' };
   }
 }
 
@@ -630,16 +594,8 @@ export async function updateDestinationWallet(wallet: { address: string; chain: 
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(wallet)
     });
-  } catch {
-    const updated: DestinationWallet = {
-      address: wallet.address,
-      chain: wallet.chain,
-      label: wallet.label || 'Whitelisted Cold Storage Vault',
-      isWhitelisted: true,
-      addedAt: new Date().toISOString(),
-      lastVerifiedAt: new Date().toISOString()
-    };
-    return { success: true, wallet: updated };
+  } catch (err: any) {
+    return { success: false, error: err.message || 'Destination wallet update could not be confirmed by backend.' };
   }
 }
 
@@ -650,26 +606,8 @@ export async function executeProfitSweep(amount: number) {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ amount })
     });
-  } catch {
-    const sweep: ProfitSweep = {
-      id: `sweep_${Date.now()}`,
-      timestamp: new Date().toISOString(),
-      destinationWallet: DEFAULT_DESTINATION_WALLET.address,
-      chain: 'bsc',
-      grossSweepAmount: amount,
-      networkFeeUsd: 3.50,
-      netTransferredUsd: Number((amount - 3.50).toFixed(2)),
-      reserveRetainedUsd: 300.00,
-      status: 'CONFIRMED',
-      txHash: `0x${Array.from({ length: 64 }, () => Math.floor(Math.random() * 16).toString(16)).join('')}`,
-      auditSignature: `ECDSA_FALLBACK_SIG_${Date.now()}`,
-      operator: 'MANUAL_OWNER'
-    };
-    fallbackSweeps.unshift(sweep);
-    fallbackMasterState.capital.totalSweptProfit += amount;
-    fallbackMasterState.capital.availableCash -= amount;
-    fallbackMasterState.capital.totalEquity -= amount;
-    return { success: true, sweep, updatedCapital: fallbackMasterState.capital };
+  } catch (err: any) {
+    return { success: false, error: err.message || 'Profit sweep could not be confirmed by backend. No funds were moved.' };
   }
 }
 
@@ -732,22 +670,8 @@ export async function triggerCanaryRollout(version?: string, notes?: string) {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ version, notes })
     });
-  } catch {
-    const update: SystemUpdate = {
-      version: version || 'v2.5.1-canary',
-      discoveredAt: new Date().toISOString(),
-      integrityVerified: true,
-      sha256: 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855',
-      automatedTestsPassed: true,
-      securityTestsPassed: true,
-      backtestPassed: true,
-      canaryStatus: 'FULL_DEPLOYMENT',
-      rollbackPoint: 'v2.5.0-stable',
-      deployedAt: new Date().toISOString(),
-      notes: notes || 'Canary self-update validated with zero slippage in test harness.'
-    };
-    fallbackUpdates.unshift(update);
-    return { success: true, update };
+  } catch (err: any) {
+    return { success: false, error: err.message || 'Canary rollout could not be confirmed by backend.' };
   }
 }
 
