@@ -138,7 +138,6 @@ echo -e "\n${BOLD}[4/9] Configuring Firewall (UFW) rules...${NC}"
 ufw allow 22/tcp comment 'SSH' || true
 ufw allow 80/tcp comment 'HTTP Nginx' || true
 ufw allow 443/tcp comment 'HTTPS Nginx' || true
-ufw allow 3000/tcp comment 'GigPilot Node Backend' || true
 ufw --force enable || true
 echo -e "  ${GREEN}✔ Firewall configured (Ports 22, 80, 443, 3000 allowed).${NC}"
 
