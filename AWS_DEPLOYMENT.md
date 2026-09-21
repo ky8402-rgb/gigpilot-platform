@@ -347,7 +347,7 @@ AWS App Runner provides 100% automated backend deployment on every `git push`. T
 ### Step 4: Add Environment Variables
 Add your production variables in the App Runner console:
 - `NODE_ENV`: `production`
-- `DATABASE_URL`: `postgresql://neondb_owner:npg_L6xTbr0PsJuG@ep-green-bread-ae4bhk9u-pooler.c-2.us-east-2.aws.neon.tech/neondb?sslmode=require&channel_binding=require`
+DATABASE_URL=<set-in-secure-environment>
 - `PAYPAL_CLIENT_ID`: `BAAv8rRenc5jlfD6eH_8pvgcU250jXTZCnyPKdBby13EAYRKhCempoPQ3Hj41GEfe2qBMu1P8ZslnbdkIc`
 - `PAYPAL_CLIENT_SECRET`: `EH8CcxBIVPvFhoAKbL-HN8l_jSdOYzlGA2oahgGs1wPV7bogYK_TE4hIOjPtzOVj-mOUUXVy8uMIt6-N`
 - `PAYPAL_MODE`: `live`
@@ -425,12 +425,12 @@ Create your production `.env` file:
 cat << 'EOF' > .env
 NODE_ENV=production
 PORT=3000
-DATABASE_URL=postgresql://neondb_owner:npg_L6xTbr0PsJuG@ep-green-bread-ae4bhk9u-pooler.c-2.us-east-2.aws.neon.tech/neondb?sslmode=require&channel_binding=require
+DATABASE_URL=<set-in-secure-environment>
 GEMINI_API_KEY=your_gemini_key_here
-PAYPAL_CLIENT_ID=BAAv8rRenc5jlfD6eH_8pvgcU250jXTZCnyPKdBby13EAYRKhCempoPQ3Hj41GEfe2qBMu1P8ZslnbdkIc
-PAYPAL_CLIENT_SECRET=EH8CcxBIVPvFhoAKbL-HN8l_jSdOYzlGA2oahgGs1wPV7bogYK_TE4hIOjPtzOVj-mOUUXVy8uMIt6-N
-PAYPAL_RECEIVER_EMAIL=kundank4@icloud.com
-PAYPAL_ME_USERNAME=ky8402
+PAYPAL_CLIENT_ID=<set-in-secure-environment>
+PAYPAL_CLIENT_SECRET=<set-in-secure-environment>
+PAYPAL_RECEIVER_EMAIL=<set-in-secure-environment>
+PAYPAL_ME_USERNAME=<set-in-secure-environment>
 PAYPAL_MODE=live
 AUTO_HEAL_ENABLED=true
 ML_ENABLED=true
