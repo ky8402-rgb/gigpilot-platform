@@ -56,14 +56,27 @@ echo "Waiting for process to initialize on port 3000..."
 sleep 3
 
 # Local health verification
-if curl -sS -m 5 http://127.0.0.1:3000/api/health >/dev/null 2>&1; then
-  echo "✔ Local health check passed (http://127.0.0.1:3000/api/health: OK)"
-else
-  echo "Notice: Service starting up or warming cache."
+HEALTH_OK=0
+for i in 1 2 3 4 5; do
+  if curl -fsS -m 5 http://127.0.0.1:3000/api/health >/dev/null 2>&1; then
+    HEALTH_OK=1
+    echo "✔ Local health check passed (attempt $i/5)"
+    break
+  fi
+  sleep 2
+done
+if [ "$HEALTH_OK" -ne 1 ]; then
+  echo "ERROR: Backend health check failed after deployment." >&2
+  pm2 status || true
+  exit 1
 fi
 
 echo "Reloading Nginx reverse proxy..."
-sudo systemctl reload nginx 2>/dev/null || sudo systemctl restart nginx 2>/dev/null || true
+if ! sudo systemctl reload nginx 2>/dev/null; then
+  echo "ERROR: Nginx reload failed." >&2
+  sudo nginx -t
+  exit 1
+fi
 
 echo "=========================================================="
 echo "✔ EC2 backend successfully deployed and running."
