@@ -263,16 +263,23 @@ tradingRouter.post('/order/place', requireOwner, async (req: Request, res: Respo
   }
 
   const { symbol, side, type, price, amount } = req.body;
-  if (!symbol || !side || !type || !price || !amount) {
-    return res.status(400).json({ success: false, error: 'Missing required order fields' });
+  const normalizedSide = String(side || '').toUpperCase();
+  const normalizedType = String(type || '').toUpperCase();
+
+  if (!symbol || !['BUY', 'SELL'].includes(normalizedSide) || !['LIMIT', 'MARKET'].includes(normalizedType) || amount === undefined || amount === null) {
+    return res.status(400).json({ success: false, error: 'Invalid order fields. Supported side: BUY/SELL; type: LIMIT/MARKET.' });
   }
 
-  const numPrice = Number(price);
+  const pairState = store.exchange.getPairState(String(symbol));
+  const marketReferencePrice = pairState?.currentPrice || 0;
+  const numPrice = normalizedType === 'MARKET'
+    ? Number(price ?? marketReferencePrice)
+    : Number(price);
   const numAmount = Number(amount);
 
   // Risk Engine Validation (Hard Constraint)
   const validation = store.risk.validateOrder(
-    { symbol, side, price: numPrice, amount: numAmount },
+    { symbol: String(symbol), side: normalizedSide as 'BUY' | 'SELL', price: numPrice, amount: numAmount },
     store.capital,
     store.exchange.getPositions(),
     store.exchange.getOpenOrders().length
@@ -287,9 +294,9 @@ tradingRouter.post('/order/place', requireOwner, async (req: Request, res: Respo
   }
 
   const order = await store.exchange.placeOrder({
-    symbol,
-    side,
-    type,
+    symbol: String(symbol),
+    side: normalizedSide as 'BUY' | 'SELL',
+    type: normalizedType as 'LIMIT' | 'MARKET',
     price: numPrice,
     amount: numAmount
   });
