@@ -590,8 +590,8 @@ export async function fetchRiskData(): Promise<{
   } catch {
     return {
       config: DEFAULT_RISK_DATA as any,
-      circuitBreakerActive: fallbackMasterState.circuitBreakerActive,
-      events: []
+      circuitBreakerActive: true,
+      events: [{ type: 'BACKEND_UNAVAILABLE', status: 'FAIL_CLOSED', message: 'Live risk state unavailable; trading controls are disabled.' }]
     };
   }
 }
@@ -603,8 +603,8 @@ export async function updateRiskConfig(config: Partial<RiskRuleConfig>) {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(config)
     });
-  } catch {
-    return { success: true, config: config as any };
+  } catch (err: any) {
+    return { success: false, error: err.message || 'Risk configuration could not be confirmed by backend.' };
   }
 }
 
@@ -614,9 +614,8 @@ export async function resetCircuitBreaker() {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' }
     });
-  } catch {
-    fallbackMasterState.circuitBreakerActive = false;
-    return { success: true, circuitBreakerActive: false };
+  } catch (err: any) {
+    return { success: false, circuitBreakerActive: true, error: err.message || 'Circuit breaker reset could not be confirmed by backend.' };
   }
 }
 
@@ -624,7 +623,7 @@ export async function fetchUpdatesHistory(): Promise<{ updates: SystemUpdate[] }
   try {
     return await fetchWithFailover<{ success: boolean; updates: SystemUpdate[] }>('/updates');
   } catch {
-    return { updates: fallbackUpdates };
+    return { updates: [] };
   }
 }
 
