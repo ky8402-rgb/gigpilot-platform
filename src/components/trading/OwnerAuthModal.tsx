@@ -101,8 +101,15 @@ export const OwnerAuthModal: React.FC<OwnerAuthModalProps> = ({ isOpen, onClose,
 
   const handleSetupSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!password || password.length < 6) {
-      setErrorMsg('Password must be at least 6 characters long.');
+    if (
+      !password ||
+      password.length < 12 ||
+      !/[a-z]/.test(password) ||
+      !/[A-Z]/.test(password) ||
+      !/[0-9]/.test(password) ||
+      !/[^A-Za-z0-9]/.test(password)
+    ) {
+      setErrorMsg('Password must be at least 12 characters and include uppercase, lowercase, number, and symbol.');
       return;
     }
     if (!totpCode || totpCode.trim().length !== 6) {
