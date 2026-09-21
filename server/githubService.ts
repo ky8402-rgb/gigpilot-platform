@@ -554,6 +554,10 @@ export async function configureGitRemote(
   if (!cleanUrl) {
     throw new Error('Remote URL cannot be empty.');
   }
+  if (!/^git@github\\.com:ky8402-rgb\\/gigpilot-platform(?:\\.git)?$/.test(cleanUrl) &&
+      !/^https:\\/\\/github\\.com\\/ky8402-rgb\\/gigpilot-platform(?:\\.git)?$/.test(cleanUrl)) {
+    throw new Error('Only the owner repository ky8402-rgb/gigpilot-platform may be configured.');
+  }
 
   // Check if remote origin already exists
   let originExists = false;
@@ -565,16 +569,16 @@ export async function configureGitRemote(
   }
 
   if (originExists) {
-    await execPromise(`git remote set-url origin "${cleanUrl}"`);
+    await execFilePromise('git', ['remote', 'set-url', 'origin', cleanUrl]);
   } else {
-    await execPromise(`git remote add origin "${cleanUrl}"`);
+    await execFilePromise('git', ['remote', 'add', 'origin', cleanUrl]);
   }
 
   if (userName && userName.trim()) {
-    await execPromise(`git config user.name "${userName.trim()}"`);
+    await execFilePromise('git', ['config', 'user.name', userName.trim()]);
   }
   if (userEmail && userEmail.trim()) {
-    await execPromise(`git config user.email "${userEmail.trim()}"`);
+    await execFilePromise('git', ['config', 'user.email', userEmail.trim()]);
   }
 
   const status = await getGitRepoStatus();
@@ -888,49 +892,40 @@ export async function executeGitOperation(
   const targetBranch = branch || 'main';
   const token = getStoredGitHubToken();
 
+  if (!/^[A-Za-z0-9._/-]+$/.test(targetBranch) || targetBranch.startsWith('-') || targetBranch.includes('..') || targetBranch.includes('@{')) {
+    throw new Error('Invalid Git branch name.');
+  }
+  if (!/^[A-Za-z0-9._-]+$/.test(remote) || remote !== 'origin') {
+    throw new Error('Only the origin Git remote is permitted.');
+  }
+
   let cmd = '';
-  let env: Record<string, any> = { ...process.env };
+  const env: Record<string, any> = { ...process.env, GIT_TERMINAL_PROMPT: '0' };
 
-  if (token && remote === 'origin') {
-    // Authenticated HTTPS remote with token
-    const tokenRemote = `https://${token}@github.com/ky8402-rgb/gigpilot-platform.git`;
-    env.GIT_TERMINAL_PROMPT = '0';
+  switch (operation) {
+    case 'status':
+      cmd = 'git status';
+      break;
+    case 'fetch':
+      cmd = `git fetch origin ${targetBranch}`;
+      break;
+    case 'pull':
+      cmd = `git pull origin ${targetBranch} --rebase`;
+      break;
+    case 'push':
+      cmd = `git push origin ${targetBranch}`;
+      break;
+    default:
+      throw new Error(`Unsupported git operation: ${operation}`);
+  }
 
-    switch (operation) {
-      case 'status':
-        cmd = 'git status';
-        break;
-      case 'fetch':
-        cmd = `git fetch "${tokenRemote}" ${targetBranch}`;
-        break;
-      case 'pull':
-        cmd = `git pull "${tokenRemote}" ${targetBranch} --rebase`;
-        break;
-      case 'push':
-        cmd = `git push "${tokenRemote}" ${targetBranch}`;
-        break;
-      default:
-        throw new Error(`Unsupported git operation: ${operation}`);
-    }
+  // Pass the GitHub token through Git's environment configuration rather than
+  // putting it in the command line or remote URL.
+  if (token) {
+    env.GIT_CONFIG_COUNT = '1';
+    env.GIT_CONFIG_KEY_0 = 'http.https://github.com/.extraheader';
+    env.GIT_CONFIG_VALUE_0 = `AUTHORIZATION: bearer ${token}`;
   } else {
-    // SSH or standard remote
-    switch (operation) {
-      case 'status':
-        cmd = 'git status';
-        break;
-      case 'fetch':
-        cmd = `git fetch ${remote} ${targetBranch}`;
-        break;
-      case 'pull':
-        cmd = `git pull ${remote} ${targetBranch} --rebase`;
-        break;
-      case 'push':
-        cmd = `git push ${remote} ${targetBranch}`;
-        break;
-      default:
-        throw new Error(`Unsupported git operation: ${operation}`);
-    }
-
     env.GIT_SSH_COMMAND = 'ssh -o StrictHostKeyChecking=accept-new -o BatchMode=yes';
   }
 
