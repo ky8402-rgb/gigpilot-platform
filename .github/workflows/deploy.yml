@@ -137,6 +137,7 @@ jobs:
           EC2_HOST: ${{ secrets.EC2_HOST || '3.222.149.9' }}
           EC2_USER: ${{ secrets.EC2_USER || 'ubuntu' }}
           EC2_INSTANCE_ID: 'i-02f24350d31f5aa51'
+          DEPLOY_OWNER_SESSION_SECRET: ${{ secrets.OWNER_SESSION_SECRET || secrets.JWT_SECRET }}
         run: |
           echo "=========================================================="
           echo "Deploying to AWS EC2 via Secure SSH ($EC2_USER@$EC2_HOST)..."
@@ -193,7 +194,14 @@ jobs:
             echo "✔ Validated source tree uploaded to EC2."
 
             echo "Executing remote production deployment on EC2 via scripts/deploy-ec2.sh..."
-            ssh -o StrictHostKeyChecking=no -o ConnectTimeout=20 -i "$SSH_KEY_FILE" "$EC2_USER@$EC2_HOST" "DEPLOY_SOURCE_DIR=\"$DEPLOY_SOURCE_DIR\" bash -s" < scripts/deploy-ec2.sh
+            if [ -n "$DEPLOY_OWNER_SESSION_SECRET" ]; then
+              printf 'export OWNER_SESSION_SECRET=%q\n' "$DEPLOY_OWNER_SESSION_SECRET" | cat - scripts/deploy-ec2.sh > /tmp/deploy-ec2-with-secret.sh
+              chmod 700 /tmp/deploy-ec2-with-secret.sh
+              DEPLOY_SCRIPT=/tmp/deploy-ec2-with-secret.sh
+            else
+              DEPLOY_SCRIPT=scripts/deploy-ec2.sh
+            fi
+            ssh -o StrictHostKeyChecking=no -o ConnectTimeout=20 -i "$SSH_KEY_FILE" "$EC2_USER@$EC2_HOST" "DEPLOY_SOURCE_DIR=\"$DEPLOY_SOURCE_DIR\" bash -s" < "$DEPLOY_SCRIPT"
             echo "✔ SSH deployment command finished successfully."
             echo "deployed=true" >> "$GITHUB_OUTPUT"
           else
