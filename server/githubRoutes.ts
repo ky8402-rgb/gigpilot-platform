@@ -19,8 +19,24 @@ import {
   pushAndDeployAll,
 } from './githubService.js';
 import { logActivityEvent, getActivityLogs } from './activityLogger.js';
+import { ownerAuth } from './trading/ownerAuth.js';
 
 export const githubRoutes = express.Router();
+
+const requireOwner = (req: express.Request, res: express.Response, next: express.NextFunction) => {
+  // The GitHub webhook is the only intentionally public route; it authenticates
+  // with GitHub's HMAC signature instead of the owner JWT.
+  if (req.method === 'POST' && req.path === '/webhook') return next();
+
+  const authHeader = req.headers.authorization;
+  const token = authHeader?.startsWith('Bearer ') ? authHeader.slice(7) : '';
+  if (!token || !ownerAuth.verifyToken(token)) {
+    return res.status(401).json({ success: false, error: 'Owner authentication required.' });
+  }
+  next();
+};
+
+githubRoutes.use(requireOwner);
 
 /**
  * GET /api/github/status
