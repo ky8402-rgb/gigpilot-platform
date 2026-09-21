@@ -1,4 +1,5 @@
 import { Router, Request, Response } from 'express';
+import rateLimit from 'express-rate-limit';
 import { globalTradingStore } from './store.js';
 import { generateAdaptiveGrid } from './adaptiveGridEngine.js';
 import { computeAllIndicators } from './indicators.js';
@@ -6,6 +7,14 @@ import { ownerAuth } from './ownerAuth.js';
 import { binanceAdapter } from './binanceAdapter.js';
 
 export const tradingRouter = Router();
+
+const authRateLimit = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 10,
+  standardHeaders: 'draft-7',
+  legacyHeaders: false,
+  message: { success: false, error: 'Too many authentication attempts. Please try again later.' }
+});
 
 const requireOwner = (req: Request, res: Response, next: Function) => {
   if (process.env.REQUIRE_OWNER_AUTH === 'false') return next();
@@ -124,9 +133,9 @@ tradingRouter.post('/mode', requireOwner, (req: Request, res: Response) => {
 });
 
 // 7. Global Kill Switch
-tradingRouter.post('/kill-switch/trigger', (req: Request, res: Response) => {
+tradingRouter.post('/kill-switch/trigger', requireOwner, async (req: Request, res: Response) => {
   const { reason } = req.body;
-  globalTradingStore.triggerEmergencyKillSwitch(reason || 'Manual emergency halt: Disabling all active trading bots');
+  await globalTradingStore.triggerEmergencyKillSwitch(reason || 'Manual emergency halt: Disabling all active trading bots');
   res.json({
     success: true,
     GLOBAL_KILL_SWITCH_ACTIVE: true,
@@ -589,7 +598,7 @@ function extractToken(req: Request): string | null {
   if (authHeader && authHeader.startsWith('Bearer ')) {
     return authHeader.substring(7);
   }
-  return (req.query.token as string) || (req.headers['x-owner-token'] as string) || null;
+  return (req.headers['x-owner-token'] as string) || null;
 }
 
 function isOwner(req: Request): boolean {
@@ -599,15 +608,19 @@ function isOwner(req: Request): boolean {
 
 tradingRouter.get('/auth/status', (req: Request, res: Response) => {
   const authenticated = isOwner(req);
+  const status = ownerAuth.getStatus(authenticated);
   return res.json({
     success: true,
-    ...ownerAuth.getStatus(authenticated),
+    isAuthenticated: authenticated,
+    isConfigured: status.isConfigured,
+    totpEnabled: status.totpEnabled,
+    hasPassword: status.hasPassword,
     GLOBAL_KILL_SWITCH_ACTIVE: globalTradingStore.GLOBAL_KILL_SWITCH_ACTIVE,
     tradingMode: globalTradingStore.tradingMode
   });
 });
 
-tradingRouter.post('/auth/setup-init', async (req: Request, res: Response) => {
+tradingRouter.post('/auth/setup-init', authRateLimit, async (req: Request, res: Response) => {
   try {
     const { email } = req.body || {};
     const setupData = await ownerAuth.initiateTotpSetup(email);
@@ -620,7 +633,7 @@ tradingRouter.post('/auth/setup-init', async (req: Request, res: Response) => {
   }
 });
 
-tradingRouter.post('/auth/setup-complete', (req: Request, res: Response) => {
+tradingRouter.post('/auth/setup-complete', authRateLimit, (req: Request, res: Response) => {
   try {
     const { password, totpCode, email } = req.body || {};
     const result = ownerAuth.completeSetup(password, totpCode, email);
@@ -634,7 +647,7 @@ tradingRouter.post('/auth/setup-complete', (req: Request, res: Response) => {
   }
 });
 
-tradingRouter.post('/auth/login', (req: Request, res: Response) => {
+tradingRouter.post('/auth/login', authRateLimit, (req: Request, res: Response) => {
   try {
     const { email, password, totpCode, emergencyPin } = req.body || {};
     if (!email) {
