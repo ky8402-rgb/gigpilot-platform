@@ -330,14 +330,16 @@ export async function configureGrid(config: {
   totalAllocatedUsd?: number;
   volatilityAdjustment?: boolean;
   trendProtection?: boolean;
-}): Promise<{ success: boolean; grid: GridConfiguration; error?: string }> {
+}): Promise<{ success: boolean; grid?: GridConfiguration; error?: string }> {
   try {
-    const res = await fetchWithFailover<{ success: boolean; grid: GridConfiguration }>('/grid/configure', {
+    const res = await fetchWithFailover<{ success: boolean; grid?: GridConfiguration; error?: string }>('/grid/configure', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(config)
     });
-    fallbackMasterState.activeGrid = res.grid;
+    if (res.grid) {
+      fallbackMasterState.activeGrid = res.grid;
+    }
     return res;
   } catch (err: any) {
     return { success: false, error: err.message || 'Failed to configure live grid on backend.' };
