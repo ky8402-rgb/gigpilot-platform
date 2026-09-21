@@ -141,7 +141,7 @@ class OwnerAuthManager {
 
   private saveConfig(): void {
     try {
-      fs.writeFileSync(PERSISTENT_CONFIG_PATH, JSON.stringify(this.config, null, 2), 'utf-8');
+      fs.writeFileSync(PERSISTENT_CONFIG_PATH, JSON.stringify(this.config, null, 2), { encoding: 'utf-8', mode: 0o600 });
     } catch (err) {
       console.error('Failed to persist owner auth config:', err);
     }
@@ -162,7 +162,11 @@ class OwnerAuthManager {
     otpauthUrl: string;
     qrCodeDataUrl: string;
   }> {
-    const targetEmail = email || this.config.ownerEmail;
+    if (this.config.passwordHash && this.config.totpEnabled) {
+      throw new Error('Owner account is already initialized.');
+    }
+    const targetEmail = (email || this.config.ownerEmail).trim();
+    if (!targetEmail) throw new Error('Owner email is required.');
     this.pendingTotpSecret = base32Encode(crypto.randomBytes(20));
     
     const issuer = 'GigPilot Binance Quant';
@@ -203,7 +207,10 @@ class OwnerAuthManager {
       };
     }
 
-    const secretToVerify = this.pendingTotpSecret || this.config.totpSecret;
+    if (this.config.passwordHash && this.config.totpEnabled) {
+      return { success: false, error: 'Owner account is already initialized.' };
+    }
+    const secretToVerify = this.pendingTotpSecret;
     if (!verifyTOTP(totpCode, secretToVerify)) {
       return { success: false, error: 'Invalid Google Authenticator 6-digit code. Please check your phone time.' };
     }
@@ -267,7 +274,9 @@ class OwnerAuthManager {
     }
 
     const testHash = hashPassword(password, this.config.passwordSalt);
-    if (testHash !== this.config.passwordHash) {
+    const expected = Buffer.from(this.config.passwordHash, 'hex');
+    const actual = Buffer.from(testHash, 'hex');
+    if (expected.length !== actual.length || !crypto.timingSafeEqual(expected, actual)) {
       return { success: false, error: 'Invalid owner password.' };
     }
 
@@ -292,7 +301,7 @@ class OwnerAuthManager {
         iat: Math.floor(Date.now() / 1000)
       },
       this.jwtSecret,
-      { expiresIn: '30d' }
+      { expiresIn: '12h' }
     );
   }
 
