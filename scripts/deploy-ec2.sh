@@ -23,13 +23,29 @@ if [ -n "${DEPLOY_SOURCE_DIR:-}" ] && [ -d "$DEPLOY_SOURCE_DIR" ]; then
   find "$APP_DIR" -mindepth 1 -maxdepth 1 \
     ! -name ".env" ! -name ".env.production" ! -name ".env.local" \
     ! -name ".owner-auth-config.json" ! -name ".binance-credentials.enc.json" \
-    ! -name "node_modules" -exec rm -rf {} +
+    ! -name ".gigpilot-session-secret" ! -name "node_modules" -exec rm -rf {} +
   cp -a "$DEPLOY_SOURCE_DIR"/. "$APP_DIR"/
   rm -rf "$DEPLOY_SOURCE_DIR"
 else
   echo "ERROR: DEPLOY_SOURCE_DIR was not provided. Refusing an unauthenticated GitHub pull." >&2
   exit 1
 fi
+
+# Bootstrap one persistent, machine-local runtime secret if no externally managed secret is present.
+# It is preserved across source deployments and inherited by PM2, but never committed to Git.
+SESSION_SECRET_FILE="$APP_DIR/.gigpilot-session-secret"
+if [ ! -s "$SESSION_SECRET_FILE" ]; then
+  umask 077
+  openssl rand -base64 48 > "$SESSION_SECRET_FILE"
+  chmod 600 "$SESSION_SECRET_FILE"
+fi
+SESSION_SECRET="$(tr -d '\\r\\n' < "$SESSION_SECRET_FILE")"
+if [ "${#SESSION_SECRET}" -lt 32 ]; then
+  echo "ERROR: Persistent GigPilot runtime secret is missing or invalid." >&2
+  exit 1
+fi
+export OWNER_SESSION_SECRET="$SESSION_SECRET"
+unset SESSION_SECRET
 
 npm ci --prefer-offline || npm ci --legacy-peer-deps
 npm run build
