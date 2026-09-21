@@ -131,6 +131,7 @@ jobs:
           aws-region: 'us-east-1'
 
       - name: Deploy via SSH (Direct EC2 Execution)
+        id: ssh_deploy
         env:
           SSH_KEY: ${{ secrets.EC2_SSH_KEY }}
           EC2_HOST: ${{ secrets.EC2_HOST || '3.222.149.9' }}
@@ -194,11 +195,14 @@ jobs:
             echo "Executing remote production deployment on EC2 via scripts/deploy-ec2.sh..."
             ssh -o StrictHostKeyChecking=no -o ConnectTimeout=20 -i "$SSH_KEY_FILE" "$EC2_USER@$EC2_HOST" "DEPLOY_SOURCE_DIR=\"$DEPLOY_SOURCE_DIR\" bash -s" < scripts/deploy-ec2.sh
             echo "✔ SSH deployment command finished successfully."
+            echo "deployed=true" >> "$GITHUB_OUTPUT"
           else
             echo "SSH direct connection could not be established. Falling back to signed push webhook."
+            echo "deployed=false" >> "$GITHUB_OUTPUT"
           fi
 
-      - name: Trigger EC2 Push-to-Deploy Webhook (Parallel / Fallback)
+      - name: Trigger EC2 Push-to-Deploy Webhook (Fallback)
+        if: steps.ssh_deploy.outputs.deployed != 'true'
         env:
           EC2_HOST: ${{ secrets.EC2_HOST || '3.222.149.9' }}
           WEBHOOK_SECRET: ${{ secrets.GITHUB_WEBHOOK_SECRET || secrets.WEBHOOK_SECRET }}
