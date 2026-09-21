@@ -64,9 +64,6 @@ export function updatePayPalConfig(newConfig: Partial<PayPalConfig>): PayPalConf
 export function isPayPalConfigured(): boolean {
   const cfg = getPayPalConfig();
   if (!cfg.clientId || !cfg.clientSecret) return false;
-  if (DUMMY_CREDENTIALS.includes(cfg.clientId) || DUMMY_CREDENTIALS.includes(cfg.clientSecret)) {
-    return false;
-  }
   return cfg.clientId.trim().length > 10 && cfg.clientSecret.trim().length > 10;
 }
 
