@@ -217,9 +217,6 @@ export async function createPayPalOrder(params: {
   throw new Error('PayPal Checkout order could not be created through the official API. No payment was created.');
 }
 
-/** 
- * Capture a PayPal v2 Checkout Order}
-
 /**
  * Capture a PayPal v2 Checkout Order
  */
@@ -273,9 +270,6 @@ export async function capturePayPalOrder(orderId: string): Promise<{
   throw new Error('PayPal capture could not be confirmed through the official API. No payment was recorded as captured.');
 }
 
-/** 
- * Execute PayPal Payout / Mass Payment}
-
 /**
  * Execute PayPal Payout / Mass Payment to Subcontractor
  */
@@ -299,7 +293,8 @@ export async function createPayPalPayout(params: {
   const baseUrl = getPayPalBaseUrl();
   const currency = params.currency || 'USD';
   const formattedAmount = Number(params.amount).toFixed(2);
-  const targetEmail = params.recipientEmail || params.receiverEmail || getPayPalConfig().receiverEmail || 'ky8402@gmail.com';
+  const targetEmail = params.recipientEmail || params.receiverEmail || getPayPalConfig().receiverEmail;
+  if (!targetEmail) throw new Error('PayPal payout recipient email is not configured.');
 
   if (token) {
     try {
