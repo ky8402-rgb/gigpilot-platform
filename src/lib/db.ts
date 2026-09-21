@@ -5,9 +5,7 @@ import { PrismaClient } from '@prisma/client';
  * Configured with connection pooling and SSL mode for high performance.
  */
 
-const NEON_DATABASE_URL =
-  process.env.DATABASE_URL ||
-  'postgresql://neondb_owner:npg_L6xTbr0PsJuG@ep-weathered-grass-aer0ibj5-pooler.c-2.us-east-2.aws.neon.tech/neondb?sslmode=require&channel_binding=require';
+const NEON_DATABASE_URL = (process.env.DATABASE_URL || '').trim();
 
 declare global {
   // eslint-disable-next-line no-var
