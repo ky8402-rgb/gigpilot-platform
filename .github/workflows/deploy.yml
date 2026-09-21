@@ -139,16 +139,32 @@ jobs:
           set -euo pipefail
           EC2_HOST="${CONFIGURED_EC2_HOST:-}"
           if [ -z "$EC2_HOST" ]; then
-            if command -v aws >/dev/null 2>&1; then
-              EC2_HOST=$(aws ec2 describe-instances \
-                --instance-ids "$EC2_INSTANCE_ID" \
-                --region us-east-1 \
-                --query 'Reservations[0].Instances[0].PublicIpAddress' \
-                --output text 2>/dev/null || true)
+            if ! command -v aws >/dev/null 2>&1; then
+              echo "ERROR: AWS CLI is unavailable; set the EC2_HOST GitHub Actions secret or install/configure AWS CLI." >&2
+              exit 1
             fi
+
+            echo "AWS caller identity:"
+            aws sts get-caller-identity --query 'Arn' --output text
+
+            echo "Discovering public IP for EC2 instance $EC2_INSTANCE_ID..."
+            EC2_LOOKUP_OUTPUT="$(mktemp)"
+            if ! EC2_HOST=$(aws ec2 describe-instances \
+              --instance-ids "$EC2_INSTANCE_ID" \
+              --region us-east-1 \
+              --query 'Reservations[0].Instances[0].PublicIpAddress' \
+              --output text 2>"$EC2_LOOKUP_OUTPUT"); then
+              echo "ERROR: AWS credentials are valid enough to reach STS, but EC2 public-IP discovery failed." >&2
+              echo "The deployment requires ec2:DescribeInstances or a configured EC2_HOST secret." >&2
+              cat "$EC2_LOOKUP_OUTPUT" >&2
+              rm -f "$EC2_LOOKUP_OUTPUT"
+              exit 1
+            fi
+            rm -f "$EC2_LOOKUP_OUTPUT"
           fi
           if [ -z "$EC2_HOST" ] || [ "$EC2_HOST" = "None" ]; then
-            echo "ERROR: EC2_HOST is not configured and the public IP could not be discovered from EC2." >&2
+            echo "ERROR: EC2_HOST is not configured and the EC2 instance has no public IP." >&2
+            echo "Set the EC2_HOST GitHub Actions secret or grant ec2:DescribeInstances to the deployment IAM principal." >&2
             exit 1
           fi
           echo "Resolved EC2 host: $EC2_HOST"
