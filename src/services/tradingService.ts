@@ -238,8 +238,6 @@ export async function selectActivePair(symbol: string) {
   }
 }
 
-export async function setAutonomyLevel}
-
 export async function setAutonomyLevel(level: AutonomyLevel) {
   try {
     const res = await fetchWithFailover<{ success: boolean; level: AutonomyLevel }>('/autonomy', {
