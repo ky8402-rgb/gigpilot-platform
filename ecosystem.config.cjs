@@ -13,11 +13,13 @@ module.exports = {
         NODE_ENV: 'production',
         PORT: 3000,
         HOST: '0.0.0.0',
+        BINANCE_MARKET_DATA_ENABLED: 'false',
       },
       env_production: {
         NODE_ENV: 'production',
         PORT: 3000,
         HOST: '0.0.0.0',
+        BINANCE_MARKET_DATA_ENABLED: 'false',
       },
     },
     {
@@ -30,9 +32,11 @@ module.exports = {
       max_memory_restart: '300M',
       env: {
         NODE_ENV: 'production',
+        BINANCE_MARKET_DATA_ENABLED: 'false',
       },
       env_production: {
         NODE_ENV: 'production',
+        BINANCE_MARKET_DATA_ENABLED: 'false',
       },
     },
   ],
