@@ -49,91 +49,8 @@ export class LearningLoopEngine {
       actualEffect: 'Exceeded baseline profit targets with stable low drawdown in sideways chop'
     };
 
-    this.challengerStrategies = [
-      {
-        id: 'STRAT-CHALLENGER-002',
-        name: 'ATR-Adaptive Bandwidth Rebalance Grid',
-        version: 'v2.1.0-rc',
-        type: 'ADAPTIVE_GRID',
-        status: 'CHALLENGER',
-        parentVersionId: 'STRAT-GRID-001',
-        createdAt: new Date(Date.now() - 86400000 * 2).toISOString(),
-        reasonForChange: 'Hypothesis: Dynamically widening grid rungs during ATR spikes reduces unnecessary turnover fees',
-        parameters: {
-          upperBoundary: 73800,
-          lowerBoundary: 60200,
-          gridLevels: 20,
-          spacingType: 'GEOMETRIC',
-          gridSpacingPct: 0.95,
-          volatilityMultiplier: 1.4,
-          trendFilterEma: 21,
-          rsiFilterThreshold: 30,
-          stopLossPct: 9.0,
-          takeProfitPct: 16.0,
-          rebalanceIntervalSec: 180
-        },
-        backtestResults: {
-          netProfit: 1680.40,
-          grossProfit: 1810.00,
-          totalFees: 129.60,
-          roiPct: 16.8,
-          sharpeRatio: 2.68,
-          sortinoRatio: 3.45,
-          maxDrawdownPct: 4.1,
-          winRatePct: 81.2,
-          profitFactor: 2.42,
-          tradesCount: 142,
-          avgTradeProfitUsd: 11.83,
-          avgHoldingTimeMinutes: 64,
-          orderFillRatePct: 94.0,
-          capitalUtilizationPct: 58.0
-        },
-        validationScore: 96,
-        expectedEffect: 'Higher net profit due to 32% lower fee drag from wider grid levels'
-      },
-      {
-        id: 'STRAT-CHALLENGER-003',
-        name: 'Order-Book Imbalance Mean-Reversion Grid',
-        version: 'v2.2.0-beta',
-        type: 'MEAN_REVERSION_GRID',
-        status: 'CHALLENGER',
-        parentVersionId: 'STRAT-GRID-001',
-        createdAt: new Date(Date.now() - 86400000 * 1).toISOString(),
-        reasonForChange: 'Weights limit orders on the side opposite to order book imbalance to exploit micro-rebates',
-        parameters: {
-          upperBoundary: 71900,
-          lowerBoundary: 62400,
-          gridLevels: 32,
-          spacingType: 'ARITHMETIC',
-          gridSpacingPct: 0.45,
-          volatilityMultiplier: 0.9,
-          trendFilterEma: 9,
-          rsiFilterThreshold: 40,
-          stopLossPct: 6.5,
-          takeProfitPct: 12.0,
-          rebalanceIntervalSec: 60
-        },
-        backtestResults: {
-          netProfit: 1290.10,
-          grossProfit: 1540.00,
-          totalFees: 249.90,
-          roiPct: 12.9,
-          sharpeRatio: 2.15,
-          sortinoRatio: 2.70,
-          maxDrawdownPct: 5.4,
-          winRatePct: 74.0,
-          profitFactor: 1.88,
-          tradesCount: 230,
-          avgTradeProfitUsd: 5.60,
-          avgHoldingTimeMinutes: 22,
-          orderFillRatePct: 88.0,
-          capitalUtilizationPct: 72.0
-        },
-        validationScore: 84,
-        expectedEffect: 'Faster turnover in tight low-volatility conditions'
-      }
-    ];
-
+    // Challengers are created only after a real backtest/validation run.
+    this.challengerStrategies = [];
     this.strategyHistory = [this.championStrategy];
   }
 
@@ -168,12 +85,15 @@ export class LearningLoopEngine {
     // 2. Lower or equal Max Drawdown
     // 3. Higher Net Profit
     // 4. At least 30 trades
+    const passesValidation = challenger.validationScore >= 90;
     const passesSharpe = cMetrics.sharpeRatio > chMetrics.sharpeRatio;
-    const passesDrawdown = cMetrics.maxDrawdownPct <= chMetrics.maxDrawdownPct * 1.05; // within 5% tolerance
+    const passesDrawdown = cMetrics.maxDrawdownPct <= chMetrics.maxDrawdownPct * 1.05;
     const passesProfit = cMetrics.netProfit > chMetrics.netProfit;
     const passesTrades = cMetrics.tradesCount >= 30;
+    const hasRealBacktest = challenger.backtestResults.tradesCount > 0 && challenger.backtestResults.orderFillRatePct > 0;
+    const hasLiveValidation = Boolean(challenger.liveResults);
 
-    if (passesSharpe && passesDrawdown && passesProfit && passesTrades) {
+    if (passesValidation && hasRealBacktest && hasLiveValidation && passesSharpe && passesDrawdown && passesProfit && passesTrades) {
       // Archive current champion
       this.championStrategy.status = 'RETIRED';
       this.championStrategy.retiredAt = new Date().toISOString();
@@ -194,6 +114,9 @@ export class LearningLoopEngine {
       };
     } else {
       const failures: string[] = [];
+      if (!passesValidation) failures.push('Validation score is below 90 or has not been produced by the validation pipeline');
+      if (!hasRealBacktest) failures.push('Real backtest results are missing');
+      if (!hasLiveValidation) failures.push('Live/shadow validation results are missing');
       if (!passesSharpe) failures.push(`Sharpe ${cMetrics.sharpeRatio} <= ${chMetrics.sharpeRatio}`);
       if (!passesDrawdown) failures.push(`Drawdown ${cMetrics.maxDrawdownPct}% > ${chMetrics.maxDrawdownPct}%`);
       if (!passesProfit) failures.push(`Net Profit $${cMetrics.netProfit} <= $${chMetrics.netProfit}`);
@@ -234,14 +157,24 @@ export class LearningLoopEngine {
         ...modifications.parameters
       },
       backtestResults: {
-        ...base.backtestResults,
-        netProfit: Number((base.backtestResults.netProfit * (0.95 + Math.random() * 0.2)).toFixed(2)),
-        sharpeRatio: Number((base.backtestResults.sharpeRatio * (0.95 + Math.random() * 0.15)).toFixed(2)),
-        maxDrawdownPct: Number((base.backtestResults.maxDrawdownPct * (0.9 + Math.random() * 0.2)).toFixed(1)),
-        tradesCount: Math.floor(base.backtestResults.tradesCount * (0.9 + Math.random() * 0.2))
+        netProfit: 0,
+        grossProfit: 0,
+        totalFees: 0,
+        roiPct: 0,
+        sharpeRatio: 0,
+        sortinoRatio: 0,
+        maxDrawdownPct: 0,
+        winRatePct: 0,
+        profitFactor: 0,
+        tradesCount: 0,
+        avgTradeProfitUsd: 0,
+        avgHoldingTimeMinutes: 0,
+        orderFillRatePct: 0,
+        capitalUtilizationPct: 0
       },
-      validationScore: Math.floor(80 + Math.random() * 18),
-      expectedEffect: modifications.expectedEffect
+      validationScore: 0,
+      expectedEffect: modifications.expectedEffect,
+      actualEffect: 'Awaiting real historical backtest and shadow/live validation.'
     };
 
     this.challengerStrategies.push(newVersion);
