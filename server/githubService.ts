@@ -1118,6 +1118,10 @@ export async function executePushToDeploy(options: {
     // Step 1: Clean any conflicted index, abort merges, fetch and sync
     addLog(`Preparing clean git state and fetching origin ${options.branch}...`);
     try {
+      if (!fs.existsSync(path.join(process.cwd(), '.git'))) {
+        addLog('No .git directory found. Initializing git and setting remote...');
+        await execPromise('git init && git remote add origin https://github.com/ky8402-rgb/gigpilot-platform.git || git remote set-url origin https://github.com/ky8402-rgb/gigpilot-platform.git', { env });
+      }
       await execPromise('git merge --abort 2>/dev/null || true', { env });
       await execPromise('git rebase --abort 2>/dev/null || true', { env });
       await execPromise('git reset --hard 2>/dev/null || true', { env });

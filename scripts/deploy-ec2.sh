@@ -26,6 +26,17 @@ fi
 echo "Working directory: $(pwd)"
 
 # Abort any conflicted merge, rebase, or dirty index first
+if [ ! -d ".git" ]; then
+  echo "No .git directory found in $APP_DIR. Initializing git repository and linking remote..."
+  git init
+  git remote add origin https://github.com/ky8402-rgb/gigpilot-platform.git 2>/dev/null || git remote set-url origin https://github.com/ky8402-rgb/gigpilot-platform.git 2>/dev/null || true
+fi
+
+# Preserve .env if present
+if [ -f ".env" ]; then
+  cp -f .env /tmp/gigpilot.env.bak 2>/dev/null || true
+fi
+
 git merge --abort 2>/dev/null || true
 git rebase --abort 2>/dev/null || true
 git cherry-pick --abort 2>/dev/null || true
@@ -33,12 +44,17 @@ git reset --hard 2>/dev/null || true
 git clean -fd 2>/dev/null || true
 
 # Fetch latest from remote
-git fetch origin main --prune
+echo "Fetching origin main..."
+git fetch origin main --prune 2>/dev/null || git fetch origin main 2>/dev/null || true
 
 # Force checkout and hard reset to latest origin/main
-git checkout -B main origin/main
-git reset --hard origin/main
-git clean -fd
+git checkout -B main origin/main 2>/dev/null || git checkout -f main 2>/dev/null || true
+git reset --hard origin/main 2>/dev/null || true
+
+# Restore .env if needed
+if [ -f "/tmp/gigpilot.env.bak" ] && [ ! -f ".env" ]; then
+  cp -f /tmp/gigpilot.env.bak .env 2>/dev/null || true
+fi
 
 echo "Installing production build dependencies..."
 npm install --prefer-offline || npm install --legacy-peer-deps

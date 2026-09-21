@@ -69,10 +69,12 @@ export const AssetDashboard: React.FC<AssetDashboardProps> = ({
   useEffect(() => {
     loadAssets(false);
     const interval = setInterval(() => {
-      loadAssets(false);
-    }, 8000);
+      if (!updatingKeys && !showKeyModal) {
+        loadAssets(false);
+      }
+    }, 12000);
     return () => clearInterval(interval);
-  }, []);
+  }, [updatingKeys, showKeyModal]);
 
   const handleCopyIp = (ip: string) => {
     navigator.clipboard.writeText(ip);
@@ -101,10 +103,20 @@ export const AssetDashboard: React.FC<AssetDashboardProps> = ({
           loadAssets(true);
         }, 1200);
       } else {
-        setKeyUpdateFeedback(res.error || 'Failed to update credentials.');
+        const rawErr = res.error || 'Failed to update credentials.';
+        if (rawErr.toLowerCase().includes('aborted') || rawErr.toLowerCase().includes('timed out') || rawErr.toLowerCase().includes('timeout')) {
+          setKeyUpdateFeedback('Connection timed out while communicating with Binance or the server. Please verify your internet connection, ensure your keys are accurate, and try again.');
+        } else {
+          setKeyUpdateFeedback(rawErr);
+        }
       }
     } catch (err: any) {
-      setKeyUpdateFeedback(err.message || 'Error communicating with server.');
+      const rawErr = err.message || '';
+      if (rawErr.toLowerCase().includes('aborted') || rawErr.toLowerCase().includes('timed out') || rawErr.toLowerCase().includes('timeout')) {
+        setKeyUpdateFeedback('Connection timed out while communicating with Binance or the server. Please verify your internet connection, ensure your keys are accurate, and try again.');
+      } else {
+        setKeyUpdateFeedback(rawErr || 'Error communicating with server.');
+      }
     } finally {
       setUpdatingKeys(false);
     }
@@ -217,6 +229,22 @@ export const AssetDashboard: React.FC<AssetDashboardProps> = ({
             className="px-3.5 py-1.5 rounded bg-amber-600 hover:bg-amber-500 text-slate-950 font-bold text-xs transition"
           >
             Configure Keys
+          </button>
+        </div>
+      )}
+
+      {/* Sync Warning / Error Banner if API error occurs */}
+      {errorMsg && !isRestricted && (
+        <div className="p-3.5 rounded-xl bg-slate-900/90 border border-slate-800 text-slate-300 text-xs flex flex-wrap items-center justify-between gap-3">
+          <div className="flex items-center gap-2 text-amber-400">
+            <AlertTriangle className="w-4 h-4 shrink-0" />
+            <span>{errorMsg}</span>
+          </div>
+          <button
+            onClick={() => loadAssets(true)}
+            className="px-2.5 py-1 rounded bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-semibold border border-slate-700 transition"
+          >
+            Retry Sync
           </button>
         </div>
       )}

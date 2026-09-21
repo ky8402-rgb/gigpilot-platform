@@ -85,11 +85,21 @@ export function getCandidateBaseUrls(): string[] {
     urls.push(`${envUrl.replace(/\/$/, '')}/api/trading`);
   }
 
-  // 1. Same-origin relative path
-  urls.push('/api/trading');
+  // Detect whether we are on localhost vs an external static host (like AWS Amplify)
+  const isLocalOrDirect = typeof window !== 'undefined' && (
+    window.location.hostname === 'localhost' || 
+    window.location.hostname === '127.0.0.1' || 
+    window.location.hostname.includes('3-222-149-9')
+  );
 
-  // 2. Direct AWS EC2 endpoint
-  urls.push('https://3-222-149-9.sslip.io/api/trading');
+  if (!isLocalOrDirect) {
+    // On Amplify (amplifyapp.com), send requests directly to the live AWS EC2 backend first
+    urls.push('https://3-222-149-9.sslip.io/api/trading');
+    urls.push('/api/trading');
+  } else {
+    urls.push('/api/trading');
+    urls.push('https://3-222-149-9.sslip.io/api/trading');
+  }
 
   return [...new Set(urls)];
 }
@@ -118,9 +128,13 @@ export function setStoredOwnerToken(token: string | null): void {
  * Resilient multi-endpoint HTTP fetch with timeout and automatic failover.
  * Never throws an uncaught fatal error that crashes the UI.
  */
-async function fetchWithFailover<T>(endpointPath: string, options?: RequestInit): Promise<T> {
+async function fetchWithFailover<T>(
+  endpointPath: string,
+  options?: RequestInit & { timeoutMs?: number }
+): Promise<T> {
   const candidates = getCandidateBaseUrls();
   let lastError: any = null;
+  const timeoutMs = options?.timeoutMs ?? 15000;
 
   const mergedHeaders: Record<string, string> = {
     Accept: 'application/json',
@@ -132,8 +146,9 @@ async function fetchWithFailover<T>(endpointPath: string, options?: RequestInit)
     mergedHeaders['Authorization'] = `Bearer ${token}`;
   }
 
+  const { timeoutMs: _t, ...fetchOptions } = options || {};
   const mergedOptions: RequestInit = {
-    ...options,
+    ...fetchOptions,
     headers: mergedHeaders
   };
 
@@ -143,33 +158,48 @@ async function fetchWithFailover<T>(endpointPath: string, options?: RequestInit)
 
     try {
       const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 3500);
+      const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
 
-      const res = await fetch(targetUrl, {
-        ...mergedOptions,
-        signal: controller.signal
-      });
-      clearTimeout(timeoutId);
+      let res: Response;
+      try {
+        res = await fetch(targetUrl, {
+          ...mergedOptions,
+          signal: controller.signal
+        });
+      } finally {
+        clearTimeout(timeoutId);
+      }
 
       const contentType = res.headers.get('content-type') || '';
-      // If server returned HTML (e.g. Amplify S3 fallback or Cloud Run auth redirect), failover to next candidate
+      // If server returned non-JSON (e.g. Amplify S3 404 index.html fallback), failover to next candidate
       if (!contentType.includes('application/json')) {
         continue;
       }
 
       const data = await res.json();
-      if (!res.ok) {
-        throw new Error(data.error || `HTTP error ${res.status}`);
-      }
 
-      // Mark this candidate as working!
+      // If server returned valid JSON, mark candidate as live and working
       workingBaseUrl = baseUrl;
       isBackendLive = true;
       lastSyncTimestamp = new Date().toISOString();
+
+      if (!res.ok) {
+        throw new Error(data.error || data.message || `API error HTTP ${res.status}`);
+      }
+
       return data as T;
     } catch (err: any) {
-      lastError = err;
-      // Continue to next candidate
+      const isAbort = err.name === 'AbortError' || err.message?.includes('aborted') || err.message?.includes('abort');
+      if (isAbort) {
+        lastError = new Error(`Request timed out after ${Math.round(timeoutMs / 1000)}s while communicating with backend.`);
+      } else {
+        lastError = err;
+      }
+
+      // If backend was reached and returned a structured API error, throw immediately rather than falling over to static host
+      if (isBackendLive && err.message && !err.message.includes('Failed to fetch') && !err.message.includes('NetworkError') && !isAbort) {
+        throw err;
+      }
     }
   }
 
@@ -830,7 +860,10 @@ export async function fetchAuditLogs(): Promise<{ logs: AuditLog[] }> {
 
 export async function fetchLiveAssets(forceRefresh = false): Promise<{ success: boolean; assets: BinanceAccountState }> {
   try {
-    return await fetchWithFailover<{ success: boolean; assets: BinanceAccountState }>(`/assets${forceRefresh ? '?refresh=true' : ''}`);
+    return await fetchWithFailover<{ success: boolean; assets: BinanceAccountState }>(
+      `/assets${forceRefresh ? '?refresh=true' : ''}`,
+      { timeoutMs: 15000 }
+    );
   } catch (err: any) {
     return {
       success: false,
@@ -869,7 +902,7 @@ export async function fetchBinanceStatus(): Promise<{
   status: string;
 }> {
   try {
-    return await fetchWithFailover('/binance/status');
+    return await fetchWithFailover('/binance/status', { timeoutMs: 10000 });
   } catch {
     return {
       success: true,
@@ -891,7 +924,8 @@ export async function updateBinanceKeys(
     return await fetchWithFailover('/binance/update-keys', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ apiKey, apiSecret, baseUrl })
+      body: JSON.stringify({ apiKey, apiSecret, baseUrl }),
+      timeoutMs: 25000
     });
   } catch (err: any) {
     return { success: false, message: '', error: err.message || 'Failed to update Binance credentials' };

@@ -153,7 +153,7 @@ jobs:
       - name: Trigger EC2 Push-to-Deploy Webhook (Parallel / Fallback)
         env:
           EC2_HOST: ${{ secrets.EC2_HOST || '3.222.149.9' }}
-          WEBHOOK_SECRET: ${{ secrets.GITHUB_WEBHOOK_SECRET || secrets.WEBHOOK_SECRET }}
+          WEBHOOK_SECRET: ${{ secrets.GITHUB_WEBHOOK_SECRET || secrets.WEBHOOK_SECRET || 'ec310d5a996f2d55400c40d9719ab37991921f18456f2f68207d340a032f7ce3' }}
           COMMIT_MSG: ${{ github.event.head_commit.message }}
         run: |
           WEBHOOK_URL="https://${EC2_HOST//./-}.sslip.io/api/github/webhook"
