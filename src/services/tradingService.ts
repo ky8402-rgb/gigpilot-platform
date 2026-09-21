@@ -45,22 +45,29 @@ export function getLastSyncTime(): string {
 // In-memory simulated fallback store so user can test all controls even if offline
 let fallbackMasterState: MasterTradingState = generateDefaultMasterState();
 let fallbackPairs = [...DEFAULT_PAIRS];
-let fallbackStrategies: StrategyVersion[] = [
-  DEFAULT_CHAMPION_STRATEGY,
-  {
-    ...DEFAULT_CHAMPION_STRATEGY,
-    id: 'STRAT-CHALLENGER-002',
-    name: 'Asymmetric Trend-Biased Geometric Grid',
-    version: 'v1.5.0-rc1',
-    status: 'CHALLENGER',
-    validationScore: 89,
-    parameters: {
-      ...DEFAULT_CHAMPION_STRATEGY.parameters,
-      gridLevels: 28,
-      gridSpacingPct: 0.65
-    }
-  }
-];
+const offlineStrategy: StrategyVersion = {
+  ...DEFAULT_CHAMPION_STRATEGY,
+  status: 'VALIDATING',
+  validationScore: 0,
+  backtestResults: {
+    netProfit: 0,
+    grossProfit: 0,
+    totalFees: 0,
+    roiPct: 0,
+    sharpeRatio: 0,
+    sortinoRatio: 0,
+    maxDrawdownPct: 0,
+    winRatePct: 0,
+    profitFactor: 0,
+    tradesCount: 0,
+    avgTradeProfitUsd: 0,
+    avgHoldingTimeMinutes: 0,
+    orderFillRatePct: 0,
+    capitalUtilizationPct: 0
+  },
+  actualEffect: 'Backend unavailable; strategy performance is not available.'
+};
+let fallbackStrategies: StrategyVersion[] = [offlineStrategy];
 let fallbackResearch = [...DEFAULT_RESEARCH_ITEMS];
 let fallbackSweeps = [...DEFAULT_SWEEPS];
 let fallbackAuditLogs = [...DEFAULT_AUDIT_LOGS];
@@ -448,7 +455,7 @@ export async function fetchStrategies(): Promise<{
   } catch {
     return {
       champion: fallbackStrategies[0],
-      challengers: fallbackStrategies.slice(1),
+      challengers: [],
       history: []
     };
   }
