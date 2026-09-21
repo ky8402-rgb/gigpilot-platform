@@ -375,9 +375,8 @@ export async function cancelOrder(orderId: string) {
     });
     fallbackMasterState.openOrders = fallbackMasterState.openOrders.filter(o => o.id !== orderId);
     return res;
-  } catch {
-    fallbackMasterState.openOrders = fallbackMasterState.openOrders.filter(o => o.id !== orderId);
-    return { success: true, orderId };
+  } catch (err: any) {
+    return { success: false, orderId, error: err.message || 'Order cancellation could not be confirmed by backend.' };
   }
 }
 
