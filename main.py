@@ -25,12 +25,16 @@ app = FastAPI(
 )
 
 # CORS Middleware (Allows frontend, local development, and external clients)
+_allowed_origins = [o.strip() for o in os.getenv("CORS_ALLOWED_ORIGINS", "").split(",") if o.strip()]
+if not _allowed_origins:
+    _allowed_origins = ["http://localhost:5173"]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=_allowed_origins,
     allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_methods=["GET", "POST", "OPTIONS"],
+    allow_headers=["Authorization", "Content-Type"],
 )
 
 # Jinja2 Templates setup
@@ -38,8 +42,10 @@ templates = Jinja2Templates(directory="templates")
 security = HTTPBasic()
 
 def authenticate_admin(credentials: HTTPBasicCredentials = Depends(security)):
-    expected_user = os.getenv("DASHBOARD_USERNAME", "admin")
-    expected_pass = os.getenv("DASHBOARD_PASSWORD", "gigpilot369")
+    expected_user = os.getenv("DASHBOARD_USERNAME", "").strip()
+    expected_pass = os.getenv("DASHBOARD_PASSWORD", "")
+    if not expected_user or not expected_pass:
+        raise HTTPException(status_code=503, detail="Dashboard credentials are not configured.")
     
     is_correct_username = secrets.compare_digest(credentials.username.encode("utf8"), expected_user.encode("utf8"))
     is_correct_password = secrets.compare_digest(credentials.password.encode("utf8"), expected_pass.encode("utf8"))
@@ -68,7 +74,7 @@ def api_health_check():
 
 # 2. GET /api/bids/stats
 @app.get("/api/bids/stats")
-def get_bids_stats():
+def get_bids_stats(username: str = Depends(authenticate_admin)):
     """
     Returns aggregated stats: { total, active, won, earned, win_rate, package_counts }
     """
@@ -81,7 +87,7 @@ def get_bids_stats():
 
 # 3. GET /api/bids?limit=50
 @app.get("/api/bids")
-def get_bids_list(limit: int = Query(default=50, ge=1, le=100)):
+def get_bids_list(limit: int = Query(default=50, ge=1, le=100), username: str = Depends(authenticate_admin)):
     """
     Returns list of bids: [ { id, job_title, company, package, bid_amount, status, submitted_at }, ... ]
     """
@@ -94,7 +100,7 @@ def get_bids_list(limit: int = Query(default=50, ge=1, le=100)):
 
 # 4. GET /api/leads?limit=20
 @app.get("/api/leads")
-def get_leads_list(limit: int = Query(default=20, ge=1, le=100)):
+def get_leads_list(limit: int = Query(default=20, ge=1, le=100), username: str = Depends(authenticate_admin)):
     """
     Returns list of leads: [ { job_title, company, source, matched_package, created_at }, ... ]
     """
@@ -111,7 +117,7 @@ def get_leads_list(limit: int = Query(default=20, ge=1, le=100)):
 
 # 5. GET /api/cron/find-and-bid
 @app.get("/api/cron/find-and-bid")
-def trigger_find_and_bid():
+def trigger_find_and_bid(username: str = Depends(authenticate_admin)):
     """
     Searches Freelancer projects matching keywords, generates AI cover letters,
     places bids, and scrapes fresh remote leads.
@@ -125,7 +131,7 @@ def trigger_find_and_bid():
 
 # 6. GET /api/cron/sync-bids
 @app.get("/api/cron/sync-bids")
-def trigger_sync_bids():
+def trigger_sync_bids(username: str = Depends(authenticate_admin)):
     """
     Synchronizes status of all pending/active bids with Freelancer.com API.
     """
@@ -155,4 +161,4 @@ def get_admin_dashboard(request: Request, username: str = Depends(authenticate_a
 if __name__ == "__main__":
     import uvicorn
     port = int(os.getenv("PORT", 8000))
-    uvicorn.run("main.py:app", host="0.0.0.0", port=port, reload=True)
+    uvicorn.run("main.py:app", host="0.0.0.0", port=port, reload=False)
