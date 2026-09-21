@@ -204,7 +204,7 @@ export const ProfitSweepView: React.FC<ProfitSweepViewProps> = ({
         <form onSubmit={handleUpdateWallet} className="space-y-4">
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
             <div className="sm:col-span-2">
-              <label className="text-slate-400 block mb-1">Vault Public Address (0x... / bc1...)</label>
+              <label className="text-slate-400 block mb-1">Vault Public Address (BSC / 0x...)</label>
               <input
                 type="text"
                 value={walletAddress}
@@ -220,10 +220,10 @@ export const ProfitSweepView: React.FC<ProfitSweepViewProps> = ({
                 onChange={e => setWalletChain(e.target.value)}
                 className="w-full bg-slate-950 border border-slate-700 rounded px-3 py-2 text-white font-bold"
               >
-                <option value="Ethereum (ERC-20 USDT/USDC)">Ethereum (ERC-20 USDT/USDC)</option>
-                <option value="Arbitrum One (Low Fee)">Arbitrum One (Low Fee)</option>
-                <option value="Solana (SPL USDC)">Solana (SPL USDC)</option>
-                <option value="Bitcoin Native (bc1...)">Bitcoin Native (bc1...)</option>
+                <option value="bsc">BSC (BEP-20 USDT)</option>
+                <option value="ethereum">Ethereum (ERC-20)</option>
+                <option value="polygon">Polygon</option>
+                <option value="solana">Solana (SPL)</option>
               </select>
             </div>
           </div>
