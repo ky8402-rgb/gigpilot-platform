@@ -296,30 +296,18 @@ export class TradingStore {
   }
 
   public deactivateKillSwitch(): void {
+    // Releasing the emergency stop must never silently resume autonomous trading.
+    // The owner must explicitly choose the autonomy level after the halt is cleared.
     this.GLOBAL_KILL_SWITCH_ACTIVE = false;
-    this.activeBotsDisabled = false;
+    this.activeBotsDisabled = true;
+    this.autonomyLevel = 0;
     this.killSwitch.deactivate();
-    this.autonomyLevel = this.previousAutonomyLevel > 0 ? this.previousAutonomyLevel : 1;
-    this.logAudit('OWNER', 'GLOBAL_KILL_SWITCH_DEACTIVATED', { GLOBAL_KILL_SWITCH_ACTIVE: false, botsRestored: true }, 'SUCCESS');
-
-    // Generate fresh adaptive grid with real live price
-    const pairState = this.exchange.getPairState(this.activeSymbol);
-    if (pairState && pairState.currentPrice > 0) {
-      this.activeGrid = generateAdaptiveGrid({
-        symbol: this.activeSymbol,
-        currentPrice: pairState.currentPrice,
-        totalAllocatedUsd: Math.min(3500, this.capital.availableCash > 0 ? this.capital.availableCash * 0.5 : 1000),
-        levelsCount: 16,
-        spacingType: 'GEOMETRIC',
-        volatilityAdjustment: true,
-        trendProtection: true,
-        regime: this.currentRegime
-      });
-
-      if (this.autonomyLevel >= 2) {
-        this.placeGridOrdersInExchange(this.activeGrid);
-      }
-    }
+    this.logAudit(
+      'OWNER',
+      'GLOBAL_KILL_SWITCH_DEACTIVATED',
+      { GLOBAL_KILL_SWITCH_ACTIVE: false, botsRestored: false, autonomyLevel: 0 },
+      'SUCCESS'
+    );
   }
 
   public logAudit(
