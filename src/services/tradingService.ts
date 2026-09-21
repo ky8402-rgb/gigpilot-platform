@@ -531,7 +531,7 @@ export async function fetchWebResearch(): Promise<{ items: ResearchItem[] }> {
     const res = await fetchWithFailover<{ success: boolean; items: ResearchItem[] }>('/research');
     return { items: res.items };
   } catch {
-    return { items: fallbackResearch };
+    return { items: [] };
   }
 }
 
@@ -572,17 +572,18 @@ export async function fetchProfitSweepInfo(): Promise<{
       };
       history: ProfitSweep[];
     }>('/profit-sweep');
-  } catch {
+  } catch (err: any) {
     return {
       destinationWallet: DEFAULT_DESTINATION_WALLET,
-      minSweepThresholdUsd: 500,
-      profitReserveBufferUsd: 300,
+      minSweepThresholdUsd: 50,
+      profitReserveBufferUsd: 200,
       eligibility: {
-        eligibleAmount: 1880.50,
-        canSweep: true,
-        reserveRetained: 300.00
+        eligibleAmount: 0,
+        canSweep: false,
+        reserveRetained: 0,
+        reason: err.message || 'Backend unavailable; sweep eligibility is not available.'
       },
-      history: fallbackSweeps
+      history: []
     };
   }
 }
