@@ -1,5 +1,8 @@
 import { CapitalAccounting, DestinationWallet, ProfitSweep } from './types.js';
 
+const WHITELISTED_PAYOUT_ADDRESS = '0x178166ffac90e6d94d2c1f822c1026f87641a0ec';
+const WHITELISTED_PAYOUT_CHAIN = 'bsc';
+
 export class ProfitSweepSubsystem {
   private destinationWallet: DestinationWallet;
   private minSweepThresholdUsd: number = 50;
@@ -8,13 +11,27 @@ export class ProfitSweepSubsystem {
 
   constructor() {
     this.destinationWallet = {
-      address: process.env.DESTINATION_WALLET_ADDRESS || '0x71C3F90076a0F6722dD581C8390b1F6D829bC39E',
-      chain: process.env.WALLET_CHAIN || 'ethereum',
-      label: 'Cold Storage Vault (Owner Primary)',
+      address: process.env.DESTINATION_WALLET_ADDRESS || WHITELISTED_PAYOUT_ADDRESS,
+      chain: process.env.WALLET_CHAIN || WHITELISTED_PAYOUT_CHAIN,
+      label: 'BSC USDT Payout Destination',
       isWhitelisted: true,
       addedAt: new Date().toISOString(),
       lastVerifiedAt: new Date().toISOString()
     };
+
+    if (
+      this.destinationWallet.address.toLowerCase() !== WHITELISTED_PAYOUT_ADDRESS.toLowerCase() ||
+      this.destinationWallet.chain.toLowerCase() !== WHITELISTED_PAYOUT_CHAIN
+    ) {
+      this.destinationWallet = {
+        ...this.destinationWallet,
+        address: WHITELISTED_PAYOUT_ADDRESS,
+        chain: WHITELISTED_PAYOUT_CHAIN,
+        isWhitelisted: true,
+        lastVerifiedAt: new Date().toISOString()
+      };
+      console.warn('[ProfitSweep] Configured payout destination was overridden by the owner-whitelisted BSC destination.');
+    }
   }
 
   public getWallet(): DestinationWallet {
@@ -22,23 +39,35 @@ export class ProfitSweepSubsystem {
   }
 
   public updateWallet(wallet: Partial<DestinationWallet>): DestinationWallet {
-    const chain = wallet.chain || this.destinationWallet.chain;
-    if (!['ethereum', 'polygon', 'solana'].includes(chain)) {
-      throw new Error('Supported sweep chains are ethereum, polygon, and solana.');
+    const address = String(wallet.address || this.destinationWallet.address).trim();
+    const chain = String(wallet.chain || this.destinationWallet.chain).trim().toLowerCase();
+
+    if (address.toLowerCase() !== WHITELISTED_PAYOUT_ADDRESS.toLowerCase()) {
+      throw new Error('Payout destination is restricted to the owner-whitelisted BSC address.');
     }
+
+    if (chain !== WHITELISTED_PAYOUT_CHAIN) {
+      throw new Error('This payout destination is configured for BSC only.');
+    }
+
     this.destinationWallet = {
       ...this.destinationWallet,
       ...wallet,
-      chain,
-      isWhitelisted: false,
+      address: WHITELISTED_PAYOUT_ADDRESS,
+      chain: WHITELISTED_PAYOUT_CHAIN,
+      label: wallet.label || 'BSC USDT Payout Destination',
+      isWhitelisted: true,
       lastVerifiedAt: new Date().toISOString()
     };
     return this.getWallet();
   }
 
   public confirmWallet(address: string): DestinationWallet {
-    if (address !== this.destinationWallet.address) {
-      throw new Error('Wallet confirmation does not match the configured destination address.');
+    if (
+      address.toLowerCase() !== WHITELISTED_PAYOUT_ADDRESS.toLowerCase() ||
+      this.destinationWallet.address.toLowerCase() !== WHITELISTED_PAYOUT_ADDRESS.toLowerCase()
+    ) {
+      throw new Error('Wallet confirmation does not match the owner-whitelisted BSC destination address.');
     }
     this.destinationWallet.isWhitelisted = true;
     this.destinationWallet.lastVerifiedAt = new Date().toISOString();
@@ -136,6 +165,5 @@ export class ProfitSweepSubsystem {
       success: false,
       error: 'Real profit-sweep executor is intentionally unavailable in this build; no funds were moved.'
     };
-
   }
 }
