@@ -341,7 +341,7 @@ export async function createPayPalPayout(params: {
       console.warn('PayPal Payouts REST API error:', errData || err.message);
       if (errData?.name === 'PAYOUT_NOT_AVAILABLE') {
         throw new Error(
-          'PAYOUT_NOT_AVAILABLE: PayPal merchant accounts with auto-sweep enabled automatically deposit all foreign client revenue received via PayPal Checkout, Invoicing, or PayPal.Me directly into your linked Payoneer Citibank checking account (Acc: 70589110002638744 / Routing: 031100209) within 24-48 hours.'
+          'PAYOUT_NOT_AVAILABLE: PayPal payout service is currently unavailable for this merchant account.'
         );
       }
       throw new Error(errData?.message || err.message || 'PayPal Payout request failed');
@@ -390,17 +390,17 @@ export async function getPayPalLiveBalance(): Promise<{
       return {
         success: true,
         accountId: res.data?.account_id || '98UNBJBN67H6W',
-        merchantName: 'Kundan Kumar',
-        email: cfg.receiverEmail || 'kundank4@icloud.com',
-        paypalMeUsername: cfg.paypalMeUsername || 'ky8402',
+        merchantName: process.env.PAYPAL_MERCHANT_NAME || '',
+        email: cfg.receiverEmail || '',
+        paypalMeUsername: cfg.paypalMeUsername || '',
         availableBalance: availVal,
         totalBalance: totalVal,
         withheldBalance: withheldVal,
         currency: primaryBalance?.currency || 'USD',
         asOfTime: res.data?.as_of_time || new Date().toISOString(),
         isLiveRest: true,
-        autoSweepStatus: 'Active - Daily Automated Settlement to Linked Payoneer Citibank Account',
-        linkedBank: 'Citibank NY (Payoneer Checking ••••8744 / Routing: 031100209 / SWIFT: CITIUS33)'
+        autoSweepStatus: 'UNKNOWN',
+        linkedBank: 'NOT_DISCLOSED'
       };
     } catch (err: any) {
       console.warn('PayPal live balance query notice:', err?.response?.data || err.message);
@@ -409,7 +409,7 @@ export async function getPayPalLiveBalance(): Promise<{
 
   return {
     success: false,
-    accountId: '98UNBJBN67H6W',
+    accountId: '',
     merchantName: 'Kundan Kumar',
     email: cfg.receiverEmail || 'kundank4@icloud.com',
     paypalMeUsername: cfg.paypalMeUsername || 'ky8402',
