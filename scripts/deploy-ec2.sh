@@ -67,7 +67,14 @@ for i in 1 2 3 4 5; do
 done
 if [ "$HEALTH_OK" -ne 1 ]; then
   echo "ERROR: Backend health check failed after deployment." >&2
+  echo "---- Listener diagnostics ----" >&2
+  ss -ltnp 2>/dev/null | grep ':3000' || true
+  echo "---- PM2 status ----" >&2
   pm2 status || true
+  echo "---- Recent gigpilot logs ----" >&2
+  pm2 logs gigpilot --lines 80 --nostream 2>&1 || true
+  echo "---- Direct health probe ----" >&2
+  curl -v -m 5 http://127.0.0.1:3000/api/health 2>&1 || true
   exit 1
 fi
 
