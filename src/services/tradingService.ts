@@ -388,10 +388,8 @@ export async function cancelAllOrders() {
     });
     fallbackMasterState.openOrders = [];
     return res;
-  } catch {
-    const count = fallbackMasterState.openOrders.length;
-    fallbackMasterState.openOrders = [];
-    return { success: true, count };
+  } catch (err: any) {
+    return { success: false, count: 0, error: err.message || 'Bulk order cancellation could not be confirmed by backend.' };
   }
 }
 
