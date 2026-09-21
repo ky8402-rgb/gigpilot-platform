@@ -720,7 +720,7 @@ export async function executeProfitSweep(amount: number) {
       id: `sweep_${Date.now()}`,
       timestamp: new Date().toISOString(),
       destinationWallet: DEFAULT_DESTINATION_WALLET.address,
-      chain: 'ethereum',
+      chain: 'bsc',
       grossSweepAmount: amount,
       networkFeeUsd: 3.50,
       netTransferredUsd: Number((amount - 3.50).toFixed(2)),
