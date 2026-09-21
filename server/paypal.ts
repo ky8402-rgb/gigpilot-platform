@@ -214,18 +214,11 @@ export async function createPayPalOrder(params: {
     }
   }
 
-  // Smart Instant Fallback (PayPal.me / Smart Order Id)
-  const orderId = params.orderId || `PP-ORD-${Date.now().toString().slice(-6)}-${Math.random().toString(36).substring(2, 6).toUpperCase()}`;
-  const paypalMeLink = `https://paypal.me/${cfg.paypalMeUsername}/${formattedAmount}${currency}`;
-
-  return {
-    orderId,
-    id: orderId,
-    status: 'CREATED',
-    approveUrl: paypalMeLink,
-    isLiveRest: false
-  };
+  throw new Error('PayPal Checkout order could not be created through the official API. No payment was created.');
 }
+
+/** 
+ * Capture a PayPal v2 Checkout Order}
 
 /**
  * Capture a PayPal v2 Checkout Order
@@ -277,16 +270,11 @@ export async function capturePayPalOrder(orderId: string): Promise<{
     }
   }
 
-  // Instant Smart Settlement Fallback
-  return {
-    orderId,
-    status: 'COMPLETED',
-    captureId: `CAP-${Date.now()}`,
-    amountCaptured: 0,
-    currency: 'USD',
-    isLiveRest: false
-  };
+  throw new Error('PayPal capture could not be confirmed through the official API. No payment was recorded as captured.');
 }
+
+/** 
+ * Execute PayPal Payout / Mass Payment}
 
 /**
  * Execute PayPal Payout / Mass Payment to Subcontractor
@@ -559,21 +547,8 @@ export async function createLivePayPalInvoice(params: {
         console.warn('Could not generate next invoice number, using timestamp:', numErr);
       }
 
-      // 2. Build invoice payload with Payoneer Citibank Payment Instructions
-      const paymentInstructions = [
-        'PAYMENT INSTRUCTIONS:',
-        'Payoneer USD Checking Account (Citibank NY):',
-        '• Bank Name: Citibank',
-        '• Bank Address: 111 Wall Street New York, NY 10043 USA',
-        '• Beneficiary: Kundan Kumar',
-        '• Account Number: 70589110002638744',
-        '• Account Type: CHECKING',
-        '• Routing (ABA): 031100209',
-        '• SWIFT / BIC: CITIUS33',
-        '• Currency: USD',
-        '• PayPal Direct Link: https://paypal.me/ky8402'
-      ].join('\n');
-
+      // Build only application-level invoice metadata; never embed bank account credentials
+      // or personal banking instructions in generated documents.
       const invoicePayload = {
         detail: {
           invoice_number: invoiceNumber,
@@ -664,16 +639,15 @@ export async function createLivePayPalInvoice(params: {
     }
   }
 
-  // Fallback to PayPal.me direct smart payment link
-  const fallbackId = `INV-SMART-${Date.now().toString().slice(-6)}`;
   return {
-    success: true,
-    invoiceId: fallbackId,
-    invoiceNumber: fallbackId,
-    payerViewUrl: `https://paypal.me/${cfg.paypalMeUsername || 'ky8402'}/${formattedAmount}${currency}`,
-    status: 'SMART_LINK',
+    success: false,
+    invoiceId: '',
+    invoiceNumber: '',
+    payerViewUrl: '',
+    status: 'UNAVAILABLE',
     amount: Number(params.amount),
     currency,
     isLiveRest: false
   };
+}
 }
