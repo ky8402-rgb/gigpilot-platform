@@ -211,7 +211,7 @@ class OwnerAuthManager {
       return { success: false, error: 'Owner account is already initialized.' };
     }
     const secretToVerify = this.pendingTotpSecret;
-    if (!verifyTOTP(totpCode, secretToVerify)) {
+    if (!secretToVerify || !verifyTOTP(totpCode, secretToVerify)) {
       return { success: false, error: 'Invalid Google Authenticator 6-digit code. Please check your phone time.' };
     }
 
