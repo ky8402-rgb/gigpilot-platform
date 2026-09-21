@@ -4,11 +4,9 @@ import express from "express";
 import cookieParser from "cookie-parser";
 import path from "path";
 import compression from "compression";
-import { tradingRouter } from "./server/trading/routes.js";
-import { githubRoutes } from "./server/githubRoutes.js";
-import { pushAndDeployAll } from "./server/githubService.js";
-import { globalTradingStore } from "./server/trading/store.js";
-import { ownerAuth } from "./server/trading/ownerAuth.js";
+let tradingStore: any = null;
+let ownerAuth: { verifyToken: (token: string) => boolean } | null = null;
+let pushAndDeployAll: ((options: { commitMessage: string; branch: string; skipAmplify: boolean; skipEc2: boolean }) => Promise<unknown>) | null = null;
 
 const app = express();
 const PORT = Number(process.env.PORT || 3000);
@@ -56,7 +54,8 @@ app.get("/api/health", (req, res) => {
   };
 
   try {
-    const store = globalTradingStore;
+    const store = tradingStore;
+    if (!store) throw new Error("Trading modules are still initializing.");
     tradingEngine = {
       available: true,
       activeSymbol: store.activeSymbol,
@@ -87,18 +86,15 @@ app.get("/api/health", (req, res) => {
   });
 });
 
-// 2. Autonomous Crypto Grid Trading Platform Router
-app.use("/api/trading", tradingRouter);
-
-// 3. GitOps, GitHub Webhooks & CI/CD Deployment Router
-app.use("/api/github", githubRoutes);
-
 // 4. On-Demand Deployment Trigger Endpoint (owner-authenticated)
 app.post("/api/deploy", async (req, res) => {
   const authHeader = req.headers.authorization;
   const token = authHeader?.startsWith("Bearer ") ? authHeader.substring(7) : null;
-  if (process.env.NODE_ENV === "production" && (!token || !ownerAuth.verifyToken(token))) {
+  if (process.env.NODE_ENV === "production" && (!token || !ownerAuth?.verifyToken(token))) {
     return res.status(401).json({ success: false, error: "Owner authentication required." });
+  }
+  if (!pushAndDeployAll) {
+    return res.status(503).json({ success: false, error: "Deployment services are still initializing." });
   }
   try {
     const { commitMessage, branch, skipAmplify, skipEc2 } = req.body || {};
@@ -120,6 +116,22 @@ app.post("/api/deploy", async (req, res) => {
 async function startServer() {
   const isCjsBundle = typeof __filename !== "undefined" && __filename.endsWith(".cjs");
   const isProduction = process.env.NODE_ENV === "production" || isCjsBundle;
+
+  // Load heavy trading/GitOps modules only after the HTTP listener is bound.
+  // This prevents synchronous module initialization from blocking the health endpoint.
+  const [tradingModule, githubModule, authModule, githubServiceModule] = await Promise.all([
+    import("./server/trading/routes.js"),
+    import("./server/githubRoutes.js"),
+    import("./server/trading/ownerAuth.js"),
+    import("./server/githubService.js"),
+  ]);
+
+  tradingStore = (await import("./server/trading/store.js")).globalTradingStore;
+  ownerAuth = authModule.ownerAuth;
+  pushAndDeployAll = githubServiceModule.pushAndDeployAll;
+
+  app.use("/api/trading", tradingModule.tradingRouter);
+  app.use("/api/github", githubModule.githubRoutes);
 
   // Guard: Ensure /api requests never leak into Vite SPA fallback HTML
   app.all("/api/*", (req, res) => {
