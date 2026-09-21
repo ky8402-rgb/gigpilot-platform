@@ -189,8 +189,18 @@ class OwnerAuthManager {
     token?: string;
     error?: string;
   } {
-    if (!password || password.length < 6) {
-      return { success: false, error: 'Password must be at least 6 characters long.' };
+    if (
+      !password ||
+      password.length < 12 ||
+      !/[a-z]/.test(password) ||
+      !/[A-Z]/.test(password) ||
+      !/[0-9]/.test(password) ||
+      !/[^A-Za-z0-9]/.test(password)
+    ) {
+      return {
+        success: false,
+        error: 'Password must be at least 12 characters and include uppercase, lowercase, number, and symbol.'
+      };
     }
 
     const secretToVerify = this.pendingTotpSecret || this.config.totpSecret;
