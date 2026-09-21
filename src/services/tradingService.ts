@@ -19,7 +19,6 @@ import {
   DEFAULT_AUDIT_LOGS,
   DEFAULT_CHAMPION_STRATEGY,
   DEFAULT_DESTINATION_WALLET,
-  DEFAULT_PAIRS,
   DEFAULT_RESEARCH_ITEMS,
   DEFAULT_RISK_DATA,
   DEFAULT_SWEEPS,
@@ -44,7 +43,7 @@ export function getLastSyncTime(): string {
 
 // In-memory simulated fallback store so user can test all controls even if offline
 let fallbackMasterState: MasterTradingState = generateDefaultMasterState();
-let fallbackPairs = [...DEFAULT_PAIRS];
+let fallbackPairs: Array<{ symbol: string; price: number; open24h: number; high24h: number; low24h: number; volume24h: number; change24hPct: number }> = [];
 const offlineStrategy: StrategyVersion = {
   ...DEFAULT_CHAMPION_STRATEGY,
   status: 'VALIDATING',
@@ -198,7 +197,7 @@ export async function fetchAllPairs(): Promise<Array<{
     fallbackPairs = data.pairs;
     return data.pairs;
   } catch {
-    return fallbackPairs;
+    return [];
   }
 }
 
@@ -212,45 +211,15 @@ export async function fetchPairDetails(symbol: string) {
       orderBook: { bids: any[]; asks: any[] };
       indicators: any;
     }>(`/pair/${encodeURIComponent(symbol)}`);
-  } catch {
-    const pair = fallbackPairs.find(p => p.symbol === symbol) || fallbackPairs[0];
-    const price = pair.price;
-
-    const candles = [];
-    const now = Date.now();
-    for (let i = 30; i >= 0; i--) {
-      const candleTime = new Date(now - i * 3600000).toISOString();
-      const variance = (Math.sin(i * 0.5) * 0.015);
-      const close = Number((price * (1 + variance)).toFixed(2));
-      const open = Number((price * (1 + variance * 0.9)).toFixed(2));
-      const high = Number((Math.max(open, close) * 1.004).toFixed(2));
-      const low = Number((Math.min(open, close) * 0.996).toFixed(2));
-      candles.push({
-        timestamp: candleTime,
-        open,
-        high,
-        low,
-        close,
-        volume: Number((100 + Math.abs(Math.cos(i)) * 500).toFixed(2))
-      });
-    }
-
-    const bids = [];
-    const asks = [];
-    for (let i = 1; i <= 8; i++) {
-      const bidPrice = Number((price * (1 - i * 0.0015)).toFixed(2));
-      const askPrice = Number((price * (1 + i * 0.0015)).toFixed(2));
-      bids.push({ price: bidPrice, amount: Number((0.5 + Math.random() * 1.5).toFixed(4)), total: 0 });
-      asks.push({ price: askPrice, amount: Number((0.5 + Math.random() * 1.5).toFixed(4)), total: 0 });
-    }
-
+  } catch (err: any) {
     return {
-      success: true,
+      success: false,
       symbol,
-      currentPrice: price,
-      candles,
-      orderBook: { bids, asks },
-      indicators: fallbackMasterState.indicators
+      currentPrice: 0,
+      candles: [],
+      orderBook: { bids: [], asks: [] },
+      indicators: null,
+      error: err.message || 'Live market telemetry unavailable.'
     };
   }
 }
