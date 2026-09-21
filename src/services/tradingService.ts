@@ -330,7 +330,7 @@ export async function configureGrid(config: {
   totalAllocatedUsd?: number;
   volatilityAdjustment?: boolean;
   trendProtection?: boolean;
-}): Promise<{ success: boolean; grid: GridConfiguration }> {
+}): Promise<{ success: boolean; grid: GridConfiguration; error?: string }> {
   try {
     const res = await fetchWithFailover<{ success: boolean; grid: GridConfiguration }>('/grid/configure', {
       method: 'POST',
