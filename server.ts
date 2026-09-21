@@ -85,7 +85,7 @@ app.use("/api/github", githubRoutes);
 app.post("/api/deploy", async (req, res) => {
   const authHeader = req.headers.authorization;
   const token = authHeader?.startsWith("Bearer ") ? authHeader.substring(7) : null;
-  if (process.env.REQUIRE_OWNER_AUTH !== "false" && (!token || !ownerAuth.verifyToken(token))) {
+  if (process.env.NODE_ENV === "production" && (!token || !ownerAuth.verifyToken(token))) {
     return res.status(401).json({ success: false, error: "Owner authentication required." });
   }
   try {
