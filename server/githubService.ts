@@ -123,7 +123,46 @@ const KNOWN_HOSTS_PATH = path.join(SSH_DIR, 'known_hosts');
 // Persistence backup path in workspace so keys and tokens are retained across restarts
 const BACKUP_DIR = path.join(process.cwd(), 'server', 'data');
 const BACKUP_FILE = path.join(BACKUP_DIR, 'github_ssh_backup.json');
+
 const TOKEN_BACKUP_FILE = path.join(BACKUP_DIR, 'github_token_backup.json');
+
+function getBackupEncryptionKey(): Buffer {
+  const secret = (process.env.OWNER_SESSION_SECRET || process.env.JWT_SECRET || '').trim();
+  if (secret.length < 32) {
+    throw new Error('OWNER_SESSION_SECRET or JWT_SECRET must be configured before sensitive GitHub credentials can be persisted.');
+  }
+  return crypto.createHash('sha256').update(secret).digest();
+}
+
+function encryptBackup(value: string): string {
+  const iv = crypto.randomBytes(12);
+  const cipher = crypto.createCipheriv('aes-256-gcm', getBackupEncryptionKey(), iv);
+  const ciphertext = Buffer.concat([cipher.update(value, 'utf8'), cipher.final()]);
+  const tag = cipher.getAuthTag();
+  return JSON.stringify({
+    version: 1,
+    iv: iv.toString('base64'),
+    tag: tag.toString('base64'),
+    data: ciphertext.toString('base64')
+  });
+}
+
+function decryptBackup(serialized: string): string {
+  const payload = JSON.parse(serialized);
+  if (payload?.version !== 1 || !payload.iv || !payload.tag || !payload.data) {
+    throw new Error('Unsupported encrypted GitHub credential backup format.');
+  }
+  const decipher = crypto.createDecipheriv(
+    'aes-256-gcm',
+    getBackupEncryptionKey(),
+    Buffer.from(payload.iv, 'base64')
+  );
+  decipher.setAuthTag(Buffer.from(payload.tag, 'base64'));
+  return Buffer.concat([
+    decipher.update(Buffer.from(payload.data, 'base64')),
+    decipher.final()
+  ]).toString('utf8');
+}
 
 /**
  * Ensures ~/.ssh directory exists with strict 0700 permissions
@@ -211,12 +250,13 @@ export function restoreFromBackupIfAvailable(): boolean {
     if (!fs.existsSync(ED25519_KEY_PATH) && !fs.existsSync(RSA_KEY_PATH) && fs.existsSync(BACKUP_FILE)) {
       const raw = fs.readFileSync(BACKUP_FILE, 'utf8');
       const data = JSON.parse(raw);
-      if (data.privateKey) {
+      if (data.encryptedPrivateKey) {
+        const privateKey = decryptBackup(data.encryptedPrivateKey);
         ensureSSHDirectory();
         const targetKeyPath = data.keyType === 'rsa' ? RSA_KEY_PATH : ED25519_KEY_PATH;
         const targetPubPath = data.keyType === 'rsa' ? RSA_PUB_PATH : ED25519_PUB_PATH;
 
-        fs.writeFileSync(targetKeyPath, data.privateKey.trim() + '\n', { mode: 0o600 });
+        fs.writeFileSync(targetKeyPath, privateKey.trim() + '\n', { mode: 0o600 });
         if (data.publicKey) {
           fs.writeFileSync(targetPubPath, data.publicKey.trim() + '\n', { mode: 0o644 });
         }
@@ -242,7 +282,7 @@ function backupSSHKeys(privateKey: string, publicKey: string, keyType: 'ed25519'
       BACKUP_FILE,
       JSON.stringify(
         {
-          privateKey,
+          encryptedPrivateKey: encryptBackup(privateKey),
           publicKey,
           keyType,
           comment,
@@ -681,8 +721,8 @@ export function getStoredGitHubToken(): string | null {
   try {
     if (fs.existsSync(TOKEN_BACKUP_FILE)) {
       const data = JSON.parse(fs.readFileSync(TOKEN_BACKUP_FILE, 'utf8'));
-      if (data.token && typeof data.token === 'string') {
-        return data.token.trim();
+      if (data.encryptedToken && typeof data.encryptedToken === 'string') {
+        return decryptBackup(data.encryptedToken).trim();
       }
     }
   } catch {}
@@ -789,7 +829,7 @@ export async function saveGitHubToken(token: string): Promise<{
     TOKEN_BACKUP_FILE,
     JSON.stringify(
       {
-        token: cleanToken,
+        encryptedToken: encryptBackup(cleanToken),
         user: verification.user,
         scopes: verification.scopes,
         savedAt: new Date().toISOString(),
@@ -800,14 +840,14 @@ export async function saveGitHubToken(token: string): Promise<{
     { mode: 0o600 }
   );
 
-  // Store in ~/.git-credentials for global git CLI convenience
+  // Do not persist the token in ~/.git-credentials. Git operations inject it
+  // through environment configuration only, avoiding another plaintext copy.
   try {
-    await execPromise('git config --global credential.helper store');
     const credPath = path.join(HOME_DIR, '.git-credentials');
-    const credLine = `https://${cleanToken}:x-oauth-basic@github.com\n`;
-    fs.writeFileSync(credPath, credLine, { mode: 0o600 });
-  } catch (err: any) {
-    console.warn('[GitHubService] Could not store git credentials file:', err.message);
+    if (fs.existsSync(credPath)) fs.unlinkSync(credPath);
+    await execFilePromise('git', ['config', '--global', '--unset', 'credential.helper']);
+  } catch {
+    // Best-effort cleanup of any legacy plaintext credential helper.
   }
 
   return {
