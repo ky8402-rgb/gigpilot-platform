@@ -79,8 +79,9 @@ export const ProfitSweepView: React.FC<ProfitSweepViewProps> = ({
       if (!res.success) {
         setSweepErrorMessage(res.error || 'Failed to execute profit sweep');
       } else {
+        const txHash = 'sweep' in res && res.sweep?.txHash ? res.sweep.txHash : 'not available';
         setSweepSuccessMessage(
-          `Successfully swept $${Number(sweepAmount).toLocaleString()} USD to ${destinationWallet.address.substring(0, 10)}... (Tx: ${res.sweep?.txHash.substring(0, 16)}...)`
+          `Sweep accepted by backend for ${Number(sweepAmount).toLocaleString()} USD to ${destinationWallet.address.substring(0, 10)}... (Tx: ${txHash.substring(0, 16)}...)`
         );
         onRefreshState();
       }
