@@ -6,7 +6,6 @@ coverage/
 *.log
 .env*
 !.env.example
-!.env.production
 .dev.env.json
 .dev.pid
 .owner-auth-config.json
