@@ -51,7 +51,7 @@ pm2 delete gigpilot 2>/dev/null || true
 
 if [ -f "ecosystem.config.cjs" ]; then
   echo "Starting PM2 via ecosystem.config.cjs..."
-  pm2 start ecosystem.config.cjs --env production
+  NODE_ENV=production PORT=3000 HOST=0.0.0.0 pm2 start ecosystem.config.cjs --env production --update-env
 else
   echo "Starting PM2 via dist/server.cjs..."
   NODE_ENV=production PORT=3000 pm2 start dist/server.cjs --name gigpilot --time --max-memory-restart 500M
