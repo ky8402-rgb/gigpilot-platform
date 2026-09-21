@@ -594,8 +594,10 @@ export async function configureGitRemote(
   if (!cleanUrl) {
     throw new Error('Remote URL cannot be empty.');
   }
-  if (!/^git@github\\.com:ky8402-rgb\\/gigpilot-platform(?:\\.git)?$/.test(cleanUrl) &&
-      !/^https:\\/\\/github\\.com\\/ky8402-rgb\\/gigpilot-platform(?:\\.git)?$/.test(cleanUrl)) {
+  if (
+    !/^git@github\.com:ky8402-rgb\/gigpilot-platform(?:\.git)?$/.test(cleanUrl) &&
+    !/^https:\/\/github\.com\/ky8402-rgb\/gigpilot-platform(?:\.git)?$/.test(cleanUrl)
+  ) {
     throw new Error('Only the owner repository ky8402-rgb/gigpilot-platform may be configured.');
   }
 
