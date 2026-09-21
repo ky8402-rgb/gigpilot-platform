@@ -283,11 +283,19 @@ export class ExchangeEngine {
     const order = this.openOrders.get(orderId);
     if (!order) return false;
 
-    if (this.mode === 'LIVE' && binanceAdapter.isKeyConfigured()) {
+    if (this.mode === 'LIVE') {
+      if (!binanceAdapter.isKeyConfigured()) {
+        return false;
+      }
       try {
-        await binanceAdapter.cancelRealOrder(order.symbol, orderId);
+        const result = await binanceAdapter.cancelRealOrder(order.symbol, orderId);
+        if (!result.success) {
+          console.error('Binance order cancellation rejected:', result.error);
+          return false;
+        }
       } catch (e) {
         console.error('Error cancelling order on Binance:', e);
+        return false;
       }
     }
 
@@ -300,11 +308,17 @@ export class ExchangeEngine {
     let count = 0;
     const targets = Array.from(this.openOrders.values()).filter((o) => !symbol || o.symbol === symbol);
 
-    if (symbol && this.mode === 'LIVE' && binanceAdapter.isKeyConfigured()) {
+    if (symbol && this.mode === 'LIVE') {
+      if (!binanceAdapter.isKeyConfigured()) return 0;
       try {
-        await binanceAdapter.cancelAllRealOrders(symbol);
+        const result = await binanceAdapter.cancelAllRealOrders(symbol);
+        if (!result.success) {
+          console.error(`Binance bulk cancellation rejected for ${symbol}:`, result.error);
+          return 0;
+        }
       } catch (e) {
         console.error(`Error bulk cancelling orders on Binance for ${symbol}:`, e);
+        return 0;
       }
     }
 
