@@ -1,8 +1,14 @@
 import dotenv from "dotenv";
-dotenv.config();
 import express from "express";
 import cookieParser from "cookie-parser";
 import path from "path";
+
+// Load production secrets from the preserved EC2 environment file before the default .env.
+// Process-level environment variables still take precedence because dotenv does not override them by default.
+if (process.env.NODE_ENV === "production") {
+  dotenv.config({ path: path.resolve(process.cwd(), ".env.production") });
+}
+dotenv.config();
 import compression from "compression";
 let tradingStore: any = null;
 let ownerAuth: { verifyToken: (token: string) => boolean } | null = null;
