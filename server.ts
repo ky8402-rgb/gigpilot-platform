@@ -1,5 +1,5 @@
 import dotenv from "dotenv";
-dotenv.config({ override: true });
+dotenv.config();
 import express from "express";
 import cookieParser from "cookie-parser";
 import path from "path";
