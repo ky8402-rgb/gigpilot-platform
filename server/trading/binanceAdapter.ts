@@ -9,22 +9,6 @@ export interface BinanceBalanceItem {
   locked: string;
 }
 
-export interface BinanceTransaction {
-  id: string;
-  type: 'DEPOSIT' | 'WITHDRAWAL' | 'TRADE' | 'FEE';
-  asset: string;
-  amount: number;
-  valueUsd: number;
-  status: string;
-  timestamp: string;
-  orderId?: string;
-  tradeId?: string;
-  txId?: string;
-  symbol?: string;
-  side?: 'BUY' | 'SELL';
-  feeUsd?: number;
-}
-
 export interface BinanceAssetWithUsd {
   asset: string;
   free: number;
@@ -44,18 +28,13 @@ export interface BinanceAccountState {
   totalEquityUsd: number;
   availableCashUsd: number;
   lockedInOrdersUsd: number;
-  withdrawableProfitUsd: number;
-  initialTradingCapitalUsd: number;
-  profitReserveBufferUsd: number;
   spotBalances: BinanceAssetWithUsd[];
   realizedProfitUsd: number;
   unrealizedProfitUsd: number;
   todayPnLUsd: number;
   todayPnLPct: number;
   openOrdersCount: number;
-  openOrders: Order[];
   recentTrades: Fill[];
-  transactions: BinanceTransaction[];
   canTrade: boolean;
   canWithdraw: boolean;
   canDeposit: boolean;
@@ -64,68 +43,32 @@ export interface BinanceAccountState {
   keyMask: string;
 }
 
+const BINANCE_CONFIG_FILE = path.join(process.cwd(), '.binance-quant-keys.json');
+
 export class BinanceAdapter {
   private apiKey: string;
   private apiSecret: string;
   private baseUrl: string = 'https://api.binance.com';
-  private serverIp: string = process.env.BINANCE_SERVER_IP || process.env.PUBLIC_IP || 'unknown';
+  private serverIp: string = '3.222.149.9';
   private priceCache: Map<string, { price: number; time: number }> = new Map();
   private lastAccountState: BinanceAccountState | null = null;
   private lastAccountFetchTime = 0;
-  // Signed Binance requests can fail when the EC2 clock is skewed. Cache a short-lived server-time offset.
-  private binanceTimeOffsetMs = 0;
-  private lastTimeSyncMs = 0;
-  private readonly credentialsPath = path.join(process.cwd(), '.binance-credentials.enc.json');
 
   constructor() {
-    this.apiKey = process.env.BINANCE_API_KEY || '';
-    this.apiSecret = process.env.BINANCE_API_SECRET || '';
-    if (process.env.BINANCE_API_BASE_URL) this.baseUrl = process.env.BINANCE_API_BASE_URL;
-
-    // Prefer AWS/EC2-injected environment credentials. If the UI was used to
-    // configure keys, restore the encrypted-at-rest copy so a PM2 restart does
-    // not silently disconnect the Spot account.
-    if (!this.apiKey || !this.apiSecret) this.loadEncryptedCredentials();
-  }
-
-  private getCredentialEncryptionKey(): Buffer {
-    const seed = process.env.OWNER_SESSION_SECRET || process.env.JWT_SECRET;
-    if (!seed) throw new Error('OWNER_SESSION_SECRET or JWT_SECRET is required to persist Binance credentials securely.');
-    return crypto.createHash('sha256').update(seed).digest();
-  }
-
-  private loadEncryptedCredentials(): void {
-    try {
-      if (!fs.existsSync(this.credentialsPath)) return;
-      const stored = JSON.parse(fs.readFileSync(this.credentialsPath, 'utf8')) as { iv: string; tag: string; data: string; baseUrl?: string };
-      const decipher = crypto.createDecipheriv('aes-256-gcm', this.getCredentialEncryptionKey(), Buffer.from(stored.iv, 'hex'));
-      decipher.setAuthTag(Buffer.from(stored.tag, 'hex'));
-      const plaintext = Buffer.concat([decipher.update(Buffer.from(stored.data, 'base64')), decipher.final()]).toString('utf8');
-      const credentials = JSON.parse(plaintext) as { apiKey: string; apiSecret: string; baseUrl?: string };
-      this.apiKey = credentials.apiKey || '';
-      this.apiSecret = credentials.apiSecret || '';
-      if (credentials.baseUrl) this.baseUrl = credentials.baseUrl;
-    } catch (err) {
-      console.error('[BinanceAdapter] Failed to restore encrypted credentials:', err);
-      this.apiKey = '';
-      this.apiSecret = '';
+    // Load from env or persistent config file
+    let savedKeys: any = {};
+    if (fs.existsSync(BINANCE_CONFIG_FILE)) {
+      try {
+        savedKeys = JSON.parse(fs.readFileSync(BINANCE_CONFIG_FILE, 'utf-8'));
+      } catch (e) {
+        console.error('Error loading saved binance keys:', e);
+      }
     }
-  }
 
-  private persistEncryptedCredentials(): void {
-    try {
-      const iv = crypto.randomBytes(12);
-      const cipher = crypto.createCipheriv('aes-256-gcm', this.getCredentialEncryptionKey(), iv);
-      const plaintext = JSON.stringify({ apiKey: this.apiKey, apiSecret: this.apiSecret, baseUrl: this.baseUrl });
-      const encrypted = Buffer.concat([cipher.update(plaintext, 'utf8'), cipher.final()]);
-      fs.writeFileSync(this.credentialsPath, JSON.stringify({
-        version: 1,
-        iv: iv.toString('hex'),
-        tag: cipher.getAuthTag().toString('hex'),
-        data: encrypted.toString('base64')
-      }), { encoding: 'utf8', mode: 0o600 });
-    } catch (err) {
-      console.error('[BinanceAdapter] Failed to persist encrypted credentials:', err);
+    this.apiKey = savedKeys.apiKey || process.env.BINANCE_API_KEY || '';
+    this.apiSecret = savedKeys.apiSecret || process.env.BINANCE_API_SECRET || '';
+    if (savedKeys.baseUrl) {
+      this.baseUrl = savedKeys.baseUrl;
     }
   }
 
@@ -133,9 +76,29 @@ export class BinanceAdapter {
     this.apiKey = apiKey.trim();
     this.apiSecret = apiSecret.trim();
     if (baseUrl) this.baseUrl = baseUrl.trim();
-    this.persistEncryptedCredentials();
-    this.lastAccountState = null;
     this.lastAccountFetchTime = 0; // Force refresh
+    this.saveConfig();
+  }
+
+  private saveConfig(): void {
+    try {
+      fs.writeFileSync(
+        BINANCE_CONFIG_FILE,
+        JSON.stringify(
+          {
+            apiKey: this.apiKey,
+            apiSecret: this.apiSecret,
+            baseUrl: this.baseUrl,
+            updatedAt: new Date().toISOString()
+          },
+          null,
+          2
+        ),
+        'utf-8'
+      );
+    } catch (e) {
+      console.error('Failed to save binance config:', e);
+    }
   }
 
   public getKeyMask(): string {
@@ -154,16 +117,6 @@ export class BinanceAdapter {
 
   public getServerIp(): string {
     return this.serverIp;
-  }
-
-  private getInitialTradingCapitalUsd(): number {
-    const n = Number(process.env.INITIAL_TRADING_CAPITAL_USD);
-    return Number.isFinite(n) && n > 0 ? n : 0;
-  }
-
-  private getProfitReserveBufferUsd(): number {
-    const n = Number(process.env.PROFIT_RESERVE_BUFFER_USD);
-    return Number.isFinite(n) && n >= 0 ? n : 0;
   }
 
   // Format pair e.g. "BTC/USDT" to "BTCUSDT"
@@ -325,23 +278,8 @@ export class BinanceAdapter {
   /**
    * Helper: Sign request for Binance private endpoints
    */
-  private async syncBinanceClock(force = false): Promise<void> {
-    if (!force && Date.now() - this.lastTimeSyncMs < 300000) return;
-    try {
-      const started = Date.now();
-      const res = await fetch(this.baseUrl + '/api/v3/time', { headers: { 'User-Agent': 'GigPilot-Quant/2.5' } });
-      if (!res.ok) throw new Error('HTTP ' + res.status);
-      const data = await res.json() as { serverTime: number };
-      const midpoint = started + Math.floor((Date.now() - started) / 2);
-      this.binanceTimeOffsetMs = Number(data.serverTime) - midpoint;
-      this.lastTimeSyncMs = Date.now();
-    } catch (err) {
-      console.warn('[BinanceAdapter] Binance clock sync failed:', err);
-    }
-  }
-
   private signQuery(params: Record<string, any> = {}): { queryString: string; signature: string } {
-    const timestamp = Date.now() + this.binanceTimeOffsetMs;
+    const timestamp = Date.now();
     const queryParts = Object.entries(params)
       .filter(([_, v]) => v !== undefined && v !== null)
       .map(([k, v]) => `${encodeURIComponent(k)}=${encodeURIComponent(v)}`);
@@ -372,18 +310,13 @@ export class BinanceAdapter {
         totalEquityUsd: 0,
         availableCashUsd: 0,
         lockedInOrdersUsd: 0,
-        withdrawableProfitUsd: 0,
-        initialTradingCapitalUsd: this.getInitialTradingCapitalUsd(),
-        profitReserveBufferUsd: this.getProfitReserveBufferUsd(),
         spotBalances: [],
         realizedProfitUsd: 0,
         unrealizedProfitUsd: 0,
         todayPnLUsd: 0,
         todayPnLPct: 0,
         openOrdersCount: 0,
-        openOrders: [],
         recentTrades: [],
-        transactions: [],
         canTrade: false,
         canWithdraw: false,
         canDeposit: false,
@@ -394,29 +327,15 @@ export class BinanceAdapter {
     }
 
     try {
-      await this.syncBinanceClock();
-      let { queryString, signature } = this.signQuery();
-      let res = await fetch(`${this.baseUrl}/api/v3/account?${queryString}&signature=${signature}`, {
+      const { queryString, signature } = this.signQuery();
+      const res = await fetch(`${this.baseUrl}/api/v3/account?${queryString}&signature=${signature}`, {
         headers: {
           'X-MBX-APIKEY': this.apiKey,
           'User-Agent': 'GigPilot-Quant/2.5'
         }
       });
 
-      let data = await res.json();
-
-      // Retry once after a forced clock sync for Binance error -1021.
-      if (!res.ok && data?.code === -1021) {
-        await this.syncBinanceClock(true);
-        ({ queryString, signature } = this.signQuery());
-        res = await fetch(`${this.baseUrl}/api/v3/account?${queryString}&signature=${signature}`, {
-          headers: {
-            'X-MBX-APIKEY': this.apiKey,
-            'User-Agent': 'GigPilot-Quant/2.5'
-          }
-        });
-        data = await res.json().catch(() => ({}));
-      }
+      const data = await res.json();
 
       if (!res.ok) {
         const errorMsg = data?.msg || `Binance API error HTTP ${res.status}`;
@@ -434,18 +353,13 @@ export class BinanceAdapter {
           totalEquityUsd: 0,
           availableCashUsd: 0,
           lockedInOrdersUsd: 0,
-          withdrawableProfitUsd: 0,
-          initialTradingCapitalUsd: this.getInitialTradingCapitalUsd(),
-          profitReserveBufferUsd: this.getProfitReserveBufferUsd(),
           spotBalances: [],
           realizedProfitUsd: 0,
           unrealizedProfitUsd: 0,
           todayPnLUsd: 0,
           todayPnLPct: 0,
           openOrdersCount: 0,
-          openOrders: [],
           recentTrades: [],
-          transactions: [],
           canTrade: false,
           canWithdraw: false,
           canDeposit: false,
@@ -460,7 +374,6 @@ export class BinanceAdapter {
       const nonZero = rawBalances.filter((b) => parseFloat(b.free) > 0 || parseFloat(b.locked) > 0);
 
       // Fetch prices for all non-zero assets in parallel
-      const changeMap: Record<string, number> = {};
       const priceMap: Record<string, number> = {
         USDT: 1.0,
         USD: 1.0,
@@ -473,14 +386,13 @@ export class BinanceAdapter {
 
       if (cryptoAssetsToPrice.length > 0) {
         try {
-          const tickerRes = await fetch(`${this.baseUrl}/api/v3/ticker/24hr`);
+          const tickerRes = await fetch(`${this.baseUrl}/api/v3/ticker/price`);
           if (tickerRes.ok) {
-            const allPrices = (await tickerRes.json()) as Array<{ symbol: string; price: string; lastPrice?: string; priceChangePercent?: string }>;
+            const allPrices = (await tickerRes.json()) as Array<{ symbol: string; price: string }>;
             for (const item of allPrices) {
               for (const asset of cryptoAssetsToPrice) {
                 if (item.symbol === `${asset}USDT` || item.symbol === `${asset}FDUSD`) {
-                  priceMap[asset] = parseFloat(item.lastPrice || item.price);
-                  if (item.priceChangePercent != null) changeMap[asset] = parseFloat(item.priceChangePercent);
+                  priceMap[asset] = parseFloat(item.price);
                 }
               }
             }
@@ -514,16 +426,9 @@ export class BinanceAdapter {
           total,
           usdPrice,
           usdValue,
-          allocationPct: 0,
-          change24hPct: changeMap[b.asset] ?? 0
+          allocationPct: 0 // Will compute below
         };
       });
-
-      const initialTradingCapitalUsd = this.getInitialTradingCapitalUsd();
-      const profitReserveBufferUsd = this.getProfitReserveBufferUsd();
-      const withdrawableProfitUsd = initialTradingCapitalUsd > 0
-        ? Math.max(0, totalEquityUsd - initialTradingCapitalUsd - profitReserveBufferUsd)
-        : 0;
 
       // Compute allocation percentages
       spotBalances.forEach((b) => {
@@ -533,30 +438,22 @@ export class BinanceAdapter {
       // Sort by USD value descending
       spotBalances.sort((a, b) => b.usdValue - a.usdValue);
 
-      // Fetch the actual Spot open orders, not the app's local order cache.
-      let openOrders: Order[] = [];
+      // Fetch real open orders count
+      let openOrdersCount = 0;
       try {
-        openOrders = await this.getRealOpenOrders();
-      } catch (err) {
-        console.error('[BinanceAdapter] Failed to fetch live Spot open orders:', err);
+        const openOrders = await this.getRealOpenOrders();
+        openOrdersCount = openOrders.length;
+      } catch {
+        openOrdersCount = 0;
       }
-      const openOrdersCount = openOrders.length;
 
-      // Fetch recent fills across held/tracked Spot symbols instead of BTC only.
-      const tradeSymbols = Array.from(new Set([
-        ...spotBalances
-          .filter((b) => b.usdValue > 0 && !['USDT', 'USDC', 'FDUSD', 'USD', 'BUSD'].includes(b.asset))
-          .map((b) => `${b.asset}USDT`),
-        'BTCUSDT', 'ETHUSDT', 'SOLUSDT', 'BNBUSDT', 'AVAXUSDT'
-      ])).slice(0, 20);
-
-      const tradeLists = await Promise.all(tradeSymbols.map(async (symbol) => {
-        try { return await this.getRealTrades(symbol, 50); } catch { return []; }
-      }));
-      const recentTrades = tradeLists
-        .flat()
-        .sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime())
-        .slice(0, 100);
+      // Fetch real trades for P&L tracking
+      let recentTrades: Fill[] = [];
+      try {
+        recentTrades = await this.getRealTrades('BTCUSDT', 20);
+      } catch {
+        recentTrades = [];
+      }
 
       const calculatedState: BinanceAccountState = {
         status: 'CONNECTED',
@@ -564,9 +461,6 @@ export class BinanceAdapter {
         serverIp: this.serverIp,
         timestamp: new Date().toISOString(),
         totalEquityUsd: Number(totalEquityUsd.toFixed(2)),
-        withdrawableProfitUsd: Number(withdrawableProfitUsd.toFixed(2)),
-        initialTradingCapitalUsd,
-        profitReserveBufferUsd,
         availableCashUsd: Number(availableCashUsd.toFixed(2)),
         lockedInOrdersUsd: Number(lockedInOrdersUsd.toFixed(2)),
         spotBalances,
@@ -575,9 +469,7 @@ export class BinanceAdapter {
         todayPnLUsd: 0,
         todayPnLPct: 0,
         openOrdersCount,
-        openOrders,
         recentTrades,
-        transactions: await this.getTransactionHistory(spotBalances),
         canTrade: !!data.canTrade,
         canWithdraw: !!data.canWithdraw,
         canDeposit: !!data.canDeposit,
@@ -599,18 +491,13 @@ export class BinanceAdapter {
         totalEquityUsd: 0,
         availableCashUsd: 0,
         lockedInOrdersUsd: 0,
-        withdrawableProfitUsd: 0,
-        initialTradingCapitalUsd: this.getInitialTradingCapitalUsd(),
-        profitReserveBufferUsd: this.getProfitReserveBufferUsd(),
         spotBalances: [],
         realizedProfitUsd: 0,
         unrealizedProfitUsd: 0,
         todayPnLUsd: 0,
         todayPnLPct: 0,
         openOrdersCount: 0,
-        openOrders: [],
         recentTrades: [],
-        transactions: [],
         canTrade: false,
         canWithdraw: false,
         canDeposit: false,
@@ -621,22 +508,6 @@ export class BinanceAdapter {
     }
   }
 
-  /**
-   * Private Signed: Current Binance API-key restrictions for diagnostics.
-   * This never returns the API secret.
-   */
-  public async getApiRestrictions(): Promise<Record<string, any> | null> {
-    if (!this.apiKey || !this.apiSecret) return null;
-    try {
-      const { queryString, signature } = this.signQuery();
-      const url = this.baseUrl + '/sapi/v1/account/apiRestrictions?' + queryString + '&signature=' + signature;
-      const res = await fetch(url, { headers: { 'X-MBX-APIKEY': this.apiKey, 'User-Agent': 'GigPilot-Quant/2.5' } });
-      const data = await res.json().catch(() => ({}));
-      return res.ok ? data : { errorCode: data?.code, errorMessage: data?.msg };
-    } catch (err: any) {
-      return { errorMessage: err?.message || 'Unable to query Binance API restrictions' };
-    }
-  }
   /**
    * Private Signed: Real Open Orders from Binance
    */
@@ -686,89 +557,6 @@ export class BinanceAdapter {
   /**
    * Private Signed: Real historical trade fills from Binance
    */
-  public async getTransactionHistory(assets: BinanceAssetWithUsd[] = []): Promise<BinanceTransaction[]> {
-    if (!this.apiKey || !this.apiSecret) return [];
-    const transactions: BinanceTransaction[] = [];
-    const now = Date.now();
-    const startTime = now - 30 * 24 * 60 * 60 * 1000;
-
-    const signedGet = async (pathName: string, params: Record<string, any> = {}) => {
-      const { queryString, signature } = this.signQuery(params);
-      const res = await fetch(`${this.baseUrl}${pathName}?${queryString}&signature=${signature}`, {
-        headers: { 'X-MBX-APIKEY': this.apiKey, 'User-Agent': 'GigPilot-Quant/2.5' }
-      });
-      if (!res.ok) return null;
-      return await res.json().catch(() => null);
-    };
-
-    try {
-      const deposits = await signedGet('/sapi/v1/capital/deposit/hisrec', { startTime, limit: 100 });
-      if (Array.isArray(deposits)) for (const d of deposits) {
-        transactions.push({
-          id: `deposit:${d.id || d.txId || d.insertTime}`,
-          type: 'DEPOSIT',
-          asset: String(d.coin || ''),
-          amount: Number(d.amount || 0),
-          valueUsd: Number(d.amount || 0),
-          status: String(d.status ?? 'UNKNOWN'),
-          timestamp: new Date(Number(d.insertTime || d.completeTime || now)).toISOString(),
-          txId: d.txId ? String(d.txId) : undefined
-        });
-      }
-    } catch {}
-
-    try {
-      const withdrawals = await signedGet('/sapi/v1/capital/withdraw/history', { startTime, limit: 100 });
-      if (Array.isArray(withdrawals)) for (const w of withdrawals) {
-        transactions.push({
-          id: `withdrawal:${w.id || w.txId || w.applyTime}`,
-          type: 'WITHDRAWAL',
-          asset: String(w.coin || ''),
-          amount: Number(w.amount || 0),
-          valueUsd: Number(w.amount || 0),
-          status: String(w.status ?? 'UNKNOWN'),
-          timestamp: new Date(w.applyTime || now).toISOString(),
-          txId: w.txId ? String(w.txId) : undefined
-        });
-      }
-    } catch {}
-
-    const symbols = assets
-      .filter(a => a.usdValue > 0 && !['USDT','USDC','FDUSD','USD','BUSD'].includes(a.asset))
-      .slice(0, 12)
-      .map(a => `${a.asset}USDT`);
-
-    const tradeResults = await Promise.all(symbols.map(async (symbol) => {
-      try {
-        const list = await signedGet('/api/v3/myTrades', { symbol, startTime, limit: 100 });
-        return Array.isArray(list) ? list : [];
-      } catch { return []; }
-    }));
-
-    for (const list of tradeResults) for (const t of list) {
-      const price = Number(t.price || 0);
-      const qty = Number(t.qty || 0);
-      transactions.push({
-        id: `trade:${t.id}`,
-        type: 'TRADE',
-        asset: String(t.commissionAsset || ''),
-        amount: qty,
-        valueUsd: price * qty,
-        status: 'FILLED',
-        timestamp: new Date(Number(t.time || now)).toISOString(),
-        orderId: String(t.orderId),
-        tradeId: String(t.id),
-        symbol: this.denormalizeSymbol(String(t.symbol || '')),
-        side: t.isBuyer ? 'BUY' : 'SELL',
-        feeUsd: Number(t.commission || 0)
-      });
-    }
-
-    return transactions
-      .sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime())
-      .slice(0, 200);
-  }
-
   public async getRealTrades(symbol = 'BTCUSDT', limit = 50): Promise<Fill[]> {
     if (!this.apiKey || !this.apiSecret) return [];
 
@@ -788,9 +576,9 @@ export class BinanceAdapter {
       orderId: String(t.orderId),
       symbol: this.denormalizeSymbol(t.symbol),
       side: t.isBuyer ? 'BUY' : 'SELL',
-      price: parseFloat(t.price),
-      amount: parseFloat(t.qty),
-      feeUsd: parseFloat(t.commission || '0'),
+      price: Number.isFinite(parseFloat(t.price)) ? parseFloat(t.price) : 0,
+      amount: Number.isFinite(parseFloat(t.qty)) ? parseFloat(t.qty) : 0,
+      feeUsd: Number.isFinite(parseFloat(t.commission)) ? parseFloat(t.commission) : 0,
       slippageBps: 0,
       realizedPnL: 0,
       timestamp: new Date(t.time).toISOString()
@@ -839,54 +627,6 @@ export class BinanceAdapter {
     }
 
     return { success: true, orderId: String(data.orderId) };
-  }
-
-  /**
-   * Private Signed: Withdraw USDT from Binance Spot to the owner wallet.
-   * Disabled unless ENABLE_REAL_WITHDRAWALS=true and the API key has withdrawal permission.
-   */
-  public async withdrawUSDT(params: {
-    amount: number;
-    address: string;
-    network: 'ETH' | 'MATIC' | 'SOL';
-  }): Promise<{ success: boolean; id?: string; error?: string }> {
-    if (process.env.ENABLE_REAL_WITHDRAWALS !== 'true') {
-      return { success: false, error: 'Real withdrawals are disabled. Set ENABLE_REAL_WITHDRAWALS=true to explicitly enable them.' };
-    }
-    if (!this.apiKey || !this.apiSecret) {
-      return { success: false, error: 'Binance API credentials missing.' };
-    }
-    if (!Number.isFinite(params.amount) || params.amount <= 0) {
-      return { success: false, error: 'Withdrawal amount must be a positive finite number.' };
-    }
-    if (params.network === 'SOL' && !/^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(params.address)) {
-      return { success: false, error: 'Invalid Solana destination address.' };
-    }
-    if (params.network !== 'SOL' && !/^0x[a-fA-F0-9]{40}$/.test(params.address)) {
-      return { success: false, error: 'Invalid EVM destination address.' };
-    }
-
-    const { queryString, signature } = this.signQuery({
-      coin: 'USDT',
-      address: params.address,
-      amount: params.amount.toFixed(6),
-      network: params.network
-    });
-
-    const res = await fetch(`${this.baseUrl}/sapi/v1/capital/withdraw/apply?${queryString}&signature=${signature}`, {
-      method: 'POST',
-      headers: {
-        'X-MBX-APIKEY': this.apiKey,
-        'User-Agent': 'GigPilot-Quant/2.5'
-      }
-    });
-
-    const data = await res.json().catch(() => ({}));
-    if (!res.ok || !data.id) {
-      return { success: false, error: data.msg || `HTTP ${res.status}` };
-    }
-
-    return { success: true, id: String(data.id) };
   }
 
   /**

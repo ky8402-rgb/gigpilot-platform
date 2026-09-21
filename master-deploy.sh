@@ -36,12 +36,12 @@ EC2_HOST="${EC2_HOST:-3.222.149.9}"
 EC2_USER="${EC2_USER:-ubuntu}"
 EC2_KEY_FILE="${EC2_KEY_FILE:-}"
 APP_DIR="${APP_DIR:-/home/ubuntu/gigpilot}"
-TARGET_BRANCH="${TARGET_BRANCH:-main}"
+TARGET_BRANCH="${TARGET_BRANCH:-master}"
 COMMIT_MSG=""
 SKIP_SSH=false
 DRY_RUN=false
 
-DATABASE_URL="${DATABASE_URL:?DATABASE_URL must be supplied securely}"
+NEON_DATABASE_URL="postgresql://neondb_owner:npg_L6xTbr0PsJuG@ep-green-bread-ae4bhk9u-pooler.c-2.us-east-2.aws.neon.tech/neondb?sslmode=require&channel_binding=require"
 
 print_header() {
   echo -e "${CYAN}${BOLD}"

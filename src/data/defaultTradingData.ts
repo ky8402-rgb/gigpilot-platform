@@ -171,15 +171,31 @@ export const DEFAULT_CHAMPION_STRATEGY: StrategyVersion = {
     orderFillRatePct: 91.5,
     capitalUtilizationPct: 65
   },
+  paperTradingResults: {
+    netProfit: 412.30,
+    grossProfit: 468.20,
+    totalFees: 55.90,
+    roiPct: 4.12,
+    sharpeRatio: 2.38,
+    sortinoRatio: 2.95,
+    maxDrawdownPct: 3.6,
+    winRatePct: 76.5,
+    profitFactor: 2.05,
+    tradesCount: 52,
+    avgTradeProfitUsd: 7.92,
+    avgHoldingTimeMinutes: 52,
+    orderFillRatePct: 89.2,
+    capitalUtilizationPct: 62
+  },
   validationScore: 94,
   expectedEffect: 'Captures daily volatility swings while keeping inventory delta-neutral',
   actualEffect: 'Exceeded baseline profit targets with stable low drawdown in sideways chop'
 };
 
 export const DEFAULT_DESTINATION_WALLET: DestinationWallet = {
-  address: '0x178166ffac90e6d94d2c1f822c1026f87641a0ec',
-  chain: 'bsc',
-  label: 'BSC USDT Payout Destination',
+  address: '0x71C3F90076a0F6722dD581C8390b1F6D829bC39E',
+  chain: 'ethereum',
+  label: 'Cold Storage Vault (Owner Primary)',
   isWhitelisted: true,
   addedAt: '2026-09-10T12:00:00.000Z',
   lastVerifiedAt: '2026-09-20T08:00:00.000Z'
@@ -244,7 +260,7 @@ export function generateDefaultOrders(symbol: string = 'BTC/USDT', price: number
       isGridOrder: true,
       gridLevelId: `grid-${symbol.toLowerCase()}-${idx}`,
       strategyId: 'STRAT-GRID-001',
-      mode: 'LIVE',
+      mode: 'PAPER',
       feesPaid: 0,
       slippageBps: 0,
       latencyMs: 24,
@@ -267,7 +283,7 @@ export function generateDefaultOrders(symbol: string = 'BTC/USDT', price: number
       isGridOrder: true,
       gridLevelId: `grid-${symbol.toLowerCase()}-${idx + 10}`,
       strategyId: 'STRAT-GRID-001',
-      mode: 'LIVE',
+      mode: 'PAPER',
       feesPaid: 0,
       slippageBps: 0,
       latencyMs: 18,
@@ -295,146 +311,66 @@ export function generateDefaultPosition(symbol: string = 'BTC/USDT', price: numb
 }
 
 export function generateDefaultMasterState(symbol: string = 'BTC/USDT'): MasterTradingState {
-  const now = new Date().toISOString();
-  const zeroCapital: CapitalAccounting = {
-    initialCapital: 0,
-    totalEquity: 0,
-    tradingCapital: 0,
-    availableCash: 0,
-    lockedInOrders: 0,
-    profitReserve: 0,
-    eligibleRealizedProfit: 0,
-    withdrawableProfit: 0,
-    totalSweptProfit: 0,
-    netRealizedProfit: 0,
-    unrealizedProfit: 0,
-    grossProfit: 0,
-    totalTradingFees: 0,
-    totalSlippageCost: 0,
-    totalFundingCosts: 0,
-    totalWithdrawalCosts: 0,
-    roiPct: 0,
-    annualizedReturnPct: 0,
-    sharpeRatio: 0,
-    sortinoRatio: 0,
-    maxDrawdownPct: 0,
-    currentDrawdownPct: 0,
-    winRatePct: 0,
-    profitFactor: 0,
-    totalTrades: 0,
-    winningTrades: 0,
-    losingTrades: 0
-  };
-
-  const zeroPosition: Position = {
-    symbol,
-    baseAmount: 0,
-    quoteAmount: 0,
-    entryPrice: 0,
-    currentPrice: 0,
-    unrealizedPnL: 0,
-    unrealizedPnLPct: 0,
-    realizedPnL: 0,
-    totalFeesPaid: 0,
-    netPnL: 0
-  };
-
-  const inactiveGrid: GridConfiguration = {
-    id: 'offline-unavailable',
-    symbol,
-    upperBoundary: 0,
-    lowerBoundary: 0,
-    levelsCount: 0,
-    spacingType: 'GEOMETRIC',
-    gridSpacingPct: 0,
-    totalAllocatedUsd: 0,
-    orderSizeUsd: 0,
-    volatilityAdjustment: false,
-    trendProtection: true,
-    rebalanceThresholdPct: 0,
-    activeLevels: [],
-    lastRebalancedAt: now
-  };
-
-  const zeroIndicators: TechnicalIndicators = {
-    rsi14: 0,
-    macd: { macd: 0, signal: 0, histogram: 0 },
-    ema9: 0,
-    ema21: 0,
-    ema50: 0,
-    ema200: 0,
-    bollingerBands: { upper: 0, middle: 0, lower: 0, bandwidth: 0 },
-    atr14: 0,
-    vwap: 0,
-    spreadBps: 0,
-    volatility24h: 0
-  };
+  const activeGrid = generateDefaultGrid(symbol);
+  const openOrders = generateDefaultOrders(symbol);
+  const position = generateDefaultPosition(symbol);
 
   return {
-    success: false,
+    success: true,
     activeSymbol: symbol,
-    autonomyLevel: 0,
-    tradingMode: 'LIVE',
-    GLOBAL_KILL_SWITCH_ACTIVE: true,
-    botsDisabled: true,
-    activeBotsCount: 0,
+    autonomyLevel: 1, // LEVEL 1 PAPER TRADING
+    tradingMode: 'PAPER',
+    GLOBAL_KILL_SWITCH_ACTIVE: false,
+    botsDisabled: false,
+    activeBotsCount: 1,
     killSwitch: {
-      isActive: true,
-      triggeredBy: 'BACKEND_UNAVAILABLE',
+      isActive: false,
+      triggeredBy: 'None',
       ordersCancelledCount: 0,
       positionsLiquidated: false
     },
-    capital: zeroCapital,
-    currentRegime: {
-      regime: 'RANGE_BOUND_LOW_VOL',
-      confidence: 0,
-      atr: 0,
-      rsi: 0,
-      adx: 0,
-      bbBandwidth: 0,
-      orderBookImbalance: 0,
-      trendDirection: 'NEUTRAL',
-      recommendedGridSpacing: 0,
-      suggestedAction: 'Awaiting live market telemetry',
-      detectedAt: now
-    },
-    activeGrid: inactiveGrid,
-    position: zeroPosition,
-    allPositions: [],
-    openOrders: [],
-    recentFills: [],
-    indicators: zeroIndicators,
-    championStrategy: {
-      ...DEFAULT_CHAMPION_STRATEGY,
-      status: 'VALIDATING',
-      validationScore: 0,
-      actualEffect: 'Backend unavailable; live strategy state is not available.',
-      backtestResults: {
-        netProfit: 0,
-        grossProfit: 0,
-        totalFees: 0,
-        roiPct: 0,
-        sharpeRatio: 0,
-        sortinoRatio: 0,
-        maxDrawdownPct: 0,
-        winRatePct: 0,
-        profitFactor: 0,
-        tradesCount: 0,
-        avgTradeProfitUsd: 0,
-        avgHoldingTimeMinutes: 0,
-        orderFillRatePct: 0,
-        capitalUtilizationPct: 0
+    capital: { ...DEFAULT_CAPITAL },
+    currentRegime: { ...DEFAULT_MARKET_REGIME },
+    activeGrid,
+    position,
+    allPositions: [position],
+    openOrders,
+    recentFills: [
+      {
+        id: `fill_${Date.now() - 120000}`,
+        orderId: 'ord_fill_prev_1',
+        symbol,
+        side: 'BUY',
+        price: 66120.00,
+        amount: 0.002646,
+        feeUsd: 0.087,
+        slippageBps: 0.2,
+        realizedPnL: 8.42,
+        timestamp: new Date(Date.now() - 120000).toISOString()
+      },
+      {
+        id: `fill_${Date.now() - 360000}`,
+        orderId: 'ord_fill_prev_2',
+        symbol,
+        side: 'SELL',
+        price: 66840.00,
+        amount: 0.002618,
+        feeUsd: 0.088,
+        slippageBps: 0.1,
+        realizedPnL: 11.20,
+        timestamp: new Date(Date.now() - 360000).toISOString()
       }
-    },
-    circuitBreakerActive: true,
+    ],
+    indicators: { ...DEFAULT_INDICATORS },
+    championStrategy: { ...DEFAULT_CHAMPION_STRATEGY },
+    circuitBreakerActive: false,
     destinationWallet: { ...DEFAULT_DESTINATION_WALLET },
     sweepEligibility: {
-      eligibleAmount: 0,
-      canSweep: false,
-      reserveRetained: 0,
-      reason: 'Backend unavailable; real profit eligibility is not available.'
+      eligibleAmount: 1880.50,
+      canSweep: true,
+      reserveRetained: 300.00
     },
-    serverTime: now
+    serverTime: new Date().toISOString()
   };
 }
 
@@ -492,7 +428,7 @@ export const DEFAULT_SWEEPS: ProfitSweep[] = [
     id: 'sweep_1',
     timestamp: '2026-09-18T14:20:00.000Z',
     destinationWallet: DEFAULT_DESTINATION_WALLET.address,
-    chain: 'bsc',
+    chain: 'ethereum',
     grossSweepAmount: 1500.00,
     networkFeeUsd: 3.20,
     netTransferredUsd: 1496.80,

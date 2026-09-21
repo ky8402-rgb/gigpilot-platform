@@ -90,7 +90,7 @@ export const HeaderNav: React.FC<HeaderNavProps> = ({
 
   const autonomyLabels: Record<AutonomyLevel, { name: string; desc: string; color: string }> = {
     0: { name: 'LEVEL 0 · OBSERVE', desc: 'Read-only telemetry; no orders', color: 'text-slate-400 border-slate-700 bg-slate-900/60' },
-    1: { name: 'LEVEL 1 · OWNER CONTROLLED', desc: 'Live trading with owner-controlled release', color: 'text-emerald-400 border-emerald-800/80 bg-emerald-950/40' },
+    1: { name: 'LEVEL 1 · PAPER', desc: 'Autonomous paper execution (Default)', color: 'text-emerald-400 border-emerald-800/80 bg-emerald-950/40' },
     2: { name: 'LEVEL 2 · ASSISTED', desc: 'AI proposes; Owner manual approve', color: 'text-cyan-400 border-cyan-800/80 bg-cyan-950/40' },
     3: { name: 'LEVEL 3 · AUTONOMOUS', desc: 'Autonomous live strategy deployment', color: 'text-amber-400 border-amber-800/80 bg-amber-950/40' },
     4: { name: 'LEVEL 4 · CONTINUOUS', desc: 'Full AI research, test & live deploy loop', color: 'text-purple-400 border-purple-800/80 bg-purple-950/40' }
@@ -223,10 +223,23 @@ export const HeaderNav: React.FC<HeaderNavProps> = ({
             )}
           </div>
 
-          {/* Production execution mode: LIVE Binance Spot only */}
-          <div className="flex items-center gap-2 px-3 py-1 rounded-md bg-rose-950/50 border border-rose-700/60">
-            <Radio className="w-3.5 h-3.5 text-rose-400" />
-            <span className="text-[11px] font-mono font-black text-rose-300">LIVE BINANCE SPOT</span>
+          {/* Trading Mode Toggle (Simulation / Paper / Live) */}
+          <div className="flex items-center bg-slate-900/90 rounded-md p-0.5 border border-slate-800">
+            {(['SIMULATION', 'PAPER', 'LIVE'] as TradingMode[]).map(m => (
+              <button
+                key={m}
+                onClick={() => onChangeTradingMode(m)}
+                className={`px-2.5 py-1 text-[11px] font-mono font-bold rounded transition-all ${
+                  tradingMode === m
+                    ? m === 'LIVE'
+                      ? 'bg-rose-600 text-white shadow'
+                      : 'bg-emerald-600 text-white shadow'
+                    : 'text-slate-400 hover:text-slate-200'
+                }`}
+              >
+                {m}
+              </button>
+            ))}
           </div>
         </div>
 
@@ -244,13 +257,13 @@ export const HeaderNav: React.FC<HeaderNavProps> = ({
             ) : (
               <>
                 <span className="w-2 h-2 rounded-full bg-amber-400 animate-pulse" />
-                <span className="text-amber-400 font-bold">LIVE ENGINE OFFLINE</span>
+                <span className="text-amber-400 font-bold">SIMULATION</span>
                 {onReconnect && (
                   <button
                     onClick={onReconnect}
                     className="ml-1 text-[10px] text-amber-300 hover:text-white underline font-semibold cursor-pointer"
                   >
-                    Reconnect
+                    Connect Live
                   </button>
                 )}
               </>

@@ -139,15 +139,7 @@ export class ExchangeEngine {
               }
             }
 
-            // Sync real Binance open orders into the engine so the terminal never
-            // reports an empty local order book when orders exist at Binance.
-            const liveOrders = await binanceAdapter.getRealOpenOrders();
-            this.openOrders.clear();
-            for (const liveOrder of liveOrders) {
-              this.openOrders.set(liveOrder.id, liveOrder);
-            }
-
-            // Sync real fills from Binance.
+            // Sync real fills from Binance
             if (acct.recentTrades && acct.recentTrades.length > 0) {
               this.fillsHistory = acct.recentTrades;
             }
@@ -241,14 +233,6 @@ export class ExchangeEngine {
       placedAt: new Date().toISOString()
     };
 
-    // LIVE mode is fail-closed: never create a local OPEN order when the real exchange is unavailable.
-    if (this.mode === 'LIVE' && !binanceAdapter.isKeyConfigured()) {
-      order.status = 'REJECTED';
-      order.rejectionReason = 'LIVE trading requires configured Binance Spot API credentials.';
-      this.orderHistory.unshift(order);
-      return order;
-    }
-
     // If Binance account is configured and mode is LIVE, dispatch to Binance
     if (this.mode === 'LIVE' && binanceAdapter.isKeyConfigured()) {
       try {
@@ -283,19 +267,11 @@ export class ExchangeEngine {
     const order = this.openOrders.get(orderId);
     if (!order) return false;
 
-    if (this.mode === 'LIVE') {
-      if (!binanceAdapter.isKeyConfigured()) {
-        return false;
-      }
+    if (this.mode === 'LIVE' && binanceAdapter.isKeyConfigured()) {
       try {
-        const result = await binanceAdapter.cancelRealOrder(order.symbol, orderId);
-        if (!result.success) {
-          console.error('Binance order cancellation rejected:', result.error);
-          return false;
-        }
+        await binanceAdapter.cancelRealOrder(order.symbol, orderId);
       } catch (e) {
         console.error('Error cancelling order on Binance:', e);
-        return false;
       }
     }
 
@@ -308,17 +284,11 @@ export class ExchangeEngine {
     let count = 0;
     const targets = Array.from(this.openOrders.values()).filter((o) => !symbol || o.symbol === symbol);
 
-    if (symbol && this.mode === 'LIVE') {
-      if (!binanceAdapter.isKeyConfigured()) return 0;
+    if (symbol && this.mode === 'LIVE' && binanceAdapter.isKeyConfigured()) {
       try {
-        const result = await binanceAdapter.cancelAllRealOrders(symbol);
-        if (!result.success) {
-          console.error(`Binance bulk cancellation rejected for ${symbol}:`, result.error);
-          return 0;
-        }
+        await binanceAdapter.cancelAllRealOrders(symbol);
       } catch (e) {
         console.error(`Error bulk cancelling orders on Binance for ${symbol}:`, e);
-        return 0;
       }
     }
 

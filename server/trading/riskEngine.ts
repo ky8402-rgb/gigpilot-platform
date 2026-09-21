@@ -27,38 +27,7 @@ export class RiskEngine {
   }
 
   public updateConfig(newConfig: Partial<RiskRuleConfig>): RiskRuleConfig {
-    const next = { ...this.config };
-
-    const bounded = (
-      key: keyof RiskRuleConfig,
-      min: number,
-      max: number,
-      integer = false
-    ) => {
-      const raw = newConfig[key];
-      if (raw === undefined) return;
-      const value = Number(raw);
-      if (!Number.isFinite(value)) {
-        throw new Error(`Risk setting ${String(key)} must be a finite number.`);
-      }
-      const normalized = integer ? Math.round(value) : value;
-      next[key] = Math.min(max, Math.max(min, normalized)) as never;
-    };
-
-    bounded('maxPositionSizePct', 0.1, 100);
-    bounded('maxCapitalAllocationPct', 0.1, 100);
-    bounded('maxDailyLossPct', 0.1, 100);
-    bounded('maxDrawdownLimitPct', 0.1, 100);
-    bounded('maxOpenOrders', 1, 200, true);
-    // GigPilot is Binance Spot only: leverage above 1 is never permitted.
-    bounded('maxLeverage', 1, 1);
-    bounded('maxExposureUsd', 1, 1_000_000_000);
-    bounded('maxSlippageBps', 0, 500);
-    bounded('minOrderBookLiquidityUsd', 0, 1_000_000_000);
-    bounded('minAccountReserveUsd', 0, 1_000_000_000);
-    bounded('autoKillSwitchTriggerDrawdownPct', 0.1, 100);
-
-    this.config = next;
+    this.config = { ...this.config, ...newConfig };
     return this.getConfig();
   }
 
@@ -86,26 +55,6 @@ export class RiskEngine {
     currentPositions: Position[],
     openOrdersCount: number
   ): { allowed: boolean; reason?: string; event?: RiskEvent } {
-    if (!Number.isFinite(proposedOrder.price) || !Number.isFinite(proposedOrder.amount) || proposedOrder.price <= 0 || proposedOrder.amount <= 0) {
-      const event = this.recordEvent(
-        'INVALID_ORDER_PARAMETERS',
-        'ORDER_REJECTED',
-        'Order price and amount must be finite positive numbers.',
-        proposedOrder
-      );
-      return { allowed: false, reason: 'Invalid order price or amount', event };
-    }
-
-    if (!Number.isFinite(capital.totalEquity) || capital.totalEquity <= 0) {
-      const event = this.recordEvent(
-        'INVALID_CAPITAL_STATE',
-        'ORDER_REJECTED',
-        'Trading capital is unavailable or invalid; order gateway is fail-closed.',
-        proposedOrder
-      );
-      return { allowed: false, reason: 'Invalid or unavailable capital state', event };
-    }
-
     const orderCostUsd = proposedOrder.price * proposedOrder.amount;
 
     // 1. Circuit breaker check
@@ -175,18 +124,6 @@ export class RiskEngine {
     // 6. Max Exposure check across all positions
     const totalExposure = currentPositions.reduce((acc, p) => acc + (p.baseAmount * p.currentPrice), 0) + (proposedOrder.side === 'BUY' ? orderCostUsd : 0);
     const maxAllowedExposure = (capital.totalEquity * this.config.maxCapitalAllocationPct) / 100;
-
-    // Hard USD exposure ceiling is independent of the percentage ceiling.
-    if (totalExposure > this.config.maxExposureUsd && proposedOrder.side === 'BUY') {
-      const event = this.recordEvent(
-        'MAX_EXPOSURE_USD_EXCEEDED',
-        'ORDER_REJECTED',
-        `Total exposure ${totalExposure.toFixed(2)} exceeds hard exposure ceiling ${this.config.maxExposureUsd.toFixed(2)}`,
-        proposedOrder
-      );
-      return { allowed: false, reason: 'Exceeds maximum USD exposure limit', event };
-    }
-
     if (totalExposure > maxAllowedExposure && proposedOrder.side === 'BUY') {
       const event = this.recordEvent(
         'MAX_CAPITAL_ALLOCATION_EXCEEDED',

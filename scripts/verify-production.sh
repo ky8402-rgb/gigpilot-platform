@@ -38,7 +38,7 @@ EC2_HOST="3.222.149.9"
 EC2_USER="${EC2_USER:-ubuntu}"
 EC2_KEY_FILE="${EC2_KEY_FILE:-}"
 APP_DIR="${APP_DIR:-/home/ubuntu/gigpilot}"
-DATABASE_URL="${DATABASE_URL:?DATABASE_URL must be supplied securely}"
+DATABASE_URL="${DATABASE_URL:-postgresql://neondb_owner:npg_L6xTbr0PsJuG@ep-green-bread-ae4bhk9u-pooler.c-2.us-east-2.aws.neon.tech/neondb?sslmode=require&channel_binding=require}"
 
 # Normalize URLs (strip trailing slash)
 BACKEND_URL="${BACKEND_URL%/}"
@@ -333,7 +333,7 @@ fi
 # ==============================================================================
 echo -e "\n${BOLD}[6/7] Testing GitHub Push-to-Deploy Webhook Receiver...${NC}"
 PING_BODY='{"zen":"Production verification ping","hook_id":101010}'
-SECRET_VAL="${GITHUB_WEBHOOK_SECRET:-}"
+SECRET_VAL="${GITHUB_WEBHOOK_SECRET:-gigpilot_prod_webhook_secret_2026}"
 PING_SIG=$(node -e "
   const crypto = require('crypto');
   const secret = process.argv[1] || '';

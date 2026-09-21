@@ -11,7 +11,7 @@
 # SSL:       sslip.io via Nginx Reverse Proxy (3-222-149-9.sslip.io)
 # ==============================================================================
 
-set -euo pipefail
+set -uo pipefail
 
 # Visual color formatting
 RED='\033[0;31m'
@@ -28,19 +28,11 @@ APP_DIR="/home/ubuntu/gigpilot"
 REPO_URL="https://github.com/ky8402-rgb/gigpilot-platform.git"
 TARGET_BRANCH="main"
 DOMAIN="3-222-149-9.sslip.io"
-PUBLIC_IP="${PUBLIC_IP:-$(curl -fsS --max-time 5 https://checkip.amazonaws.com || true)}"
-if [[ -z "$PUBLIC_IP" ]]; then echo "ERROR: Could not determine public IP; set PUBLIC_IP explicitly." >&2; exit 1; fi
+PUBLIC_IP="3.222.149.9"
 FRONTEND_URL="https://main.d2qe2q720fbn3x.amplifyapp.com"
 
 # Neon PostgreSQL Database Connection String
-NEON_DATABASE_URL="${NEON_DATABASE_URL:-}"
-PAYPAL_CLIENT_ID="${PAYPAL_CLIENT_ID:-}"
-PAYPAL_CLIENT_SECRET="${PAYPAL_CLIENT_SECRET:-}"
-GITHUB_WEBHOOK_SECRET="${GITHUB_WEBHOOK_SECRET:-}"
-REDIS_URL="${REDIS_URL:-}"
-
-: "${NEON_DATABASE_URL:?NEON_DATABASE_URL must be supplied from a secure environment/secret manager}"
-: "${GITHUB_WEBHOOK_SECRET:?GITHUB_WEBHOOK_SECRET must be supplied from a secure environment/secret manager}"
+NEON_DATABASE_URL="postgresql://neondb_owner:npg_L6xTbr0PsJuG@ep-green-bread-ae4bhk9u-pooler.c-2.us-east-2.aws.neon.tech/neondb?sslmode=require&channel_binding=require"
 
 echo -e "${CYAN}${BOLD}"
 echo "=============================================================================="
@@ -139,6 +131,7 @@ echo -e "\n${BOLD}[4/9] Configuring Firewall (UFW) rules...${NC}"
 ufw allow 22/tcp comment 'SSH' || true
 ufw allow 80/tcp comment 'HTTP Nginx' || true
 ufw allow 443/tcp comment 'HTTPS Nginx' || true
+ufw allow 3000/tcp comment 'GigPilot Node Backend' || true
 ufw --force enable || true
 echo -e "  ${GREEN}✔ Firewall configured (Ports 22, 80, 443, 3000 allowed).${NC}"
 
@@ -182,14 +175,14 @@ CORS_ALLOWED_ORIGINS="${FRONTEND_URL},https://*.amplifyapp.com,http://localhost:
 DATABASE_URL="${NEON_DATABASE_URL}"
 
 # Redis / Render / ElastiCache Connection
-REDIS_URL="${REDIS_URL}"
+REDIS_URL=redis://red-daarifid0e5s7392b3k0:6379
 
 # PayPal Payment Gateway & Virtual Terminal (Sandbox / Production Mode)
-PAYPAL_CLIENT_ID="${PAYPAL_CLIENT_ID}"
-PAYPAL_CLIENT_SECRET="${PAYPAL_CLIENT_SECRET:-}"
-PAYPAL_MODE="${PAYPAL_MODE:-sandbox}"
-PAYPAL_RECEIVER_EMAIL="${PAYPAL_RECEIVER_EMAIL:-}"
-PAYPAL_ME_USERNAME="${PAYPAL_ME_USERNAME:-}"
+PAYPAL_CLIENT_ID=BAAv8rRenc5jlfD6eH_8pvgcU250jXTZCnyPKdBby13EAYRKhCempoPQ3Hj41GEfe2qBMu1P8ZslnbdkIc
+PAYPAL_CLIENT_SECRET=EH8CcxBIVPvFhoAKbL-HN8l_jSdOYzlGA2oahgGs1wPV7bogYK_TE4hIOjPtzOVj-mOUUXVy8uMIt6-N
+PAYPAL_MODE=sandbox
+PAYPAL_RECEIVER_EMAIL=kundank4@icloud.com
+PAYPAL_ME_USERNAME=ky8402
 
 # Self-Healing, Python ML Microservice & Telemetry
 ML_SERVICE_URL=http://127.0.0.1:8000
@@ -197,7 +190,7 @@ ML_ENABLED=true
 AUTO_HEAL_ENABLED=true
 
 # GitHub Automated Push-to-Deploy Webhook Secret
-GITHUB_WEBHOOK_SECRET="${GITHUB_WEBHOOK_SECRET}"
+GITHUB_WEBHOOK_SECRET=gigpilot_prod_webhook_secret_2026
 EOF
 
 chmod 600 "${APP_DIR}/.env"
@@ -239,7 +232,7 @@ if [ -d "${APP_DIR}/ml_service" ]; then
     docker run -d \
       --name self-healing-ml-service \
       --restart unless-stopped \
-      -p 127.0.0.1:8000:8000 \
+      -p 8000:8000 \
       -e DATABASE_URL="${NEON_DATABASE_URL}" \
       self-healing-ml-service
   fi
@@ -329,6 +322,15 @@ server {
         proxy_read_timeout 120s;
     }
 
+    # Optional direct route to Python ML service
+    location /api/ml/ {
+        proxy_pass http://127.0.0.1:8000/;
+        proxy_http_version 1.1;
+        proxy_set_header Host \$host;
+        proxy_set_header X-Real-IP \$remote_addr;
+        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto \$scheme;
+    }
 }
 EOF
 

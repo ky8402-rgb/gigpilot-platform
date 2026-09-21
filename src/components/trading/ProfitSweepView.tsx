@@ -37,33 +37,37 @@ export const ProfitSweepView: React.FC<ProfitSweepViewProps> = ({
   capital,
   destinationWallet,
   sweepEligibility,
-  sweepsHistory,
+  sweepsHistory = [],
   onRefreshState
 }) => {
-  const [walletAddress, setWalletAddress] = useState(destinationWallet.address);
-  const [walletChain, setWalletChain] = useState(destinationWallet.chain);
-  const [walletLabel, setWalletLabel] = useState(destinationWallet.label);
+  const [walletAddress, setWalletAddress] = useState(destinationWallet?.address || '');
+  const [walletChain, setWalletChain] = useState(destinationWallet?.chain || 'Ethereum (ERC-20 USDT/USDC)');
+  const [walletLabel, setWalletLabel] = useState(destinationWallet?.label || '');
   const [sweepAmount, setSweepAmount] = useState(
-    sweepEligibility.eligibleAmount > 0 ? sweepEligibility.eligibleAmount.toFixed(2) : '500.00'
+    typeof sweepEligibility?.eligibleAmount === 'number' && sweepEligibility.eligibleAmount > 0
+      ? sweepEligibility.eligibleAmount.toFixed(2)
+      : '500.00'
   );
   const [isUpdatingWallet, setIsUpdatingWallet] = useState(false);
   const [isSweeping, setIsSweeping] = useState(false);
+  const [walletNotice, setWalletNotice] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
   const [sweepSuccessMessage, setSweepSuccessMessage] = useState<string | null>(null);
   const [sweepErrorMessage, setSweepErrorMessage] = useState<string | null>(null);
 
   const handleUpdateWallet = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsUpdatingWallet(true);
+    setWalletNotice(null);
     try {
       await updateDestinationWallet({
         address: walletAddress,
         chain: walletChain,
         label: walletLabel
       });
-      alert('Whitelisted payout destination wallet updated successfully!');
+      setWalletNotice({ type: 'success', text: 'Whitelisted payout destination wallet updated successfully!' });
       onRefreshState();
     } catch (err: any) {
-      alert(`Failed to update wallet: ${err.message}`);
+      setWalletNotice({ type: 'error', text: `Failed to update wallet: ${err.message || 'Unknown error'}` });
     } finally {
       setIsUpdatingWallet(false);
     }
@@ -79,9 +83,10 @@ export const ProfitSweepView: React.FC<ProfitSweepViewProps> = ({
       if (!res.success) {
         setSweepErrorMessage(res.error || 'Failed to execute profit sweep');
       } else {
-        const txHash = 'sweep' in res && res.sweep?.txHash ? res.sweep.txHash : 'not available';
+        const destStr = destinationWallet?.address ? `${destinationWallet.address.substring(0, 10)}...` : 'vault';
+        const txStr = res.sweep?.txHash ? ` (Tx: ${res.sweep.txHash.substring(0, 16)}...)` : '';
         setSweepSuccessMessage(
-          `Sweep accepted by backend for ${Number(sweepAmount).toLocaleString()} USD to ${destinationWallet.address.substring(0, 10)}... (Tx: ${txHash.substring(0, 16)}...)`
+          `Successfully swept $${Number(sweepAmount).toLocaleString()} USD to ${destStr}${txStr}`
         );
         onRefreshState();
       }
@@ -90,6 +95,19 @@ export const ProfitSweepView: React.FC<ProfitSweepViewProps> = ({
     } finally {
       setIsSweeping(false);
     }
+  };
+
+  const safeCapital = capital || {
+    initialCapital: 0,
+    netRealizedProfit: 0,
+    profitReserve: 0,
+    totalSweptProfit: 0
+  };
+
+  const safeEligibility = sweepEligibility || {
+    eligibleAmount: 0,
+    canSweep: false,
+    reserveRetained: 0
   };
 
   return (
@@ -115,7 +133,7 @@ export const ProfitSweepView: React.FC<ProfitSweepViewProps> = ({
           <div className="bg-slate-950 p-3 rounded-lg border border-slate-800">
             <span className="text-slate-500 block text-[10px]">INITIAL CAPITAL (PROTECTED)</span>
             <span className="text-sm font-bold text-white">
-              ${capital.initialCapital.toLocaleString()}
+              ${safeCapital.initialCapital.toLocaleString()}
             </span>
             <span className="text-[10px] text-emerald-400 block mt-0.5">Never sweepable</span>
           </div>
@@ -123,7 +141,7 @@ export const ProfitSweepView: React.FC<ProfitSweepViewProps> = ({
           <div className="bg-slate-950 p-3 rounded-lg border border-slate-800">
             <span className="text-slate-500 block text-[10px]">NET REALIZED PROFIT</span>
             <span className="text-sm font-bold text-emerald-400">
-              +${capital.netRealizedProfit.toLocaleString()}
+              +${safeCapital.netRealizedProfit.toLocaleString()}
             </span>
             <span className="text-[10px] text-slate-400 block mt-0.5">Net after all fees</span>
           </div>
@@ -131,7 +149,7 @@ export const ProfitSweepView: React.FC<ProfitSweepViewProps> = ({
           <div className="bg-slate-950 p-3 rounded-lg border border-slate-800">
             <span className="text-slate-500 block text-[10px]">PROFIT RESERVE BUFFER</span>
             <span className="text-sm font-bold text-amber-300">
-              ${capital.profitReserve.toLocaleString()}
+              ${safeCapital.profitReserve.toLocaleString()}
             </span>
             <span className="text-[10px] text-slate-400 block mt-0.5">Retained liquidity buffer</span>
           </div>
@@ -139,10 +157,10 @@ export const ProfitSweepView: React.FC<ProfitSweepViewProps> = ({
           <div className="bg-slate-950 p-3 rounded-lg border border-emerald-900/60 bg-emerald-950/20">
             <span className="text-emerald-400 block text-[10px]">ELIGIBLE FOR SWEEP</span>
             <span className="text-sm font-extrabold text-emerald-300">
-              ${sweepEligibility.eligibleAmount.toLocaleString()}
+              ${safeEligibility.eligibleAmount.toLocaleString()}
             </span>
             <span className="text-[10px] text-slate-300 block mt-0.5">
-              Swept to date: ${capital.totalSweptProfit.toLocaleString()}
+              Swept to date: ${safeCapital.totalSweptProfit.toLocaleString()}
             </span>
           </div>
         </div>
@@ -205,7 +223,7 @@ export const ProfitSweepView: React.FC<ProfitSweepViewProps> = ({
         <form onSubmit={handleUpdateWallet} className="space-y-4">
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
             <div className="sm:col-span-2">
-              <label className="text-slate-400 block mb-1">Vault Public Address (BSC / 0x...)</label>
+              <label className="text-slate-400 block mb-1">Vault Public Address (0x... / bc1...)</label>
               <input
                 type="text"
                 value={walletAddress}
@@ -221,10 +239,10 @@ export const ProfitSweepView: React.FC<ProfitSweepViewProps> = ({
                 onChange={e => setWalletChain(e.target.value)}
                 className="w-full bg-slate-950 border border-slate-700 rounded px-3 py-2 text-white font-bold"
               >
-                <option value="bsc">BSC (BEP-20 USDT)</option>
-                <option value="ethereum">Ethereum (ERC-20)</option>
-                <option value="polygon">Polygon</option>
-                <option value="solana">Solana (SPL)</option>
+                <option value="Ethereum (ERC-20 USDT/USDC)">Ethereum (ERC-20 USDT/USDC)</option>
+                <option value="Arbitrum One (Low Fee)">Arbitrum One (Low Fee)</option>
+                <option value="Solana (SPL USDC)">Solana (SPL USDC)</option>
+                <option value="Bitcoin Native (bc1...)">Bitcoin Native (bc1...)</option>
               </select>
             </div>
           </div>
@@ -277,14 +295,14 @@ export const ProfitSweepView: React.FC<ProfitSweepViewProps> = ({
                       {new Date(s.timestamp).toLocaleString()}
                     </td>
                     <td className="py-2.5 px-3 text-slate-300 font-bold">
-                      {s.destinationWallet.substring(0, 8)}...{s.destinationWallet.slice(-6)}
+                      {s.destinationWallet ? `${s.destinationWallet.substring(0, 8)}...${s.destinationWallet.slice(-6)}` : 'N/A'}
                     </td>
-                    <td className="py-2.5 px-3 text-slate-400">{s.chain}</td>
+                    <td className="py-2.5 px-3 text-slate-400">{s.chain || 'N/A'}</td>
                     <td className="py-2.5 px-3 text-emerald-400 font-extrabold">
-                      ${s.grossSweepAmount.toLocaleString()} USD
+                      ${(s.grossSweepAmount ?? 0).toLocaleString()} USD
                     </td>
                     <td className="py-2.5 px-3 text-cyan-400 flex items-center gap-1 font-mono">
-                      <span>{s.txHash.substring(0, 12)}...</span>
+                      <span>{s.txHash ? `${s.txHash.substring(0, 12)}...` : 'N/A'}</span>
                       <ExternalLink className="w-3 h-3 opacity-70" />
                     </td>
                     <td className="py-2.5 px-3">

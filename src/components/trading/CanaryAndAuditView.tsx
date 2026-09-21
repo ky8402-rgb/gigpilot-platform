@@ -20,33 +20,44 @@ interface CanaryAndAuditViewProps {
 }
 
 export const CanaryAndAuditView: React.FC<CanaryAndAuditViewProps> = ({
-  updates,
-  auditLogs,
+  updates = [],
+  auditLogs = [],
   onRefreshState
 }) => {
   const [operatorFilter, setOperatorFilter] = useState<'ALL' | 'AUTONOMOUS_AGENT' | 'OWNER' | 'RISK_ENGINE' | 'SWEEP_DAEMON'>('ALL');
   const [isTriggeringRollout, setIsTriggeringRollout] = useState(false);
+  const [statusMessage, setStatusMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+
+  const safeLogs = Array.isArray(auditLogs) ? auditLogs : [];
+  const safeUpdates = Array.isArray(updates) ? updates : [];
 
   const filteredLogs = operatorFilter === 'ALL'
-    ? auditLogs
-    : auditLogs.filter(l => l.operator === operatorFilter);
+    ? safeLogs
+    : safeLogs.filter(l => l.operator === operatorFilter);
 
   const handleRollout = async () => {
     setIsTriggeringRollout(true);
+    setStatusMessage(null);
     try {
       const nextVer = `v2.${Math.floor(Date.now() / 1000000)}`;
       await triggerCanaryRollout(nextVer, 'Canary test: Dynamic micro-spread dampening with Kelly sizing');
-      alert(`Canary release ${nextVer} initiated. Staging unit tests and backtests executing in background.`);
+      setStatusMessage({
+        type: 'success',
+        text: `Canary release ${nextVer} initiated. Staging unit tests and backtests executing in background.`
+      });
       onRefreshState();
     } catch (err: any) {
-      alert(`Rollout error: ${err.message}`);
+      setStatusMessage({
+        type: 'error',
+        text: `Rollout error: ${err.message || 'Unknown error'}`
+      });
     } finally {
       setIsTriggeringRollout(false);
     }
   };
 
   const exportAuditLogs = () => {
-    const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(auditLogs, null, 2));
+    const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(safeLogs, null, 2));
     const downloadAnchor = document.createElement('a');
     downloadAnchor.setAttribute("href", dataStr);
     downloadAnchor.setAttribute("download", `aegis_audit_trail_${new Date().toISOString().slice(0, 10)}.json`);
@@ -57,6 +68,29 @@ export const CanaryAndAuditView: React.FC<CanaryAndAuditViewProps> = ({
 
   return (
     <div className="space-y-6 max-w-5xl mx-auto font-mono text-xs">
+      {statusMessage && (
+        <div className={`p-3 rounded-lg flex items-center justify-between gap-2 text-xs font-mono border ${
+          statusMessage.type === 'success'
+            ? 'bg-emerald-950/80 border-emerald-800 text-emerald-300'
+            : 'bg-rose-950/80 border-rose-800 text-rose-300'
+        }`}>
+          <div className="flex items-center gap-2">
+            {statusMessage.type === 'success' ? (
+              <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
+            ) : (
+              <AlertCircle className="w-4 h-4 text-rose-400 shrink-0" />
+            )}
+            <span>{statusMessage.text}</span>
+          </div>
+          <button
+            onClick={() => setStatusMessage(null)}
+            className="text-slate-400 hover:text-white px-2 py-0.5 text-[10px] rounded hover:bg-slate-800"
+          >
+            Dismiss
+          </button>
+        </div>
+      )}
+
       {/* 1. Canary Deployment & Self-Updating Pipeline */}
       <div className="bg-slate-900/80 border border-slate-800 rounded-xl p-5 shadow-xl">
         <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-800 pb-4 mb-4">

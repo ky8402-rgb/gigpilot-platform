@@ -77,10 +77,10 @@ export const InteractiveGridChart: React.FC<InteractiveGridChartProps> = ({
             <span className="text-xs px-2 py-0.5 rounded bg-slate-800 text-slate-300 font-mono">1m SPOT</span>
           </div>
           <div className="text-xs font-mono text-slate-400 hidden sm:flex items-center gap-3">
-            <span>O: <strong className="text-white">${candles[candles.length - 1]?.open.toLocaleString()}</strong></span>
-            <span>H: <strong className="text-white">${candles[candles.length - 1]?.high.toLocaleString()}</strong></span>
-            <span>L: <strong className="text-white">${candles[candles.length - 1]?.low.toLocaleString()}</strong></span>
-            <span>C: <strong className="text-white">${candles[candles.length - 1]?.close.toLocaleString()}</strong></span>
+            <span>O: <strong className="text-white">${candles[candles.length - 1]?.open != null ? candles[candles.length - 1].open.toLocaleString() : '—'}</strong></span>
+            <span>H: <strong className="text-white">${candles[candles.length - 1]?.high != null ? candles[candles.length - 1].high.toLocaleString() : '—'}</strong></span>
+            <span>L: <strong className="text-white">${candles[candles.length - 1]?.low != null ? candles[candles.length - 1].low.toLocaleString() : '—'}</strong></span>
+            <span>C: <strong className="text-white">${candles[candles.length - 1]?.close != null ? candles[candles.length - 1].close.toLocaleString() : '—'}</strong></span>
           </div>
         </div>
 
@@ -305,9 +305,9 @@ export const InteractiveGridChart: React.FC<InteractiveGridChartProps> = ({
             <span className="w-2 h-2 rounded-full bg-emerald-400" />
             <span>GRID: <strong>{grid.levelsCount} Levels</strong> ({grid.spacingType})</span>
             <span className="text-slate-500">|</span>
-            <span>Allocated: <strong>${grid.totalAllocatedUsd.toLocaleString()}</strong></span>
+            <span>Allocated: <strong>${(grid.totalAllocatedUsd ?? 0).toLocaleString()}</strong></span>
             <span className="text-slate-500">|</span>
-            <span className="text-amber-400">Step: {grid.gridSpacingPct.toFixed(2)}%</span>
+            <span className="text-amber-400">Step: {typeof grid.gridSpacingPct === 'number' ? grid.gridSpacingPct.toFixed(2) : '0.50'}%</span>
           </div>
         )}
 
@@ -316,13 +316,13 @@ export const InteractiveGridChart: React.FC<InteractiveGridChartProps> = ({
           <div className="absolute bottom-2 left-2 bg-slate-900/90 border border-slate-800 px-3 py-1.5 rounded text-[11px] font-mono text-slate-300 backdrop-blur-sm shadow flex items-center gap-3">
             <div className="flex items-center gap-1.5">
               <span className="text-slate-400">SPREAD:</span>
-              <span className="text-purple-300 font-bold">${orderBook.spread}</span>
-              <span className="text-[10px] text-purple-400">({orderBook.spreadBps} bps)</span>
+              <span className="text-purple-300 font-bold">${orderBook.spread ?? '0.00'}</span>
+              <span className="text-[10px] text-purple-400">({orderBook.spreadBps ?? 0} bps)</span>
             </div>
             <span className="text-slate-700">|</span>
             <div className="flex items-center gap-2">
-              <span className="text-emerald-400 font-semibold">BID: ${orderBook.bids[0]?.price.toLocaleString()}</span>
-              <span className="text-rose-400 font-semibold">ASK: ${orderBook.asks[0]?.price.toLocaleString()}</span>
+              <span className="text-emerald-400 font-semibold">BID: ${orderBook.bids?.[0]?.price != null ? orderBook.bids[0].price.toLocaleString() : '—'}</span>
+              <span className="text-rose-400 font-semibold">ASK: ${orderBook.asks?.[0]?.price != null ? orderBook.asks[0].price.toLocaleString() : '—'}</span>
             </div>
           </div>
         )}
@@ -334,30 +334,30 @@ export const InteractiveGridChart: React.FC<InteractiveGridChartProps> = ({
           <div className="bg-slate-950/60 border border-slate-800 px-2.5 py-1 rounded">
             <span className="text-slate-500 block text-[10px]">RSI (14)</span>
             <span className={`font-bold ${
-              indicators.rsi14 > 70 ? 'text-rose-400' : indicators.rsi14 < 30 ? 'text-emerald-400' : 'text-slate-200'
+              (indicators.rsi14 ?? 50) > 70 ? 'text-rose-400' : (indicators.rsi14 ?? 50) < 30 ? 'text-emerald-400' : 'text-slate-200'
             }`}>
-              {indicators.rsi14.toFixed(1)} {indicators.rsi14 > 70 ? '(Overbought)' : indicators.rsi14 < 30 ? '(Oversold)' : ''}
+              {typeof indicators.rsi14 === 'number' ? indicators.rsi14.toFixed(1) : '50.0'} {(indicators.rsi14 ?? 50) > 70 ? '(Overbought)' : (indicators.rsi14 ?? 50) < 30 ? '(Oversold)' : ''}
             </span>
           </div>
           <div className="bg-slate-950/60 border border-slate-800 px-2.5 py-1 rounded">
             <span className="text-slate-500 block text-[10px]">ATR (14)</span>
-            <span className="font-bold text-white">${indicators.atr14.toFixed(2)}</span>
+            <span className="font-bold text-white">${typeof indicators.atr14 === 'number' ? indicators.atr14.toFixed(2) : '0.00'}</span>
           </div>
           <div className="bg-slate-950/60 border border-slate-800 px-2.5 py-1 rounded">
             <span className="text-slate-500 block text-[10px]">EMA 21 / 50</span>
-            <span className="font-bold text-cyan-300">${indicators.ema21.toFixed(0)} / ${indicators.ema50.toFixed(0)}</span>
+            <span className="font-bold text-cyan-300">${typeof indicators.ema21 === 'number' ? indicators.ema21.toFixed(0) : '0'} / ${typeof indicators.ema50 === 'number' ? indicators.ema50.toFixed(0) : '0'}</span>
           </div>
           <div className="bg-slate-950/60 border border-slate-800 px-2.5 py-1 rounded">
             <span className="text-slate-500 block text-[10px]">BB BANDWIDTH</span>
-            <span className="font-bold text-amber-300">{indicators.bollingerBands.bandwidth.toFixed(2)}%</span>
+            <span className="font-bold text-amber-300">{typeof indicators.bollingerBands?.bandwidth === 'number' ? indicators.bollingerBands.bandwidth.toFixed(2) : '0.00'}%</span>
           </div>
           <div className="bg-slate-950/60 border border-slate-800 px-2.5 py-1 rounded">
             <span className="text-slate-500 block text-[10px]">VWAP</span>
-            <span className="font-bold text-white">${indicators.vwap.toFixed(1)}</span>
+            <span className="font-bold text-white">${typeof indicators.vwap === 'number' ? indicators.vwap.toFixed(1) : '0.0'}</span>
           </div>
           <div className="bg-slate-950/60 border border-slate-800 px-2.5 py-1 rounded">
             <span className="text-slate-500 block text-[10px]">24H VOLATILITY</span>
-            <span className="font-bold text-emerald-400">{indicators.volatility24h?.toFixed(2) ?? '—'}%</span>
+            <span className="font-bold text-emerald-400">{typeof indicators.volatility24h === 'number' ? indicators.volatility24h.toFixed(2) : '0.00'}%</span>
           </div>
         </div>
       )}

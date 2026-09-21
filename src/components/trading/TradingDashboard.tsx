@@ -90,12 +90,7 @@ export interface TradingDashboardProps {
 }
 
 export const TradingDashboard: React.FC<TradingDashboardProps> = ({ onLogout }) => {
-  const [activeTab, setActiveTab] = useState<ActiveTerminalTab>(() => window.location.pathname === '/assets' ? 'ASSETS' : 'TERMINAL');
-  const navigateTab = useCallback((tab: ActiveTerminalTab) => {
-    setActiveTab(tab);
-    const target = tab === 'ASSETS' ? '/assets' : '/';
-    if (window.location.pathname !== target) window.history.pushState({ tab }, '', target);
-  }, []);
+  const [activeTab, setActiveTab] = useState<ActiveTerminalTab>('TERMINAL');
   // Initialize with complete, realistic master state immediately so the app never blocks on loading
   const [state, setState] = useState<MasterTradingState>(() => generateDefaultMasterState());
   const [pairs, setPairs] = useState<Array<{ symbol: string; price: number; change24hPct: number }>>(() => DEFAULT_PAIRS);
@@ -136,12 +131,6 @@ export const TradingDashboard: React.FC<TradingDashboardProps> = ({ onLogout }) 
   const [showAuthModal, setShowAuthModal] = useState<boolean>(false);
   const stateRef = useRef(state);
   stateRef.current = state;
-
-  useEffect(() => {
-    const onPopState = () => setActiveTab(window.location.pathname === '/assets' ? 'ASSETS' : 'TERMINAL');
-    window.addEventListener('popstate', onPopState);
-    return () => window.removeEventListener('popstate', onPopState);
-  }, []);
 
   // Load state from backend with graceful degradation and auto-failover
   const loadFullState = useCallback(async () => {
@@ -292,7 +281,7 @@ export const TradingDashboard: React.FC<TradingDashboardProps> = ({ onLogout }) 
         ownerEmail={ownerEmail}
         onOpenOwnerAuth={() => setShowAuthModal(true)}
         onLogoutOwner={handleLogoutOwner}
-        onNavigateToAssets={() => navigateTab('ASSETS')}
+        onNavigateToAssets={() => setActiveTab('ASSETS')}
       />
 
       {/* Backend Synchronization Notification Bar */}
@@ -346,7 +335,7 @@ export const TradingDashboard: React.FC<TradingDashboardProps> = ({ onLogout }) 
       {/* 2. Real-Time Net Capital Accounting & Performance Metrics Bar */}
       <CapitalMetricsBar
         capital={state.capital}
-        onOpenSweepModal={() => navigateTab('PROFIT_SWEEP')}
+        onOpenSweepModal={() => setActiveTab('PROFIT_SWEEP')}
       />
 
       {/* 3. Terminal View Tabs Bar */}
@@ -354,7 +343,7 @@ export const TradingDashboard: React.FC<TradingDashboardProps> = ({ onLogout }) 
         <div className="max-w-[1700px] mx-auto flex items-center justify-between gap-2 overflow-x-auto">
           <div className="flex items-center gap-1">
             <button
-              onClick={() => navigateTab('TERMINAL')}
+              onClick={() => setActiveTab('TERMINAL')}
               className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-mono font-bold transition-all ${
                 activeTab === 'TERMINAL'
                   ? 'bg-emerald-950/80 text-emerald-300 border border-emerald-700/80 shadow'
@@ -366,7 +355,7 @@ export const TradingDashboard: React.FC<TradingDashboardProps> = ({ onLogout }) 
             </button>
 
             <button
-              onClick={() => navigateTab('ASSETS')}
+              onClick={() => setActiveTab('ASSETS')}
               className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-mono font-bold transition-all ${
                 activeTab === 'ASSETS'
                   ? 'bg-amber-950/80 text-amber-300 border border-amber-600/80 shadow'
@@ -378,7 +367,7 @@ export const TradingDashboard: React.FC<TradingDashboardProps> = ({ onLogout }) 
             </button>
 
             <button
-              onClick={() => navigateTab('ADAPTIVE_GRID')}
+              onClick={() => setActiveTab('ADAPTIVE_GRID')}
               className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-mono font-bold transition-all ${
                 activeTab === 'ADAPTIVE_GRID'
                   ? 'bg-emerald-950/80 text-emerald-300 border border-emerald-700/80 shadow'
@@ -390,7 +379,7 @@ export const TradingDashboard: React.FC<TradingDashboardProps> = ({ onLogout }) 
             </button>
 
             <button
-              onClick={() => navigateTab('LEARNING_LOOP')}
+              onClick={() => setActiveTab('LEARNING_LOOP')}
               className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-mono font-bold transition-all ${
                 activeTab === 'LEARNING_LOOP'
                   ? 'bg-emerald-950/80 text-emerald-300 border border-emerald-700/80 shadow'
@@ -402,7 +391,7 @@ export const TradingDashboard: React.FC<TradingDashboardProps> = ({ onLogout }) 
             </button>
 
             <button
-              onClick={() => navigateTab('SCRIPTING_IDE')}
+              onClick={() => setActiveTab('SCRIPTING_IDE')}
               className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-mono font-bold transition-all ${
                 activeTab === 'SCRIPTING_IDE'
                   ? 'bg-emerald-950/80 text-emerald-300 border border-emerald-700/80 shadow'
@@ -414,7 +403,7 @@ export const TradingDashboard: React.FC<TradingDashboardProps> = ({ onLogout }) 
             </button>
 
             <button
-              onClick={() => navigateTab('PROFIT_SWEEP')}
+              onClick={() => setActiveTab('PROFIT_SWEEP')}
               className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-mono font-bold transition-all ${
                 activeTab === 'PROFIT_SWEEP'
                   ? 'bg-emerald-950/80 text-emerald-300 border border-emerald-700/80 shadow'
@@ -426,7 +415,7 @@ export const TradingDashboard: React.FC<TradingDashboardProps> = ({ onLogout }) 
             </button>
 
             <button
-              onClick={() => navigateTab('WEB_RESEARCH')}
+              onClick={() => setActiveTab('WEB_RESEARCH')}
               className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-mono font-bold transition-all ${
                 activeTab === 'WEB_RESEARCH'
                   ? 'bg-emerald-950/80 text-emerald-300 border border-emerald-700/80 shadow'
@@ -438,7 +427,7 @@ export const TradingDashboard: React.FC<TradingDashboardProps> = ({ onLogout }) 
             </button>
 
             <button
-              onClick={() => navigateTab('RISK_SAFETY')}
+              onClick={() => setActiveTab('RISK_SAFETY')}
               className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-mono font-bold transition-all ${
                 activeTab === 'RISK_SAFETY'
                   ? 'bg-emerald-950/80 text-emerald-300 border border-emerald-700/80 shadow'
@@ -450,7 +439,7 @@ export const TradingDashboard: React.FC<TradingDashboardProps> = ({ onLogout }) 
             </button>
 
             <button
-              onClick={() => navigateTab('SYSTEM_CANARY')}
+              onClick={() => setActiveTab('SYSTEM_CANARY')}
               className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-mono font-bold transition-all ${
                 activeTab === 'SYSTEM_CANARY'
                   ? 'bg-emerald-950/80 text-emerald-300 border border-emerald-700/80 shadow'
@@ -519,7 +508,7 @@ export const TradingDashboard: React.FC<TradingDashboardProps> = ({ onLogout }) 
 
         {activeTab === 'ASSETS' && (
           <AssetDashboard
-            onNavigateToTrade={() => navigateTab('TERMINAL')}
+            onNavigateToTrade={() => setActiveTab('TERMINAL')}
             isOwnerAuthenticated={isOwnerAuth}
             onOpenOwnerLogin={() => setShowAuthModal(true)}
           />

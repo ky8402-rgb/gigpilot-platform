@@ -7,7 +7,7 @@ services:
       dockerfile: Dockerfile
     container_name: self-healing-ml-service
     ports:
-      - "127.0.0.1:8000:8000"
+      - "8000:8000"
     environment:
       - DATABASE_URL=${DATABASE_URL:-postgresql://postgres:postgres@postgres:5432/postgres}
       - MLFLOW_TRACKING_URI=/app/mlruns

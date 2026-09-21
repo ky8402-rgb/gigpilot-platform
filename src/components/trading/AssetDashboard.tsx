@@ -18,7 +18,7 @@ import {
   TrendingUp,
   Clock
 } from 'lucide-react';
-import { BinanceAccountState, BinanceAssetWithUsd, Order } from '../../types/trading';
+import { BinanceAccountState, BinanceAssetWithUsd, Fill } from '../../types/trading';
 import { fetchLiveAssets, updateBinanceKeys } from '../../services/tradingService';
 
 interface AssetDashboardProps {
@@ -39,7 +39,6 @@ export const AssetDashboard: React.FC<AssetDashboardProps> = ({
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [hideSmallBalances, setHideSmallBalances] = useState<boolean>(true);
   const [copiedIp, setCopiedIp] = useState<boolean>(false);
-  const [tradeAsset, setTradeAsset] = useState<string | null>(null);
 
   // Key update modal state
   const [showKeyModal, setShowKeyModal] = useState<boolean>(false);
@@ -278,21 +277,22 @@ export const AssetDashboard: React.FC<AssetDashboardProps> = ({
           </div>
         </div>
 
-        {/* Withdrawable Profit */}
-        <div className="bg-slate-900/80 border border-emerald-800/50 rounded-xl p-5">
-          <div className="flex items-center justify-between"><span className="text-xs font-medium text-slate-400">Withdrawable Profit</span><div className="p-2 bg-emerald-500/10 rounded-lg text-emerald-400"><TrendingUp className="w-4 h-4" /></div></div>
-          <div className="mt-3">
-            <div className="text-2xl font-bold font-mono text-emerald-400">${account ? account.withdrawableProfitUsd.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : "0.00"}</div>
-            <div className="mt-1 text-[11px] text-slate-500">Equity − initial capital − reserve buffer</div>
+        {/* Active Spot Tokens */}
+        <div className="bg-slate-900/80 border border-slate-800 rounded-xl p-5">
+          <div className="flex items-center justify-between">
+            <span className="text-xs font-medium text-slate-400">Tracked Assets</span>
+            <div className="p-2 bg-purple-500/10 rounded-lg text-purple-400">
+              <PieChart className="w-4 h-4" />
+            </div>
           </div>
-        </div>
-      </div>
-
-      <div className="flex flex-wrap items-center justify-between gap-3 bg-slate-900/80 border border-slate-800 rounded-xl p-4">
-        <div><div className="text-sm font-bold text-slate-200">Binance Spot Wallet</div><div className="text-[11px] text-slate-500 mt-0.5">Deposits and withdrawals are handled only by Binance. GigPilot does not custody funds.</div></div>
-        <div className="flex gap-2">
-          <a href="https://www.binance.com/en/my/wallet/account/main/deposit/crypto" target="_blank" rel="noopener noreferrer" className="px-3.5 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold inline-flex items-center gap-1.5"><ArrowDownRight className="w-3.5 h-3.5" /> Deposit</a>
-          <a href="https://www.binance.com/en/my/wallet/account/main/withdrawal/crypto" target="_blank" rel="noopener noreferrer" className="px-3.5 py-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-bold border border-slate-700 inline-flex items-center gap-1.5"><ArrowUpRight className="w-3.5 h-3.5" /> Withdraw</a>
+          <div className="mt-3">
+            <div className="text-2xl font-bold font-mono text-slate-100">
+              {account?.spotBalances?.length || 0} Assets
+            </div>
+            <div className="flex items-center gap-1.5 mt-1 text-[11px] text-purple-400">
+              <span>Non-zero balance tokens</span>
+            </div>
+          </div>
         </div>
       </div>
 
@@ -334,13 +334,20 @@ export const AssetDashboard: React.FC<AssetDashboardProps> = ({
           <table className="w-full text-left text-xs text-slate-300">
             <thead className="bg-slate-950/80 text-[11px] font-semibold text-slate-400 uppercase tracking-wider border-b border-slate-800">
               <tr>
-                <th className="py-3 px-4">Asset</th><th className="py-3 px-4 text-right">Amount</th><th className="py-3 px-4 text-right">Value (USD)</th><th className="py-3 px-4 text-right">% of Portfolio</th><th className="py-3 px-4 text-right">24h Change</th><th className="py-3 px-4 text-center">Actions</th>
+                <th className="py-3 px-4">Asset</th>
+                <th className="py-3 px-4 text-right">Free</th>
+                <th className="py-3 px-4 text-right">Locked</th>
+                <th className="py-3 px-4 text-right">Total Balance</th>
+                <th className="py-3 px-4 text-right">Live Price</th>
+                <th className="py-3 px-4 text-right">Total USD Value</th>
+                <th className="py-3 px-4 text-right">Allocation</th>
+                <th className="py-3 px-4 text-center">Action</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-800/60 font-mono">
               {filteredBalances.length === 0 ? (
                 <tr>
-                  <td colSpan={6} className="py-12 text-center text-slate-500 font-sans">
+                  <td colSpan={8} className="py-12 text-center text-slate-500 font-sans">
                     {loading ? (
                       <div className="flex items-center justify-center gap-2">
                         <RefreshCw className="w-4 h-4 animate-spin text-amber-500" />
@@ -361,48 +368,52 @@ export const AssetDashboard: React.FC<AssetDashboardProps> = ({
               ) : (
                 filteredBalances.map((item) => (
                   <tr key={item.asset} className="hover:bg-slate-800/40 transition">
-                    <td className="py-3 px-4 font-bold text-slate-100 flex items-center gap-2.5"><div className="w-7 h-7 rounded-full bg-slate-800 border border-slate-700 flex items-center justify-center font-bold text-[10px] text-amber-400">{item.asset.slice(0, 3)}</div><span className="font-sans font-bold">{item.asset}</span></td>
-                    <td className="py-3 px-4 text-right text-slate-200">{item.total.toLocaleString("en-US", { maximumFractionDigits: 8 })}</td>
-                    <td className="py-3 px-4 text-right font-bold text-emerald-400">${item.usdValue.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
-                    <td className="py-3 px-4 text-right text-slate-300">{item.allocationPct.toFixed(2)}%</td>
-                    <td className={`py-3 px-4 text-right font-semibold ${item.change24hPct !== undefined && item.change24hPct >= 0 ? "text-emerald-400" : "text-rose-400"}`}>{item.change24hPct !== undefined ? `${item.change24hPct >= 0 ? "+" : ""}${item.change24hPct.toFixed(2)}%` : "—"}</td>
-                    <td className="py-3 px-4 text-center font-sans"><div className="flex justify-center gap-2"><button onClick={() => setTradeAsset(item.asset)} className="px-2.5 py-1 rounded bg-emerald-600/20 hover:bg-emerald-600/30 text-emerald-300 text-[11px] font-semibold border border-emerald-700/50">Trade</button><a href={`https://www.binance.com/en/trade/${item.asset}_USDT`} target="_blank" rel="noopener noreferrer" className="px-2.5 py-1 rounded bg-slate-800 hover:bg-slate-700 text-slate-300 text-[11px] font-semibold border border-slate-700 inline-flex items-center gap-1">Binance <ExternalLink className="w-3 h-3" /></a></div></td>
-                  </tr>              ))
-              )}
-            </tbody>
-          </table>
-        </div>
-      </div>
-
-      {/* 5. LIVE BINANCE OPEN ORDERS */}
-      <div className="bg-slate-900/90 border border-slate-800 rounded-xl overflow-hidden shadow-xl">
-        <div className="p-4 border-b border-slate-800 bg-slate-950/40 flex items-center justify-between">
-          <div>
-            <h2 className="text-sm font-bold text-slate-200 uppercase tracking-wider">Live Binance Open Orders</h2>
-            <p className="text-[11px] text-slate-500 mt-1">Directly synchronized from Binance Spot REST, independent of GigPilot's local order cache.</p>
-          </div>
-          <span className="text-[11px] text-slate-400 font-mono">{account?.openOrders?.length || 0} open</span>
-        </div>
-        <div className="overflow-x-auto">
-          <table className="w-full text-left text-xs text-slate-300">
-            <thead className="bg-slate-950/80 text-[11px] font-semibold text-slate-400 uppercase tracking-wider border-b border-slate-800">
-              <tr>
-                <th className="py-3 px-4">Order ID</th><th className="py-3 px-4">Symbol</th><th className="py-3 px-4">Side</th><th className="py-3 px-4">Type</th><th className="py-3 px-4 text-right">Price</th><th className="py-3 px-4 text-right">Qty</th><th className="py-3 px-4">Status</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-800/60 font-mono">
-              {!account?.openOrders?.length ? (
-                <tr><td colSpan={7} className="py-8 text-center text-slate-500 font-sans">No open Binance Spot orders.</td></tr>
-              ) : (
-                account.openOrders.map((order: Order) => (
-                  <tr key={order.id} className="hover:bg-slate-800/40">
-                    <td className="py-2.5 px-4 text-slate-400">{order.id}</td>
-                    <td className="py-2.5 px-4 font-bold text-slate-200">{order.symbol}</td>
-                    <td className="py-2.5 px-4">{order.side}</td>
-                    <td className="py-2.5 px-4">{order.type}</td>
-                    <td className="py-2.5 px-4 text-right">{order.price.toLocaleString('en-US', { maximumFractionDigits: 12 })}</td>
-                    <td className="py-2.5 px-4 text-right">{order.amount.toLocaleString('en-US', { maximumFractionDigits: 12 })}</td>
-                    <td className="py-2.5 px-4 text-emerald-400">{order.status}</td>
+                    <td className="py-3 px-4 font-bold text-slate-100 flex items-center gap-2.5">
+                      <div className="w-6 h-6 rounded-full bg-slate-800 border border-slate-700 flex items-center justify-center font-bold text-[10px] text-amber-400">
+                        {item.asset.slice(0, 3)}
+                      </div>
+                      <span className="font-sans font-bold">{item.asset}</span>
+                    </td>
+                    <td className="py-3 px-4 text-right text-slate-200">
+                      {item.free.toLocaleString('en-US', { maximumFractionDigits: 6 })}
+                    </td>
+                    <td className="py-3 px-4 text-right text-slate-400">
+                      {item.locked > 0 ? (
+                        <span className="text-amber-400 font-semibold">{item.locked.toLocaleString('en-US', { maximumFractionDigits: 6 })}</span>
+                      ) : (
+                        '0.00'
+                      )}
+                    </td>
+                    <td className="py-3 px-4 text-right font-bold text-slate-100">
+                      {item.total.toLocaleString('en-US', { maximumFractionDigits: 6 })}
+                    </td>
+                    <td className="py-3 px-4 text-right text-slate-300">
+                      ${item.usdPrice > 0 ? item.usdPrice.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 4 }) : '1.00'}
+                    </td>
+                    <td className="py-3 px-4 text-right font-bold text-emerald-400">
+                      ${item.usdValue.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                    </td>
+                    <td className="py-3 px-4 text-right">
+                      <div className="flex items-center justify-end gap-2">
+                        <div className="w-12 bg-slate-800 h-1.5 rounded-full overflow-hidden">
+                          <div
+                            className="bg-amber-500 h-full rounded-full"
+                            style={{ width: `${Math.min(100, item.allocationPct)}%` }}
+                          />
+                        </div>
+                        <span className="text-slate-400 text-[11px] w-10 text-right">{item.allocationPct}%</span>
+                      </div>
+                    </td>
+                    <td className="py-3 px-4 text-center font-sans">
+                      {onNavigateToTrade && (
+                        <button
+                          onClick={onNavigateToTrade}
+                          className="px-2.5 py-1 rounded bg-slate-800 hover:bg-slate-700 text-slate-300 text-[11px] font-semibold border border-slate-700 transition"
+                        >
+                          Trade
+                        </button>
+                      )}
+                    </td>
                   </tr>
                 ))
               )}
@@ -411,22 +422,67 @@ export const AssetDashboard: React.FC<AssetDashboardProps> = ({
         </div>
       </div>
 
-      {/* 6. BINANCE TRANSACTION HISTORY */}
+      {/* 5. VERIFIED BINANCE TRADE HISTORY */}
       <div className="bg-slate-900/90 border border-slate-800 rounded-xl overflow-hidden shadow-xl">
-        <div className="p-4 border-b border-slate-800 bg-slate-950/40 flex items-center justify-between"><div><h2 className="text-sm font-bold text-slate-200 uppercase tracking-wider">Transaction History</h2><p className="text-[11px] text-slate-500 mt-1">Deposits, withdrawals, trades and fees from Binance. Trades include Binance order IDs.</p></div><span className="text-[11px] text-slate-500 font-mono">Last 30 days</span></div>
-        <div className="overflow-x-auto"><table className="w-full text-left text-xs text-slate-300"><thead className="bg-slate-950/80 text-[11px] font-semibold text-slate-400 uppercase tracking-wider border-b border-slate-800"><tr><th className="py-3 px-4">Type</th><th className="py-3 px-4">Asset</th><th className="py-3 px-4 text-right">Amount</th><th className="py-3 px-4 text-right">Value (USD)</th><th className="py-3 px-4">Status</th><th className="py-3 px-4">Timestamp</th><th className="py-3 px-4">Binance Order ID / TxID</th></tr></thead>
-          <tbody className="divide-y divide-slate-800/60 font-mono">{!account?.transactions?.length ? <tr><td colSpan={7} className="py-10 text-center text-slate-500 font-sans">No Binance transactions returned for the selected period.</td></tr> : account.transactions.map(tx => <tr key={tx.id} className="hover:bg-slate-800/40"><td className="py-2.5 px-4"><span className="text-[10px] font-bold px-2 py-0.5 rounded bg-slate-800 text-slate-300">{tx.type}</span></td><td className="py-2.5 px-4 font-bold text-slate-200">{tx.asset}</td><td className="py-2.5 px-4 text-right">{tx.amount.toLocaleString("en-US",{maximumFractionDigits:8})}</td><td className="py-2.5 px-4 text-right text-emerald-400">${tx.valueUsd.toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2})}</td><td className="py-2.5 px-4 text-slate-400">{tx.status}</td><td className="py-2.5 px-4 text-slate-500">{new Date(tx.timestamp).toLocaleString()}</td><td className="py-2.5 px-4 text-slate-500 text-[11px]">{tx.orderId || tx.txId || "—"}</td></tr>)}</tbody>
-        </table></div>
-      </div>
-      {tradeAsset && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm">
-          <div className="bg-slate-900 border border-slate-700 rounded-2xl max-w-sm w-full p-6 shadow-2xl">
-            <div className="flex items-center justify-between mb-4"><h3 className="text-base font-bold text-slate-100">Trade {tradeAsset}</h3><button onClick={() => setTradeAsset(null)} className="text-slate-400 hover:text-white">✕</button></div>
-            <p className="text-xs text-slate-400 mb-5">Execution remains protected by owner authentication, the global kill switch, trading mode and the risk engine.</p>
-            <div className="flex justify-end gap-2"><button onClick={() => setTradeAsset(null)} className="px-3 py-2 rounded-lg bg-slate-800 text-slate-300 text-xs font-semibold">Close</button>{onNavigateToTrade && <button onClick={() => { setTradeAsset(null); onNavigateToTrade(); }} className="px-3 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold">Open Trade Terminal</button>}</div>
+        <div className="p-4 border-b border-slate-800 flex items-center justify-between bg-slate-950/40">
+          <div className="flex items-center gap-2">
+            <TrendingUp className="w-4 h-4 text-amber-400" />
+            <h2 className="text-sm font-bold text-slate-200 uppercase tracking-wider">Recent Binance Spot Trades</h2>
           </div>
+          <span className="text-xs text-slate-500 font-mono">Live from myTrades</span>
         </div>
-      )}
+
+        <div className="overflow-x-auto">
+          <table className="w-full text-left text-xs text-slate-300">
+            <thead className="bg-slate-950/80 text-[11px] font-semibold text-slate-400 uppercase tracking-wider border-b border-slate-800">
+              <tr>
+                <th className="py-3 px-4">Trade ID</th>
+                <th className="py-3 px-4">Pair</th>
+                <th className="py-3 px-4">Side</th>
+                <th className="py-3 px-4 text-right">Price</th>
+                <th className="py-3 px-4 text-right">Amount</th>
+                <th className="py-3 px-4 text-right">Fee (USD)</th>
+                <th className="py-3 px-4 text-right">Time</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-800/60 font-mono">
+              {!account?.recentTrades || account.recentTrades.length === 0 ? (
+                <tr>
+                  <td colSpan={7} className="py-8 text-center text-slate-500 font-sans">
+                    No historical trade executions recorded on this Binance Spot pair yet.
+                  </td>
+                </tr>
+              ) : (
+                account.recentTrades.map((trade: Fill) => (
+                  <tr key={trade.id} className="hover:bg-slate-800/40 transition">
+                    <td className="py-2.5 px-4 text-slate-400 text-[11px]">{trade.id}</td>
+                    <td className="py-2.5 px-4 font-bold text-slate-200">{trade.symbol}</td>
+                    <td className="py-2.5 px-4">
+                      <span
+                        className={`px-2 py-0.5 rounded text-[10px] font-bold ${
+                          trade.side === 'BUY'
+                            ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30'
+                            : 'bg-rose-500/20 text-rose-400 border border-rose-500/30'
+                        }`}
+                      >
+                        {trade.side}
+                      </span>
+                    </td>
+                    <td className="py-2.5 px-4 text-right text-slate-200">
+                      ${trade.price.toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                    </td>
+                    <td className="py-2.5 px-4 text-right text-slate-300">{trade.amount}</td>
+                    <td className="py-2.5 px-4 text-right text-slate-400">${trade.feeUsd.toFixed(4)}</td>
+                    <td className="py-2.5 px-4 text-right text-slate-500 text-[11px]">
+                      {new Date(trade.timestamp).toLocaleTimeString()}
+                    </td>
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
+        </div>
+      </div>
 
       {/* 6. MODAL: UPDATE BINANCE API CREDENTIALS */}
       {showKeyModal && (
@@ -446,7 +502,7 @@ export const AssetDashboard: React.FC<AssetDashboardProps> = ({
             </div>
 
             <p className="text-xs text-slate-400 leading-relaxed">
-              Enter your personal Binance Spot API credentials. For production, inject keys through AWS secret management; runtime-entered keys are encrypted at rest on the backend and are never exposed back to the browser.
+              Enter your personal Binance Spot API credentials. Keys are saved securely server-side for personal algorithmic execution.
             </p>
 
             <div className="p-3 bg-slate-950 border border-slate-800 rounded-lg text-xs space-y-1">

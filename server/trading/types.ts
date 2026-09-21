@@ -2,12 +2,12 @@
 
 export type AutonomyLevel = 0 | 1 | 2 | 3 | 4;
 // 0: OBSERVE (No trading)
-// 1: OWNER_CONTROLLED (Live trading with manual strategy release)
+// 1: PAPER (Fully autonomous simulated trading - DEFAULT)
 // 2: ASSISTED (AI proposes changes; Owner approves live deployment)
 // 3: AUTONOMOUS (AI can deploy validated strategies automatically)
 // 4: CONTINUOUS_OPTIMIZATION (AI continuously researches, tests, optimizes, and deploys)
 
-export type TradingMode = 'LIVE';
+export type TradingMode = 'SIMULATION' | 'PAPER' | 'LIVE';
 
 export type MarketRegimeType = 
   | 'RANGE_BOUND_LOW_VOL' 
@@ -249,6 +249,7 @@ export interface StrategyVersion {
     rebalanceIntervalSec: number;
   };
   backtestResults: StrategyPerformanceMetrics;
+  paperTradingResults?: StrategyPerformanceMetrics;
   liveResults?: StrategyPerformanceMetrics;
   validationScore: number; // 0 - 100
   expectedEffect: string;

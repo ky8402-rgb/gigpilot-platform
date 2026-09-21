@@ -33,7 +33,7 @@ export class TradingStore {
   public previousAutonomyLevel: AutonomyLevel = 1;
   public GLOBAL_KILL_SWITCH_ACTIVE: boolean = true; // DEFAULT SAFE KILL SWITCH ENGAGED
   public activeBotsDisabled: boolean = true;
-  public tradingMode: TradingMode = 'LIVE'; // Production is LIVE Binance Spot only; no paper/simulation execution mode exists.
+  public tradingMode: TradingMode = 'LIVE'; // Real live trading on personal Binance account
   public currentRegime: MarketRegime;
   public activeGrid: GridConfiguration | null = null;
   public capital: CapitalAccounting;
@@ -42,7 +42,6 @@ export class TradingStore {
 
   constructor() {
     this.exchange = new ExchangeEngine();
-    this.exchange.setMode(this.tradingMode);
     this.risk = new RiskEngine();
     this.killSwitch = new EmergencyKillSwitch();
     this.sweeper = new ProfitSweepSubsystem();
@@ -61,7 +60,7 @@ export class TradingStore {
 
     // Initial Capital Accounting (All values derived from real exchange)
     this.capital = {
-      initialCapital: Number(process.env.INITIAL_TRADING_CAPITAL_USD) > 0 ? Number(process.env.INITIAL_TRADING_CAPITAL_USD) : 0.0,
+      initialCapital: 0.0,
       totalEquity: 0.0,
       tradingCapital: 0.0,
       availableCash: 0.0,
@@ -143,11 +142,6 @@ export class TradingStore {
         this.capital.availableCash = acct.availableCashUsd;
         this.capital.lockedInOrders = acct.lockedInOrdersUsd;
         this.capital.tradingCapital = acct.totalEquityUsd;
-        this.capital.withdrawableProfit = acct.withdrawableProfitUsd;
-        this.capital.profitReserve = acct.profitReserveBufferUsd;
-        if (this.capital.initialCapital === 0 && acct.initialTradingCapitalUsd > 0) {
-          this.capital.initialCapital = acct.initialTradingCapitalUsd;
-        }
         if (this.capital.initialCapital === 0 && acct.totalEquityUsd > 0) {
           this.capital.initialCapital = acct.totalEquityUsd;
         }
@@ -248,13 +242,10 @@ export class TradingStore {
   }
 
   public setTradingMode(mode: TradingMode) {
-    if (mode !== 'LIVE') {
-      throw new Error('GigPilot is LIVE Binance Spot only. Paper and simulation trading are not supported.');
-    }
     const prev = this.tradingMode;
-    this.tradingMode = 'LIVE';
-    this.exchange.setMode('LIVE');
-    this.logAudit('OWNER', 'LIVE_TRADING_MODE_CONFIRMED', { previous: prev, newMode: 'LIVE' }, 'SUCCESS');
+    this.tradingMode = mode;
+    this.exchange.setMode(mode);
+    this.logAudit('OWNER', 'TRADING_MODE_CHANGED', { previous: prev, newMode: mode }, 'SUCCESS');
   }
 
   public setActiveSymbol(symbol: string) {
@@ -296,18 +287,30 @@ export class TradingStore {
   }
 
   public deactivateKillSwitch(): void {
-    // Releasing the emergency stop must never silently resume autonomous trading.
-    // The owner must explicitly choose the autonomy level after the halt is cleared.
     this.GLOBAL_KILL_SWITCH_ACTIVE = false;
-    this.activeBotsDisabled = true;
-    this.autonomyLevel = 0;
+    this.activeBotsDisabled = false;
     this.killSwitch.deactivate();
-    this.logAudit(
-      'OWNER',
-      'GLOBAL_KILL_SWITCH_DEACTIVATED',
-      { GLOBAL_KILL_SWITCH_ACTIVE: false, botsRestored: false, autonomyLevel: 0 },
-      'SUCCESS'
-    );
+    this.autonomyLevel = this.previousAutonomyLevel > 0 ? this.previousAutonomyLevel : 1;
+    this.logAudit('OWNER', 'GLOBAL_KILL_SWITCH_DEACTIVATED', { GLOBAL_KILL_SWITCH_ACTIVE: false, botsRestored: true }, 'SUCCESS');
+
+    // Generate fresh adaptive grid with real live price
+    const pairState = this.exchange.getPairState(this.activeSymbol);
+    if (pairState && pairState.currentPrice > 0) {
+      this.activeGrid = generateAdaptiveGrid({
+        symbol: this.activeSymbol,
+        currentPrice: pairState.currentPrice,
+        totalAllocatedUsd: Math.min(3500, this.capital.availableCash > 0 ? this.capital.availableCash * 0.5 : 1000),
+        levelsCount: 16,
+        spacingType: 'GEOMETRIC',
+        volatilityAdjustment: true,
+        trendProtection: true,
+        regime: this.currentRegime
+      });
+
+      if (this.autonomyLevel >= 2) {
+        this.placeGridOrdersInExchange(this.activeGrid);
+      }
+    }
   }
 
   public logAudit(

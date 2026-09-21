@@ -167,21 +167,32 @@ export function computeAllIndicators(candles: Candle[], orderBook?: OrderBook): 
   const vwap = calculateVWAP(candles);
   
   const spreadBps = orderBook ? orderBook.spreadBps : 2.5;
-  const high24h = Math.max(...candles.slice(-24).map(c => c.high));
-  const low24h = Math.min(...candles.slice(-24).map(c => c.low));
-  const volatility24h = currentPrice > 0 ? Number((((high24h - low24h) / currentPrice) * 100).toFixed(2)) : 3.5;
+  const recentSlice = candles.slice(-24);
+  const high24h = recentSlice.length > 0 ? Math.max(...recentSlice.map(c => c.high || currentPrice)) : currentPrice * 1.02;
+  const low24h = recentSlice.length > 0 ? Math.min(...recentSlice.map(c => c.low || currentPrice)) : currentPrice * 0.98;
+  const rawVol = currentPrice > 0 ? (((high24h - low24h) / currentPrice) * 100) : 3.5;
+  const volatility24h = Number.isFinite(rawVol) ? Number(rawVol.toFixed(2)) : 3.5;
 
   return {
-    rsi14: Number(rsi14.toFixed(2)),
-    macd,
-    ema9: Number(ema9.toFixed(2)),
-    ema21: Number(ema21.toFixed(2)),
-    ema50: Number(ema50.toFixed(2)),
-    ema200: Number(ema200.toFixed(2)),
-    bollingerBands,
-    atr14,
-    vwap,
-    spreadBps,
-    volatility24h
+    rsi14: Number.isFinite(rsi14) ? Number(rsi14.toFixed(2)) : 50,
+    macd: {
+      macd: Number.isFinite(macd?.macd) ? macd.macd : 0,
+      signal: Number.isFinite(macd?.signal) ? macd.signal : 0,
+      histogram: Number.isFinite(macd?.histogram) ? macd.histogram : 0,
+    },
+    ema9: Number.isFinite(ema9) ? Number(ema9.toFixed(2)) : currentPrice,
+    ema21: Number.isFinite(ema21) ? Number(ema21.toFixed(2)) : currentPrice,
+    ema50: Number.isFinite(ema50) ? Number(ema50.toFixed(2)) : currentPrice,
+    ema200: Number.isFinite(ema200) ? Number(ema200.toFixed(2)) : currentPrice,
+    bollingerBands: {
+      upper: Number.isFinite(bollingerBands?.upper) ? bollingerBands.upper : currentPrice * 1.02,
+      middle: Number.isFinite(bollingerBands?.middle) ? bollingerBands.middle : currentPrice,
+      lower: Number.isFinite(bollingerBands?.lower) ? bollingerBands.lower : currentPrice * 0.98,
+      bandwidth: Number.isFinite(bollingerBands?.bandwidth) ? bollingerBands.bandwidth : 3.0,
+    },
+    atr14: Number.isFinite(atr14) ? atr14 : 100,
+    vwap: Number.isFinite(vwap) ? vwap : currentPrice,
+    spreadBps: Number.isFinite(spreadBps) ? spreadBps : 2.5,
+    volatility24h: Number.isFinite(volatility24h) ? volatility24h : 3.5
   };
 }

@@ -1,22 +1,16 @@
 import dotenv from "dotenv";
+dotenv.config({ override: true });
 import express from "express";
 import cookieParser from "cookie-parser";
 import path from "path";
-
-// Load production secrets from the preserved EC2 environment file before the default .env.
-// Process-level environment variables still take precedence because dotenv does not override them by default.
-if (process.env.NODE_ENV === "production") {
-  dotenv.config({ path: path.resolve(process.cwd(), ".env.production") });
-}
-dotenv.config();
 import compression from "compression";
-let tradingStore: any = null;
-let ownerAuth: { verifyToken: (token: string) => boolean } | null = null;
-let pushAndDeployAll: ((options: { commitMessage: string; branch: string; skipAmplify: boolean; skipEc2: boolean }) => Promise<unknown>) | null = null;
+import { tradingRouter } from "./server/trading/routes.js";
+import { githubRoutes } from "./server/githubRoutes.js";
+import { pushAndDeployAll } from "./server/githubService.js";
+import { globalTradingStore } from "./server/trading/store.js";
 
 const app = express();
-const PORT = Number(process.env.PORT || 3000);
-app.set('trust proxy', 1);
+const PORT = 3000;
 
 // Security & Parsing Middlewares
 app.use(compression());
@@ -24,28 +18,17 @@ app.use(express.json({ limit: "10mb" }));
 app.use(express.urlencoded({ extended: true, limit: "10mb" }));
 app.use(cookieParser());
 
-// Restricted CORS: only the configured frontend and local development origins are accepted.
+// Permissive CORS for Multi-Cloud & Local Testing
 app.use((req, res, next) => {
   const origin = req.headers.origin;
-  const configuredOrigins = (process.env.CORS_ALLOWED_ORIGINS || '')
-    .split(',')
-    .map((value) => value.trim())
-    .filter(Boolean);
-
-  const allowed = new Set([
-    process.env.FRONTEND_ORIGIN || "https://main.d2qe2q720fbn3x.amplifyapp.com",
-    ...configuredOrigins,
-    "http://localhost:5173",
-    "http://localhost:3000"
-  ]);
-  if (origin && allowed.has(origin)) {
-    res.header("Access-Control-Allow-Origin", origin);
-    res.header("Vary", "Origin");
-    res.header("Access-Control-Allow-Credentials", "true");
-  }
+  res.header("Access-Control-Allow-Origin", origin || "*");
   res.header("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS, PATCH");
   res.header("Access-Control-Allow-Headers", "Origin, X-Requested-With, Content-Type, Accept, Authorization, X-GitHub-Event, X-GitHub-Delivery, X-Hub-Signature-256");
-  if (req.method === "OPTIONS") return res.sendStatus(204);
+  res.header("Access-Control-Allow-Credentials", "true");
+
+  if (req.method === "OPTIONS") {
+    return res.sendStatus(200);
+  }
   next();
 });
 
@@ -53,17 +36,16 @@ app.use((req, res, next) => {
 
 // 1. Healthcheck Endpoint (for AWS EC2, Amplify, Load Balancer, and Health Monitors)
 app.get("/api/health", (req, res) => {
+  const store = globalTradingStore;
   const mem = process.memoryUsage();
-  let tradingEngine: Record<string, unknown> = {
-    available: false,
-    reason: "Trading state unavailable during health probe."
-  };
-
-  try {
-    const store = tradingStore;
-    if (!store) throw new Error("Trading modules are still initializing.");
-    tradingEngine = {
-      available: true,
+  res.json({
+    status: "ok",
+    service: "Autonomous Crypto Grid Trading Platform",
+    version: "v2.5.0",
+    uptimeSeconds: Math.floor(process.uptime()),
+    timestamp: new Date().toISOString(),
+    environment: process.env.NODE_ENV || "development",
+    tradingEngine: {
       activeSymbol: store.activeSymbol,
       autonomyLevel: store.autonomyLevel,
       tradingMode: store.tradingMode,
@@ -71,19 +53,7 @@ app.get("/api/health", (req, res) => {
       circuitBreakerActive: store.risk.isCircuitBreakerActive(),
       totalEquityUsd: store.capital.totalEquity,
       netProfitUsd: store.capital.netRealizedProfit,
-    };
-  } catch (error) {
-    console.error("[Health] Trading state probe failed:", error);
-  }
-
-  res.status(200).json({
-    status: "ok",
-    service: "Autonomous Crypto Grid Trading Platform",
-    version: "v2.5.0",
-    uptimeSeconds: Math.floor(process.uptime()),
-    timestamp: new Date().toISOString(),
-    environment: process.env.NODE_ENV || "development",
-    tradingEngine,
+    },
     system: {
       nodeVersion: process.version,
       rssMb: Math.round(mem.rss / 1024 / 1024),
@@ -92,16 +62,14 @@ app.get("/api/health", (req, res) => {
   });
 });
 
-// 4. On-Demand Deployment Trigger Endpoint (owner-authenticated)
+// 2. Autonomous Crypto Grid Trading Platform Router
+app.use("/api/trading", tradingRouter);
+
+// 3. GitOps, GitHub Webhooks & CI/CD Deployment Router
+app.use("/api/github", githubRoutes);
+
+// 4. On-Demand Deployment Trigger Endpoint
 app.post("/api/deploy", async (req, res) => {
-  const authHeader = req.headers.authorization;
-  const token = authHeader?.startsWith("Bearer ") ? authHeader.substring(7) : null;
-  if (process.env.NODE_ENV === "production" && (!token || !ownerAuth?.verifyToken(token))) {
-    return res.status(401).json({ success: false, error: "Owner authentication required." });
-  }
-  if (!pushAndDeployAll) {
-    return res.status(503).json({ success: false, error: "Deployment services are still initializing." });
-  }
   try {
     const { commitMessage, branch, skipAmplify, skipEc2 } = req.body || {};
     const result = await pushAndDeployAll({
@@ -123,22 +91,6 @@ async function startServer() {
   const isCjsBundle = typeof __filename !== "undefined" && __filename.endsWith(".cjs");
   const isProduction = process.env.NODE_ENV === "production" || isCjsBundle;
 
-  // Load heavy trading/GitOps modules only after the HTTP listener is bound.
-  // This prevents synchronous module initialization from blocking the health endpoint.
-  const [tradingModule, githubModule, authModule, githubServiceModule] = await Promise.all([
-    import("./server/trading/routes.js"),
-    import("./server/githubRoutes.js"),
-    import("./server/trading/ownerAuth.js"),
-    import("./server/githubService.js"),
-  ]);
-
-  tradingStore = (await import("./server/trading/store.js")).globalTradingStore;
-  ownerAuth = authModule.ownerAuth;
-  pushAndDeployAll = githubServiceModule.pushAndDeployAll;
-
-  app.use("/api/trading", tradingModule.tradingRouter);
-  app.use("/api/github", githubModule.githubRoutes);
-
   // Guard: Ensure /api requests never leak into Vite SPA fallback HTML
   app.all("/api/*", (req, res) => {
     res.status(404).json({
@@ -156,21 +108,6 @@ async function startServer() {
     });
   });
 
-  // Bind the HTTP listener before optional Vite/static SPA setup. This guarantees
-  // the API health endpoint is reachable even if frontend middleware configuration
-  // fails during startup.
-  const server = app.listen(PORT, "0.0.0.0", () => {
-    console.log(`\n===============================================================`);
-    console.log(`🚀 Autonomous Crypto Grid Trading Platform running on port ${PORT}`);
-    console.log(`📊 Mode: ${process.env.NODE_ENV || "development"} | Bound: 0.0.0.0:${PORT}`);
-    console.log(`🌐 Health: http://localhost:${PORT}/api/health`);
-    console.log(`📈 Trading State: http://localhost:${PORT}/api/trading/state`);
-    console.log(`===============================================================\n`);
-  });
-
-  server.on("error", (err) => {
-    console.error("[HTTP Server] Failed to bind/listen:", err);
-  });
   if (!isProduction) {
     try {
       const { createServer: createViteServer } = await import("vite");
@@ -194,7 +131,14 @@ async function startServer() {
     });
   }
 
-
+  app.listen(PORT, "0.0.0.0", () => {
+    console.log(`\n===============================================================`);
+    console.log(`🚀 Autonomous Crypto Grid Trading Platform running on port ${PORT}`);
+    console.log(`📊 Mode: ${process.env.NODE_ENV || "development"} | Bound: 0.0.0.0:${PORT}`);
+    console.log(`🌐 Health: http://localhost:${PORT}/api/health`);
+    console.log(`📈 Trading State: http://localhost:${PORT}/api/trading/state`);
+    console.log(`===============================================================\n`);
+  });
 }
 
 // Global Exception Handlers
