@@ -11,7 +11,8 @@ import { globalTradingStore } from "./server/trading/store.js";
 import { ownerAuth } from "./server/trading/ownerAuth.js";
 
 const app = express();
-const PORT = 3000;
+const PORT = Number(process.env.PORT || 3000);
+app.set('trust proxy', 1);
 
 // Security & Parsing Middlewares
 app.use(compression());
@@ -22,8 +23,14 @@ app.use(cookieParser());
 // Restricted CORS: only the configured frontend and local development origins are accepted.
 app.use((req, res, next) => {
   const origin = req.headers.origin;
+  const configuredOrigins = (process.env.CORS_ALLOWED_ORIGINS || '')
+    .split(',')
+    .map((value) => value.trim())
+    .filter(Boolean);
+
   const allowed = new Set([
     process.env.FRONTEND_ORIGIN || "https://main.d2qe2q720fbn3x.amplifyapp.com",
+    ...configuredOrigins,
     "http://localhost:5173",
     "http://localhost:3000"
   ]);
