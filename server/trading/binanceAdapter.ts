@@ -68,7 +68,7 @@ export class BinanceAdapter {
   private apiKey: string;
   private apiSecret: string;
   private baseUrl: string = 'https://api.binance.com';
-  private serverIp: string = process.env.BINANCE_SERVER_IP || process.env.PUBLIC_IP || '3.222.149.9';
+  private serverIp: string = process.env.BINANCE_SERVER_IP || process.env.PUBLIC_IP || 'unknown';
   private priceCache: Map<string, { price: number; time: number }> = new Map();
   private lastAccountState: BinanceAccountState | null = null;
   private lastAccountFetchTime = 0;
