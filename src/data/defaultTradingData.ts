@@ -295,66 +295,146 @@ export function generateDefaultPosition(symbol: string = 'BTC/USDT', price: numb
 }
 
 export function generateDefaultMasterState(symbol: string = 'BTC/USDT'): MasterTradingState {
-  const activeGrid = generateDefaultGrid(symbol);
-  const openOrders = generateDefaultOrders(symbol);
-  const position = generateDefaultPosition(symbol);
+  const now = new Date().toISOString();
+  const zeroCapital: CapitalAccounting = {
+    initialCapital: 0,
+    totalEquity: 0,
+    tradingCapital: 0,
+    availableCash: 0,
+    lockedInOrders: 0,
+    profitReserve: 0,
+    eligibleRealizedProfit: 0,
+    withdrawableProfit: 0,
+    totalSweptProfit: 0,
+    netRealizedProfit: 0,
+    unrealizedProfit: 0,
+    grossProfit: 0,
+    totalTradingFees: 0,
+    totalSlippageCost: 0,
+    totalFundingCosts: 0,
+    totalWithdrawalCosts: 0,
+    roiPct: 0,
+    annualizedReturnPct: 0,
+    sharpeRatio: 0,
+    sortinoRatio: 0,
+    maxDrawdownPct: 0,
+    currentDrawdownPct: 0,
+    winRatePct: 0,
+    profitFactor: 0,
+    totalTrades: 0,
+    winningTrades: 0,
+    losingTrades: 0
+  };
+
+  const zeroPosition: Position = {
+    symbol,
+    baseAmount: 0,
+    quoteAmount: 0,
+    entryPrice: 0,
+    currentPrice: 0,
+    unrealizedPnL: 0,
+    unrealizedPnLPct: 0,
+    realizedPnL: 0,
+    totalFeesPaid: 0,
+    netPnL: 0
+  };
+
+  const inactiveGrid: GridConfiguration = {
+    id: 'offline-unavailable',
+    symbol,
+    upperBoundary: 0,
+    lowerBoundary: 0,
+    levelsCount: 0,
+    spacingType: 'GEOMETRIC',
+    gridSpacingPct: 0,
+    totalAllocatedUsd: 0,
+    orderSizeUsd: 0,
+    volatilityAdjustment: false,
+    trendProtection: true,
+    rebalanceThresholdPct: 0,
+    activeLevels: [],
+    lastRebalancedAt: now
+  };
+
+  const zeroIndicators: TechnicalIndicators = {
+    rsi14: 0,
+    macd: { macd: 0, signal: 0, histogram: 0 },
+    ema9: 0,
+    ema21: 0,
+    ema50: 0,
+    ema200: 0,
+    bollingerBands: { upper: 0, middle: 0, lower: 0, bandwidth: 0 },
+    atr14: 0,
+    vwap: 0,
+    spreadBps: 0,
+    volatility24h: 0
+  };
 
   return {
-    success: true,
+    success: false,
     activeSymbol: symbol,
-    autonomyLevel: 1, // OWNER-CONTROLLED LIVE TRADING
+    autonomyLevel: 0,
     tradingMode: 'LIVE',
-    GLOBAL_KILL_SWITCH_ACTIVE: false,
-    botsDisabled: false,
-    activeBotsCount: 1,
+    GLOBAL_KILL_SWITCH_ACTIVE: true,
+    botsDisabled: true,
+    activeBotsCount: 0,
     killSwitch: {
-      isActive: false,
-      triggeredBy: 'None',
+      isActive: true,
+      triggeredBy: 'BACKEND_UNAVAILABLE',
       ordersCancelledCount: 0,
       positionsLiquidated: false
     },
-    capital: { ...DEFAULT_CAPITAL },
-    currentRegime: { ...DEFAULT_MARKET_REGIME },
-    activeGrid,
-    position,
-    allPositions: [position],
-    openOrders,
-    recentFills: [
-      {
-        id: `fill_${Date.now() - 120000}`,
-        orderId: 'ord_fill_prev_1',
-        symbol,
-        side: 'BUY',
-        price: 66120.00,
-        amount: 0.002646,
-        feeUsd: 0.087,
-        slippageBps: 0.2,
-        realizedPnL: 8.42,
-        timestamp: new Date(Date.now() - 120000).toISOString()
-      },
-      {
-        id: `fill_${Date.now() - 360000}`,
-        orderId: 'ord_fill_prev_2',
-        symbol,
-        side: 'SELL',
-        price: 66840.00,
-        amount: 0.002618,
-        feeUsd: 0.088,
-        slippageBps: 0.1,
-        realizedPnL: 11.20,
-        timestamp: new Date(Date.now() - 360000).toISOString()
+    capital: zeroCapital,
+    currentRegime: {
+      regime: 'RANGE_BOUND_LOW_VOL',
+      confidence: 0,
+      atr: 0,
+      rsi: 0,
+      adx: 0,
+      bbBandwidth: 0,
+      orderBookImbalance: 0,
+      trendDirection: 'NEUTRAL',
+      recommendedGridSpacing: 0,
+      suggestedAction: 'Awaiting live market telemetry',
+      detectedAt: now
+    },
+    activeGrid: inactiveGrid,
+    position: zeroPosition,
+    allPositions: [],
+    openOrders: [],
+    recentFills: [],
+    indicators: zeroIndicators,
+    championStrategy: {
+      ...DEFAULT_CHAMPION_STRATEGY,
+      status: 'VALIDATING',
+      validationScore: 0,
+      actualEffect: 'Backend unavailable; live strategy state is not available.',
+      backtestResults: {
+        netProfit: 0,
+        grossProfit: 0,
+        totalFees: 0,
+        roiPct: 0,
+        sharpeRatio: 0,
+        sortinoRatio: 0,
+        maxDrawdownPct: 0,
+        winRatePct: 0,
+        profitFactor: 0,
+        tradesCount: 0,
+        avgTradeProfitUsd: 0,
+        avgHoldingTimeMinutes: 0,
+        orderFillRatePct: 0,
+        capitalUtilizationPct: 0
       }
-    ],
-    indicators: { ...DEFAULT_INDICATORS },
-    championStrategy: { ...DEFAULT_CHAMPION_STRATEGY },
-    circuitBreakerActive: false,
+    },
+    circuitBreakerActive: true,
     destinationWallet: { ...DEFAULT_DESTINATION_WALLET },
     sweepEligibility: {
-      eligibleAmount: 1880.50,
-      canSweep: true,
-      reserveRetained: 300.00
+      eligibleAmount: 0,
+      canSweep: false,
+      reserveRetained: 0,
+      reason: 'Backend unavailable; real profit eligibility is not available.'
     },
-    serverTime: new Date().toISOString()
+    serverTime: now
   };
 }
 
