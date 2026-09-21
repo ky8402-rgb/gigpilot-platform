@@ -130,11 +130,35 @@ jobs:
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY || secrets.AWS }}
           aws-region: 'us-east-1'
 
+      - name: Resolve EC2 public host
+        id: resolve_ec2_host
+        env:
+          CONFIGURED_EC2_HOST: ${{ secrets.EC2_HOST }}
+          EC2_INSTANCE_ID: 'i-02f24350d31f5aa51'
+        run: |
+          set -euo pipefail
+          EC2_HOST="${CONFIGURED_EC2_HOST:-}"
+          if [ -z "$EC2_HOST" ]; then
+            if command -v aws >/dev/null 2>&1; then
+              EC2_HOST=$(aws ec2 describe-instances \
+                --instance-ids "$EC2_INSTANCE_ID" \
+                --region us-east-1 \
+                --query 'Reservations[0].Instances[0].PublicIpAddress' \
+                --output text 2>/dev/null || true)
+            fi
+          fi
+          if [ -z "$EC2_HOST" ] || [ "$EC2_HOST" = "None" ]; then
+            echo "ERROR: EC2_HOST is not configured and the public IP could not be discovered from EC2." >&2
+            exit 1
+          fi
+          echo "Resolved EC2 host: $EC2_HOST"
+          printf 'EC2_HOST=%s\n' "$EC2_HOST" >> "$GITHUB_ENV"
+
       - name: Deploy via SSH (Direct EC2 Execution)
         id: ssh_deploy
         env:
           SSH_KEY: ${{ secrets.EC2_SSH_KEY }}
-          EC2_HOST: ${{ secrets.EC2_HOST || '3.222.149.9' }}
+          EC2_HOST: ${{ env.EC2_HOST }}
           EC2_USER: ${{ secrets.EC2_USER || 'ubuntu' }}
           EC2_INSTANCE_ID: 'i-02f24350d31f5aa51'
           DEPLOY_OWNER_SESSION_SECRET: ${{ secrets.OWNER_SESSION_SECRET || secrets.JWT_SECRET }}
@@ -212,7 +236,7 @@ jobs:
       - name: Trigger EC2 Push-to-Deploy Webhook (Fallback)
         if: steps.ssh_deploy.outputs.deployed != 'true'
         env:
-          EC2_HOST: ${{ secrets.EC2_HOST || '3.222.149.9' }}
+          EC2_HOST: ${{ env.EC2_HOST }}
           WEBHOOK_SECRET: ${{ secrets.GITHUB_WEBHOOK_SECRET || secrets.WEBHOOK_SECRET }}
           COMMIT_MSG: ${{ github.event.head_commit.message }}
         run: |
@@ -279,7 +303,7 @@ jobs:
 
       - name: Verify EC2 Backend Health
         env:
-          EC2_HOST: ${{ secrets.EC2_HOST || '3.222.149.9' }}
+          EC2_HOST: ${{ env.EC2_HOST }}
         run: |
           HEALTH_URL="https://${EC2_HOST//./-}.sslip.io/api/health"
           FALLBACK_URL="http://${EC2_HOST}:3000/api/health"
@@ -305,7 +329,7 @@ jobs:
 
       - name: Report EC2 Status to Step Summary
         env:
-          EC2_HOST: ${{ secrets.EC2_HOST || '3.222.149.9' }}
+          EC2_HOST: ${{ env.EC2_HOST }}
         run: |
           echo "### 🛡️ AWS EC2 Backend Auto-Deploy" >> $GITHUB_STEP_SUMMARY
           echo "- **App Name:** gigpilot-backend" >> $GITHUB_STEP_SUMMARY
