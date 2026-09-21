@@ -144,7 +144,7 @@ jobs:
 
           if [ "$SSH_CONNECTED" -eq 1 ]; then
             echo "Executing remote production deployment on EC2 via scripts/deploy-ec2.sh..."
-            ssh -o StrictHostKeyChecking=no -o ConnectTimeout=20 -i "$SSH_KEY_FILE" "$EC2_USER@$EC2_HOST" 'bash -s' < scripts/deploy-ec2.sh
+            ssh -o StrictHostKeyChecking=no -o ConnectTimeout=20 -i "$SSH_KEY_FILE" "$EC2_USER@$EC2_HOST" "GITHUB_TOKEN='${{ secrets.GITHUB_TOKEN }}' bash -s" < scripts/deploy-ec2.sh
             echo "✔ SSH deployment command finished successfully."
           else
             echo "SSH direct connection could not be established. Falling back to signed push webhook."

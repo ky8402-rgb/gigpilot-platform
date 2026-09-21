@@ -7,6 +7,14 @@ echo "=========================================================="
 
 APP_DIR="/home/ubuntu/gigpilot"
 
+# Check for GitHub token for authenticated git access
+REPO_URL="https://github.com/ky8402-rgb/gigpilot-platform.git"
+if [ -n "$GITHUB_TOKEN" ]; then
+  REPO_URL="https://x-access-token:${GITHUB_TOKEN}@github.com/ky8402-rgb/gigpilot-platform.git"
+elif [ -n "$GH_TOKEN" ]; then
+  REPO_URL="https://x-access-token:${GH_TOKEN}@github.com/ky8402-rgb/gigpilot-platform.git"
+fi
+
 if [ -f "/home/ubuntu/.env" ]; then
   cp -f /home/ubuntu/.env /tmp/gigpilot.env.bak 2>/dev/null || true
 elif [ -f "$APP_DIR/.env" ]; then
@@ -16,7 +24,7 @@ fi
 if [ ! -d "$APP_DIR" ] || [ ! -f "$APP_DIR/package.json" ]; then
   echo "Clean repository checkout required at $APP_DIR..."
   rm -rf /tmp/gigpilot-fresh 2>/dev/null || true
-  git clone https://github.com/ky8402-rgb/gigpilot-platform.git /tmp/gigpilot-fresh
+  git clone "$REPO_URL" /tmp/gigpilot-fresh
   mkdir -p "$APP_DIR"
   cp -rf /tmp/gigpilot-fresh/. "$APP_DIR/"
   rm -rf /tmp/gigpilot-fresh
@@ -26,7 +34,7 @@ cd "$APP_DIR"
 echo "Working directory: $(pwd)"
 
 # Ensure origin is configured
-git remote set-url origin https://github.com/ky8402-rgb/gigpilot-platform.git 2>/dev/null || git remote add origin https://github.com/ky8402-rgb/gigpilot-platform.git 2>/dev/null || true
+git remote set-url origin "$REPO_URL" 2>/dev/null || git remote add origin "$REPO_URL" 2>/dev/null || true
 
 # Clean and update
 git fetch origin main --prune 2>/dev/null || true
