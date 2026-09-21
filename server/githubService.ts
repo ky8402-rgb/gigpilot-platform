@@ -2,11 +2,12 @@ import fs from 'fs';
 import path from 'path';
 import os from 'os';
 import crypto from 'crypto';
-import { exec, execSync } from 'child_process';
+import { exec, execSync, execFile } from 'child_process';
 import util from 'util';
 import { logActivityEvent } from './activityLogger.js';
 
 const execPromise = util.promisify(exec);
+const execFilePromise = util.promisify(execFile);
 
 export interface SSHKeyInfo {
   configured: boolean;
