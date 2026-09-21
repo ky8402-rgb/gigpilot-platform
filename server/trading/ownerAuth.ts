@@ -104,13 +104,16 @@ class OwnerAuthManager {
   private jwtSecret: string;
 
   constructor() {
-    this.jwtSecret = process.env.JWT_SECRET || process.env.OWNER_SESSION_SECRET || 'quant-owner-session-secret-key-369';
+    this.jwtSecret = process.env.JWT_SECRET || process.env.OWNER_SESSION_SECRET || '';
+    if (this.jwtSecret.length < 32) {
+      throw new Error('JWT_SECRET or OWNER_SESSION_SECRET must be configured with at least 32 characters.');
+    }
     this.config = this.loadConfig();
   }
 
   private loadConfig(): OwnerConfig {
-    const defaultEmail = process.env.OWNER_EMAIL || 'ky8402@gmail.com';
-    const emergencyPin = process.env.OWNER_AUTH_PIN || '778899';
+    const defaultEmail = process.env.OWNER_EMAIL || '';
+    const emergencyPin = process.env.OWNER_AUTH_PIN || '';
 
     if (fs.existsSync(PERSISTENT_CONFIG_PATH)) {
       try {
@@ -227,8 +230,17 @@ class OwnerAuthManager {
       return { success: false, error: 'Access denied: personal single-owner account.' };
     }
 
-    // Emergency PIN override
-    if (emergencyPin && emergencyPin.trim() === this.config.emergencyPin.trim()) {
+    // Emergency PIN is disabled unless explicitly enabled. It must never be a
+    // built-in/default credential or a replacement for password + TOTP.
+    if (
+      process.env.ALLOW_EMERGENCY_PIN === 'true' &&
+      this.config.emergencyPin &&
+      emergencyPin &&
+      crypto.timingSafeEqual(
+        Buffer.from(emergencyPin.trim()),
+        Buffer.from(this.config.emergencyPin.trim())
+      )
+    ) {
       const token = this.generateToken(this.config.ownerEmail);
       return { success: true, token };
     }
@@ -274,7 +286,7 @@ class OwnerAuthManager {
   }
 
   public verifyToken(token: string): boolean {
-    if (!token) return false;
+    if (!token || token.length > 4096) return false;
     try {
       const decoded = jwt.verify(token, this.jwtSecret) as any;
       return decoded && decoded.role === 'owner';
