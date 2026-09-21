@@ -681,14 +681,14 @@ export async function fetchBinanceStatus(): Promise<{
 }> {
   try {
     return await fetchWithFailover('/binance/status');
-  } catch {
+  } catch (err: any) {
     return {
-      success: true,
+      success: false,
       apiKeyConfigured: false,
-      keyMask: 'NOT CONFIGURED',
-      serverIp: '3.222.149.9',
+      keyMask: 'UNAVAILABLE',
+      serverIp: 'unknown',
       baseUrl: 'https://api.binance.com',
-      status: 'UNCONFIGURED'
+      status: 'UNAVAILABLE'
     };
   }
 }
