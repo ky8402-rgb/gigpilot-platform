@@ -254,8 +254,6 @@ export async function setAutonomyLevel(level: AutonomyLevel) {
   }
 }
 
-export async function setTradingMode}
-
 export async function setTradingMode(mode: TradingMode) {
   try {
     const res = await fetchWithFailover<{ success: boolean; mode: TradingMode }>('/mode', {
@@ -269,8 +267,6 @@ export async function setTradingMode(mode: TradingMode) {
     return { success: false, mode, error: err.message || 'Failed to change trading mode.' };
   }
 }
-
-export async function triggerKillSwitch}
 
 export async function triggerKillSwitch(reason?: string) {
   try {
@@ -290,8 +286,6 @@ export async function triggerKillSwitch(reason?: string) {
   }
 }
 
-export async function deactivateKillSwitch}
-
 export async function deactivateKillSwitch() {
   try {
     const res = await fetchWithFailover<{ success: boolean; GLOBAL_KILL_SWITCH_ACTIVE: boolean; botsDisabled: boolean; killSwitch: any }>('/kill-switch/deactivate', {
@@ -308,8 +302,6 @@ export async function deactivateKillSwitch() {
     return { success: false, error: err.message || 'Failed to release backend kill switch.' };
   }
 }
-
-export async function toggleGlobalKillSwitch}
 
 export async function toggleGlobalKillSwitch(active?: boolean, reason?: string) {
   try {
@@ -329,8 +321,6 @@ export async function toggleGlobalKillSwitch(active?: boolean, reason?: string) 
     return { success: false, error: err.message || 'Failed to change backend kill switch state.' };
   }
 }
-
-export async function configureGrid}
 
 export async function configureGrid(config: {
   upperBoundary?: number;
@@ -353,8 +343,6 @@ export async function configureGrid(config: {
     return { success: false, error: err.message || 'Failed to configure live grid on backend.' };
   }
 }
-
-export async function placeManualOrder}
 
 export async function placeManualOrder(order: {
   symbol: string;
