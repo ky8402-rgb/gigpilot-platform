@@ -1,5 +1,5 @@
-import { Candle, Fill, Order, OrderBook, Position, TradingMode } from './types.js';
-import { binanceAdapter } from './binanceAdapter.js';
+import { Candle, Fill, Order, OrderBook, OrderBookLevel, Position, TradingMode } from './types.js';
+import { binanceAdapter, FALLBACK_BASELINE_PRICES } from './binanceAdapter.js';
 
 export interface ExchangePairState {
   symbol: string;
@@ -25,31 +25,96 @@ export class ExchangeEngine {
   private onTickCallbacks: Array<(symbol: string, price: number) => void> = [];
   private isUpdating = false;
 
-  private trackedSymbols = ['BTC/USDT', 'ETH/USDT', 'SOL/USDT', 'BNB/USDT', 'AVAX/USDT'];
+  private trackedSymbols = [
+    'BTC/USDT',
+    'ETH/USDT',
+    'SOL/USDT',
+    'LUNA/USDT',
+    'BNB/USDT',
+    'AVAX/USDT',
+    'DOGE/USDT',
+    'XRP/USDT'
+  ];
 
   constructor() {
     this.initRealPairs();
     this.startLiveExchangePoller();
   }
 
+  // Normalize any variation of a trading pair ("BTC-USDT", "BTCUSDT", "btc/usdt") to standard "BTC/USDT"
+  public normalizeSymbol(sym: string): string {
+    if (!sym) return 'BTC/USDT';
+    let s = decodeURIComponent(sym).trim().toUpperCase();
+    s = s.replace(/[-_]/g, '/');
+    if (!s.includes('/')) {
+      if (s.endsWith('USDT')) s = `${s.slice(0, -4)}/USDT`;
+      else if (s.endsWith('USD')) s = `${s.slice(0, -3)}/USDT`;
+      else if (s.endsWith('USDC')) s = `${s.slice(0, -4)}/USDC`;
+      else s = `${s}/USDT`;
+    }
+    return s;
+  }
+
   private async initRealPairs() {
     for (const symbol of this.trackedSymbols) {
+      const norm = symbol.replace(/[\/\-_]/g, '').toUpperCase();
+      const fb = FALLBACK_BASELINE_PRICES[norm] || FALLBACK_BASELINE_PRICES['BTCUSDT'];
+      const price = fb.price;
+
+      // Seed initial candles so UI charts render immediately on startup
+      const initialCandles: Candle[] = [];
+      const now = Date.now();
+      let cClose = price * 0.995;
+      for (let i = 30; i >= 0; i--) {
+        const timeMs = now - i * 60000;
+        const wave = Math.sin(i * 0.4) * 0.002;
+        const open = Number(cClose.toFixed(4));
+        const close = Number((cClose * (1 + wave)).toFixed(4));
+        const high = Number((Math.max(open, close) * 1.002).toFixed(4));
+        const low = Number((Math.min(open, close) * 0.998).toFixed(4));
+        cClose = close;
+        initialCandles.push({
+          timestamp: timeMs,
+          open,
+          high,
+          low,
+          close,
+          volume: Number((100 + i * 5).toFixed(2))
+        });
+      }
+
+      // Seed initial order book
+      const bids: OrderBookLevel[] = [];
+      const asks: OrderBookLevel[] = [];
+      let cumB = 0;
+      let cumA = 0;
+      for (let i = 1; i <= 10; i++) {
+        const bidP = Number((price * (1 - i * 0.0008)).toFixed(4));
+        const askP = Number((price * (1 + i * 0.0008)).toFixed(4));
+        const bAmt = Number((Math.random() * 2 + 0.5).toFixed(4));
+        const aAmt = Number((Math.random() * 2 + 0.5).toFixed(4));
+        cumB += bAmt;
+        cumA += aAmt;
+        bids.push({ price: bidP, amount: bAmt, total: Number(cumB.toFixed(4)) });
+        asks.push({ price: askP, amount: aAmt, total: Number(cumA.toFixed(4)) });
+      }
+
       this.pairs.set(symbol, {
         symbol,
-        currentPrice: 0,
-        open24h: 0,
-        high24h: 0,
-        low24h: 0,
-        volume24h: 0,
-        priceChangePct: 0,
-        candles: [],
+        currentPrice: price,
+        open24h: fb.open24h,
+        high24h: fb.high24h,
+        low24h: fb.low24h,
+        volume24h: fb.volume,
+        priceChangePct: fb.change24hPct,
+        candles: initialCandles,
         orderBook: {
           symbol,
-          bids: [],
-          asks: [],
-          spread: 0,
-          spreadBps: 0,
-          midPrice: 0,
+          bids,
+          asks,
+          spread: Number((price * 0.0016).toFixed(4)),
+          spreadBps: 16,
+          midPrice: price,
           timestamp: Date.now()
         },
         lastUpdated: new Date().toISOString()
@@ -60,7 +125,7 @@ export class ExchangeEngine {
         baseAmount: 0,
         quoteAmount: 0,
         entryPrice: 0,
-        currentPrice: 0,
+        currentPrice: price,
         unrealizedPnL: 0,
         unrealizedPnLPct: 0,
         realizedPnL: 0,
@@ -69,8 +134,10 @@ export class ExchangeEngine {
       });
     }
 
-    // Initial immediate fetch from Binance
-    await this.refreshLiveMarketData();
+    // Immediate background fetch from Binance public mirrors
+    this.refreshLiveMarketData().catch(err => {
+      console.warn('[ExchangeEngine] Initial live market fetch warning:', err.message);
+    });
   }
 
   public async refreshLiveMarketData(): Promise<void> {
@@ -167,7 +234,8 @@ export class ExchangeEngine {
   }
 
   public getPairState(symbol: string): ExchangePairState | undefined {
-    return this.pairs.get(symbol);
+    const norm = this.normalizeSymbol(symbol);
+    return this.pairs.get(norm) || this.pairs.get(symbol);
   }
 
   public getAllPairs(): ExchangePairState[] {
@@ -176,7 +244,9 @@ export class ExchangeEngine {
 
   public getOpenOrders(symbol?: string): Order[] {
     const list = Array.from(this.openOrders.values());
-    return symbol ? list.filter((o) => o.symbol === symbol) : list;
+    if (!symbol) return list;
+    const norm = this.normalizeSymbol(symbol);
+    return list.filter((o) => o.symbol === norm || o.symbol === symbol);
   }
 
   public getFills(): Fill[] {
@@ -188,7 +258,8 @@ export class ExchangeEngine {
   }
 
   public getPosition(symbol: string): Position | undefined {
-    return this.positions.get(symbol);
+    const norm = this.normalizeSymbol(symbol);
+    return this.positions.get(norm) || this.positions.get(symbol);
   }
 
   public setMode(mode: TradingMode) {

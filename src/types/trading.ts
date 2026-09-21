@@ -395,3 +395,54 @@ export interface OwnerAuthStatus {
   GLOBAL_KILL_SWITCH_ACTIVE?: boolean;
 }
 
+export type EngineId =
+  | 'DATA_ENGINE'
+  | 'QUANT_ENGINE'
+  | 'GRID_ENGINE'
+  | 'AI_RESEARCH_AGENT'
+  | 'SELF_LEARN_OPTIMIZER'
+  | 'STRATEGY_IDE'
+  | 'EXCHANGE_EXECUTION_ENGINE'
+  | 'RISK_ENGINE'
+  | 'PROFIT_ACCOUNTING'
+  | 'AUTO_PROFIT_SWEEP'
+  | 'SYSTEM_MONITOR_SECURITY';
+
+export interface EngineErrorRecord {
+  id: string;
+  timestamp: string;
+  level: 'WARN' | 'ERROR' | 'CRITICAL';
+  message: string;
+  details?: any;
+}
+
+export interface EngineHealth {
+  id: EngineId;
+  name: string;
+  status: 'HEALTHY' | 'DEGRADED' | 'DOWN' | 'OFF';
+  enabled: boolean;
+  latencyMs: number;
+  lastHeartbeat: string;
+  errorCount: number;
+  lastError?: string;
+  errorSurface: EngineErrorRecord[];
+  details?: Record<string, any>;
+}
+
+export type SupportedExchange = 'BINANCE' | 'BYBIT' | 'KUCOIN';
+
+export interface ExchangeCredentialsInfo {
+  exchange: SupportedExchange;
+  configured: boolean;
+  apiKeyMask: string;
+  status: 'CONNECTED' | 'ERROR' | 'UNCONFIGURED';
+  permissions: {
+    spotTrading: boolean;
+    marginTrading: boolean;
+    futuresTrading: boolean;
+    withdrawals: boolean;
+  };
+  lastChecked?: string;
+}
+
+

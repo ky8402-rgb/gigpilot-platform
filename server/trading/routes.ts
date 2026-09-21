@@ -1,9 +1,8 @@
 import { Router, Request, Response } from 'express';
 import { globalTradingStore } from './store.js';
-import { generateAdaptiveGrid } from './adaptiveGridEngine.js';
-import { computeAllIndicators } from './indicators.js';
 import { ownerAuth } from './ownerAuth.js';
 import { binanceAdapter } from './binanceAdapter.js';
+import { EngineId, SupportedExchange } from './types.js';
 
 export const tradingRouter = Router();
 
@@ -11,12 +10,14 @@ export const tradingRouter = Router();
 tradingRouter.get('/state', (req: Request, res: Response) => {
   try {
     const store = globalTradingStore;
-    const pairState = store.exchange.getPairState(store.activeSymbol);
-    const position = store.exchange.getPosition(store.activeSymbol);
-    const openOrders = store.exchange.getOpenOrders(store.activeSymbol);
-    const indicators = pairState ? computeAllIndicators(pairState.candles, pairState.orderBook) : null;
+    const livePair = store.dataEngine.getPairData(store.activeSymbol);
+    const position = store.exchangeExec.getPosition(store.activeSymbol);
+    const openOrders = store.exchangeExec.getOpenOrders(store.activeSymbol);
+    const qResult = livePair ? store.quantEngine.computeSignals(store.activeSymbol, livePair.candles, livePair.orderBook) : { indicators: null, regime: null };
 
     const isKillActive = store.GLOBAL_KILL_SWITCH_ACTIVE || store.killSwitch.getState().isActive;
+    const failClosedStatus = store.monitor.isSystemFailClosed();
+    const engines = store.monitor.getAllEngineHealth();
 
     return res.json({
       success: true,
@@ -27,18 +28,19 @@ tradingRouter.get('/state', (req: Request, res: Response) => {
       botsDisabled: store.activeBotsDisabled || isKillActive,
       activeBotsCount: isKillActive ? 0 : (store.autonomyLevel > 0 ? 1 : 0),
       killSwitch: store.killSwitch.getState(),
+      failClosedStatus,
+      engines,
       capital: store.capital,
-      currentRegime: store.currentRegime,
+      currentRegime: qResult.regime || store.currentRegime,
       activeGrid: store.activeGrid,
       position,
-      allPositions: store.exchange.getPositions(),
+      allPositions: store.exchangeExec.getPositions(),
       openOrders,
-      recentFills: store.exchange.getFills().slice(0, 15),
-      indicators,
-      championStrategy: store.learningLoop.getChampion(),
+      recentFills: store.exchangeExec.getFills().slice(0, 15),
+      indicators: qResult.indicators,
+      championStrategy: store.learningLoop.getChampionStrategy(),
       circuitBreakerActive: store.risk.isCircuitBreakerActive(),
-      destinationWallet: store.sweeper.getWallet(),
-      sweepEligibility: store.sweeper.calculateSweepEligibility(store.capital),
+      destinationWallet: store.sweeper.getDestinationWallet(),
       serverTime: new Date().toISOString()
     });
   } catch (err: any) {
@@ -47,17 +49,119 @@ tradingRouter.get('/state', (req: Request, res: Response) => {
   }
 });
 
-// 2. All Pairs & Market Ticker
+// 2. Modular Engine Health Check (All 10 Subsystems)
+tradingRouter.get('/engines/health', (req: Request, res: Response) => {
+  try {
+    const store = globalTradingStore;
+    const engines = store.monitor.getAllEngineHealth();
+    const failClosed = store.monitor.isSystemFailClosed();
+    return res.json({
+      success: true,
+      failClosed,
+      engines,
+      timestamp: new Date().toISOString()
+    });
+  } catch (err: any) {
+    return res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// 3. Engine Off-Switch Toggle
+tradingRouter.post('/engines/:id/off-switch', (req: Request, res: Response) => {
+  try {
+    const engineId = req.params.id as EngineId;
+    const { enabled } = req.body;
+    if (enabled === undefined) {
+      return res.status(400).json({ success: false, error: 'Field "enabled" (boolean) is required.' });
+    }
+
+    const result = globalTradingStore.monitor.setEngineOffSwitch(engineId, Boolean(enabled));
+    if (!result.success) {
+      return res.status(404).json(result);
+    }
+
+    return res.json({
+      success: true,
+      engineHealth: result.engineHealth,
+      failClosed: globalTradingStore.monitor.isSystemFailClosed()
+    });
+  } catch (err: any) {
+    return res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// 4. Engine Error Surface Clear
+tradingRouter.post('/engines/:id/clear-errors', (req: Request, res: Response) => {
+  try {
+    const engineId = req.params.id as EngineId;
+    const result = globalTradingStore.monitor.clearEngineErrors(engineId);
+    return res.json(result);
+  } catch (err: any) {
+    return res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// 5. Multi-Exchange Credentials Management (Trade-Only Keys for Binance, Bybit, KuCoin)
+tradingRouter.get('/exchanges/credentials', (req: Request, res: Response) => {
+  try {
+    const creds = globalTradingStore.exchangeExec.getExchangeCredentials();
+    return res.json({
+      success: true,
+      credentials: creds,
+      securityPolicy: 'TRADE_ONLY_KEYS_STRICT (Withdrawal permissions blocked)'
+    });
+  } catch (err: any) {
+    return res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+tradingRouter.post('/exchanges/keys', (req: Request, res: Response) => {
+  try {
+    const { exchange, apiKey, apiSecret, passphrase } = req.body || {};
+    if (!exchange || !['BINANCE', 'BYBIT', 'KUCOIN'].includes(exchange)) {
+      return res.status(400).json({ success: false, error: 'Valid exchange (BINANCE, BYBIT, KUCOIN) is required.' });
+    }
+    if (!apiKey || !apiSecret) {
+      return res.status(400).json({ success: false, error: 'Both apiKey and apiSecret are required.' });
+    }
+
+    const result = globalTradingStore.exchangeExec.configureKeys(exchange as SupportedExchange, apiKey, apiSecret, passphrase);
+    if (!result.success) {
+      return res.status(400).json(result);
+    }
+
+    // Also update binanceAdapter if Binance
+    if (exchange === 'BINANCE') {
+      binanceAdapter.updateCredentials(apiKey, apiSecret);
+    }
+
+    globalTradingStore.monitor.logAudit({
+      category: 'CONFIG_CHANGE',
+      action: `Updated Trade-Only API Keys for ${exchange}`,
+      details: { exchange }
+    });
+
+    return res.json({
+      success: true,
+      message: `Trade-only keys for ${exchange} configured successfully.`,
+      credentials: globalTradingStore.exchangeExec.getExchangeCredentials()
+    });
+  } catch (err: any) {
+    return res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// 6. All Pairs & Market Ticker
 tradingRouter.get('/pairs', (req: Request, res: Response) => {
   try {
-    const pairs = globalTradingStore.exchange.getAllPairs().map(p => ({
+    const pairs = globalTradingStore.dataEngine.getAllPairs().map(p => ({
       symbol: p.symbol,
       price: p.currentPrice,
       open24h: p.open24h,
       high24h: p.high24h,
       low24h: p.low24h,
       volume24h: p.volume24h,
-      change24hPct: p.open24h > 0 ? Number((((p.currentPrice - p.open24h) / p.open24h) * 100).toFixed(2)) : 0
+      change24hPct: p.priceChangePct
     }));
     return res.json({ success: true, pairs });
   } catch (err: any) {
@@ -66,27 +170,35 @@ tradingRouter.get('/pairs', (req: Request, res: Response) => {
   }
 });
 
-// 3. Pair Details & Candlesticks
-tradingRouter.get('/pair/:symbol', (req: Request, res: Response) => {
-  const symbol = decodeURIComponent(req.params.symbol);
-  const state = globalTradingStore.exchange.getPairState(symbol);
-  if (!state) {
-    return res.status(404).json({ success: false, error: 'Pair not found' });
+// 7. Pair Details & Candlesticks
+tradingRouter.get(['/pair/:symbol', '/pair/:base/:quote'], (req: Request, res: Response) => {
+  const rawSymbol = req.params.quote ? `${req.params.base}/${req.params.quote}` : (req.params.symbol || '');
+  const norm = globalTradingStore.dataEngine.normalizeSymbol(rawSymbol);
+  const liveData = globalTradingStore.dataEngine.getPairData(norm);
+  if (!liveData) {
+    return res.status(404).json({ success: false, error: `Pair ${norm} not found or Data Engine offline` });
   }
 
-  const indicators = computeAllIndicators(state.candles, state.orderBook);
+  const qResult = globalTradingStore.quantEngine.computeSignals(norm, liveData.candles, liveData.orderBook);
 
   res.json({
     success: true,
-    symbol: state.symbol,
-    currentPrice: state.currentPrice,
-    candles: state.candles,
-    orderBook: state.orderBook,
-    indicators
+    symbol: liveData.symbol,
+    currentPrice: liveData.currentPrice,
+    open24h: liveData.open24h,
+    high24h: liveData.high24h,
+    low24h: liveData.low24h,
+    volume24h: liveData.volume24h,
+    priceChangePct: liveData.priceChangePct,
+    candles: liveData.candles,
+    orderBook: liveData.orderBook,
+    indicators: qResult.indicators,
+    regime: qResult.regime,
+    source: liveData.source
   });
 });
 
-// 4. Select Active Pair
+// 8. Select Active Pair
 tradingRouter.post('/pair/select', (req: Request, res: Response) => {
   const { symbol } = req.body;
   if (!symbol) return res.status(400).json({ success: false, error: 'Symbol required' });
@@ -95,29 +207,22 @@ tradingRouter.post('/pair/select', (req: Request, res: Response) => {
   res.json({ success: true, activeSymbol: globalTradingStore.activeSymbol });
 });
 
-// 5. Autonomy Level
+// 9. Autonomy Level
 tradingRouter.post('/autonomy', (req: Request, res: Response) => {
   const { level } = req.body;
   if (level === undefined || level < 0 || level > 4) {
     return res.status(400).json({ success: false, error: 'Invalid autonomy level (0-4)' });
   }
 
-  globalTradingStore.setAutonomyLevel(level);
-  res.json({ success: true, autonomyLevel: globalTradingStore.autonomyLevel });
-});
-
-// 6. Trading Mode
-tradingRouter.post('/mode', (req: Request, res: Response) => {
-  const { mode } = req.body;
-  if (!['SIMULATION', 'PAPER', 'LIVE'].includes(mode)) {
-    return res.status(400).json({ success: false, error: 'Invalid mode' });
+  try {
+    globalTradingStore.setAutonomyLevel(level);
+    res.json({ success: true, autonomyLevel: globalTradingStore.autonomyLevel });
+  } catch (err: any) {
+    res.status(403).json({ success: false, error: err.message });
   }
-
-  globalTradingStore.setTradingMode(mode);
-  res.json({ success: true, tradingMode: globalTradingStore.tradingMode });
 });
 
-// 7. Global Kill Switch
+// 10. Global Kill Switch
 tradingRouter.post('/kill-switch/trigger', (req: Request, res: Response) => {
   const { reason } = req.body;
   globalTradingStore.triggerEmergencyKillSwitch(reason || 'Manual emergency halt: Disabling all active trading bots');
@@ -144,7 +249,7 @@ tradingRouter.post('/kill-switch/deactivate', (req: Request, res: Response) => {
 tradingRouter.post('/kill-switch/toggle', (req: Request, res: Response) => {
   const { active, reason } = req.body;
   const shouldActivate = active !== undefined ? Boolean(active) : !globalTradingStore.GLOBAL_KILL_SWITCH_ACTIVE;
-  
+
   if (shouldActivate) {
     globalTradingStore.triggerEmergencyKillSwitch(reason || 'Manual operator toggle: Disabling all active trading bots');
   } else {
@@ -160,7 +265,7 @@ tradingRouter.post('/kill-switch/toggle', (req: Request, res: Response) => {
   });
 });
 
-// 8. Configure Grid
+// 11. Configure Grid
 tradingRouter.post('/grid/configure', async (req: Request, res: Response) => {
   const store = globalTradingStore;
   const {
@@ -173,17 +278,15 @@ tradingRouter.post('/grid/configure', async (req: Request, res: Response) => {
     trendProtection
   } = req.body;
 
-  const pairState = store.exchange.getPairState(store.activeSymbol);
-  if (!pairState) return res.status(400).json({ success: false, error: 'No active pair state' });
+  const liveData = store.dataEngine.getPairData(store.activeSymbol);
+  if (!liveData) return res.status(400).json({ success: false, error: 'No active pair live data from Data Engine' });
 
-  store.exchange.cancelAllOrders(store.activeSymbol);
+  await store.exchangeExec.cancelAllOrders(store.activeSymbol);
 
-  const newGrid = generateAdaptiveGrid({
+  const newGridRes = store.gridEngine.generateGrid({
     symbol: store.activeSymbol,
-    currentPrice: pairState.currentPrice,
-    upperBoundary: Number(upperBoundary) || undefined,
-    lowerBoundary: Number(lowerBoundary) || undefined,
-    levelsCount: Number(levelsCount) || 20,
+    currentPrice: liveData.currentPrice,
+    levelsCount: Number(levelsCount) || 16,
     spacingType: spacingType || 'GEOMETRIC',
     totalAllocatedUsd: Number(totalAllocatedUsd) || 3500,
     volatilityAdjustment: volatilityAdjustment !== false,
@@ -191,52 +294,61 @@ tradingRouter.post('/grid/configure', async (req: Request, res: Response) => {
     regime: store.currentRegime
   });
 
-  store.activeGrid = newGrid;
+  if (!newGridRes.grid) {
+    return res.status(422).json({ success: false, error: newGridRes.error || 'Failed to generate grid' });
+  }
 
-  // Place in exchange
-  for (const lvl of newGrid.activeLevels) {
-    await store.exchange.placeOrder({
-      symbol: newGrid.symbol,
-      side: lvl.side,
-      type: 'GRID_LIMIT',
-      price: lvl.price,
-      amount: lvl.orderSize,
-      isGridOrder: true,
-      gridLevelId: lvl.id
+  store.activeGrid = newGridRes.grid;
+  if (!store.GLOBAL_KILL_SWITCH_ACTIVE && store.autonomyLevel >= 2) {
+    store.placeGridOrdersInExchange(store.activeGrid, liveData.currentPrice);
+  }
+
+  store.monitor.logAudit({
+    category: 'CONFIG_CHANGE',
+    action: `Grid manually configured for ${store.activeSymbol}`,
+    details: {
+      upper: store.activeGrid.upperBoundary,
+      lower: store.activeGrid.lowerBoundary,
+      levels: store.activeGrid.levelsCount
+    }
+  });
+
+  res.json({ success: true, grid: store.activeGrid });
+});
+
+// 12. Manual Live Order Placement (Validated via Independent Risk Engine)
+tradingRouter.post('/order/place', async (req: Request, res: Response) => {
+  const store = globalTradingStore;
+  if (store.GLOBAL_KILL_SWITCH_ACTIVE || store.killSwitch.getState().isActive) {
+    return res.status(403).json({ success: false, error: 'Cannot place orders: GLOBAL KILL SWITCH is engaged' });
+  }
+
+  // Fail closed check
+  const failStatus = store.monitor.isSystemFailClosed();
+  if (failStatus.failClosed) {
+    return res.status(503).json({
+      success: false,
+      error: `FAIL-CLOSED: Trading is blocked because critical engine(s) are degraded or offline: ${failStatus.downEngines.join(', ')}`
     });
   }
 
-  store.logAudit('OWNER', 'GRID_MANUALLY_CONFIGURED', {
-    symbol: store.activeSymbol,
-    upper: newGrid.upperBoundary,
-    lower: newGrid.lowerBoundary,
-    levels: newGrid.levelsCount
-  }, 'SUCCESS');
-
-  res.json({ success: true, grid: newGrid });
-});
-
-// 9. Manual Order Placement (Validated via Independent Risk Engine)
-tradingRouter.post('/order/place', async (req: Request, res: Response) => {
-  const store = globalTradingStore;
-  if (store.killSwitch.getState().isActive) {
-    return res.status(403).json({ success: false, error: 'Cannot place orders: Kill Switch is ACTIVE' });
-  }
-
-  const { symbol, side, type, price, amount } = req.body;
+  const { symbol, side, type, price, amount, exchange } = req.body;
   if (!symbol || !side || !type || !price || !amount) {
-    return res.status(400).json({ success: false, error: 'Missing required order fields' });
+    return res.status(400).json({ success: false, error: 'Missing required order fields (symbol, side, type, price, amount)' });
   }
 
   const numPrice = Number(price);
   const numAmount = Number(amount);
+  const norm = store.dataEngine.normalizeSymbol(symbol);
+  const liveData = store.dataEngine.getPairData(norm);
 
-  // Risk Engine Validation (Hard Constraint)
+  // 1. Risk Engine Pre-Trade Gate
   const validation = store.risk.validateOrder(
-    { symbol, side, price: numPrice, amount: numAmount },
+    { symbol: norm, side, price: numPrice, amount: numAmount },
     store.capital,
-    store.exchange.getPositions(),
-    store.exchange.getOpenOrders().length
+    store.exchangeExec.getPositions(),
+    store.exchangeExec.getOpenOrders().length,
+    liveData?.currentPrice
   );
 
   if (!validation.allowed) {
@@ -247,318 +359,219 @@ tradingRouter.post('/order/place', async (req: Request, res: Response) => {
     });
   }
 
-  const order = await store.exchange.placeOrder({
-    symbol,
+  // 2. Exchange Execution Engine
+  const execResult = await store.exchangeExec.executeOrder({
+    symbol: norm,
     side,
     type,
     price: numPrice,
-    amount: numAmount
+    amount: numAmount,
+    exchange: exchange || 'BINANCE'
   });
 
-  if (order.status === 'REJECTED') {
-    store.logAudit('OWNER', 'ORDER_REJECTED', {
-      symbol,
-      side,
-      price: numPrice,
-      amount: numAmount,
-      reason: order.rejectionReason || 'Rejected by Binance'
-    }, 'REJECTED');
-
+  if (!execResult.success) {
+    store.monitor.logAudit({
+      category: 'SECURITY_ALERT',
+      action: 'Order Rejected by Exchange Execution Engine',
+      details: { symbol: norm, side, price: numPrice, amount: numAmount, error: execResult.error }
+    });
     return res.status(400).json({
       success: false,
-      error: order.rejectionReason || 'Order was rejected by exchange',
-      order
+      error: execResult.error,
+      order: execResult.order
     });
   }
 
-  store.logAudit('OWNER', 'ORDER_PLACED', { orderId: order.id, symbol, side, price: numPrice, amount: numAmount }, 'SUCCESS');
+  store.monitor.logAudit({
+    category: 'ORDER_EXECUTION',
+    action: `Live order placed on ${exchange || 'BINANCE'}`,
+    details: { orderId: execResult.order?.id, symbol: norm, side, price: numPrice, amount: numAmount }
+  });
 
-  res.json({ success: true, order });
+  res.json({ success: true, order: execResult.order });
 });
 
-// 10. Cancel Order
+// 13. Cancel Order
 tradingRouter.post('/order/cancel', async (req: Request, res: Response) => {
   const { orderId } = req.body;
-  const success = await globalTradingStore.exchange.cancelOrder(orderId);
-  if (!success) return res.status(404).json({ success: false, error: 'Order not found or already filled' });
+  const result = await globalTradingStore.exchangeExec.cancelOrder(orderId);
+  if (!result.success) return res.status(404).json(result);
 
-  globalTradingStore.logAudit('OWNER', 'ORDER_CANCELLED', { orderId }, 'SUCCESS');
+  globalTradingStore.monitor.logAudit({
+    category: 'ORDER_EXECUTION',
+    action: `Order cancelled: ${orderId}`,
+    details: { orderId }
+  });
   res.json({ success: true, orderId });
 });
 
 tradingRouter.post('/order/cancel-all', async (req: Request, res: Response) => {
   const { symbol } = req.body;
-  const count = await globalTradingStore.exchange.cancelAllOrders(symbol);
-  globalTradingStore.logAudit('OWNER', 'ALL_ORDERS_CANCELLED', { count, symbol }, 'SUCCESS');
+  const count = await globalTradingStore.exchangeExec.cancelAllOrders(symbol);
+  globalTradingStore.monitor.logAudit({
+    category: 'ORDER_EXECUTION',
+    action: `Cancelled ${count} open order(s)`,
+    details: { count, symbol }
+  });
   res.json({ success: true, cancelledCount: count });
 });
 
-// 11. Learning Loop Strategies & Promotion
+// 14. Self-Learn Optimizer (Champion / Challenger)
 tradingRouter.get('/strategies', (req: Request, res: Response) => {
   const store = globalTradingStore;
   res.json({
     success: true,
-    champion: store.learningLoop.getChampion(),
-    challengers: store.learningLoop.getChallengers(),
-    history: store.learningLoop.getHistory()
+    champion: store.learningLoop.getChampionStrategy(),
+    challengers: store.learningLoop.getChallengerStrategies(),
+    history: store.learningLoop.getStrategyHistory()
   });
 });
 
 tradingRouter.post('/strategy/promote', (req: Request, res: Response) => {
-  const { challengerId } = req.body;
-  const result = globalTradingStore.learningLoop.evaluatePromotion(challengerId);
+  const { challengerId, reason } = req.body;
+  const promoted = globalTradingStore.learningLoop.promoteChallenger(challengerId, reason);
+  if (!promoted) {
+    return res.status(400).json({ success: false, error: 'Challenger not found or optimizer offline' });
+  }
 
-  globalTradingStore.logAudit(
-    'OWNER',
-    'STRATEGY_PROMOTION_EVALUATION',
-    { challengerId, promoted: result.promoted, reason: result.reason },
-    result.promoted ? 'SUCCESS' : 'REJECTED'
-  );
+  globalTradingStore.monitor.logAudit({
+    category: 'CONFIG_CHANGE',
+    action: `Strategy promoted: ${promoted.id}`,
+    details: { promotedId: promoted.id, reason }
+  });
 
-  res.json({ success: result.promoted, ...result });
+  res.json({ success: true, champion: promoted });
 });
 
-tradingRouter.post('/strategy/create-variant', (req: Request, res: Response) => {
-  const { baseStrategyId, name, reasonForChange, parameters, expectedEffect } = req.body;
-  const newVariant = globalTradingStore.learningLoop.createChallengerVariant(
-    baseStrategyId,
-    {
-      name: name || 'Adaptive Volatility Variant',
-      reasonForChange: reasonForChange || 'Auto-generated optimization candidate',
-      parameters: parameters || {},
-      expectedEffect: expectedEffect || 'Testing higher Sharpe parameter perturbation'
-    }
-  );
-
-  res.json({ success: true, challenger: newVariant });
-});
-
-// 12. Sandboxed In-App Scripting Execution
+// 15. Strategy IDE Sandbox Execution
 tradingRouter.post('/script/execute', (req: Request, res: Response) => {
   const { code } = req.body;
   if (!code) return res.status(400).json({ success: false, error: 'Code is required' });
 
   const store = globalTradingStore;
-  const pairState = store.exchange.getPairState(store.activeSymbol);
-  const position = store.exchange.getPosition(store.activeSymbol) || {
+  const liveData = store.dataEngine.getPairData(store.activeSymbol);
+  const position = store.exchangeExec.getPosition(store.activeSymbol) || {
     symbol: store.activeSymbol,
     baseAmount: 0,
-    quoteAmount: 10000,
+    quoteAmount: store.capital.availableCash,
     entryPrice: 0,
-    currentPrice: pairState?.currentPrice || 65000,
+    currentPrice: liveData?.currentPrice || 0,
     unrealizedPnL: 0,
     unrealizedPnLPct: 0,
     realizedPnL: 0,
     totalFeesPaid: 0,
-    netPnL: 0
+    netPnL: 0,
+    liquidationPrice: 0,
+    marginUsed: 0
   };
 
   const result = store.scripting.executeUserScript(code, {
     symbol: store.activeSymbol,
-    candles: pairState?.candles || [],
-    orderBook: pairState?.orderBook || store.exchange.getPairState(store.activeSymbol)?.orderBook || {
-      symbol: store.activeSymbol,
-      bids: [],
-      asks: [],
-      spread: 0,
-      spreadBps: 0,
-      midPrice: 0,
-      timestamp: Date.now()
-    },
+    candles: liveData?.candles || [],
+    orderBook: liveData?.orderBook || { symbol: store.activeSymbol, bids: [], asks: [], spread: 0, spreadBps: 0, midPrice: 0, timestamp: Date.now() },
     position,
     balance: store.capital.availableCash,
     marketRegime: store.currentRegime.regime
   });
 
-  // If script generated orders and kill switch is not active, apply them
-  if (result.success && !store.killSwitch.getState().isActive && result.ordersGenerated.length > 0) {
-    for (const ord of result.ordersGenerated) {
-      const v = store.risk.validateOrder(
-        { symbol: store.activeSymbol, side: ord.side, price: ord.price, amount: ord.amount },
-        store.capital,
-        store.exchange.getPositions(),
-        store.exchange.getOpenOrders().length
-      );
-      if (v.allowed) {
-        store.exchange.placeOrder({
-          symbol: store.activeSymbol,
-          side: ord.side,
-          type: ord.type,
-          price: ord.price,
-          amount: ord.amount,
-          strategyId: 'CUSTOM-SCRIPT-IDE'
-        });
-      } else {
-        result.logs.push(`[RiskEngine Rejected] ${v.reason}`);
-      }
-    }
-  }
-
-  res.json({ success: result.success, result });
+  res.json(result);
 });
 
-// 13. Autonomous Web Research
+// 16. AI Research Agent
 tradingRouter.get('/research', (req: Request, res: Response) => {
   res.json({
     success: true,
-    items: globalTradingStore.research.getResearchFeed()
+    items: globalTradingStore.research.getResearchItems()
   });
 });
 
 tradingRouter.post('/research/analyze', async (req: Request, res: Response) => {
-  const { title, content, source } = req.body;
-  if (!title || !content) {
-    return res.status(400).json({ success: false, error: 'Title and content required' });
-  }
+  const store = globalTradingStore;
+  const liveData = store.dataEngine.getPairData(store.activeSymbol);
+  if (!liveData) return res.status(400).json({ success: false, error: 'No live market data for research analysis' });
 
-  try {
-    const item = await globalTradingStore.research.analyzeNewIntelligence(
-      title,
-      content,
-      source || 'External RSS / Web Feed'
-    );
-    res.json({ success: true, item });
-  } catch (err: any) {
-    res.status(500).json({ success: false, error: err.message });
-  }
+  const result = await store.research.evaluateLiveMarketIntelligence(
+    store.activeSymbol,
+    liveData.currentPrice,
+    liveData.priceChangePct
+  );
+
+  res.json(result);
 });
 
-// 14. Wallet Profit Sweep Subsystem
-tradingRouter.get('/profit-sweep', (req: Request, res: Response) => {
+// 17. Profit Sweep Subsystem
+tradingRouter.get('/sweep/info', (req: Request, res: Response) => {
   const store = globalTradingStore;
-  const settings = store.sweeper.getSweepSettings();
-  const eligibility = store.sweeper.calculateSweepEligibility(store.capital);
-  const history = store.sweeper.getSweepsHistory();
-
   res.json({
     success: true,
-    ...settings,
-    eligibility,
-    history
+    destinationWallet: store.sweeper.getDestinationWallet(),
+    sweeps: store.sweeper.getSweeps(),
+    eligibleProfitUsd: store.capital.eligibleRealizedProfit,
+    totalSweptUsd: store.capital.totalSweptProfit
   });
 });
 
-tradingRouter.post('/profit-sweep/wallet', (req: Request, res: Response) => {
-  const { address, chain, label } = req.body;
-  if (!address) return res.status(400).json({ success: false, error: 'Address is required' });
-
-  const updated = globalTradingStore.sweeper.updateWallet({ address, chain, label, isWhitelisted: true });
-  globalTradingStore.logAudit('OWNER', 'DESTINATION_WALLET_UPDATED', { address, chain }, 'SUCCESS');
-  res.json({ success: true, wallet: updated });
+tradingRouter.post('/sweep/wallet', (req: Request, res: Response) => {
+  const { wallet } = req.body;
+  if (!wallet) return res.status(400).json({ success: false, error: 'Wallet payload required' });
+  const result = globalTradingStore.sweeper.setDestinationWallet(wallet);
+  res.json(result);
 });
 
-tradingRouter.post('/profit-sweep/execute', (req: Request, res: Response) => {
+tradingRouter.post('/sweep/execute', (req: Request, res: Response) => {
+  const { amountUsd } = req.body;
+  const numAmount = Number(amountUsd);
+  if (!numAmount || numAmount <= 0) return res.status(400).json({ success: false, error: 'Valid amount required' });
+
   const store = globalTradingStore;
-  if (store.killSwitch.getState().isActive) {
-    return res.status(403).json({ success: false, error: 'Cannot execute profit sweep: Kill switch is ACTIVE' });
-  }
-
-  const { amount } = req.body;
-  const numAmount = Number(amount);
-  if (!numAmount || numAmount <= 0) {
-    return res.status(400).json({ success: false, error: 'Invalid sweep amount' });
-  }
-
-  const result = store.sweeper.executeSweep(numAmount, store.capital, 'MANUAL_OWNER');
+  const result = store.sweeper.executeManualSweep(numAmount, store.capital.eligibleRealizedProfit);
   if (!result.success) {
-    return res.status(400).json({ success: false, error: result.error });
+    return res.status(422).json(result);
   }
 
-  // Deduct from available withdrawable profit & update swept total
-  store.capital.totalSweptProfit += numAmount;
-  store.capital.withdrawableProfit = Math.max(0, store.capital.withdrawableProfit - numAmount);
-  store.capital.availableCash = Math.max(0, store.capital.availableCash - numAmount);
-  store.capital.totalEquity = Math.max(0, store.capital.totalEquity - numAmount);
+  // Deduct swept profit from accounting
+  store.profitAccounting.recordSweepExecuted(numAmount);
 
-  store.logAudit('SWEEP_DAEMON', 'PROFIT_SWEPT_TO_WALLET', {
-    amount: numAmount,
-    txHash: result.sweep?.txHash,
-    wallet: result.sweep?.destinationWallet
-  }, 'SUCCESS');
+  store.monitor.logAudit({
+    category: 'PROFIT_SWEEP',
+    action: `Cold storage sweep of $${numAmount.toFixed(2)} executed`,
+    details: { txHash: result.sweep?.txHash, address: result.sweep?.destinationAddress }
+  });
 
-  res.json({ success: true, sweep: result.sweep, updatedCapital: store.capital });
+  res.json(result);
 });
 
-// 15. Risk Engine Config & Events
+// 18. Risk Configuration & Circuit Breaker
 tradingRouter.get('/risk', (req: Request, res: Response) => {
-  const store = globalTradingStore;
   res.json({
     success: true,
-    config: store.risk.getConfig(),
-    circuitBreakerActive: store.risk.isCircuitBreakerActive(),
-    events: store.risk.getRiskEvents()
+    config: globalTradingStore.risk.getConfig(),
+    riskEvents: globalTradingStore.risk.getRiskEvents(),
+    circuitBreakerActive: globalTradingStore.risk.isCircuitBreakerActive()
   });
 });
 
-tradingRouter.post('/risk/config', (req: Request, res: Response) => {
-  const updated = globalTradingStore.risk.updateConfig(req.body);
-  globalTradingStore.logAudit('OWNER', 'RISK_RULES_UPDATED', req.body, 'SUCCESS');
-  res.json({ success: true, config: updated });
-});
-
-tradingRouter.post('/risk/reset-circuit-breaker', (req: Request, res: Response) => {
+tradingRouter.post('/risk/circuit-breaker/reset', (req: Request, res: Response) => {
   globalTradingStore.risk.resetCircuitBreaker();
-  globalTradingStore.logAudit('OWNER', 'CIRCUIT_BREAKER_RESET', {}, 'SUCCESS');
   res.json({ success: true, circuitBreakerActive: false });
 });
 
-// 16. Self-Updating & Canary Rollouts
-tradingRouter.get('/updates', (req: Request, res: Response) => {
-  res.json({
-    success: true,
-    updates: globalTradingStore.updater.getUpdatesHistory()
-  });
-});
-
-tradingRouter.post('/updates/rollout', (req: Request, res: Response) => {
-  const { version, notes } = req.body;
-  const update = globalTradingStore.updater.triggerCanaryRollout(
-    version || `v2.${Math.floor(Date.now() / 1000000)}`,
-    notes || 'Canary testing automated boundary damper'
-  );
-  globalTradingStore.logAudit('OWNER', 'CANARY_ROLLOUT_TRIGGERED', { version: update.version }, 'SUCCESS');
-  res.json({ success: true, update });
-});
-
-// 17. Audit Logs
+// 19. Audit Logs & System Updates
 tradingRouter.get('/audit-logs', (req: Request, res: Response) => {
   res.json({
     success: true,
-    logs: globalTradingStore.auditLogs
+    logs: globalTradingStore.monitor.getAuditLogs()
   });
 });
 
-// 18. Server-Sent Events (SSE) Live Feed
-tradingRouter.get('/stream', (req: Request, res: Response) => {
-  res.writeHead(200, {
-    'Content-Type': 'text/event-stream',
-    'Cache-Control': 'no-cache',
-    Connection: 'keep-alive'
-  });
-
-  const sendTick = (symbol: string, price: number) => {
-    if (symbol === globalTradingStore.activeSymbol) {
-      const data = JSON.stringify({
-        type: 'TICK',
-        symbol,
-        price,
-        regime: globalTradingStore.currentRegime.regime,
-        unrealizedProfit: globalTradingStore.capital.unrealizedProfit,
-        totalEquity: globalTradingStore.capital.totalEquity,
-        timestamp: Date.now()
-      });
-      res.write(`data: ${data}\n\n`);
-    }
-  };
-
-  globalTradingStore.exchange.registerTickCallback(sendTick);
-
-  req.on('close', () => {
-    // client disconnected
+tradingRouter.get('/updates', (req: Request, res: Response) => {
+  res.json({
+    success: true,
+    updates: globalTradingStore.monitor.getSystemUpdates()
   });
 });
 
-// 19. Single Owner Authentication & Google Authenticator (TOTP)
+// 20. Single Owner Authentication & Google Authenticator (TOTP)
 function extractToken(req: Request): string | null {
   const authHeader = req.headers.authorization;
   if (authHeader && authHeader.startsWith('Bearer ')) {
@@ -586,10 +599,7 @@ tradingRouter.post('/auth/setup-init', async (req: Request, res: Response) => {
   try {
     const { email } = req.body || {};
     const setupData = await ownerAuth.initiateTotpSetup(email);
-    return res.json({
-      success: true,
-      ...setupData
-    });
+    return res.json({ success: true, ...setupData });
   } catch (err: any) {
     return res.status(500).json({ success: false, error: err.message });
   }
@@ -599,10 +609,7 @@ tradingRouter.post('/auth/setup-complete', (req: Request, res: Response) => {
   try {
     const { password, totpCode, email } = req.body || {};
     const result = ownerAuth.completeSetup(password, totpCode, email);
-    if (!result.success) {
-      return res.status(400).json(result);
-    }
-    globalTradingStore.logAudit('OWNER', 'OWNER_ACCOUNT_SETUP_COMPLETED', { email }, 'SUCCESS');
+    if (!result.success) return res.status(400).json(result);
     return res.json(result);
   } catch (err: any) {
     return res.status(500).json({ success: false, error: err.message });
@@ -612,15 +619,9 @@ tradingRouter.post('/auth/setup-complete', (req: Request, res: Response) => {
 tradingRouter.post('/auth/login', (req: Request, res: Response) => {
   try {
     const { email, password, totpCode, emergencyPin } = req.body || {};
-    if (!email) {
-      return res.status(400).json({ success: false, error: 'Owner email is required.' });
-    }
+    if (!email) return res.status(400).json({ success: false, error: 'Owner email is required.' });
     const result = ownerAuth.login({ email, password, totpCode, emergencyPin });
-    if (!result.success) {
-      globalTradingStore.logAudit('OWNER', 'LOGIN_ATTEMPT_FAILED', { email, error: result.error }, 'REJECTED');
-      return res.status(401).json(result);
-    }
-    globalTradingStore.logAudit('OWNER', 'OWNER_LOGIN_SUCCESSFUL', { email }, 'SUCCESS');
+    if (!result.success) return res.status(401).json(result);
     return res.json(result);
   } catch (err: any) {
     return res.status(500).json({ success: false, error: err.message });
@@ -628,74 +629,25 @@ tradingRouter.post('/auth/login', (req: Request, res: Response) => {
 });
 
 tradingRouter.post('/auth/logout', (req: Request, res: Response) => {
-  globalTradingStore.logAudit('OWNER', 'OWNER_LOGOUT', {}, 'SUCCESS');
   return res.json({ success: true, message: 'Logged out successfully' });
 });
 
-// 20. Real Live Exchange Assets & Spot Balances (Binance Spot)
+// 21. Real Live Exchange Assets & Spot Balances
 tradingRouter.get('/assets', async (req: Request, res: Response) => {
   try {
     const force = req.query.refresh === 'true';
     const accountState = await binanceAdapter.getRealAccountState(force);
-    
-    // Sync store capital with real Binance account numbers
     if (accountState.status === 'CONNECTED') {
-      globalTradingStore.capital.totalEquity = accountState.totalEquityUsd;
-      globalTradingStore.capital.availableCash = accountState.availableCashUsd;
-      globalTradingStore.capital.lockedInOrders = accountState.lockedInOrdersUsd;
-      globalTradingStore.capital.tradingCapital = accountState.totalEquityUsd;
+      globalTradingStore.profitAccounting.syncFromRealAccount({
+        totalEquityUsd: accountState.totalEquityUsd,
+        availableCashUsd: accountState.availableCashUsd,
+        lockedInOrdersUsd: accountState.lockedInOrdersUsd,
+        recentTradesCount: accountState.recentTrades?.length || 0
+      });
     }
 
-    return res.json({
-      success: true,
-      assets: accountState
-    });
-  } catch (err: any) {
-    console.error('Error in /api/trading/assets:', err);
-    return res.status(500).json({ success: false, error: err.message });
-  }
-});
-
-// 21. Binance Connection Status & Dynamic API Key Management
-tradingRouter.get('/binance/status', (req: Request, res: Response) => {
-  return res.json({
-    success: true,
-    apiKeyConfigured: binanceAdapter.isKeyConfigured(),
-    keyMask: binanceAdapter.getKeyMask(),
-    serverIp: binanceAdapter.getServerIp(),
-    baseUrl: binanceAdapter.getBaseUrl(),
-    status: binanceAdapter.isKeyConfigured() ? 'CONFIGURED' : 'UNCONFIGURED'
-  });
-});
-
-tradingRouter.post('/binance/update-keys', async (req: Request, res: Response) => {
-  try {
-    const { apiKey, apiSecret, baseUrl } = req.body || {};
-    if (!apiKey || !apiSecret) {
-      return res.status(400).json({ success: false, error: 'Both API Key and API Secret are required.' });
-    }
-
-    binanceAdapter.updateCredentials(apiKey, apiSecret, baseUrl);
-    const testState = await binanceAdapter.getRealAccountState(true);
-
-    if (testState.status === 'CONNECTED') {
-      globalTradingStore.capital.totalEquity = testState.totalEquityUsd;
-      globalTradingStore.capital.availableCash = testState.availableCashUsd;
-      globalTradingStore.capital.lockedInOrders = testState.lockedInOrdersUsd;
-    }
-
-    globalTradingStore.logAudit('OWNER', 'BINANCE_KEYS_UPDATED', {
-      keyMask: binanceAdapter.getKeyMask(),
-      status: testState.status
-    }, 'SUCCESS');
-
-    return res.json({
-      success: true,
-      message: 'Binance API credentials updated successfully.',
-      accountState: testState
-    });
+    return res.json({ success: true, assets: accountState });
   } catch (err: any) {
     return res.status(500).json({ success: false, error: err.message });
   }
 });
-

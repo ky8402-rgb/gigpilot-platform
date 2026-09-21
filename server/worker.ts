@@ -15,7 +15,7 @@ const heartbeatInterval = setInterval(() => {
   if (!isRunning) return;
   const store = globalTradingStore;
   const cap = store.capital;
-  const pos = store.exchange.getPosition(store.activeSymbol);
+  const pos = store.exchangeExec.getPosition(store.activeSymbol);
   
   console.log(
     `[Trading Worker Heartbeat] ${new Date().toISOString()} | Active: ${store.activeSymbol} | ` +

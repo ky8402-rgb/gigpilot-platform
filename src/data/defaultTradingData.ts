@@ -21,50 +21,84 @@ import {
 export const DEFAULT_PAIRS = [
   {
     symbol: 'BTC/USDT',
-    price: 66520.40,
-    open24h: 65120.00,
-    high24h: 67340.00,
-    low24h: 64890.00,
-    volume24h: 18450.25,
-    change24hPct: 2.15
+    price: 85859.20,
+    open24h: 81244.00,
+    high24h: 86344.00,
+    low24h: 80580.00,
+    volume24h: 28313.80,
+    change24hPct: 5.67
   },
   {
     symbol: 'ETH/USDT',
-    price: 3485.60,
-    open24h: 3390.00,
-    high24h: 3520.00,
-    low24h: 3360.00,
-    volume24h: 42100.80,
-    change24hPct: 2.82
+    price: 2746.80,
+    open24h: 2625.00,
+    high24h: 2780.00,
+    low24h: 2610.00,
+    volume24h: 512883.00,
+    change24hPct: 4.61
   },
   {
     symbol: 'SOL/USDT',
-    price: 158.45,
-    open24h: 151.20,
-    high24h: 162.30,
-    low24h: 149.80,
-    volume24h: 89400.10,
-    change24hPct: 4.79
+    price: 117.53,
+    open24h: 109.80,
+    high24h: 119.20,
+    low24h: 108.50,
+    volume24h: 4430041.00,
+    change24hPct: 7.01
   },
   {
-    symbol: 'AVAX/USDT',
-    price: 28.60,
-    open24h: 29.10,
-    high24h: 29.85,
-    low24h: 27.90,
-    volume24h: 15200.50,
-    change24hPct: -1.72
+    symbol: 'LUNA/USDT',
+    price: 0.0538,
+    open24h: 0.0551,
+    high24h: 0.0585,
+    low24h: 0.0513,
+    volume24h: 105174350.00,
+    change24hPct: -2.71
   },
   {
     symbol: 'BNB/USDT',
-    price: 582.10,
-    open24h: 574.50,
-    high24h: 588.00,
-    low24h: 571.20,
-    volume24h: 9850.40,
-    change24hPct: 1.32
+    price: 796.29,
+    open24h: 762.00,
+    high24h: 805.00,
+    low24h: 758.00,
+    volume24h: 286468.00,
+    change24hPct: 4.49
+  },
+  {
+    symbol: 'AVAX/USDT',
+    price: 10.98,
+    open24h: 11.07,
+    high24h: 11.35,
+    low24h: 10.80,
+    volume24h: 9937614.00,
+    change24hPct: -0.85
+  },
+  {
+    symbol: 'DOGE/USDT',
+    price: 0.0989,
+    open24h: 0.0872,
+    high24h: 0.1025,
+    low24h: 0.0865,
+    volume24h: 2039550726.00,
+    change24hPct: 13.41
+  },
+  {
+    symbol: 'XRP/USDT',
+    price: 1.4956,
+    open24h: 1.4020,
+    high24h: 1.5200,
+    low24h: 1.3950,
+    volume24h: 258054211.00,
+    change24hPct: 6.67
   }
 ];
+
+export function getBasePairPrice(symbol: string): number {
+  if (!symbol) return 85859.20;
+  const norm = symbol.replace(/[\/\-_]/g, '').toUpperCase();
+  const pair = DEFAULT_PAIRS.find(p => p.symbol.replace(/[\/\-_]/g, '').toUpperCase() === norm);
+  return pair ? pair.price : 85859.20;
+}
 
 export const DEFAULT_CAPITAL: CapitalAccounting = {
   initialCapital: 10000.00,
@@ -111,27 +145,52 @@ export const DEFAULT_MARKET_REGIME: MarketRegime = {
 };
 
 export const DEFAULT_INDICATORS: TechnicalIndicators = {
-  rsi14: 48.6,
+  rsi14: 52.6,
   macd: {
     macd: 84.5,
     signal: 62.1,
     histogram: 22.4
   },
-  ema9: 66410.2,
-  ema21: 66280.5,
-  ema50: 65900.0,
-  ema200: 64200.0,
+  ema9: 85710.2,
+  ema21: 85480.5,
+  ema50: 84900.0,
+  ema200: 82200.0,
   bollingerBands: {
-    upper: 67450.0,
-    middle: 66320.0,
-    lower: 65190.0,
+    upper: 87450.0,
+    middle: 85820.0,
+    lower: 84190.0,
     bandwidth: 3.4
   },
   atr14: 840.5,
-  vwap: 66380.0,
+  vwap: 85780.0,
   spreadBps: 2.4,
   volatility24h: 2.85
 };
+
+export function generateDefaultIndicators(price: number = 85859.20): TechnicalIndicators {
+  return {
+    rsi14: 52.6,
+    macd: {
+      macd: Number((price * 0.0012).toFixed(4)),
+      signal: Number((price * 0.0009).toFixed(4)),
+      histogram: Number((price * 0.0003).toFixed(4))
+    },
+    ema9: Number((price * 0.998).toFixed(4)),
+    ema21: Number((price * 0.995).toFixed(4)),
+    ema50: Number((price * 0.991).toFixed(4)),
+    ema200: Number((price * 0.975).toFixed(4)),
+    bollingerBands: {
+      upper: Number((price * 1.018).toFixed(4)),
+      middle: Number((price * 0.997).toFixed(4)),
+      lower: Number((price * 0.976).toFixed(4)),
+      bandwidth: 3.4
+    },
+    atr14: Number((price * 0.012).toFixed(4)),
+    vwap: Number((price * 0.998).toFixed(4)),
+    spreadBps: 2.4,
+    volatility24h: 2.85
+  };
+}
 
 export const DEFAULT_CHAMPION_STRATEGY: StrategyVersion = {
   id: 'STRAT-GRID-001',
@@ -201,29 +260,35 @@ export const DEFAULT_DESTINATION_WALLET: DestinationWallet = {
   lastVerifiedAt: '2026-09-21T09:50:00.000Z'
 };
 
-export function generateDefaultGrid(symbol: string = 'BTC/USDT', price: number = 66520): GridConfiguration {
-  const upperBoundary = Math.round(price * 1.08);
-  const lowerBoundary = Math.round(price * 0.92);
+export function generateDefaultGrid(symbol: string = 'BTC/USDT', price?: number): GridConfiguration {
+  const p = (price && price > 0) ? price : getBasePairPrice(symbol);
+  const isSmall = p < 1;
+  const isMid = p < 100;
+  const decimals = isSmall ? 5 : (isMid ? 3 : 2);
+
+  const upperBoundary = Number((p * 1.08).toFixed(decimals));
+  const lowerBoundary = Number((p * 0.92).toFixed(decimals));
   const levelsCount = 20;
   const activeLevels: GridLevel[] = [];
 
   const step = (upperBoundary - lowerBoundary) / (levelsCount - 1);
   for (let i = 0; i < levelsCount; i++) {
-    const levelPrice = Number((lowerBoundary + step * i).toFixed(2));
-    const side = levelPrice < price ? 'BUY' : 'SELL';
+    const levelPrice = Number((lowerBoundary + step * i).toFixed(decimals));
+    const side = levelPrice < p ? 'BUY' : 'SELL';
+    const orderSize = Number((175 / (levelPrice > 0 ? levelPrice : 1)).toFixed(isSmall ? 2 : 6));
     activeLevels.push({
-      id: `grid-${symbol.toLowerCase()}-${i}`,
+      id: `grid-${symbol.toLowerCase().replace(/[\/\-_]/g, '')}-${i}`,
       index: i,
       price: levelPrice,
       side: side as 'BUY' | 'SELL',
-      orderSize: Number((175 / levelPrice).toFixed(6)),
+      orderSize,
       valueUsd: 175,
       status: 'PLACED'
     });
   }
 
   return {
-    id: `grid_cfg_${symbol.replace('/', '_')}`,
+    id: `grid_cfg_${symbol.replace(/[\/\-_]/g, '_')}`,
     symbol,
     upperBoundary,
     lowerBoundary,
@@ -240,25 +305,31 @@ export function generateDefaultGrid(symbol: string = 'BTC/USDT', price: number =
   };
 }
 
-export function generateDefaultOrders(symbol: string = 'BTC/USDT', price: number = 66520): Order[] {
+export function generateDefaultOrders(symbol: string = 'BTC/USDT', price?: number): Order[] {
+  const p = (price && price > 0) ? price : getBasePairPrice(symbol);
+  const isSmall = p < 1;
+  const isMid = p < 100;
+  const decimals = isSmall ? 5 : (isMid ? 3 : 2);
   const orders: Order[] = [];
-  const buyPrices = [price * 0.995, price * 0.988, price * 0.981, price * 0.974, price * 0.967];
-  const sellPrices = [price * 1.006, price * 1.013, price * 1.020, price * 1.027, price * 1.034];
+  const buyPrices = [p * 0.995, p * 0.988, p * 0.981, p * 0.974, p * 0.967];
+  const sellPrices = [p * 1.006, p * 1.013, p * 1.020, p * 1.027, p * 1.034];
 
-  buyPrices.forEach((p, idx) => {
+  buyPrices.forEach((rawP, idx) => {
+    const priceVal = Number(rawP.toFixed(decimals));
+    const amt = Number((175 / priceVal).toFixed(isSmall ? 2 : 6));
     orders.push({
       id: `ord_buy_${idx}_${Date.now()}`,
       symbol,
       side: 'BUY',
       type: 'GRID_LIMIT',
-      price: Number(p.toFixed(2)),
-      amount: Number((175 / p).toFixed(6)),
+      price: priceVal,
+      amount: amt,
       filledAmount: 0,
-      remainingAmount: Number((175 / p).toFixed(6)),
+      remainingAmount: amt,
       costUsd: 175,
       status: 'OPEN',
       isGridOrder: true,
-      gridLevelId: `grid-${symbol.toLowerCase()}-${idx}`,
+      gridLevelId: `grid-${symbol.toLowerCase().replace(/[\/\-_]/g, '')}-${idx}`,
       strategyId: 'STRAT-GRID-001',
       mode: 'PAPER',
       feesPaid: 0,
@@ -268,20 +339,22 @@ export function generateDefaultOrders(symbol: string = 'BTC/USDT', price: number
     });
   });
 
-  sellPrices.forEach((p, idx) => {
+  sellPrices.forEach((rawP, idx) => {
+    const priceVal = Number(rawP.toFixed(decimals));
+    const amt = Number((175 / priceVal).toFixed(isSmall ? 2 : 6));
     orders.push({
       id: `ord_sell_${idx}_${Date.now()}`,
       symbol,
       side: 'SELL',
       type: 'GRID_LIMIT',
-      price: Number(p.toFixed(2)),
-      amount: Number((175 / p).toFixed(6)),
+      price: priceVal,
+      amount: amt,
       filledAmount: 0,
-      remainingAmount: Number((175 / p).toFixed(6)),
+      remainingAmount: amt,
       costUsd: 175,
       status: 'OPEN',
       isGridOrder: true,
-      gridLevelId: `grid-${symbol.toLowerCase()}-${idx + 10}`,
+      gridLevelId: `grid-${symbol.toLowerCase().replace(/[\/\-_]/g, '')}-${idx + 10}`,
       strategyId: 'STRAT-GRID-001',
       mode: 'PAPER',
       feesPaid: 0,
@@ -294,26 +367,36 @@ export function generateDefaultOrders(symbol: string = 'BTC/USDT', price: number
   return orders;
 }
 
-export function generateDefaultPosition(symbol: string = 'BTC/USDT', price: number = 66520.40): Position {
+export function generateDefaultPosition(symbol: string = 'BTC/USDT', price?: number): Position {
+  const p = (price && price > 0) ? price : getBasePairPrice(symbol);
+  const isSmall = p < 1;
+  const decimals = isSmall ? 5 : 2;
+  const entry = Number((p * 0.992).toFixed(decimals));
+  const baseAmt = Number((3400 / p).toFixed(isSmall ? 1 : 4));
+  const unPnL = Number(((p - entry) * baseAmt).toFixed(2));
+  const unPct = Number((((p - entry) / entry) * 100).toFixed(2));
+
   return {
     symbol,
-    baseAmount: 0.052,
-    quoteAmount: 3459.06,
-    entryPrice: 66100.00,
-    currentPrice: price,
-    unrealizedPnL: 21.86,
-    unrealizedPnLPct: 0.63,
+    baseAmount: baseAmt,
+    quoteAmount: 3400,
+    entryPrice: entry,
+    currentPrice: p,
+    unrealizedPnL: unPnL,
+    unrealizedPnLPct: unPct,
     realizedPnL: 148.50,
     totalFeesPaid: 12.40,
-    netPnL: 157.96,
-    liquidationPrice: 58200.00
+    netPnL: Number((148.50 + unPnL - 12.40).toFixed(2)),
+    liquidationPrice: Number((entry * 0.88).toFixed(decimals))
   };
 }
 
 export function generateDefaultMasterState(symbol: string = 'BTC/USDT'): MasterTradingState {
-  const activeGrid = generateDefaultGrid(symbol);
-  const openOrders = generateDefaultOrders(symbol);
-  const position = generateDefaultPosition(symbol);
+  const price = getBasePairPrice(symbol);
+  const activeGrid = generateDefaultGrid(symbol, price);
+  const openOrders = generateDefaultOrders(symbol, price);
+  const position = generateDefaultPosition(symbol, price);
+  const indicators = generateDefaultIndicators(price);
 
   return {
     success: true,
@@ -361,7 +444,7 @@ export function generateDefaultMasterState(symbol: string = 'BTC/USDT'): MasterT
         timestamp: new Date(Date.now() - 360000).toISOString()
       }
     ],
-    indicators: { ...DEFAULT_INDICATORS },
+    indicators,
     championStrategy: { ...DEFAULT_CHAMPION_STRATEGY },
     circuitBreakerActive: false,
     destinationWallet: { ...DEFAULT_DESTINATION_WALLET },

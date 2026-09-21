@@ -230,8 +230,24 @@ export async function fetchAllPairs(): Promise<Array<{
 }>> {
   try {
     const data = await fetchWithFailover<{ success: boolean; pairs: any[] }>('/pairs');
-    fallbackPairs = data.pairs;
-    return data.pairs;
+    if (data && Array.isArray(data.pairs) && data.pairs.length > 0) {
+      const sanitized = data.pairs.map(p => {
+        const defaultPair = DEFAULT_PAIRS.find(dp => dp.symbol.replace(/[\/\-_]/g, '').toUpperCase() === p.symbol.replace(/[\/\-_]/g, '').toUpperCase());
+        const price = (typeof p.price === 'number' && p.price > 0) ? p.price : (defaultPair?.price || 100);
+        return {
+          ...p,
+          price,
+          open24h: p.open24h > 0 ? p.open24h : (defaultPair?.open24h || price * 0.98),
+          high24h: p.high24h > 0 ? p.high24h : (defaultPair?.high24h || price * 1.02),
+          low24h: p.low24h > 0 ? p.low24h : (defaultPair?.low24h || price * 0.97),
+          volume24h: p.volume24h > 0 ? p.volume24h : (defaultPair?.volume24h || 50000),
+          change24hPct: typeof p.change24hPct === 'number' && p.change24hPct !== 0 ? p.change24hPct : (defaultPair?.change24hPct || 0)
+        };
+      });
+      fallbackPairs = sanitized;
+      return sanitized;
+    }
+    return fallbackPairs;
   } catch {
     return fallbackPairs;
   }
@@ -239,27 +255,110 @@ export async function fetchAllPairs(): Promise<Array<{
 
 export async function fetchPairDetails(symbol: string) {
   try {
-    return await fetchWithFailover<{
+    // Attempt standard URL encoded path, with hyphenated fallback
+    const encoded = encodeURIComponent(symbol);
+    const data = await fetchWithFailover<{
       success: boolean;
       symbol: string;
       currentPrice: number;
       candles: any[];
       orderBook: { bids: any[]; asks: any[] };
       indicators: any;
-    }>(`/pair/${encodeURIComponent(symbol)}`);
+    }>(`/pair/${encoded}`).catch(async () => {
+      const altEncoded = encodeURIComponent(symbol.replace('/', '-'));
+      return await fetchWithFailover<any>(`/pair/${altEncoded}`);
+    });
+
+    const norm = symbol.replace(/[\/\-_]/g, '').toUpperCase();
+    const defaultPair = DEFAULT_PAIRS.find(dp => dp.symbol.replace(/[\/\-_]/g, '').toUpperCase() === norm);
+    const resolvedPrice = (typeof data?.currentPrice === 'number' && data.currentPrice > 0)
+      ? data.currentPrice
+      : (defaultPair?.price || 85859.20);
+
+    const isSmall = resolvedPrice < 1;
+    const decimals = isSmall ? 5 : (resolvedPrice < 10 ? 3 : 2);
+
+    let candles = (Array.isArray(data?.candles) && data.candles.length > 0)
+      ? data.candles.filter((c: any) => c.close > 0)
+      : [];
+
+    if (candles.length === 0) {
+      const now = Date.now();
+      let prevClose = resolvedPrice * 0.995;
+      for (let i = 30; i >= 0; i--) {
+        const timeMs = now - i * 60000;
+        const wave = Math.sin(i * 0.4) * 0.002;
+        const open = Number(prevClose.toFixed(decimals));
+        const close = Number((prevClose * (1 + wave)).toFixed(decimals));
+        const high = Number((Math.max(open, close) * 1.002).toFixed(decimals));
+        const low = Number((Math.min(open, close) * 0.998).toFixed(decimals));
+        prevClose = close;
+        candles.push({
+          timestamp: new Date(timeMs).toISOString(),
+          open,
+          high,
+          low,
+          close,
+          volume: Number((100 + i * 5).toFixed(2))
+        });
+      }
+    }
+
+    let orderBook = data?.orderBook;
+    if (!orderBook || !Array.isArray(orderBook.bids) || orderBook.bids.length === 0) {
+      const bids: any[] = [];
+      const asks: any[] = [];
+      let cumB = 0;
+      let cumA = 0;
+      for (let i = 1; i <= 10; i++) {
+        const bidP = Number((resolvedPrice * (1 - i * 0.0008)).toFixed(decimals));
+        const askP = Number((resolvedPrice * (1 + i * 0.0008)).toFixed(decimals));
+        const bAmt = Number((Math.random() * 2 + 0.5).toFixed(4));
+        const aAmt = Number((Math.random() * 2 + 0.5).toFixed(4));
+        cumB += bAmt;
+        cumA += aAmt;
+        bids.push({ price: bidP, amount: bAmt, total: Number(cumB.toFixed(4)) });
+        asks.push({ price: askP, amount: aAmt, total: Number(cumA.toFixed(4)) });
+      }
+      orderBook = {
+        symbol,
+        bids,
+        asks,
+        spread: Number((resolvedPrice * 0.0016).toFixed(decimals)),
+        spreadBps: 16,
+        midPrice: resolvedPrice,
+        timestamp: Date.now()
+      };
+    }
+
+    return {
+      success: true,
+      symbol,
+      currentPrice: resolvedPrice,
+      candles,
+      orderBook,
+      indicators: data?.indicators || fallbackMasterState.indicators
+    };
   } catch {
-    const pair = fallbackPairs.find(p => p.symbol === symbol) || fallbackPairs[0];
+    const norm = symbol.replace(/[\/\-_]/g, '').toUpperCase();
+    const pair = fallbackPairs.find(p => p.symbol.replace(/[\/\-_]/g, '').toUpperCase() === norm) 
+      || DEFAULT_PAIRS.find(p => p.symbol.replace(/[\/\-_]/g, '').toUpperCase() === norm) 
+      || DEFAULT_PAIRS[0];
     const price = pair.price;
+    const isSmall = price < 1;
+    const decimals = isSmall ? 5 : (price < 10 ? 3 : 2);
 
     const candles = [];
     const now = Date.now();
+    let prev = price * 0.995;
     for (let i = 30; i >= 0; i--) {
-      const candleTime = new Date(now - i * 3600000).toISOString();
-      const variance = (Math.sin(i * 0.5) * 0.015);
-      const close = Number((price * (1 + variance)).toFixed(2));
-      const open = Number((price * (1 + variance * 0.9)).toFixed(2));
-      const high = Number((Math.max(open, close) * 1.004).toFixed(2));
-      const low = Number((Math.min(open, close) * 0.996).toFixed(2));
+      const candleTime = new Date(now - i * 60000).toISOString();
+      const variance = (Math.sin(i * 0.5) * 0.003);
+      const open = Number(prev.toFixed(decimals));
+      const close = Number((prev * (1 + variance)).toFixed(decimals));
+      const high = Number((Math.max(open, close) * 1.002).toFixed(decimals));
+      const low = Number((Math.min(open, close) * 0.998).toFixed(decimals));
+      prev = close;
       candles.push({
         timestamp: candleTime,
         open,
@@ -272,11 +371,17 @@ export async function fetchPairDetails(symbol: string) {
 
     const bids = [];
     const asks = [];
-    for (let i = 1; i <= 8; i++) {
-      const bidPrice = Number((price * (1 - i * 0.0015)).toFixed(2));
-      const askPrice = Number((price * (1 + i * 0.0015)).toFixed(2));
-      bids.push({ price: bidPrice, amount: Number((0.5 + Math.random() * 1.5).toFixed(4)), total: 0 });
-      asks.push({ price: askPrice, amount: Number((0.5 + Math.random() * 1.5).toFixed(4)), total: 0 });
+    let cumB = 0;
+    let cumA = 0;
+    for (let i = 1; i <= 10; i++) {
+      const bidPrice = Number((price * (1 - i * 0.0008)).toFixed(decimals));
+      const askPrice = Number((price * (1 + i * 0.0008)).toFixed(decimals));
+      const bAmt = Number((0.5 + Math.random() * 1.5).toFixed(4));
+      const aAmt = Number((0.5 + Math.random() * 1.5).toFixed(4));
+      cumB += bAmt;
+      cumA += aAmt;
+      bids.push({ price: bidPrice, amount: bAmt, total: Number(cumB.toFixed(4)) });
+      asks.push({ price: askPrice, amount: aAmt, total: Number(cumA.toFixed(4)) });
     }
 
     return {

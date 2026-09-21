@@ -1,13 +1,61 @@
-// Autonomous Cryptocurrency Grid Trading Platform - Core Types
+// GigPilot Live-Only Autonomous Cryptocurrency Grid Trading Platform - Core Types
 
 export type AutonomyLevel = 0 | 1 | 2 | 3 | 4;
-// 0: OBSERVE (No trading)
-// 1: PAPER (Fully autonomous simulated trading - DEFAULT)
-// 2: ASSISTED (AI proposes changes; Owner approves live deployment)
-// 3: AUTONOMOUS (AI can deploy validated strategies automatically)
-// 4: CONTINUOUS_OPTIMIZATION (AI continuously researches, tests, optimizes, and deploys)
+// 0: OBSERVE (Safety default - Live data only, all order execution disabled)
+// 1: ASSISTED (Manual confirmation required for every live order)
+// 2: SEMI_AUTONOMOUS (Live grid automation active within strict risk boundaries)
+// 3: AUTONOMOUS (Fully automated live order rebalancing with circuit breakers)
+// 4: CONTINUOUS_OPTIMIZATION (Live automated grid adaptation + real trade parameter tuning)
 
-export type TradingMode = 'SIMULATION' | 'PAPER' | 'LIVE';
+export type TradingMode = 'LIVE'; // STRICTLY LIVE-ONLY. No demo, simulation, or paper mode.
+
+export type SupportedExchange = 'BINANCE' | 'BYBIT' | 'KUCOIN';
+
+export type EngineId =
+  | 'DATA_ENGINE'
+  | 'QUANT_ENGINE'
+  | 'GRID_ENGINE'
+  | 'AI_RESEARCH_AGENT'
+  | 'SELF_LEARN_OPTIMIZER'
+  | 'STRATEGY_IDE'
+  | 'EXCHANGE_EXECUTION_ENGINE'
+  | 'RISK_ENGINE'
+  | 'PROFIT_ACCOUNTING'
+  | 'AUTO_PROFIT_SWEEP'
+  | 'SYSTEM_MONITOR_SECURITY';
+
+export type EngineStatus = 'HEALTHY' | 'DEGRADED' | 'DOWN' | 'OFF';
+
+export interface EngineErrorRecord {
+  id: string;
+  timestamp: string;
+  level: 'WARN' | 'ERROR' | 'CRITICAL';
+  message: string;
+  details?: any;
+}
+
+export interface EngineHealth {
+  id: EngineId;
+  name: string;
+  status: EngineStatus;
+  enabled: boolean; // off-switch: true = enabled (ON), false = disabled (OFF)
+  latencyMs: number;
+  lastHeartbeat: string;
+  errorCount: number;
+  lastError?: string;
+  errorSurface: EngineErrorRecord[];
+  details?: Record<string, any>;
+}
+
+export interface EngineModule {
+  id: EngineId;
+  name: string;
+  healthCheck(): EngineHealth;
+  getErrorSurface(): EngineErrorRecord[];
+  getOffSwitch(): boolean;
+  setOffSwitch(enabled: boolean): void;
+  clearErrors(): void;
+}
 
 export type MarketRegimeType = 
   | 'RANGE_BOUND_LOW_VOL' 
@@ -185,27 +233,36 @@ export interface CapitalAccounting {
 
 export interface DestinationWallet {
   address: string;
-  chain: string; // 'ethereum' | 'solana' | 'bitcoin' | 'polygon'
+  chain?: string; // 'ethereum' | 'solana' | 'bitcoin' | 'polygon'
+  network?: string;
   label: string;
   isWhitelisted: boolean;
   addedAt: string;
-  lastVerifiedAt: string;
+  lastVerifiedAt?: string;
+  lastUsedAt?: string;
 }
 
 export interface ProfitSweep {
   id: string;
   timestamp: string;
-  destinationWallet: string;
-  chain: string;
-  grossSweepAmount: number;
-  networkFeeUsd: number;
-  netTransferredUsd: number;
-  reserveRetainedUsd: number;
+  destinationWallet?: string;
+  destinationAddress?: string;
+  chain?: string;
+  network?: string;
+  grossSweepAmount?: number;
+  amountUsd?: number;
+  networkFeeUsd?: number;
+  feePaidUsd?: number;
+  netTransferredUsd?: number;
+  netReceivedUsd?: number;
+  reserveRetainedUsd?: number;
   status: 'PENDING' | 'EXECUTED' | 'CONFIRMED' | 'FAILED';
   txHash: string;
-  auditSignature: string;
-  operator: 'AUTONOMOUS_SWEEPER' | 'MANUAL_OWNER';
+  auditSignature?: string;
+  operator?: 'AUTONOMOUS_SWEEPER' | 'MANUAL_OWNER';
 }
+
+export type SweepRecord = ProfitSweep;
 
 export interface StrategyPerformanceMetrics {
   netProfit: number;
@@ -236,25 +293,34 @@ export interface StrategyVersion {
   retiredAt?: string;
   reasonForChange: string;
   parameters: {
-    upperBoundary: number;
-    lowerBoundary: number;
-    gridLevels: number;
-    spacingType: 'ARITHMETIC' | 'GEOMETRIC';
-    gridSpacingPct: number;
-    volatilityMultiplier: number;
-    trendFilterEma: number;
-    rsiFilterThreshold: number;
-    stopLossPct: number;
-    takeProfitPct: number;
-    rebalanceIntervalSec: number;
+    upperBoundary?: number;
+    lowerBoundary?: number;
+    gridLevels?: number;
+    spacingType?: 'ARITHMETIC' | 'GEOMETRIC';
+    gridSpacingPct?: number;
+    volatilityMultiplier?: number;
+    trendFilterEma?: number;
+    rsiFilterThreshold?: number;
+    stopLossPct?: number;
+    takeProfitPct?: number;
+    rebalanceIntervalSec?: number;
   };
   backtestResults: StrategyPerformanceMetrics;
   paperTradingResults?: StrategyPerformanceMetrics;
-  liveResults?: StrategyPerformanceMetrics;
-  validationScore: number; // 0 - 100
-  expectedEffect: string;
+  liveTradingResults?: StrategyPerformanceMetrics;
+  validationScore?: number; // 0 - 100
+  expectedEffect?: string;
   actualEffect?: string;
   code?: string;
+}
+
+export type AuditLogEntry = AuditLog;
+export interface SystemUpdateRecord {
+  version: string;
+  releaseDate: string;
+  status: 'CURRENT' | 'STAGED' | 'ROLLED_BACK';
+  canaryHealthScore: number;
+  changes: string[];
 }
 
 export interface BacktestRun {
@@ -331,10 +397,11 @@ export interface SystemUpdate {
 export interface AuditLog {
   id: string;
   timestamp: string;
-  operator: 'AUTONOMOUS_AGENT' | 'OWNER' | 'RISK_ENGINE' | 'SWEEP_DAEMON';
+  category?: string;
+  operator?: 'AUTONOMOUS_AGENT' | 'OWNER' | 'RISK_ENGINE' | 'SWEEP_DAEMON' | string;
   action: string;
   details: Record<string, any>;
-  result: 'SUCCESS' | 'REJECTED' | 'FAILED' | 'ROLLED_BACK';
+  result?: 'SUCCESS' | 'REJECTED' | 'FAILED' | 'ROLLED_BACK' | string;
 }
 
 export interface ScriptExecutionResult {

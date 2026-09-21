@@ -33,6 +33,17 @@ interface GridMatrixAndOrdersProps {
   }) => Promise<{ success: boolean; error?: string }>;
 }
 
+const formatOrderPrice = (val: number | undefined | null) => {
+  if (val == null || isNaN(val)) return '—';
+  if (val === 0) return '0.00';
+  if (Math.abs(val) < 0.0001) return val.toFixed(6);
+  if (Math.abs(val) < 0.01) return val.toFixed(5);
+  if (Math.abs(val) < 1) return val.toFixed(4);
+  if (Math.abs(val) < 10) return val.toFixed(3);
+  if (Math.abs(val) < 1000) return val.toFixed(2);
+  return val.toLocaleString(undefined, { minimumFractionDigits: 1, maximumFractionDigits: 2 });
+};
+
 export const GridMatrixAndOrders: React.FC<GridMatrixAndOrdersProps> = ({
   grid,
   currentPrice,
@@ -48,11 +59,17 @@ export const GridMatrixAndOrders: React.FC<GridMatrixAndOrdersProps> = ({
   // Manual Order Form State
   const [manualSide, setManualSide] = useState<'BUY' | 'SELL'>('BUY');
   const [manualType, setManualType] = useState<'LIMIT' | 'MARKET'>('LIMIT');
-  const [manualPrice, setManualPrice] = useState(currentPrice.toString());
+  const [manualPrice, setManualPrice] = useState(currentPrice > 0 ? currentPrice.toString() : '85859.20');
   const [manualAmount, setManualAmount] = useState('0.05');
   const [orderError, setOrderError] = useState<string | null>(null);
   const [orderSuccess, setOrderSuccess] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
+
+  React.useEffect(() => {
+    if (currentPrice > 0) {
+      setManualPrice(currentPrice.toString());
+    }
+  }, [currentPrice]);
 
   const handleManualSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -179,7 +196,7 @@ export const GridMatrixAndOrders: React.FC<GridMatrixAndOrdersProps> = ({
                             {lvl.side}
                           </span>
                         </td>
-                        <td className="py-2 px-2 font-bold text-white">${lvl.price.toLocaleString()}</td>
+                        <td className="py-2 px-2 font-bold text-white">${formatOrderPrice(lvl.price)}</td>
                         <td className={`py-2 px-2 ${distPct >= 0 ? 'text-rose-400' : 'text-emerald-400'}`}>
                           {distPct >= 0 ? '+' : ''}{distPct.toFixed(2)}%
                         </td>
@@ -231,7 +248,7 @@ export const GridMatrixAndOrders: React.FC<GridMatrixAndOrdersProps> = ({
                           {ord.side}
                         </span>
                       </td>
-                      <td className="py-2 px-2 font-bold text-white">${ord.price.toLocaleString()}</td>
+                      <td className="py-2 px-2 font-bold text-white">${formatOrderPrice(ord.price)}</td>
                       <td className="py-2 px-2 text-slate-300">{ord.amount}</td>
                       <td className="py-2 px-2 text-slate-300">${ord.costUsd.toFixed(2)}</td>
                       <td className="py-2 px-2 text-[10px] text-slate-400">{ord.strategyId}</td>
@@ -282,7 +299,7 @@ export const GridMatrixAndOrders: React.FC<GridMatrixAndOrdersProps> = ({
                           {f.side}
                         </span>
                       </td>
-                      <td className="py-2 px-2 font-bold text-white">${f.price.toLocaleString()}</td>
+                      <td className="py-2 px-2 font-bold text-white">${formatOrderPrice(f.price)}</td>
                       <td className="py-2 px-2 text-slate-300">{f.amount}</td>
                       <td className="py-2 px-2 text-slate-400">-${f.feeUsd.toFixed(4)}</td>
                       <td className="py-2 px-2 text-slate-400">{f.slippageBps} bps</td>
@@ -432,10 +449,10 @@ export const GridMatrixAndOrders: React.FC<GridMatrixAndOrdersProps> = ({
         <div className="mt-3 pt-3 border-t border-slate-800 flex flex-wrap items-center justify-between gap-2 text-xs font-mono">
           <div className="flex items-center gap-3">
             <span className="text-slate-400">Inventory:</span>
-            <span className="text-white font-bold">{position.baseAmount.toFixed(4)} {position.symbol.split('/')[0]}</span>
+            <span className="text-white font-bold">{position.baseAmount >= 1000 ? position.baseAmount.toLocaleString() : position.baseAmount.toFixed(4)} {position.symbol.split('/')[0]}</span>
             <span className="text-slate-500">|</span>
             <span className="text-slate-400">Entry:</span>
-            <span className="text-white">${position.entryPrice.toLocaleString()}</span>
+            <span className="text-white">${formatOrderPrice(position.entryPrice)}</span>
           </div>
           <div className="flex items-center gap-2">
             <span className="text-slate-400">Unrealized PnL:</span>

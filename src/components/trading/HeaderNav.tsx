@@ -82,9 +82,20 @@ export const HeaderNav: React.FC<HeaderNavProps> = ({
   const [showPairDropdown, setShowPairDropdown] = useState(false);
   const [showAutonomyDropdown, setShowAutonomyDropdown] = useState(false);
 
-  const activePairInfo = pairs.find(p => p.symbol === activeSymbol) || {
+  const formatTickerPrice = (pVal: number | undefined | null) => {
+    if (pVal == null || isNaN(pVal)) return '—';
+    if (pVal === 0) return '0.00';
+    if (pVal < 0.001) return pVal.toFixed(6);
+    if (pVal < 1) return pVal.toFixed(4);
+    if (pVal < 10) return pVal.toFixed(3);
+    if (pVal < 1000) return pVal.toFixed(2);
+    return pVal.toLocaleString(undefined, { minimumFractionDigits: 1, maximumFractionDigits: 2 });
+  };
+
+  const normActive = activeSymbol.replace(/[\/\-_]/g, '').toUpperCase();
+  const activePairInfo = pairs.find(p => p.symbol.replace(/[\/\-_]/g, '').toUpperCase() === normActive) || {
     symbol: activeSymbol,
-    price: 66850,
+    price: 85859.20,
     change24hPct: 2.34
   };
 
@@ -137,9 +148,9 @@ export const HeaderNav: React.FC<HeaderNavProps> = ({
                   <ChevronDown className="w-3.5 h-3.5 text-slate-400" />
                 </div>
                 <div className="text-[11px] flex items-center gap-2">
-                  <span className="text-white font-mono font-semibold">${activePairInfo.price.toLocaleString()}</span>
+                  <span className="text-white font-mono font-semibold">${formatTickerPrice(activePairInfo.price)}</span>
                   <span className={activePairInfo.change24hPct >= 0 ? 'text-emerald-400 font-mono' : 'text-rose-400 font-mono'}>
-                    {activePairInfo.change24hPct >= 0 ? '+' : ''}{activePairInfo.change24hPct}%
+                    {activePairInfo.change24hPct >= 0 ? '+' : ''}{activePairInfo.change24hPct.toFixed(2)}%
                   </span>
                 </div>
               </div>
@@ -159,14 +170,14 @@ export const HeaderNav: React.FC<HeaderNavProps> = ({
                         setShowPairDropdown(false);
                       }}
                       className={`w-full flex items-center justify-between px-2.5 py-2 text-xs rounded hover:bg-slate-800 transition-colors ${
-                        p.symbol === activeSymbol ? 'bg-emerald-500/10 text-emerald-300 font-bold' : 'text-slate-200'
+                        p.symbol.replace(/[\/\-_]/g, '').toUpperCase() === normActive ? 'bg-emerald-500/10 text-emerald-300 font-bold' : 'text-slate-200'
                       }`}
                     >
                       <span className="font-mono">{p.symbol}</span>
                       <div className="text-right font-mono">
-                        <div>${p.price.toLocaleString()}</div>
+                        <div>${formatTickerPrice(p.price)}</div>
                         <div className={`text-[10px] ${p.change24hPct >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
-                          {p.change24hPct >= 0 ? '+' : ''}{p.change24hPct}%
+                          {p.change24hPct >= 0 ? '+' : ''}{p.change24hPct.toFixed(2)}%
                         </div>
                       </div>
                     </button>

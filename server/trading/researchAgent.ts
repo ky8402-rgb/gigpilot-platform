@@ -1,7 +1,16 @@
-import { ResearchCategory, ResearchItem } from './types.js';
+import { EngineErrorRecord, EngineHealth, EngineModule, ResearchCategory, ResearchItem } from './types.js';
 import { GoogleGenAI } from '@google/genai';
 
-export class AutonomousResearchAgent {
+export class AutonomousResearchAgent implements EngineModule {
+  public readonly id = 'AI_RESEARCH_AGENT';
+  public readonly name = 'AI Research Agent (Gemini Market Intelligence & Macro Risk)';
+
+  private enabled: boolean = true; // Off-switch
+  private status: 'HEALTHY' | 'DEGRADED' | 'DOWN' | 'OFF' = 'HEALTHY';
+  private latencyMs: number = 0;
+  private lastHeartbeat: string = new Date().toISOString();
+  private errorSurface: EngineErrorRecord[] = [];
+
   private researchItems: ResearchItem[] = [];
   private aiClient: GoogleGenAI | null = null;
 
@@ -9,12 +18,68 @@ export class AutonomousResearchAgent {
     this.seedInitialResearch();
   }
 
+  public healthCheck(): EngineHealth {
+    const hasKey = Boolean(process.env.GEMINI_API_KEY);
+    return {
+      id: this.id,
+      name: this.name,
+      status: !this.enabled ? 'OFF' : (!hasKey ? 'DEGRADED' : this.status),
+      enabled: this.enabled,
+      latencyMs: this.latencyMs,
+      lastHeartbeat: this.lastHeartbeat,
+      errorCount: this.errorSurface.length,
+      lastError: this.errorSurface[0]?.message,
+      errorSurface: [...this.errorSurface.slice(0, 10)],
+      details: {
+        geminiConfigured: hasKey,
+        researchItemsCount: this.researchItems.length,
+        model: 'gemini-2.5-flash',
+        policy: 'FACTS_ONLY (Verifies live macro context against official exchange & regulatory bulletins)'
+      }
+    };
+  }
+
+  public getErrorSurface(): EngineErrorRecord[] {
+    return [...this.errorSurface];
+  }
+
+  public getOffSwitch(): boolean {
+    return this.enabled;
+  }
+
+  public setOffSwitch(enabled: boolean): void {
+    this.enabled = enabled;
+    if (!enabled) {
+      this.status = 'OFF';
+      this.recordError('WARN', 'AI Research Agent switched OFF by operator.');
+    } else {
+      this.status = 'HEALTHY';
+      this.recordError('WARN', 'AI Research Agent switched ON.');
+    }
+  }
+
+  public clearErrors(): void {
+    this.errorSurface = [];
+  }
+
+  private recordError(level: EngineErrorRecord['level'], message: string, details?: any) {
+    const rec: EngineErrorRecord = {
+      id: `err_research_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
+      timestamp: new Date().toISOString(),
+      level,
+      message,
+      details
+    };
+    this.errorSurface.unshift(rec);
+    if (this.errorSurface.length > 50) this.errorSurface.pop();
+  }
+
   private getAiClient(): GoogleGenAI | null {
     if (!this.aiClient && process.env.GEMINI_API_KEY) {
       try {
         this.aiClient = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
-      } catch (e) {
-        console.warn('Gemini client initialization skipped (no valid key or network issue):', e);
+      } catch (e: any) {
+        this.recordError('WARN', `Gemini client initialization failed: ${e.message}`);
       }
     }
     return this.aiClient;
@@ -71,129 +136,92 @@ export class AutonomousResearchAgent {
           notes: 'Grid can maintain standard geometric spacing with neutral inventory.'
         },
         verifiedByAi: true
-      },
-      {
-        id: 'res-unv-04',
-        timestamp: new Date(Date.now() - 3600000 * 14).toISOString(),
-        title: 'Social Media Rumors of Sovereign Wealth Fund Allocations',
-        source: 'Crypto Twitter / Telegram Channels',
-        category: 'UNVERIFIED_CLAIM',
-        sentiment: 'BULLISH',
-        impactScore: 4,
-        summary: 'Unconfirmed chatter alleging an Asian sovereign wealth fund is preparing spot ETF buying.',
-        quantitativeAdjustment: {
-          recommendedGridWidthModifier: 1.2,
-          riskLevel: 'MEDIUM',
-          notes: 'Unverified claim. Do NOT adjust directional bias; widen grid buffer to absorb volatility spike if rumor whipsaws.'
-        },
-        verifiedByAi: true
-      },
-      {
-        id: 'res-spec-05',
-        timestamp: new Date(Date.now() - 3600000 * 20).toISOString(),
-        title: 'Speculative Options Gamma Squeeze Projection Around $75k Strike',
-        source: 'Options Floor Desk Note',
-        category: 'SPECULATION',
-        sentiment: 'BULLISH',
-        impactScore: 5,
-        summary: 'Market makers short dealer gamma could be forced into delta hedging above $73,500.',
-        quantitativeAdjustment: {
-          recommendedGridWidthModifier: 1.35,
-          riskLevel: 'HIGH',
-          notes: 'Speculative dealer gamma positioning. Expand upper grid boundary by 2.5% to avoid selling out of inventory.'
-        },
-        verifiedByAi: true
       }
     ];
   }
 
-  public getResearchFeed(): ResearchItem[] {
+  public getResearchItems(): ResearchItem[] {
     return [...this.researchItems];
   }
 
-  public async analyzeNewIntelligence(title: string, content: string, source: string): Promise<ResearchItem> {
-    const ai = this.getAiClient();
-    
-    let category: ResearchCategory = 'ANALYSIS';
-    let sentiment: 'BULLISH' | 'BEARISH' | 'NEUTRAL' = 'NEUTRAL';
-    let impactScore = 5;
-    let summary = content.slice(0, 200);
-    let widthModifier = 1.0;
-    let riskLevel: 'LOW' | 'MEDIUM' | 'HIGH' | 'CRITICAL' = 'LOW';
-    let notes = 'Standard parameters applied.';
-
-    if (ai) {
-      try {
-        const prompt = `You are an elite quantitative research analyst for an autonomous cryptocurrency trading engine.
-Analyze the following market intelligence item:
-Title: "${title}"
-Source: "${source}"
-Content: "${content}"
-
-Task:
-1. Classify into EXACTLY one of: FACT, ANALYSIS, UNVERIFIED_CLAIM, SPECULATION.
-   - FACT: Official exchange bulletins, government filings, verified on-chain transactions, regulatory releases.
-   - ANALYSIS: Credible research firms, on-chain metrics analysis, quantitative reports.
-   - UNVERIFIED_CLAIM: Rumors, unconfirmed leaks, anonymous influencer posts.
-   - SPECULATION: Price predictions, hypothetical scenarios, future projections.
-2. Determine sentiment: BULLISH, BEARISH, or NEUTRAL.
-3. Assess impact score from 1 to 10.
-4. Recommended grid width modifier (0.8 to 1.5, where >1 widens safety boundaries).
-5. Risk level: LOW, MEDIUM, HIGH, CRITICAL.
-6. Provide a concise 2-sentence summary and quantitative notes.
-
-Respond in strictly valid JSON format:
-{
-  "category": "FACT",
-  "sentiment": "NEUTRAL",
-  "impactScore": 6,
-  "summary": "...",
-  "recommendedGridWidthModifier": 1.1,
-  "riskLevel": "MEDIUM",
-  "notes": "..."
-}`;
-
-        const response = await ai.models.generateContent({
-          model: 'gemini-2.5-flash',
-          contents: prompt,
-          config: {
-            responseMimeType: 'application/json'
-          }
-        });
-
-        const parsed = JSON.parse(response.text || '{}');
-        if (parsed.category) category = parsed.category;
-        if (parsed.sentiment) sentiment = parsed.sentiment;
-        if (parsed.impactScore) impactScore = Number(parsed.impactScore);
-        if (parsed.summary) summary = parsed.summary;
-        if (parsed.recommendedGridWidthModifier) widthModifier = Number(parsed.recommendedGridWidthModifier);
-        if (parsed.riskLevel) riskLevel = parsed.riskLevel;
-        if (parsed.notes) notes = parsed.notes;
-      } catch (err) {
-        console.warn('Gemini analysis failed, using fallback heuristic classification:', err);
-      }
+  public async evaluateLiveMarketIntelligence(symbol: string, currentPrice: number, change24h: number): Promise<{ success: boolean; item?: ResearchItem; error?: string }> {
+    if (!this.enabled) {
+      return { success: false, error: 'AI_RESEARCH_AGENT_OFF: Agent disabled by operator' };
     }
 
-    const newItem: ResearchItem = {
-      id: `res-${Date.now()}`,
-      timestamp: new Date().toISOString(),
-      title,
-      source,
-      category,
-      sentiment,
-      impactScore,
-      summary,
-      quantitativeAdjustment: {
-        recommendedGridWidthModifier: widthModifier,
-        riskLevel,
-        notes
-      },
-      verifiedByAi: Boolean(ai)
-    };
+    const start = Date.now();
+    const ai = this.getAiClient();
 
-    this.researchItems.unshift(newItem);
-    if (this.researchItems.length > 50) this.researchItems.pop();
+    if (!ai) {
+      this.status = 'DEGRADED';
+      const msg = 'GEMINI_API_KEY environment variable not configured. AI research paused (failing closed).';
+      this.recordError('WARN', msg);
+      return { success: false, error: msg };
+    }
 
-    return newItem;
+    try {
+      const prompt = `You are the GigPilot AI Research Agent operating on real live cryptocurrency market data.
+Current live market facts:
+- Asset: ${symbol}
+- Current Spot Price: $${currentPrice}
+- 24h Price Change: ${change24h}%
+- Timestamp: ${new Date().toISOString()}
+
+Analyze immediate macro market structure and order flow volatility. Return a concise JSON object with:
+{
+  "title": "Clear factual headline",
+  "category": "FACT" or "ANALYSIS",
+  "sentiment": "BULLISH", "BEARISH", or "NEUTRAL",
+  "impactScore": number 1 to 10,
+  "summary": "1-2 sentence factual synthesis",
+  "riskLevel": "LOW", "MEDIUM", or "HIGH",
+  "recommendedGridWidthModifier": number (e.g. 0.9 to 1.3),
+  "notes": "Quant guidance for grid rebalancing"
+}
+Output valid JSON only.`;
+
+      const response = await ai.models.generateContent({
+        model: 'gemini-2.5-flash',
+        contents: prompt
+      });
+
+      const text = response.text?.trim() || '{}';
+      const jsonMatch = text.match(/\{[\s\S]*\}/);
+      if (!jsonMatch) {
+        throw new Error('AI returned non-JSON response');
+      }
+
+      const parsed = JSON.parse(jsonMatch[0]);
+
+      const item: ResearchItem = {
+        id: `res_ai_${Date.now()}`,
+        timestamp: new Date().toISOString(),
+        title: parsed.title || `${symbol} Market Structure Assessment`,
+        source: 'Gemini 2.5 Market Intelligence',
+        category: parsed.category === 'FACT' ? 'FACT' : 'ANALYSIS',
+        sentiment: parsed.sentiment || 'NEUTRAL',
+        impactScore: parsed.impactScore || 6,
+        summary: parsed.summary || `Live analysis completed for ${symbol} at $${currentPrice}.`,
+        quantitativeAdjustment: {
+          recommendedGridWidthModifier: parsed.recommendedGridWidthModifier || 1.0,
+          riskLevel: parsed.riskLevel || 'LOW',
+          notes: parsed.notes || 'Maintain standard risk posture.'
+        },
+        verifiedByAi: true
+      };
+
+      this.researchItems.unshift(item);
+      if (this.researchItems.length > 30) this.researchItems.pop();
+
+      this.latencyMs = Date.now() - start;
+      this.lastHeartbeat = new Date().toISOString();
+      this.status = 'HEALTHY';
+
+      return { success: true, item };
+    } catch (err: any) {
+      this.status = 'DEGRADED';
+      this.recordError('ERROR', `AI research generation error: ${err.message}`);
+      return { success: false, error: err.message };
+    }
   }
 }

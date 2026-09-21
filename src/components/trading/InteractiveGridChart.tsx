@@ -23,6 +23,17 @@ interface InteractiveGridChartProps {
   currentPrice: number;
 }
 
+const formatChartPrice = (val: number | undefined | null) => {
+  if (val == null || isNaN(val)) return '—';
+  if (val === 0) return '0.00';
+  if (Math.abs(val) < 0.0001) return val.toFixed(6);
+  if (Math.abs(val) < 0.01) return val.toFixed(5);
+  if (Math.abs(val) < 1) return val.toFixed(4);
+  if (Math.abs(val) < 10) return val.toFixed(3);
+  if (Math.abs(val) < 1000) return val.toFixed(2);
+  return val.toLocaleString(undefined, { minimumFractionDigits: 1, maximumFractionDigits: 2 });
+};
+
 export const InteractiveGridChart: React.FC<InteractiveGridChartProps> = ({
   symbol,
   candles,
@@ -38,7 +49,10 @@ export const InteractiveGridChart: React.FC<InteractiveGridChartProps> = ({
   // Compute price domain for SVG chart
   const { minPrice, maxPrice, recentCandles } = useMemo(() => {
     const slice = candles.slice(-45);
-    if (slice.length === 0) return { minPrice: 60000, maxPrice: 70000, recentCandles: [] };
+    const p = currentPrice > 0 ? currentPrice : 100;
+    if (slice.length === 0) {
+      return { minPrice: p * 0.95, maxPrice: p * 1.05, recentCandles: [] };
+    }
 
     let low = Math.min(...slice.map(c => c.low));
     let high = Math.max(...slice.map(c => c.high));
@@ -47,14 +61,16 @@ export const InteractiveGridChart: React.FC<InteractiveGridChartProps> = ({
       low = Math.min(low, grid.lowerBoundary * 0.995);
       high = Math.max(high, grid.upperBoundary * 1.005);
     }
+    low = Math.min(low, p * 0.995);
+    high = Math.max(high, p * 1.005);
 
-    const padding = (high - low) * 0.05;
+    const padding = (high - low) * 0.05 || (p * 0.02);
     return {
       minPrice: low - padding,
       maxPrice: high + padding,
       recentCandles: slice
     };
-  }, [candles, grid]);
+  }, [candles, grid, currentPrice]);
 
   const svgWidth = 840;
   const svgHeight = 420;
@@ -77,10 +93,10 @@ export const InteractiveGridChart: React.FC<InteractiveGridChartProps> = ({
             <span className="text-xs px-2 py-0.5 rounded bg-slate-800 text-slate-300 font-mono">1m SPOT</span>
           </div>
           <div className="text-xs font-mono text-slate-400 hidden sm:flex items-center gap-3">
-            <span>O: <strong className="text-white">${candles[candles.length - 1]?.open != null ? candles[candles.length - 1].open.toLocaleString() : '—'}</strong></span>
-            <span>H: <strong className="text-white">${candles[candles.length - 1]?.high != null ? candles[candles.length - 1].high.toLocaleString() : '—'}</strong></span>
-            <span>L: <strong className="text-white">${candles[candles.length - 1]?.low != null ? candles[candles.length - 1].low.toLocaleString() : '—'}</strong></span>
-            <span>C: <strong className="text-white">${candles[candles.length - 1]?.close != null ? candles[candles.length - 1].close.toLocaleString() : '—'}</strong></span>
+            <span>O: <strong className="text-white">${candles[candles.length - 1]?.open != null ? formatChartPrice(candles[candles.length - 1].open) : '—'}</strong></span>
+            <span>H: <strong className="text-white">${candles[candles.length - 1]?.high != null ? formatChartPrice(candles[candles.length - 1].high) : '—'}</strong></span>
+            <span>L: <strong className="text-white">${candles[candles.length - 1]?.low != null ? formatChartPrice(candles[candles.length - 1].low) : '—'}</strong></span>
+            <span>C: <strong className="text-white">${candles[candles.length - 1]?.close != null ? formatChartPrice(candles[candles.length - 1].close) : '—'}</strong></span>
           </div>
         </div>
 
@@ -124,7 +140,7 @@ export const InteractiveGridChart: React.FC<InteractiveGridChartProps> = ({
               <g key={idx} className="opacity-25">
                 <line x1="0" y1={y} x2={svgWidth - 65} y2={y} stroke="#334155" strokeDasharray="3 3" />
                 <text x={svgWidth - 60} y={y + 3} fill="#94a3b8" fontSize="10" fontFamily="monospace">
-                  ${priceVal.toFixed(0)}
+                  ${formatChartPrice(priceVal)}
                 </text>
               </g>
             );
@@ -160,7 +176,7 @@ export const InteractiveGridChart: React.FC<InteractiveGridChartProps> = ({
                 fontWeight="bold"
                 fontFamily="monospace"
               >
-                UPPER ${grid.upperBoundary.toFixed(0)}
+                UPPER ${formatChartPrice(grid.upperBoundary)}
               </text>
 
               {/* Lower Boundary */}
@@ -190,7 +206,7 @@ export const InteractiveGridChart: React.FC<InteractiveGridChartProps> = ({
                 fontWeight="bold"
                 fontFamily="monospace"
               >
-                LOWER ${grid.lowerBoundary.toFixed(0)}
+                LOWER ${formatChartPrice(grid.lowerBoundary)}
               </text>
 
               {/* Grid Rungs */}
@@ -293,7 +309,7 @@ export const InteractiveGridChart: React.FC<InteractiveGridChartProps> = ({
                 fontWeight="bold"
                 fontFamily="monospace"
               >
-                ${currentPrice.toFixed(1)}
+                ${formatChartPrice(currentPrice)}
               </text>
             </g>
           )}
@@ -316,13 +332,13 @@ export const InteractiveGridChart: React.FC<InteractiveGridChartProps> = ({
           <div className="absolute bottom-2 left-2 bg-slate-900/90 border border-slate-800 px-3 py-1.5 rounded text-[11px] font-mono text-slate-300 backdrop-blur-sm shadow flex items-center gap-3">
             <div className="flex items-center gap-1.5">
               <span className="text-slate-400">SPREAD:</span>
-              <span className="text-purple-300 font-bold">${orderBook.spread ?? '0.00'}</span>
+              <span className="text-purple-300 font-bold">${formatChartPrice(orderBook.spread)}</span>
               <span className="text-[10px] text-purple-400">({orderBook.spreadBps ?? 0} bps)</span>
             </div>
             <span className="text-slate-700">|</span>
             <div className="flex items-center gap-2">
-              <span className="text-emerald-400 font-semibold">BID: ${orderBook.bids?.[0]?.price != null ? orderBook.bids[0].price.toLocaleString() : '—'}</span>
-              <span className="text-rose-400 font-semibold">ASK: ${orderBook.asks?.[0]?.price != null ? orderBook.asks[0].price.toLocaleString() : '—'}</span>
+              <span className="text-emerald-400 font-semibold">BID: ${orderBook.bids?.[0]?.price != null ? formatChartPrice(orderBook.bids[0].price) : '—'}</span>
+              <span className="text-rose-400 font-semibold">ASK: ${orderBook.asks?.[0]?.price != null ? formatChartPrice(orderBook.asks[0].price) : '—'}</span>
             </div>
           </div>
         )}

@@ -34,6 +34,9 @@ import {
 } from '../../services/tradingService';
 import {
   generateDefaultMasterState,
+  generateDefaultGrid,
+  generateDefaultOrders,
+  generateDefaultPosition,
   DEFAULT_PAIRS,
   DEFAULT_CHAMPION_STRATEGY,
   DEFAULT_RESEARCH_ITEMS,
@@ -71,11 +74,14 @@ import {
   Cpu,
   Wifi,
   WifiOff,
-  Coins
+  Coins,
+  Server
 } from 'lucide-react';
+import { EngineHealthView } from './EngineHealthView';
 
 export type ActiveTerminalTab =
   | 'TERMINAL'
+  | 'ENGINES'
   | 'ASSETS'
   | 'ADAPTIVE_GRID'
   | 'LEARNING_LOOP'
@@ -236,13 +242,27 @@ export const TradingDashboard: React.FC<TradingDashboardProps> = ({ onLogout }) 
     }
   };
 
+  const activePairInfo = pairs.find(p => p.symbol.replace(/[\/\-_]/g, '').toUpperCase() === state.activeSymbol.replace(/[\/\-_]/g, '').toUpperCase());
+  const activePrice = (pairDetails?.currentPrice && pairDetails.currentPrice > 0)
+    ? pairDetails.currentPrice
+    : (activePairInfo?.price || DEFAULT_PAIRS.find(p => p.symbol.replace(/[\/\-_]/g, '').toUpperCase() === state.activeSymbol.replace(/[\/\-_]/g, '').toUpperCase())?.price || 85859.20);
+
   return (
     <div className="min-h-screen bg-[#070B14] text-slate-100 flex flex-col font-sans selection:bg-emerald-500 selection:text-black">
       {/* 1. Header Navigation & Emergency Kill Switch */}
       <HeaderNav
         activeSymbol={state.activeSymbol}
         onSelectSymbol={async (sym) => {
+          setState(prev => ({
+            ...prev,
+            activeSymbol: sym,
+            activeGrid: generateDefaultGrid(sym),
+            openOrders: generateDefaultOrders(sym),
+            position: generateDefaultPosition(sym)
+          }));
           await selectActivePair(sym);
+          const pd = await fetchPairDetails(sym);
+          if (pd) setPairDetails(pd);
           loadFullState();
         }}
         pairs={pairs}
@@ -352,6 +372,18 @@ export const TradingDashboard: React.FC<TradingDashboardProps> = ({ onLogout }) 
             >
               <BarChart2 className="w-3.5 h-3.5" />
               <span>Grid Terminal</span>
+            </button>
+
+            <button
+              onClick={() => setActiveTab('ENGINES')}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-mono font-bold transition-all ${
+                activeTab === 'ENGINES'
+                  ? 'bg-sky-950/80 text-sky-300 border border-sky-700/80 shadow'
+                  : 'text-slate-400 hover:text-slate-200'
+              }`}
+            >
+              <Server className="w-3.5 h-3.5 text-sky-400" />
+              <span>Engines & Health</span>
             </button>
 
             <button
@@ -476,7 +508,7 @@ export const TradingDashboard: React.FC<TradingDashboardProps> = ({ onLogout }) 
                 orderBook={pairDetails?.orderBook || { bids: [], asks: [] }}
                 grid={state.activeGrid}
                 indicators={state.indicators}
-                currentPrice={pairDetails?.currentPrice || 66850}
+                currentPrice={activePrice}
               />
             </div>
 
@@ -484,7 +516,7 @@ export const TradingDashboard: React.FC<TradingDashboardProps> = ({ onLogout }) 
             <div className="lg:col-span-5 h-full">
               <GridMatrixAndOrders
                 grid={state.activeGrid}
-                currentPrice={pairDetails?.currentPrice || 66850}
+                currentPrice={activePrice}
                 openOrders={state.openOrders}
                 recentFills={state.recentFills}
                 position={state.position}
@@ -504,6 +536,10 @@ export const TradingDashboard: React.FC<TradingDashboardProps> = ({ onLogout }) 
               />
             </div>
           </div>
+        )}
+
+        {activeTab === 'ENGINES' && (
+          <EngineHealthView onEngineToggled={loadFullState} />
         )}
 
         {activeTab === 'ASSETS' && (
