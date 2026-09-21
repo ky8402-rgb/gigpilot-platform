@@ -23,7 +23,7 @@ const requireOwner = (req: Request, res: Response, next: Function) => {
 };
 
 // 1. Master System State
-tradingRouter.get('/state', (req: Request, res: Response) => {
+tradingRouter.get('/state', requireOwner, (req: Request, res: Response) => {
   try {
     const store = globalTradingStore;
     const pairState = store.exchange.getPairState(store.activeSymbol);
@@ -149,19 +149,19 @@ tradingRouter.post('/kill-switch/deactivate', requireOwner, (req: Request, res: 
   globalTradingStore.deactivateKillSwitch();
   res.json({
     success: true,
-    GLOBAL_KILL_SWITCH_ACTIVE: false,
-    botsDisabled: false,
+    GLOBAL_KILL_SWITCH_ACTIVE: globalTradingStore.GLOBAL_KILL_SWITCH_ACTIVE,
+    botsDisabled: globalTradingStore.activeBotsDisabled,
     autonomyLevel: globalTradingStore.autonomyLevel,
     killSwitch: globalTradingStore.killSwitch.getState()
   });
 });
 
-tradingRouter.post('/kill-switch/toggle', requireOwner, (req: Request, res: Response) => {
+tradingRouter.post('/kill-switch/toggle', requireOwner, async (req: Request, res: Response) => {
   const { active, reason } = req.body;
   const shouldActivate = active !== undefined ? Boolean(active) : !globalTradingStore.GLOBAL_KILL_SWITCH_ACTIVE;
   
   if (shouldActivate) {
-    globalTradingStore.triggerEmergencyKillSwitch(reason || 'Manual operator toggle: Disabling all active trading bots');
+    await globalTradingStore.triggerEmergencyKillSwitch(reason || 'Manual operator toggle: Disabling all active trading bots');
   } else {
     globalTradingStore.deactivateKillSwitch();
   }
@@ -316,7 +316,7 @@ tradingRouter.post('/order/cancel-all', requireOwner, (req: Request, res: Respon
 });
 
 // 11. Learning Loop Strategies & Promotion
-tradingRouter.get('/strategies', (req: Request, res: Response) => {
+tradingRouter.get('/strategies', requireOwner, (req: Request, res: Response) => {
   const store = globalTradingStore;
   res.json({
     success: true,
@@ -365,9 +365,9 @@ tradingRouter.post('/script/execute', requireOwner, (req: Request, res: Response
   const position = store.exchange.getPosition(store.activeSymbol) || {
     symbol: store.activeSymbol,
     baseAmount: 0,
-    quoteAmount: 10000,
+    quoteAmount: 0,
     entryPrice: 0,
-    currentPrice: pairState?.currentPrice || 65000,
+    currentPrice: pairState?.currentPrice || 0,
     unrealizedPnL: 0,
     unrealizedPnLPct: 0,
     realizedPnL: 0,
@@ -446,7 +446,7 @@ tradingRouter.post('/research/analyze', requireOwner, async (req: Request, res: 
 });
 
 // 14. Wallet Profit Sweep Subsystem
-tradingRouter.get('/profit-sweep', (req: Request, res: Response) => {
+tradingRouter.get('/profit-sweep', requireOwner, (req: Request, res: Response) => {
   const store = globalTradingStore;
   const settings = store.sweeper.getSweepSettings();
   const eligibility = store.sweeper.calculateSweepEligibility(store.capital);
@@ -715,7 +715,7 @@ tradingRouter.get('/assets', requireOwner, async (req: Request, res: Response) =
 });
 
 // 21. Binance Connection Status & Dynamic API Key Management
-tradingRouter.get('/binance/status', (req: Request, res: Response) => {
+tradingRouter.get('/binance/status', requireOwner, (req: Request, res: Response) => {
   return res.json({
     success: true,
     apiKeyConfigured: binanceAdapter.isKeyConfigured(),
