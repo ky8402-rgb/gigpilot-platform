@@ -28,7 +28,8 @@ APP_DIR="/home/ubuntu/gigpilot"
 REPO_URL="https://github.com/ky8402-rgb/gigpilot-platform.git"
 TARGET_BRANCH="main"
 DOMAIN="3-222-149-9.sslip.io"
-PUBLIC_IP="3.222.149.9"
+PUBLIC_IP="${PUBLIC_IP:-$(curl -fsS --max-time 5 https://checkip.amazonaws.com || true)}"
+if [[ -z "$PUBLIC_IP" ]]; then echo "ERROR: Could not determine public IP; set PUBLIC_IP explicitly." >&2; exit 1; fi
 FRONTEND_URL="https://main.d2qe2q720fbn3x.amplifyapp.com"
 
 # Neon PostgreSQL Database Connection String
