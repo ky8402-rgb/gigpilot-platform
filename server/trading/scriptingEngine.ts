@@ -101,7 +101,7 @@ export class ScriptingSandboxEngine {
       side: 'BUY' | 'SELL',
       amount: number,
       price: number,
-      type: 'LIMIT' | 'MARKET',
+      type: 'LIMIT' | 'MARKET' | 'GRID_LIMIT',
       label: string
     ) => {
       if (ordersGenerated.length >= MAX_ORDERS) throw new Error(`Script exceeded the ${MAX_ORDERS}-order limit.`);
