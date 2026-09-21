@@ -11,7 +11,7 @@
 # SSL:       sslip.io via Nginx Reverse Proxy (3-222-149-9.sslip.io)
 # ==============================================================================
 
-set -uo pipefail
+set -euo pipefail
 
 # Visual color formatting
 RED='\033[0;31m'
@@ -32,7 +32,14 @@ PUBLIC_IP="3.222.149.9"
 FRONTEND_URL="https://main.d2qe2q720fbn3x.amplifyapp.com"
 
 # Neon PostgreSQL Database Connection String
-NEON_DATABASE_URL="postgresql://neondb_owner:npg_L6xTbr0PsJuG@ep-green-bread-ae4bhk9u-pooler.c-2.us-east-2.aws.neon.tech/neondb?sslmode=require&channel_binding=require"
+NEON_DATABASE_URL="${NEON_DATABASE_URL:-}"
+PAYPAL_CLIENT_ID="${PAYPAL_CLIENT_ID:-}"
+PAYPAL_CLIENT_SECRET="${PAYPAL_CLIENT_SECRET:-}"
+GITHUB_WEBHOOK_SECRET="${GITHUB_WEBHOOK_SECRET:-}"
+REDIS_URL="${REDIS_URL:-}"
+
+: "${NEON_DATABASE_URL:?NEON_DATABASE_URL must be supplied from a secure environment/secret manager}"
+: "${GITHUB_WEBHOOK_SECRET:?GITHUB_WEBHOOK_SECRET must be supplied from a secure environment/secret manager}"
 
 echo -e "${CYAN}${BOLD}"
 echo "=============================================================================="
@@ -175,10 +182,10 @@ CORS_ALLOWED_ORIGINS="${FRONTEND_URL},https://*.amplifyapp.com,http://localhost:
 DATABASE_URL="${NEON_DATABASE_URL}"
 
 # Redis / Render / ElastiCache Connection
-REDIS_URL=redis://red-daarifid0e5s7392b3k0:6379
+REDIS_URL="${REDIS_URL}"
 
 # PayPal Payment Gateway & Virtual Terminal (Sandbox / Production Mode)
-PAYPAL_CLIENT_ID=BAAv8rRenc5jlfD6eH_8pvgcU250jXTZCnyPKdBby13EAYRKhCempoPQ3Hj41GEfe2qBMu1P8ZslnbdkIc
+PAYPAL_CLIENT_ID="${PAYPAL_CLIENT_ID}"
 PAYPAL_CLIENT_SECRET=EH8CcxBIVPvFhoAKbL-HN8l_jSdOYzlGA2oahgGs1wPV7bogYK_TE4hIOjPtzOVj-mOUUXVy8uMIt6-N
 PAYPAL_MODE=sandbox
 PAYPAL_RECEIVER_EMAIL=kundank4@icloud.com
@@ -190,7 +197,7 @@ ML_ENABLED=true
 AUTO_HEAL_ENABLED=true
 
 # GitHub Automated Push-to-Deploy Webhook Secret
-GITHUB_WEBHOOK_SECRET=gigpilot_prod_webhook_secret_2026
+GITHUB_WEBHOOK_SECRET="${GITHUB_WEBHOOK_SECRET}"
 EOF
 
 chmod 600 "${APP_DIR}/.env"
