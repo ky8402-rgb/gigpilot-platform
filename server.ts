@@ -49,16 +49,16 @@ app.use((req, res, next) => {
 
 // 1. Healthcheck Endpoint (for AWS EC2, Amplify, Load Balancer, and Health Monitors)
 app.get("/api/health", (req, res) => {
-  const store = globalTradingStore;
   const mem = process.memoryUsage();
-  res.json({
-    status: "ok",
-    service: "Autonomous Crypto Grid Trading Platform",
-    version: "v2.5.0",
-    uptimeSeconds: Math.floor(process.uptime()),
-    timestamp: new Date().toISOString(),
-    environment: process.env.NODE_ENV || "development",
-    tradingEngine: {
+  let tradingEngine: Record<string, unknown> = {
+    available: false,
+    reason: "Trading state unavailable during health probe."
+  };
+
+  try {
+    const store = globalTradingStore;
+    tradingEngine = {
+      available: true,
       activeSymbol: store.activeSymbol,
       autonomyLevel: store.autonomyLevel,
       tradingMode: store.tradingMode,
@@ -66,7 +66,19 @@ app.get("/api/health", (req, res) => {
       circuitBreakerActive: store.risk.isCircuitBreakerActive(),
       totalEquityUsd: store.capital.totalEquity,
       netProfitUsd: store.capital.netRealizedProfit,
-    },
+    };
+  } catch (error) {
+    console.error("[Health] Trading state probe failed:", error);
+  }
+
+  res.status(200).json({
+    status: "ok",
+    service: "Autonomous Crypto Grid Trading Platform",
+    version: "v2.5.0",
+    uptimeSeconds: Math.floor(process.uptime()),
+    timestamp: new Date().toISOString(),
+    environment: process.env.NODE_ENV || "development",
+    tradingEngine,
     system: {
       nodeVersion: process.version,
       rssMb: Math.round(mem.rss / 1024 / 1024),
