@@ -41,7 +41,7 @@ export const ProfitSweepView: React.FC<ProfitSweepViewProps> = ({
   onRefreshState
 }) => {
   const [walletAddress, setWalletAddress] = useState(destinationWallet?.address || '');
-  const [walletChain, setWalletChain] = useState(destinationWallet?.chain || 'Ethereum (ERC-20 USDT/USDC)');
+  const [walletChain, setWalletChain] = useState(destinationWallet?.chain || 'BSC');
   const [walletLabel, setWalletLabel] = useState(destinationWallet?.label || '');
   const [sweepAmount, setSweepAmount] = useState(
     typeof sweepEligibility?.eligibleAmount === 'number' && sweepEligibility.eligibleAmount > 0
@@ -239,6 +239,7 @@ export const ProfitSweepView: React.FC<ProfitSweepViewProps> = ({
                 onChange={e => setWalletChain(e.target.value)}
                 className="w-full bg-slate-950 border border-slate-700 rounded px-3 py-2 text-white font-bold"
               >
+                <option value="BSC">BSC (BNB Smart Chain - BEP-20 USDT)</option>
                 <option value="Ethereum (ERC-20 USDT/USDC)">Ethereum (ERC-20 USDT/USDC)</option>
                 <option value="Arbitrum One (Low Fee)">Arbitrum One (Low Fee)</option>
                 <option value="Solana (SPL USDC)">Solana (SPL USDC)</option>

@@ -193,12 +193,12 @@ export const DEFAULT_CHAMPION_STRATEGY: StrategyVersion = {
 };
 
 export const DEFAULT_DESTINATION_WALLET: DestinationWallet = {
-  address: '0x71C3F90076a0F6722dD581C8390b1F6D829bC39E',
-  chain: 'ethereum',
-  label: 'Cold Storage Vault (Owner Primary)',
+  address: '0x178166ffac90e6d94d2c1f822c1026f87641a0ec',
+  chain: 'bsc',
+  label: 'Binance Deposit Vault (USDT - BSC)',
   isWhitelisted: true,
-  addedAt: '2026-09-10T12:00:00.000Z',
-  lastVerifiedAt: '2026-09-20T08:00:00.000Z'
+  addedAt: '2026-09-21T09:50:00.000Z',
+  lastVerifiedAt: '2026-09-21T09:50:00.000Z'
 };
 
 export function generateDefaultGrid(symbol: string = 'BTC/USDT', price: number = 66520): GridConfiguration {
@@ -428,7 +428,7 @@ export const DEFAULT_SWEEPS: ProfitSweep[] = [
     id: 'sweep_1',
     timestamp: '2026-09-18T14:20:00.000Z',
     destinationWallet: DEFAULT_DESTINATION_WALLET.address,
-    chain: 'ethereum',
+    chain: 'bsc',
     grossSweepAmount: 1500.00,
     networkFeeUsd: 3.20,
     netTransferredUsd: 1496.80,

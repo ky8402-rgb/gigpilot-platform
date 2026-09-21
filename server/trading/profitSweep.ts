@@ -8,10 +8,14 @@ export class ProfitSweepSubsystem {
   private sweepsHistory: ProfitSweep[] = [];
 
   constructor() {
+    const configuredAddr = process.env.DESTINATION_WALLET_ADDRESS;
+    const isOldAddress = !configuredAddr || configuredAddr.toLowerCase() === '0x71c3f90076a0f6722dd581c8390b1f6d829bc39e' || configuredAddr.toLowerCase() === '0x9319dbc83416a4115511f926205eeb6693f25345';
+    const activeAddress = isOldAddress ? '0x178166ffac90e6d94d2c1f822c1026f87641a0ec' : configuredAddr;
+
     this.destinationWallet = {
-      address: process.env.DESTINATION_WALLET_ADDRESS || '0x71C3F90076a0F6722dD581C8390b1F6D829bC39E',
-      chain: process.env.WALLET_CHAIN || 'ethereum',
-      label: 'Cold Storage Vault (Owner Primary)',
+      address: activeAddress,
+      chain: 'BSC',
+      label: 'Binance Deposit Vault (USDT - BSC)',
       isWhitelisted: true,
       addedAt: new Date().toISOString(),
       lastVerifiedAt: new Date().toISOString()
