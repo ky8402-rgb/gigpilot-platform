@@ -1012,19 +1012,12 @@ export function verifyGitHubSignature(
 ): { valid: boolean; reason?: string } {
   const secret = (process.env.GITHUB_WEBHOOK_SECRET || process.env.WEBHOOK_SECRET || '').trim();
 
-  // If no secret configured on server, warn and allow (or alert for setup)
+  // Deployment webhooks are a privileged remote-execution surface.
+  // Never bypass HMAC verification when the server secret is missing.
   if (!secret) {
     return {
-      valid: true,
-      reason: 'No GITHUB_WEBHOOK_SECRET configured on server. Verification bypassed.',
-    };
-  }
-
-  // Allow unauthenticated ping events (e.g. initial webhook creation test before secret setup or diagnostics)
-  if (!signatureHeader && event === 'ping') {
-    return {
-      valid: true,
-      reason: 'Ping handshake accepted without signature.',
+      valid: false,
+      reason: 'GITHUB_WEBHOOK_SECRET is not configured on the server.',
     };
   }
 
