@@ -138,6 +138,21 @@ async function startServer() {
     });
   });
 
+  // Bind the HTTP listener before optional Vite/static SPA setup. This guarantees
+  // the API health endpoint is reachable even if frontend middleware configuration
+  // fails during startup.
+  const server = app.listen(PORT, "0.0.0.0", () => {
+    console.log(`\n===============================================================`);
+    console.log(`🚀 Autonomous Crypto Grid Trading Platform running on port ${PORT}`);
+    console.log(`📊 Mode: ${process.env.NODE_ENV || "development"} | Bound: 0.0.0.0:${PORT}`);
+    console.log(`🌐 Health: http://localhost:${PORT}/api/health`);
+    console.log(`📈 Trading State: http://localhost:${PORT}/api/trading/state`);
+    console.log(`===============================================================\n`);
+  });
+
+  server.on("error", (err) => {
+    console.error("[HTTP Server] Failed to bind/listen:", err);
+  });
   if (!isProduction) {
     try {
       const { createServer: createViteServer } = await import("vite");
@@ -161,14 +176,7 @@ async function startServer() {
     });
   }
 
-  app.listen(PORT, "0.0.0.0", () => {
-    console.log(`\n===============================================================`);
-    console.log(`🚀 Autonomous Crypto Grid Trading Platform running on port ${PORT}`);
-    console.log(`📊 Mode: ${process.env.NODE_ENV || "development"} | Bound: 0.0.0.0:${PORT}`);
-    console.log(`🌐 Health: http://localhost:${PORT}/api/health`);
-    console.log(`📈 Trading State: http://localhost:${PORT}/api/trading/state`);
-    console.log(`===============================================================\n`);
-  });
+
 }
 
 // Global Exception Handlers
