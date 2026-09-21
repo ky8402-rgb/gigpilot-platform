@@ -236,6 +236,7 @@ class OwnerAuthManager {
       process.env.ALLOW_EMERGENCY_PIN === 'true' &&
       this.config.emergencyPin &&
       emergencyPin &&
+      emergencyPin.trim().length === this.config.emergencyPin.trim().length &&
       crypto.timingSafeEqual(
         Buffer.from(emergencyPin.trim()),
         Buffer.from(this.config.emergencyPin.trim())
