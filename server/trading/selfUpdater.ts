@@ -1,5 +1,4 @@
 import { SystemUpdate } from './types.js';
-import crypto from 'crypto';
 
 export class SelfUpdaterManager {
   private updatesHistory: SystemUpdate[] = [];
