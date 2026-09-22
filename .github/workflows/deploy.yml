@@ -76,6 +76,8 @@ jobs:
 
   deploy-ec2:
     name: 🛡️ Deploy Backend (AWS EC2 - gigpilot-backend)
+    # Do not fall back to the old US backend. The Bybit production backend must be an explicitly configured host or the migrated host file.
+    if: ${{ secrets.EC2_HOST != '' || hashFiles('deployment/backend-host.txt') != '' }}
     runs-on: ubuntu-latest
     steps:
       - name: Checkout Source Code
@@ -97,10 +99,17 @@ jobs:
         continue-on-error: true
         env:
           SSH_KEY: ${{ secrets.EC2_SSH_KEY }}
-          EC2_HOST: ${{ secrets.EC2_HOST || '3.222.149.9' }}
+          EC2_HOST: ${{ secrets.EC2_HOST || '' }}
           EC2_USER: ${{ secrets.EC2_USER || 'ubuntu' }}
           EC2_INSTANCE_ID: ${{ secrets.EC2_INSTANCE_ID }}
         run: |
+          if [ -z "$EC2_HOST" ] && [ -f deployment/backend-host.txt ]; then
+            EC2_HOST="$(tr -d '\r\n' < deployment/backend-host.txt)"
+          fi
+          if [ -z "$EC2_HOST" ]; then
+            echo "ERROR: No production EC2 host configured. The Bybit-region migration must establish deployment/backend-host.txt first."
+            exit 1
+          fi
           echo "=========================================================="
           echo "Deploying to AWS EC2 via Secure SSH ($EC2_USER@$EC2_HOST)..."
           echo "=========================================================="
@@ -154,10 +163,17 @@ jobs:
       - name: Trigger EC2 Push-to-Deploy Webhook (Parallel / Fallback)
         continue-on-error: true
         env:
-          EC2_HOST: ${{ secrets.EC2_HOST || '3.222.149.9' }}
+          EC2_HOST: ${{ secrets.EC2_HOST || '' }}
           WEBHOOK_SECRET: ${{ secrets.GITHUB_WEBHOOK_SECRET || secrets.WEBHOOK_SECRET || '' }}
           COMMIT_MSG: ${{ github.event.head_commit.message }}
         run: |
+          if [ -z "$EC2_HOST" ] && [ -f deployment/backend-host.txt ]; then
+            EC2_HOST="$(tr -d '\r\n' < deployment/backend-host.txt)"
+          fi
+          if [ -z "$EC2_HOST" ]; then
+            echo "ERROR: No production EC2 host configured."
+            exit 1
+          fi
           WEBHOOK_URL="https://${EC2_HOST//./-}.sslip.io/api/github/webhook"
           echo "Target Webhook: $WEBHOOK_URL"
           
@@ -225,8 +241,15 @@ jobs:
 
       - name: Verify EC2 Backend Health
         env:
-          EC2_HOST: ${{ secrets.EC2_HOST || '3.222.149.9' }}
+          EC2_HOST: ${{ secrets.EC2_HOST || '' }}
         run: |
+          if [ -z "$EC2_HOST" ] && [ -f deployment/backend-host.txt ]; then
+            EC2_HOST="$(tr -d '\r\n' < deployment/backend-host.txt)"
+          fi
+          if [ -z "$EC2_HOST" ]; then
+            echo "ERROR: No production EC2 host configured."
+            exit 1
+          fi
           HEALTH_URL="https://${EC2_HOST//./-}.sslip.io/api/health"
           FALLBACK_URL="http://${EC2_HOST}:3000/api/health"
           echo "Pinging EC2 Health at $HEALTH_URL..."
@@ -251,8 +274,11 @@ jobs:
 
       - name: Report EC2 Status to Step Summary
         env:
-          EC2_HOST: ${{ secrets.EC2_HOST || '3.222.149.9' }}
+          EC2_HOST: ${{ secrets.EC2_HOST || '' }}
         run: |
+          if [ -z "$EC2_HOST" ] && [ -f deployment/backend-host.txt ]; then
+            EC2_HOST="$(tr -d '\r\n' < deployment/backend-host.txt)"
+          fi
           echo "### 🛡️ AWS EC2 Backend Auto-Deploy" >> $GITHUB_STEP_SUMMARY
           echo "- **App Name:** gigpilot-backend" >> $GITHUB_STEP_SUMMARY
           echo "- **EC2 Host:** \`$EC2_HOST\`" >> $GITHUB_STEP_SUMMARY
