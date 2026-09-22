@@ -93,11 +93,7 @@ export const HeaderNav: React.FC<HeaderNavProps> = ({
   };
 
   const normActive = activeSymbol.replace(/[\/\-_]/g, '').toUpperCase();
-  const activePairInfo = pairs.find(p => p.symbol.replace(/[\/\-_]/g, '').toUpperCase() === normActive) || {
-    symbol: activeSymbol,
-    price: 85859.20,
-    change24hPct: 2.34
-  };
+  const activePairInfo = pairs.find(p => p.symbol.replace(/[\\/\-_]/g, '').toUpperCase() === normActive);
 
   const autonomyLabels: Record<AutonomyLevel, { name: string; desc: string; color: string }> = {
     0: { name: 'LEVEL 0 · OBSERVE', desc: 'Read-only telemetry; no orders', color: 'text-slate-400 border-slate-700 bg-slate-900/60' },
@@ -148,9 +144,9 @@ export const HeaderNav: React.FC<HeaderNavProps> = ({
                   <ChevronDown className="w-3.5 h-3.5 text-slate-400" />
                 </div>
                 <div className="text-[11px] flex items-center gap-2">
-                  <span className="text-white font-mono font-semibold">${formatTickerPrice(activePairInfo.price)}</span>
-                  <span className={activePairInfo.change24hPct >= 0 ? 'text-emerald-400 font-mono' : 'text-rose-400 font-mono'}>
-                    {activePairInfo.change24hPct >= 0 ? '+' : ''}{activePairInfo.change24hPct.toFixed(2)}%
+                  <span className="text-white font-mono font-semibold">${formatTickerPrice(activePairInfo?.price)}</span>
+                  <span className={activePairInfo ? (activePairInfo.change24hPct >= 0 ? 'text-emerald-400 font-mono' : 'text-rose-400 font-mono') : 'text-slate-400 font-mono'}>
+                    {activePairInfo ? `${activePairInfo.change24hPct >= 0 ? '+' : ''}${activePairInfo.change24hPct.toFixed(2)}%` : '—'}
                   </span>
                 </div>
               </div>
@@ -234,24 +230,6 @@ export const HeaderNav: React.FC<HeaderNavProps> = ({
             )}
           </div>
 
-          {/* Trading Mode Toggle (Simulation / Paper / Live) */}
-          <div className="flex items-center bg-slate-900/90 rounded-md p-0.5 border border-slate-800">
-            {(['SIMULATION', 'PAPER', 'LIVE'] as TradingMode[]).map(m => (
-              <button
-                key={m}
-                onClick={() => onChangeTradingMode(m)}
-                className={`px-2.5 py-1 text-[11px] font-mono font-bold rounded transition-all ${
-                  tradingMode === m
-                    ? m === 'LIVE'
-                      ? 'bg-rose-600 text-white shadow'
-                      : 'bg-emerald-600 text-white shadow'
-                    : 'text-slate-400 hover:text-slate-200'
-                }`}
-              >
-                {m}
-              </button>
-            ))}
-          </div>
         </div>
 
         {/* Right: Prominent Global Kill Switch & Operator Badge */}
@@ -268,7 +246,7 @@ export const HeaderNav: React.FC<HeaderNavProps> = ({
             ) : (
               <>
                 <span className="w-2 h-2 rounded-full bg-amber-400 animate-pulse" />
-                <span className="text-amber-400 font-bold">SIMULATION</span>
+                <span className="text-amber-400 font-bold">LIVE DATA UNAVAILABLE</span>
                 {onReconnect && (
                   <button
                     onClick={onReconnect}

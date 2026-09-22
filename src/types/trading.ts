@@ -1,5 +1,5 @@
 export type AutonomyLevel = 0 | 1 | 2 | 3 | 4;
-export type TradingMode = 'SIMULATION' | 'PAPER' | 'LIVE';
+export type TradingMode = 'LIVE';
 
 export type MarketRegimeType = 
   | 'RANGE_BOUND_LOW_VOL' 
@@ -386,7 +386,6 @@ export interface ExchangeAccountState {
   accountType: string;
   apiKeyConfigured: boolean;
   keyMask: string;
-  isTestnet?: boolean;
 }
 
 export type BybitAccountState = ExchangeAccountState;
