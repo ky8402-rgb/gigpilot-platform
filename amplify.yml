@@ -3,7 +3,7 @@ frontend:
   phases:
     preBuild:
       commands:
-        - BACKEND_URL="${VITE_BACKEND_URL:-${API_BASE_URL:-https://3-222-149-9.sslip.io}}"
+        - if [ -z "$VITE_BACKEND_URL" ] && [ -z "$API_BASE_URL" ] && [ -f deployment/backend-host.txt ]; then BACKEND_URL="https://$(tr -d "\r\n" < deployment/backend-host.txt).sslip.io"; else BACKEND_URL="${VITE_BACKEND_URL:-${API_BASE_URL:-https://3-222-149-9.sslip.io}}"; fi
         - echo "REACT_APP_API_URL=${BACKEND_URL}" > .env.production
         - echo "API_BASE_URL=${BACKEND_URL}" >> .env.production
         - echo "VITE_BACKEND_URL=${BACKEND_URL}" >> .env.production
