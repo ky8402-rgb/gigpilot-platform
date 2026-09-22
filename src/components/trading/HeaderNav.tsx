@@ -97,10 +97,10 @@ export const HeaderNav: React.FC<HeaderNavProps> = ({
 
   const autonomyLabels: Record<AutonomyLevel, { name: string; desc: string; color: string }> = {
     0: { name: 'LEVEL 0 · OBSERVE', desc: 'Read-only telemetry; no orders', color: 'text-slate-400 border-slate-700 bg-slate-900/60' },
-    1: { name: 'LEVEL 1 · PAPER', desc: 'Autonomous paper execution (Default)', color: 'text-emerald-400 border-emerald-800/80 bg-emerald-950/40' },
+    1: { name: 'LEVEL 1 · CONTROLLED', desc: 'Owner-controlled live execution (Default)', color: 'text-emerald-400 border-emerald-800/80 bg-emerald-950/40' },
     2: { name: 'LEVEL 2 · ASSISTED', desc: 'AI proposes; Owner manual approve', color: 'text-cyan-400 border-cyan-800/80 bg-cyan-950/40' },
     3: { name: 'LEVEL 3 · AUTONOMOUS', desc: 'Autonomous live strategy deployment', color: 'text-amber-400 border-amber-800/80 bg-amber-950/40' },
-    4: { name: 'LEVEL 4 · CONTINUOUS', desc: 'Full AI research, test & live deploy loop', color: 'text-purple-400 border-purple-800/80 bg-purple-950/40' }
+    4: { name: 'LEVEL 4 · CONTINUOUS', desc: 'Full AI research, validation & live deployment loop', color: 'text-purple-400 border-purple-800/80 bg-purple-950/40' }
   };
 
   const getRegimeColor = (r: string) => {
