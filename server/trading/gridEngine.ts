@@ -9,6 +9,7 @@ export interface GridParams {
   volatilityAdjustment?: boolean;
   trendProtection?: boolean;
   regime?: MarketRegime | null;
+  targetGridSpacingPct?: number;
 }
 
 export class GridEngine implements EngineModule {
@@ -107,13 +108,19 @@ export class GridEngine implements EngineModule {
         regime
       } = params;
 
-      // Calculate baseline width from ATR or regime
+      // Calculate baseline width from regime, optionally overridden by the autonomous optimizer.
       let baseWidthPct = 0.05; // 5% default
       if (regime) {
         if (regime.regime === 'BREAKOUT_VOLATILITY') baseWidthPct = 0.08;
         else if (regime.regime === 'RANGE_BOUND_LOW_VOL') baseWidthPct = 0.035;
         else if (regime.regime === 'BULL_TREND_STRONG') baseWidthPct = 0.06;
         else if (regime.regime === 'BEAR_TREND_STRONG') baseWidthPct = 0.065;
+      }
+
+      const totalRungsForSpacing = Math.max(4, Math.min(64, levelsCount));
+      if (params.targetGridSpacingPct && params.targetGridSpacingPct > 0) {
+        // gridSpacingPct = full width / total rungs * 100; convert requested spacing to half-width.
+        baseWidthPct = (params.targetGridSpacingPct * totalRungsForSpacing) / 200;
       }
 
       let upperBoundary = currentPrice * (1 + baseWidthPct);
