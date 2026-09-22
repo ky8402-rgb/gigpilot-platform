@@ -27,6 +27,7 @@ import {
   fetchRiskData,
   fetchUpdatesHistory,
   fetchAuditLogs,
+  fetchAutonomousOptimizer,
   isEngineLiveConnected,
   fetchOwnerAuthStatus,
   logoutOwner,
@@ -63,6 +64,7 @@ import {
   Server
 } from 'lucide-react';
 import { EngineHealthView } from './EngineHealthView';
+import { AutonomousProfitOptimizerView } from './AutonomousProfitOptimizerView';
 
 export type ActiveTerminalTab =
   | 'TERMINAL'
@@ -74,7 +76,8 @@ export type ActiveTerminalTab =
   | 'PROFIT_SWEEP'
   | 'WEB_RESEARCH'
   | 'RISK_SAFETY'
-  | 'SYSTEM_CANARY';
+  | 'SYSTEM_CANARY'
+  | 'AI_PROFIT';
 
 export interface TradingDashboardProps {
   onLogout?: () => void;
@@ -96,6 +99,7 @@ export const TradingDashboard: React.FC<TradingDashboardProps> = ({ onLogout }) 
   const [riskData, setRiskData] = useState<any>(null);
   const [updatesHistory, setUpdatesHistory] = useState<any[]>([]);
   const [auditLogs, setAuditLogs] = useState<any[]>([]);
+  const [optimizerTelemetry, setOptimizerTelemetry] = useState<any>(null);
   const [globalKillSwitchActive, setGlobalKillSwitchActive] = useState<boolean>(true);
   const [isLiveConnected, setIsLiveConnected] = useState<boolean>(false);
   const [refreshing, setRefreshing] = useState(false);
@@ -123,6 +127,7 @@ export const TradingDashboard: React.FC<TradingDashboardProps> = ({ onLogout }) 
         riskRes,
         updatesRes,
         logsRes,
+        optimizerRes,
         pairDetailsRes
       ] = await Promise.allSettled([
         fetchAllPairs(),
@@ -132,6 +137,7 @@ export const TradingDashboard: React.FC<TradingDashboardProps> = ({ onLogout }) 
         fetchRiskData(),
         fetchUpdatesHistory(),
         fetchAuditLogs(),
+        fetchAutonomousOptimizer(),
         masterState.activeSymbol ? fetchPairDetails(masterState.activeSymbol) : Promise.resolve(null)
       ]);
 
@@ -142,6 +148,7 @@ export const TradingDashboard: React.FC<TradingDashboardProps> = ({ onLogout }) 
       if (riskRes.status === 'fulfilled') setRiskData(riskRes.value);
       if (updatesRes.status === 'fulfilled') setUpdatesHistory(updatesRes.value.updates);
       if (logsRes.status === 'fulfilled') setAuditLogs(logsRes.value.logs);
+      if (optimizerRes.status === 'fulfilled') setOptimizerTelemetry(optimizerRes.value);
       if (pairDetailsRes.status === 'fulfilled' && pairDetailsRes.value) setPairDetails(pairDetailsRes.value);
     } catch (err: any) {
       console.warn('[TradingDashboard] Telemetry notice:', err.message || err);
@@ -456,6 +463,18 @@ export const TradingDashboard: React.FC<TradingDashboardProps> = ({ onLogout }) 
             </button>
 
             <button
+              onClick={() => setActiveTab('AI_PROFIT')}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-mono font-bold transition-all ${
+                activeTab === 'AI_PROFIT'
+                  ? 'bg-emerald-950/80 text-emerald-300 border border-emerald-700/80 shadow'
+                  : 'text-slate-400 hover:text-slate-200'
+              }`}
+            >
+              <Cpu className="w-3.5 h-3.5 text-emerald-400" />
+              <span>AI Profit Engine</span>
+            </button>
+
+            <button
               onClick={() => setActiveTab('SYSTEM_CANARY')}
               className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-mono font-bold transition-all ${
                 activeTab === 'SYSTEM_CANARY'
@@ -521,6 +540,10 @@ export const TradingDashboard: React.FC<TradingDashboardProps> = ({ onLogout }) 
               />
             </div>
           </div>
+        )}
+
+        {activeTab === 'AI_PROFIT' && (
+          <AutonomousProfitOptimizerView />
         )}
 
         {activeTab === 'ENGINES' && (
