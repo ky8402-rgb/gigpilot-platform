@@ -63,7 +63,7 @@ export class AutonomousStrategyBuilder implements EngineModule {
     }
     const start = Date.now();
     try {
-      const prompt = \`You are GigPilot's autonomous live-production strategy builder.
+      const prompt = `You are GigPilot's autonomous live-production strategy builder.
 
 Your sole objective is sustainable NET REALIZED PROFIT AFTER FEES. Do not optimize trade count, volume, gross P&L, raw win rate, or other vanity metrics.
 
@@ -82,22 +82,22 @@ Never change credentials, wallet/withdrawal settings, leverage limits, exposure 
 A build is eligible only when confidence >= 0.85 and all proposed parameters remain within the bounds above. If live evidence is insufficient, return REJECTED.
 
 LIVE ACCOUNTING:
-\${JSON.stringify({ totalEquity: input.capital.totalEquity, availableCash: input.capital.availableCash, lockedInOrders: input.capital.lockedInOrders, netRealizedProfit: input.capital.netRealizedProfit, totalTradingFees: input.capital.totalTradingFees, currentDrawdownPct: input.capital.currentDrawdownPct, totalTrades: input.capital.totalTrades })}
+${JSON.stringify({ totalEquity: input.capital.totalEquity, availableCash: input.capital.availableCash, lockedInOrders: input.capital.lockedInOrders, netRealizedProfit: input.capital.netRealizedProfit, totalTradingFees: input.capital.totalTradingFees, currentDrawdownPct: input.capital.currentDrawdownPct, totalTrades: input.capital.totalTrades })}
 
 LIVE GRID:
-\${JSON.stringify({ spacingPct: input.grid.gridSpacingPct, levels: input.grid.levelsCount, allocatedUsd: input.grid.totalAllocatedUsd, spacingType: input.grid.spacingType })}
+${JSON.stringify({ spacingPct: input.grid.gridSpacingPct, levels: input.grid.levelsCount, allocatedUsd: input.grid.totalAllocatedUsd, spacingType: input.grid.spacingType })}
 
 LIVE REGIME:
-\${JSON.stringify(input.regime)}
+${JSON.stringify(input.regime)}
 
 LATEST LIVE RESEARCH:
-\${JSON.stringify(input.research.slice(0, 5))}
+${JSON.stringify(input.research.slice(0, 5))}
 
 CURRENT LIVE STRATEGY:
-\${JSON.stringify({ id: input.champion.id, version: input.champion.version, parameters: input.champion.parameters, liveResults: input.champion.liveTradingResults })}
+${JSON.stringify({ id: input.champion.id, version: input.champion.version, parameters: input.champion.parameters, liveResults: input.champion.liveTradingResults })}
 
 Return JSON only:
-{"status":"BUILT|REJECTED","strategyName":"...","confidence":0..1,"rationale":"...","expectedEffect":"...","parameters":{"gridLevels":16,"gridSpacingPct":0.65,"volatilityMultiplier":1.15,"trendFilterEma":50,"rsiFilterThreshold":35,"rebalanceIntervalSec":120}}\`;
+{"status":"BUILT|REJECTED","strategyName":"...","confidence":0..1,"rationale":"...","expectedEffect":"...","parameters":{"gridLevels":16,"gridSpacingPct":0.65,"volatilityMultiplier":1.15,"trendFilterEma":50,"rsiFilterThreshold":35,"rebalanceIntervalSec":120}}`;
 
       const response = await ai.models.generateContent({ model: 'gemini-2.5-flash', contents: prompt });
       const raw = response.text?.trim() || '{}';
@@ -111,7 +111,7 @@ Return JSON only:
       const valid = validInt(p.gridLevels, 8, 64) && validNum(p.gridSpacingPct, 0.10, 5.00) && validNum(p.volatilityMultiplier, 0.50, 2.00) && validInt(p.trendFilterEma, 9, 200) && validNum(p.rsiFilterThreshold, 20, 80) && validInt(p.rebalanceIntervalSec, 30, 900);
       const status = parsed.status === 'BUILT' && confidence >= 0.85 && valid ? 'BUILT' : 'REJECTED';
       const build: AutonomousStrategyBuild = {
-        id: \`build_\${Date.now()}_\${Math.random().toString(36).slice(2, 7)}\`,
+        id: `build_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
         createdAt: new Date().toISOString(),
         objective: 'NET_REALIZED_PROFIT_AFTER_FEES',
         status,
@@ -131,13 +131,13 @@ Return JSON only:
       return build;
     } catch (err: any) {
       this.status = 'DEGRADED';
-      this.recordError('ERROR', \`Autonomous strategy build failed: \${err?.message || 'unknown error'}\`);
+      this.recordError('ERROR', `Autonomous strategy build failed: ${err?.message || 'unknown error'}`);
       return null;
     }
   }
 
   private recordError(level: EngineErrorRecord['level'], message: string) {
-    this.errorSurface.unshift({ id: \`err_strategy_builder_\${Date.now()}_\${Math.random().toString(36).slice(2, 7)}\`, timestamp: new Date().toISOString(), level, message });
+    this.errorSurface.unshift({ id: `err_strategy_builder_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`, timestamp: new Date().toISOString(), level, message });
     if (this.errorSurface.length > 50) this.errorSurface.pop();
   }
 }
