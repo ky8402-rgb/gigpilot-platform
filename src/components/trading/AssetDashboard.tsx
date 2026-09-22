@@ -203,9 +203,9 @@ export const AssetDashboard: React.FC<AssetDashboardProps> = ({
           </div>
           <div className="flex items-center gap-2 shrink-0 bg-slate-900/90 border border-amber-800/80 px-3 py-2 rounded-lg">
             <span className="text-[11px] text-slate-400">Server Public IP:</span>
-            <code className="text-xs font-mono font-bold text-amber-300">{account?.serverIp || '3.222.149.9'}</code>
+            <code className="text-xs font-mono font-bold text-amber-300">{account?.serverIp || 'Unavailable'}</code>
             <button
-              onClick={() => handleCopyIp(account?.serverIp || '3.222.149.9')}
+              onClick={() => handleCopyIp(account?.serverIp || 'Unavailable')}
               className="p-1 text-slate-400 hover:text-white transition"
               title="Copy Server IP"
             >
@@ -557,17 +557,17 @@ export const AssetDashboard: React.FC<AssetDashboardProps> = ({
               <ul className="text-slate-400 list-disc list-inside space-y-0.5 leading-normal">
                 <li>Permissions needed: <strong className="text-slate-200">Spot & Margin Trading</strong></li>
                 <li>Leave <strong className="text-rose-400">Withdrawals UNCHECKED</strong> (keeps your funds strictly protected)</li>
-                <li>Optionally whitelist EC2 Server IP: <code className="text-amber-300 font-mono font-bold">{account?.serverIp || '3.222.149.9'}</code></li>
+                <li>Optionally whitelist EC2 Server IP: <code className="text-amber-300 font-mono font-bold">{account?.serverIp || 'Unavailable'}</code></li>
               </ul>
               <div className="flex items-center justify-between pt-1 border-t border-slate-800/80">
                 <span className="text-slate-400">Server IP Whitelist:</span>
                 <button
                   type="button"
-                  onClick={() => handleCopyIp(account?.serverIp || '3.222.149.9')}
+                  onClick={() => handleCopyIp(account?.serverIp || 'Unavailable')}
                   className="text-xs text-amber-400 hover:text-amber-300 flex items-center gap-1 font-mono font-semibold"
                 >
                   {copiedIp ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
-                  <span>{copiedIp ? 'Copied' : account?.serverIp || '3.222.149.9'}</span>
+                  <span>{copiedIp ? 'Copied' : account?.serverIp || 'Unavailable'}</span>
                 </button>
               </div>
             </div>
