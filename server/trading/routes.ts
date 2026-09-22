@@ -505,7 +505,10 @@ tradingRouter.get('/optimizer', (req: Request, res: Response) => {
     success: true,
     objective: 'NET_REALIZED_PROFIT_AFTER_FEES',
     autonomousDecisioning: true,
+    autonomousBuild: true,
+    sourceData: 'LIVE_PRODUCTION_ONLY',
     decisions: store.autonomousProfitOptimizer.getDecisions(),
+    strategyBuilds: store.autonomousProfitOptimizer.getStrategyBuilds(),
     engine: store.autonomousProfitOptimizer.healthCheck()
   });
 });
