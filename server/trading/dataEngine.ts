@@ -52,7 +52,7 @@ export class DataEngine implements EngineModule {
   // Real-time WebSocket connection to Bybit V5 public spot stream
   private ws: WebSocket | null = null;
   private wsConnected: boolean = false;
-  private wsUrl: string = 'wss://stream.bybit.com/v5/public/spot';
+  private wsUrl: string = process.env.BYBIT_WS_URL || 'wss://stream.bybit.com/v5/public/spot';
 
   private marketData: Map<string, LivePairMarketData> = new Map();
   private tickCallbacks: Array<(symbol: string, price: number, data: LivePairMarketData) => void> = [];
@@ -68,9 +68,9 @@ export class DataEngine implements EngineModule {
   ];
 
   // Official public endpoints for Bybit V5 live market data
-  private bybitEndpoints = [
-    'https://api.bybit.com'
-  ];
+  private bybitEndpoints = (process.env.BYBIT_API_BASE_URL
+    ? [process.env.BYBIT_API_BASE_URL]
+    : ['https://api.bybit.com', 'https://api.bytick.com']);
 
   constructor() {
     this.startLiveIngestion();
@@ -390,7 +390,7 @@ export class DataEngine implements EngineModule {
         let spreadBps = existing?.orderBook?.spreadBps || 0;
 
         try {
-          const depthRes = await fetch(`https://api.bybit.com/v5/market/orderbook?category=spot&symbol=${raw}&limit=15`, {
+          const depthRes = await fetch(`${this.bybitEndpoints[0]}/v5/market/orderbook?category=spot&symbol=${raw}&limit=15`, {
             headers: { 'Accept': 'application/json' }
           });
           if (depthRes.ok) {
@@ -426,7 +426,7 @@ export class DataEngine implements EngineModule {
         let candles: Candle[] = existing?.candles || [];
 
         try {
-          const klineRes = await fetch(`https://api.bybit.com/v5/market/kline?category=spot&symbol=${raw}&interval=1&limit=30`, {
+          const klineRes = await fetch(`${this.bybitEndpoints[0]}/v5/market/kline?category=spot&symbol=${raw}&interval=1&limit=30`, {
             headers: { 'Accept': 'application/json' }
           });
           if (klineRes.ok) {
