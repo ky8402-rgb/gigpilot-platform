@@ -476,8 +476,8 @@ export const EngineHealthView: React.FC<EngineHealthViewProps> = ({ onEngineTogg
               Execution engine connects exclusively using trade-only credentials. Any key with withdrawal permissions is rejected by policy.
             </p>
 
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-              {(['BINANCE', 'BYBIT', 'KUCOIN'] as SupportedExchange[]).map((ex) => {
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              {(['BYBIT', 'KUCOIN'] as SupportedExchange[]).map((ex) => {
                 const cred = credentials.find(c => c.exchange === ex);
                 const isConfigured = cred?.configured;
 

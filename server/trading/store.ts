@@ -20,7 +20,7 @@ import { LearningLoopEngine } from './learningLoop.js';
 import { ScriptingSandboxEngine } from './scriptingEngine.js';
 import { SystemMonitorSecurity } from './systemMonitor.js';
 import { EmergencyKillSwitch } from './killSwitch.js';
-import { binanceAdapter } from './binanceAdapter.js';
+import { bybitAdapter } from './bybitAdapter.js';
 
 export class TradingStore {
   // Modular Subsystems
@@ -129,7 +129,7 @@ export class TradingStore {
 
   public async syncCapitalFromRealExchange(): Promise<void> {
     try {
-      const acct = await binanceAdapter.getRealAccountState();
+      const acct = await bybitAdapter.getRealAccountState();
       if (acct.status === 'CONNECTED') {
         this.profitAccounting.syncFromRealAccount({
           totalEquityUsd: acct.totalEquityUsd,

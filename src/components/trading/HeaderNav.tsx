@@ -286,10 +286,10 @@ export const HeaderNav: React.FC<HeaderNavProps> = ({
             <button
               onClick={onNavigateToAssets}
               className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-900 hover:bg-slate-800 text-slate-200 text-xs font-semibold border border-slate-800 hover:border-amber-500/50 transition shadow-sm"
-              title="View live Binance spot assets & balances"
+              title="View live Bybit spot assets & balances"
             >
               <Wallet className="w-3.5 h-3.5 text-amber-400" />
-              <span className="hidden sm:inline">Binance Assets</span>
+              <span className="hidden sm:inline">Bybit Assets</span>
             </button>
           )}
 

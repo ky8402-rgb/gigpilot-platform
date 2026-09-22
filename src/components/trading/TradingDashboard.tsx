@@ -311,7 +311,7 @@ export const TradingDashboard: React.FC<TradingDashboardProps> = ({ onLogout }) 
             <span className="w-2 h-2 rounded-full bg-amber-400 animate-pulse" />
             <span className="font-bold text-amber-300">BACKEND EXCHANGE GATEWAY CONNECTING:</span>
             <span className="text-slate-300">
-              Live spot market prices, balances, and orders stream directly from Binance Spot REST API.
+              Live spot market prices, balances, and orders stream directly from Bybit Spot V5 API.
             </span>
           </div>
           <button
@@ -395,7 +395,7 @@ export const TradingDashboard: React.FC<TradingDashboardProps> = ({ onLogout }) 
               }`}
             >
               <Coins className="w-3.5 h-3.5 text-amber-400" />
-              <span>Binance Assets</span>
+              <span>Bybit Assets</span>
             </button>
 
             <button

@@ -162,7 +162,7 @@ class OwnerAuthManager {
     const targetEmail = email || this.config.ownerEmail;
     this.pendingTotpSecret = base32Encode(crypto.randomBytes(20));
     
-    const issuer = 'GigPilot Binance Quant';
+    const issuer = 'GigPilot Bybit Quant';
     const otpauthUrl = `otpauth://totp/${encodeURIComponent(issuer)}:${encodeURIComponent(targetEmail)}?secret=${this.pendingTotpSecret}&issuer=${encodeURIComponent(issuer)}&algorithm=SHA1&digits=6&period=30`;
     
     const qrCodeDataUrl = await QRCode.toDataURL(otpauthUrl, {

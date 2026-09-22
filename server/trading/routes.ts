@@ -1,7 +1,7 @@
 import { Router, Request, Response } from 'express';
 import { globalTradingStore } from './store.js';
 import { ownerAuth } from './ownerAuth.js';
-import { binanceAdapter } from './binanceAdapter.js';
+import { bybitAdapter } from './bybitAdapter.js';
 import { EngineId, SupportedExchange } from './types.js';
 
 export const tradingRouter = Router();
@@ -101,7 +101,7 @@ tradingRouter.post('/engines/:id/clear-errors', (req: Request, res: Response) =>
   }
 });
 
-// 5. Multi-Exchange Credentials Management (Trade-Only Keys for Binance, Bybit, KuCoin)
+// 5. Multi-Exchange Credentials Management (Trade-Only Keys for Bybit, KuCoin)
 tradingRouter.get('/exchanges/credentials', (req: Request, res: Response) => {
   try {
     const creds = globalTradingStore.exchangeExec.getExchangeCredentials();
@@ -117,9 +117,9 @@ tradingRouter.get('/exchanges/credentials', (req: Request, res: Response) => {
 
 tradingRouter.post('/exchanges/keys', (req: Request, res: Response) => {
   try {
-    const { exchange, apiKey, apiSecret, passphrase } = req.body || {};
-    if (!exchange || !['BINANCE', 'BYBIT', 'KUCOIN'].includes(exchange)) {
-      return res.status(400).json({ success: false, error: 'Valid exchange (BINANCE, BYBIT, KUCOIN) is required.' });
+    const { exchange, apiKey, apiSecret, passphrase, isTestnet } = req.body || {};
+    if (!exchange || !['BYBIT', 'KUCOIN'].includes(exchange)) {
+      return res.status(400).json({ success: false, error: 'Valid exchange (BYBIT, KUCOIN) is required.' });
     }
     if (!apiKey || !apiSecret) {
       return res.status(400).json({ success: false, error: 'Both apiKey and apiSecret are required.' });
@@ -130,15 +130,15 @@ tradingRouter.post('/exchanges/keys', (req: Request, res: Response) => {
       return res.status(400).json(result);
     }
 
-    // Also update binanceAdapter if Binance
-    if (exchange === 'BINANCE') {
-      binanceAdapter.updateCredentials(apiKey, apiSecret);
+    // Also update bybitAdapter if Bybit
+    if (exchange === 'BYBIT') {
+      bybitAdapter.updateCredentials(apiKey, apiSecret, undefined, isTestnet);
     }
 
     globalTradingStore.monitor.logAudit({
       category: 'CONFIG_CHANGE',
       action: `Updated Trade-Only API Keys for ${exchange}`,
-      details: { exchange }
+      details: { exchange, isTestnet }
     });
 
     return res.json({
@@ -360,13 +360,14 @@ tradingRouter.post('/order/place', async (req: Request, res: Response) => {
   }
 
   // 2. Exchange Execution Engine
+  const targetExchange = exchange || 'BYBIT';
   const execResult = await store.exchangeExec.executeOrder({
     symbol: norm,
     side,
     type,
     price: numPrice,
     amount: numAmount,
-    exchange: exchange || 'BINANCE'
+    exchange: targetExchange
   });
 
   if (!execResult.success) {
@@ -384,7 +385,7 @@ tradingRouter.post('/order/place', async (req: Request, res: Response) => {
 
   store.monitor.logAudit({
     category: 'ORDER_EXECUTION',
-    action: `Live order placed on ${exchange || 'BINANCE'}`,
+    action: `Live order placed on ${targetExchange}`,
     details: { orderId: execResult.order?.id, symbol: norm, side, price: numPrice, amount: numAmount }
   });
 
@@ -636,7 +637,7 @@ tradingRouter.post('/auth/logout', (req: Request, res: Response) => {
 tradingRouter.get('/assets', async (req: Request, res: Response) => {
   try {
     const force = req.query.refresh === 'true';
-    const accountState = await binanceAdapter.getRealAccountState(force);
+    const accountState = await bybitAdapter.getRealAccountState(force);
     if (accountState.status === 'CONNECTED') {
       globalTradingStore.profitAccounting.syncFromRealAccount({
         totalEquityUsd: accountState.totalEquityUsd,

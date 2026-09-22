@@ -1,0 +1,800 @@
+import crypto from 'crypto';
+import fs from 'fs';
+import path from 'path';
+import { Candle, Fill, Order, OrderBook, OrderBookLevel } from './types.js';
+
+export interface BybitBalanceItem {
+  asset: string;
+  free: string;
+  locked: string;
+}
+
+export interface BybitAssetWithUsd {
+  asset: string;
+  free: number;
+  locked: number;
+  total: number;
+  usdPrice: number;
+  usdValue: number;
+  allocationPct: number;
+  change24hPct?: number;
+}
+
+export interface BybitAccountState {
+  status: 'CONNECTED' | 'RESTRICTED' | 'DISCONNECTED' | 'ERROR';
+  message: string;
+  serverIp: string;
+  timestamp: string;
+  totalEquityUsd: number;
+  availableCashUsd: number;
+  lockedInOrdersUsd: number;
+  spotBalances: BybitAssetWithUsd[];
+  realizedProfitUsd: number;
+  unrealizedProfitUsd: number;
+  todayPnLUsd: number;
+  todayPnLPct: number;
+  openOrdersCount: number;
+  recentTrades: Fill[];
+  canTrade: boolean;
+  canWithdraw: boolean;
+  canDeposit: boolean;
+  accountType: string;
+  apiKeyConfigured: boolean;
+  keyMask: string;
+  isTestnet?: boolean;
+}
+
+const BYBIT_CONFIG_FILE = path.join(process.cwd(), '.bybit-quant-keys.json');
+
+export class BybitAdapter {
+  private apiKey: string = '';
+  private apiSecret: string = '';
+  private baseUrl: string = 'https://api.bybit.com';
+  private testnetBaseUrl: string = 'https://api-testnet.bybit.com';
+  private isTestnet: boolean = false;
+  private serverIp: string = '3.222.149.9';
+  private priceCache: Map<string, { price: number; time: number }> = new Map();
+  private lastAccountState: BybitAccountState | null = null;
+  private lastAccountFetchTime = 0;
+  private timeOffset = 0;
+
+  constructor() {
+    let savedKeys: any = {};
+    if (fs.existsSync(BYBIT_CONFIG_FILE)) {
+      try {
+        savedKeys = JSON.parse(fs.readFileSync(BYBIT_CONFIG_FILE, 'utf-8'));
+      } catch (e) {
+        console.error('Error loading saved Bybit keys:', e);
+      }
+    }
+
+    this.apiKey = savedKeys.apiKey || process.env.BYBIT_API_KEY || '';
+    this.apiSecret = savedKeys.apiSecret || process.env.BYBIT_API_SECRET || '';
+    this.isTestnet = Boolean(savedKeys.isTestnet ?? (process.env.BYBIT_TESTNET === 'true'));
+    if (savedKeys.baseUrl) {
+      this.baseUrl = savedKeys.baseUrl;
+    } else if (this.isTestnet) {
+      this.baseUrl = this.testnetBaseUrl;
+    }
+
+    this.syncServerTime().catch(() => {});
+  }
+
+  public getActiveBaseUrl(): string {
+    return this.isTestnet ? this.testnetBaseUrl : this.baseUrl;
+  }
+
+  public getIsTestnet(): boolean {
+    return this.isTestnet;
+  }
+
+  public setTestnet(testnet: boolean): void {
+    this.isTestnet = testnet;
+    this.baseUrl = testnet ? this.testnetBaseUrl : 'https://api.bybit.com';
+    this.saveConfig();
+  }
+
+  public async syncServerTime(): Promise<number> {
+    try {
+      const res = await fetch(`${this.getActiveBaseUrl()}/v5/market/time`);
+      if (res.ok) {
+        const data = (await res.json()) as any;
+        const serverTime = Number(data?.time || (data?.result?.timeSecond ? data.result.timeSecond * 1000 : Date.now()));
+        this.timeOffset = serverTime - Date.now();
+      }
+    } catch {
+      this.timeOffset = 0;
+    }
+    return this.timeOffset;
+  }
+
+  public getSyncedTimestamp(): number {
+    return Date.now() + this.timeOffset;
+  }
+
+  public updateCredentials(apiKey: string, apiSecret: string, baseUrl?: string, isTestnet?: boolean): void {
+    this.apiKey = apiKey.trim();
+    this.apiSecret = apiSecret.trim();
+    if (typeof isTestnet === 'boolean') {
+      this.isTestnet = isTestnet;
+    }
+    if (baseUrl) {
+      this.baseUrl = baseUrl.trim();
+    } else {
+      this.baseUrl = this.isTestnet ? this.testnetBaseUrl : 'https://api.bybit.com';
+    }
+    this.saveConfig();
+    this.lastAccountState = null;
+    this.lastAccountFetchTime = 0;
+    this.syncServerTime().catch(() => {});
+  }
+
+  private saveConfig(): void {
+    try {
+      fs.writeFileSync(
+        BYBIT_CONFIG_FILE,
+        JSON.stringify(
+          {
+            apiKey: this.apiKey,
+            apiSecret: this.apiSecret,
+            baseUrl: this.baseUrl,
+            isTestnet: this.isTestnet,
+            updatedAt: new Date().toISOString()
+          },
+          null,
+          2
+        )
+      );
+    } catch (e) {
+      console.error('Failed to save Bybit config:', e);
+    }
+  }
+
+  public getKeyMask(): string {
+    if (!this.apiKey) return 'NOT_CONFIGURED';
+    if (this.apiKey.length <= 8) return '****' + this.apiKey.slice(-4);
+    return this.apiKey.slice(0, 4) + '...' + this.apiKey.slice(-4);
+  }
+
+  public hasCredentials(): boolean {
+    return Boolean(this.apiKey && this.apiSecret);
+  }
+
+  public normalizeSymbol(sym: string): string {
+    let s = (sym || 'BTC/USDT').replace(/[\/\-_]/g, '').toUpperCase();
+    if (!s.endsWith('USDT') && !s.endsWith('USDC') && !s.endsWith('USD')) {
+      s += 'USDT';
+    }
+    return s;
+  }
+
+  public denormalizeSymbol(sym: string): string {
+    const raw = sym.toUpperCase();
+    if (raw.endsWith('USDT')) return `${raw.slice(0, -4)}/USDT`;
+    if (raw.endsWith('USDC')) return `${raw.slice(0, -4)}/USDC`;
+    if (raw.endsWith('USD')) return `${raw.slice(0, -3)}/USD`;
+    return raw;
+  }
+
+  private signGet(params: Record<string, any>): { headers: Record<string, string>; queryString: string } {
+    const timestamp = this.getSyncedTimestamp().toString();
+    const recvWindow = '5000';
+    const keys = Object.keys(params).sort();
+    const queryString = keys.map(k => `${k}=${params[k]}`).join('&');
+    const signPayload = `${timestamp}${this.apiKey}${recvWindow}${queryString}`;
+    const signature = crypto.createHmac('sha256', this.apiSecret).update(signPayload).digest('hex');
+
+    return {
+      headers: {
+        'X-BAPI-API-KEY': this.apiKey,
+        'X-BAPI-SIGN': signature,
+        'X-BAPI-TIMESTAMP': timestamp,
+        'X-BAPI-RECV-WINDOW': recvWindow,
+        'Accept': 'application/json'
+      },
+      queryString
+    };
+  }
+
+  private signPost(body: Record<string, any>): { headers: Record<string, string>; bodyStr: string } {
+    const timestamp = this.getSyncedTimestamp().toString();
+    const recvWindow = '5000';
+    const bodyStr = JSON.stringify(body);
+    const signPayload = `${timestamp}${this.apiKey}${recvWindow}${bodyStr}`;
+    const signature = crypto.createHmac('sha256', this.apiSecret).update(signPayload).digest('hex');
+
+    return {
+      headers: {
+        'X-BAPI-API-KEY': this.apiKey,
+        'X-BAPI-SIGN': signature,
+        'X-BAPI-TIMESTAMP': timestamp,
+        'X-BAPI-RECV-WINDOW': recvWindow,
+        'Content-Type': 'application/json',
+        'Accept': 'application/json'
+      },
+      bodyStr
+    };
+  }
+
+  /**
+   * Public: Real live ticker price from Bybit V5 Spot
+   */
+  public async getRealPrice(symbol = 'BTCUSDT'): Promise<number> {
+    const raw = this.normalizeSymbol(symbol);
+    const cached = this.priceCache.get(raw);
+    if (cached && Date.now() - cached.time < 2000) {
+      return cached.price;
+    }
+
+    try {
+      const res = await fetch(`${this.getActiveBaseUrl()}/v5/market/tickers?category=spot&symbol=${raw}`, {
+        headers: { 'Accept': 'application/json' }
+      });
+      if (res.ok) {
+        const json = (await res.json()) as any;
+        const item = json?.result?.list?.[0];
+        const p = parseFloat(item?.lastPrice);
+        if (p > 0) {
+          this.priceCache.set(raw, { price: p, time: Date.now() });
+          return p;
+        }
+      }
+    } catch {
+      // ignore
+    }
+
+    return cached?.price || 0;
+  }
+
+  /**
+   * Public: Real 24h ticker statistics from Bybit V5 Spot
+   */
+  public async getReal24hStats(symbol = 'BTCUSDT'): Promise<{
+    symbol: string;
+    price: number;
+    open24h: number;
+    high24h: number;
+    low24h: number;
+    volume: number;
+    change24hPct: number;
+  }> {
+    const raw = this.normalizeSymbol(symbol);
+    try {
+      const res = await fetch(`${this.getActiveBaseUrl()}/v5/market/tickers?category=spot&symbol=${raw}`, {
+        headers: { 'Accept': 'application/json' }
+      });
+      if (res.ok) {
+        const json = (await res.json()) as any;
+        const item = json?.result?.list?.[0];
+        if (item) {
+          const price = parseFloat(item.lastPrice) || 0;
+          const open24h = parseFloat(item.prevPrice24h) || 0;
+          const high24h = parseFloat(item.highPrice24h) || 0;
+          const low24h = parseFloat(item.lowPrice24h) || 0;
+          const volume = parseFloat(item.volume24h) || 0;
+          const change24hPct = parseFloat(item.price24hPcnt) * 100 || 0;
+          return { symbol: this.denormalizeSymbol(raw), price, open24h, high24h, low24h, volume, change24hPct };
+        }
+      }
+    } catch {
+      // ignore
+    }
+
+    return {
+      symbol: this.denormalizeSymbol(raw),
+      price: 0,
+      open24h: 0,
+      high24h: 0,
+      low24h: 0,
+      volume: 0,
+      change24hPct: 0
+    };
+  }
+
+  /**
+   * Public: Real Candlesticks from Bybit V5 Spot
+   */
+  public async getRealCandles(symbol = 'BTCUSDT', interval = '1m', limit = 50): Promise<Candle[]> {
+    const raw = this.normalizeSymbol(symbol);
+    let intervalParam = '1';
+    if (interval === '3m') intervalParam = '3';
+    else if (interval === '5m') intervalParam = '5';
+    else if (interval === '15m') intervalParam = '15';
+    else if (interval === '30m') intervalParam = '30';
+    else if (interval === '1h') intervalParam = '60';
+    else if (interval === '4h') intervalParam = '240';
+    else if (interval === '1d') intervalParam = 'D';
+
+    try {
+      const res = await fetch(`${this.getActiveBaseUrl()}/v5/market/kline?category=spot&symbol=${raw}&interval=${intervalParam}&limit=${limit}`, {
+        headers: { 'Accept': 'application/json' }
+      });
+      if (res.ok) {
+        const json = (await res.json()) as any;
+        const list = json?.result?.list;
+        if (Array.isArray(list) && list.length > 0) {
+          // Bybit returns newest first, reverse for chronological ascending
+          return list.slice().reverse().map((k: any[]) => ({
+            timestamp: Number(k[0]),
+            open: parseFloat(k[1]),
+            high: parseFloat(k[2]),
+            low: parseFloat(k[3]),
+            close: parseFloat(k[4]),
+            volume: parseFloat(k[5])
+          }));
+        }
+      }
+    } catch {
+      // ignore
+    }
+
+    return [];
+  }
+
+  /**
+   * Public: Real Order Book (Depth) from Bybit V5 Spot
+   */
+  public async getRealOrderBook(symbol = 'BTCUSDT', limit = 15): Promise<OrderBook> {
+    const raw = this.normalizeSymbol(symbol);
+    const denorm = this.denormalizeSymbol(raw);
+
+    try {
+      const res = await fetch(`${this.getActiveBaseUrl()}/v5/market/orderbook?category=spot&symbol=${raw}&limit=${limit}`, {
+        headers: { 'Accept': 'application/json' }
+      });
+      if (res.ok) {
+        const json = (await res.json()) as any;
+        const result = json?.result;
+        if (result && (Array.isArray(result.b) || Array.isArray(result.a))) {
+          let cumB = 0;
+          let cumA = 0;
+          const bids: OrderBookLevel[] = (result.b || []).map((b: any[]) => {
+            const price = parseFloat(b[0]);
+            const amount = parseFloat(b[1]);
+            cumB += amount;
+            return { price, amount, total: Number(cumB.toFixed(4)) };
+          });
+          const asks: OrderBookLevel[] = (result.a || []).map((a: any[]) => {
+            const price = parseFloat(a[0]);
+            const amount = parseFloat(a[1]);
+            cumA += amount;
+            return { price, amount, total: Number(cumA.toFixed(4)) };
+          });
+
+          const bestBid = bids[0]?.price || 0;
+          const bestAsk = asks[0]?.price || 0;
+          const spread = bestAsk > bestBid ? Number((bestAsk - bestBid).toFixed(4)) : 0;
+          const midPrice = bestAsk && bestBid ? Number(((bestAsk + bestBid) / 2).toFixed(2)) : bestBid || bestAsk;
+          const spreadBps = midPrice > 0 ? Number(((spread / midPrice) * 10000).toFixed(2)) : 0;
+
+          return {
+            symbol: denorm,
+            bids,
+            asks,
+            spread,
+            spreadBps,
+            midPrice,
+            timestamp: Number(result.ts || Date.now())
+          };
+        }
+      }
+    } catch {
+      // ignore
+    }
+
+    return {
+      symbol: denorm,
+      bids: [],
+      asks: [],
+      spread: 0,
+      spreadBps: 0,
+      midPrice: 0,
+      timestamp: Date.now()
+    };
+  }
+
+  /**
+   * Private Signed: Real Bybit Spot Account balances and portfolio valuation
+   * Supports both Unified Trading Account (UTA) and classic Spot wallets
+   */
+  public async getRealAccountState(forceRefresh = false): Promise<BybitAccountState> {
+    if (!forceRefresh && this.lastAccountState && Date.now() - this.lastAccountFetchTime < 6000) {
+      return this.lastAccountState;
+    }
+
+    if (!this.apiKey || !this.apiSecret) {
+      return {
+        status: 'DISCONNECTED',
+        message: 'Bybit trade-only API key & secret not configured. Please enter your Bybit keys in the panel.',
+        serverIp: this.serverIp,
+        timestamp: new Date().toISOString(),
+        totalEquityUsd: 0,
+        availableCashUsd: 0,
+        lockedInOrdersUsd: 0,
+        spotBalances: [],
+        realizedProfitUsd: 0,
+        unrealizedProfitUsd: 0,
+        todayPnLUsd: 0,
+        todayPnLPct: 0,
+        openOrdersCount: 0,
+        recentTrades: [],
+        canTrade: false,
+        canWithdraw: false,
+        canDeposit: false,
+        accountType: 'SPOT / UTA',
+        apiKeyConfigured: false,
+        keyMask: 'NOT_CONFIGURED',
+        isTestnet: this.isTestnet
+      };
+    }
+
+    try {
+      // 1. Query Bybit V5 wallet balance (UNIFIED accountType first, fall back to SPOT if non-UTA)
+      let walletList: any[] = [];
+      let queryType = 'UNIFIED';
+      let signed = this.signGet({ accountType: queryType });
+      let res = await fetch(`${this.getActiveBaseUrl()}/v5/account/wallet-balance?${signed.queryString}`, {
+        headers: signed.headers
+      });
+
+      let json = (await res.json()) as any;
+
+      // If UNIFIED fails or empty, try SPOT
+      if (!res.ok || json.retCode !== 0 || !json?.result?.list?.length) {
+        queryType = 'SPOT';
+        signed = this.signGet({ accountType: queryType });
+        res = await fetch(`${this.getActiveBaseUrl()}/v5/account/wallet-balance?${signed.queryString}`, {
+          headers: signed.headers
+        });
+        json = (await res.json()) as any;
+      }
+
+      if (!res.ok || json.retCode !== 0) {
+        const retMsg = json?.retMsg || `Bybit HTTP ${res.status}`;
+        const isIpError = json?.retCode === 10003 || json?.retCode === 10004 || json?.retCode === 10005;
+        const msg = isIpError
+          ? `Bybit API Auth/IP Error (Code ${json.retCode}): ${retMsg}. Verify IP whitelist (${this.serverIp}) or API key permissions.`
+          : `Bybit Account Query Failed: ${retMsg} (Code: ${json?.retCode})`;
+
+        return {
+          status: isIpError ? 'RESTRICTED' : 'ERROR',
+          message: msg,
+          serverIp: this.serverIp,
+          timestamp: new Date().toISOString(),
+          totalEquityUsd: 0,
+          availableCashUsd: 0,
+          lockedInOrdersUsd: 0,
+          spotBalances: [],
+          realizedProfitUsd: 0,
+          unrealizedProfitUsd: 0,
+          todayPnLUsd: 0,
+          todayPnLPct: 0,
+          openOrdersCount: 0,
+          recentTrades: [],
+          canTrade: false,
+          canWithdraw: false,
+          canDeposit: false,
+          accountType: queryType,
+          apiKeyConfigured: true,
+          keyMask: this.getKeyMask(),
+          isTestnet: this.isTestnet
+        };
+      }
+
+      const accountData = json.result.list[0];
+      const coinList: any[] = accountData.coin || [];
+
+      let totalEquityUsd = parseFloat(accountData.totalEquity || accountData.totalWalletBalance || '0');
+      let availableCashUsd = 0;
+      let lockedInOrdersUsd = 0;
+
+      const spotBalances: BybitAssetWithUsd[] = [];
+
+      for (const c of coinList) {
+        const free = parseFloat(c.walletBalance || c.free || '0');
+        const locked = parseFloat(c.locked || '0');
+        const total = free + locked;
+        if (total <= 0) continue;
+
+        let usdPrice = parseFloat(c.usdValue || '0');
+        let itemUsdVal = usdPrice;
+
+        if (c.coin === 'USDT' || c.coin === 'USDC' || c.coin === 'USD') {
+          usdPrice = 1.0;
+          itemUsdVal = total;
+          availableCashUsd += free;
+          lockedInOrdersUsd += locked;
+        } else {
+          if (itemUsdVal <= 0) {
+            const p = await this.getRealPrice(`${c.coin}USDT`);
+            usdPrice = p;
+            itemUsdVal = total * p;
+          }
+        }
+
+        spotBalances.push({
+          asset: c.coin,
+          free,
+          locked,
+          total,
+          usdPrice,
+          usdValue: Number(itemUsdVal.toFixed(2)),
+          allocationPct: 0
+        });
+      }
+
+      if (totalEquityUsd <= 0) {
+        totalEquityUsd = spotBalances.reduce((sum, b) => sum + b.usdValue, 0);
+      }
+
+      // Calculate allocation percentages
+      for (const b of spotBalances) {
+        b.allocationPct = totalEquityUsd > 0 ? Number(((b.usdValue / totalEquityUsd) * 100).toFixed(2)) : 0;
+      }
+
+      spotBalances.sort((a, b) => b.usdValue - a.usdValue);
+
+      // Fetch open orders
+      let openOrdersCount = 0;
+      try {
+        const orders = await this.getRealOpenOrders();
+        openOrdersCount = orders.length;
+      } catch {
+        // ignore
+      }
+
+      // Fetch recent trade fills
+      let recentTrades: Fill[] = [];
+      try {
+        recentTrades = await this.getRealTrades('BTCUSDT', 20);
+      } catch {
+        // ignore
+      }
+
+      const state: BybitAccountState = {
+        status: 'CONNECTED',
+        message: `Connected to Bybit ${this.isTestnet ? 'Testnet' : 'Live Spot/UTA'}. Real-time balances synchronized.`,
+        serverIp: this.serverIp,
+        timestamp: new Date().toISOString(),
+        totalEquityUsd: Number(totalEquityUsd.toFixed(2)),
+        availableCashUsd: Number(availableCashUsd.toFixed(2)),
+        lockedInOrdersUsd: Number(lockedInOrdersUsd.toFixed(2)),
+        spotBalances,
+        realizedProfitUsd: 0,
+        unrealizedProfitUsd: 0,
+        todayPnLUsd: 0,
+        todayPnLPct: 0,
+        openOrdersCount,
+        recentTrades,
+        canTrade: true,
+        canWithdraw: false,
+        canDeposit: true,
+        accountType: queryType,
+        apiKeyConfigured: true,
+        keyMask: this.getKeyMask(),
+        isTestnet: this.isTestnet
+      };
+
+      this.lastAccountState = state;
+      this.lastAccountFetchTime = Date.now();
+      return state;
+    } catch (e: any) {
+      return {
+        status: 'ERROR',
+        message: `Bybit Connection Exception: ${e.message}`,
+        serverIp: this.serverIp,
+        timestamp: new Date().toISOString(),
+        totalEquityUsd: 0,
+        availableCashUsd: 0,
+        lockedInOrdersUsd: 0,
+        spotBalances: [],
+        realizedProfitUsd: 0,
+        unrealizedProfitUsd: 0,
+        todayPnLUsd: 0,
+        todayPnLPct: 0,
+        openOrdersCount: 0,
+        recentTrades: [],
+        canTrade: false,
+        canWithdraw: false,
+        canDeposit: false,
+        accountType: 'SPOT / UTA',
+        apiKeyConfigured: true,
+        keyMask: this.getKeyMask(),
+        isTestnet: this.isTestnet
+      };
+    }
+  }
+
+  /**
+   * Private Signed: Real Open Orders from Bybit
+   */
+  public async getRealOpenOrders(symbol?: string): Promise<Order[]> {
+    if (!this.apiKey || !this.apiSecret) return [];
+
+    const params: Record<string, any> = { category: 'spot' };
+    if (symbol) {
+      params.symbol = this.normalizeSymbol(symbol);
+    }
+
+    const { headers, queryString } = this.signGet(params);
+    const res = await fetch(`${this.getActiveBaseUrl()}/v5/order/realtime?${queryString}`, {
+      headers
+    });
+
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.retMsg || `HTTP ${res.status}`);
+    }
+
+    const json = (await res.json()) as any;
+    const rawList = json?.result?.list || [];
+
+    return rawList.map((o: any) => ({
+      id: String(o.orderId),
+      symbol: this.denormalizeSymbol(o.symbol),
+      side: o.side.toUpperCase() as 'BUY' | 'SELL',
+      type: o.orderType.toUpperCase() === 'LIMIT' ? 'LIMIT' : 'MARKET',
+      price: parseFloat(o.price || '0'),
+      amount: parseFloat(o.qty || '0'),
+      filledAmount: parseFloat(o.cumExecQty || '0'),
+      remainingAmount: parseFloat(o.leavesQty || o.qty || '0'),
+      costUsd: parseFloat(o.cumExecValue || '0'),
+      status: o.orderStatus === 'New' || o.orderStatus === 'PartiallyFilled' ? 'OPEN' : o.orderStatus,
+      isGridOrder: false,
+      strategyId: 'LIVE-BYBIT-SPOT',
+      mode: 'LIVE',
+      feesPaid: parseFloat(o.cumExecFee || '0'),
+      slippageBps: 0,
+      latencyMs: 20,
+      placedAt: new Date(Number(o.createdTime)).toISOString()
+    }));
+  }
+
+  /**
+   * Private Signed: Real trade execution history from Bybit
+   */
+  public async getRealTrades(symbol = 'BTCUSDT', limit = 50): Promise<Fill[]> {
+    if (!this.apiKey || !this.apiSecret) return [];
+
+    const norm = this.normalizeSymbol(symbol);
+    const { headers, queryString } = this.signGet({ category: 'spot', symbol: norm, limit });
+    const res = await fetch(`${this.getActiveBaseUrl()}/v5/execution/list?${queryString}`, {
+      headers
+    });
+
+    if (!res.ok) return [];
+    const json = (await res.json()) as any;
+    const list = json?.result?.list || [];
+
+    return list.map((t: any) => ({
+      id: String(t.execId),
+      orderId: String(t.orderId),
+      symbol: this.denormalizeSymbol(t.symbol),
+      side: t.side.toUpperCase() as 'BUY' | 'SELL',
+      price: parseFloat(t.execPrice || '0'),
+      amount: parseFloat(t.execQty || '0'),
+      feeUsd: parseFloat(t.execFee || '0'),
+      slippageBps: 0,
+      realizedPnL: 0,
+      timestamp: new Date(Number(t.execTime)).toISOString()
+    }));
+  }
+
+  /**
+   * Symbol precision and step rules for Bybit Spot
+   */
+  public getSymbolRules(symbol: string): { priceDecimals: number; qtyDecimals: number; minNotional: number } {
+    const norm = this.normalizeSymbol(symbol);
+    if (norm.startsWith('BTC')) return { priceDecimals: 2, qtyDecimals: 5, minNotional: 5.0 };
+    if (norm.startsWith('ETH')) return { priceDecimals: 2, qtyDecimals: 4, minNotional: 5.0 };
+    if (norm.startsWith('SOL')) return { priceDecimals: 2, qtyDecimals: 3, minNotional: 5.0 };
+    if (norm.startsWith('BNB')) return { priceDecimals: 2, qtyDecimals: 3, minNotional: 5.0 };
+    if (norm.startsWith('AVAX')) return { priceDecimals: 2, qtyDecimals: 2, minNotional: 5.0 };
+    return { priceDecimals: 2, qtyDecimals: 4, minNotional: 5.0 };
+  }
+
+  /**
+   * Private Signed: Place real spot order on Bybit
+   */
+  public async placeRealOrder(params: {
+    symbol: string;
+    side: 'BUY' | 'SELL';
+    type: 'LIMIT' | 'MARKET';
+    price?: number;
+    quantity: number;
+  }): Promise<{ success: boolean; orderId?: string; error?: string; raw?: any }> {
+    if (!this.apiKey || !this.apiSecret) {
+      return { success: false, error: 'Bybit API credentials missing. Please configure your API key & secret.' };
+    }
+
+    const rules = this.getSymbolRules(params.symbol);
+    const formattedQty = Number(params.quantity.toFixed(rules.qtyDecimals));
+    if (formattedQty <= 0) {
+      return {
+        success: false,
+        error: `Order quantity (${params.quantity}) must be at least ${Math.pow(10, -rules.qtyDecimals)} for ${params.symbol}`
+      };
+    }
+
+    const payload: Record<string, any> = {
+      category: 'spot',
+      symbol: this.normalizeSymbol(params.symbol),
+      side: params.side === 'BUY' ? 'Buy' : 'Sell',
+      orderType: params.type === 'MARKET' ? 'Market' : 'Limit',
+      qty: formattedQty.toString()
+    };
+
+    if (params.type === 'LIMIT') {
+      if (!params.price || params.price <= 0) {
+        return { success: false, error: 'Valid price is required for LIMIT orders' };
+      }
+      const formattedPrice = Number(params.price.toFixed(rules.priceDecimals));
+      payload.price = formattedPrice.toString();
+      payload.timeInForce = 'GTC';
+
+      const notional = formattedPrice * formattedQty;
+      if (notional < rules.minNotional) {
+        return {
+          success: false,
+          error: `Order value ($${notional.toFixed(2)}) is below Bybit minimum notional of $${rules.minNotional.toFixed(2)} USD`
+        };
+      }
+    }
+
+    try {
+      const { headers, bodyStr } = this.signPost(payload);
+      const res = await fetch(`${this.getActiveBaseUrl()}/v5/order/create`, {
+        method: 'POST',
+        headers,
+        body: bodyStr
+      });
+
+      const json = (await res.json()) as any;
+
+      if (!res.ok || json.retCode !== 0) {
+        return { success: false, error: json.retMsg || `Bybit HTTP ${res.status}: ${JSON.stringify(json)}`, raw: json };
+      }
+
+      return {
+        success: true,
+        orderId: json.result?.orderId || json.result?.orderLinkId,
+        raw: json.result
+      };
+    } catch (e: any) {
+      return { success: false, error: `Bybit Order Dispatch Failed: ${e.message}` };
+    }
+  }
+
+  /**
+   * Private Signed: Cancel single order on Bybit
+   */
+  public async cancelOrder(symbol: string, orderId: string): Promise<{ success: boolean; error?: string }> {
+    if (!this.apiKey || !this.apiSecret) {
+      return { success: false, error: 'Bybit API credentials missing.' };
+    }
+
+    try {
+      const payload = {
+        category: 'spot',
+        symbol: this.normalizeSymbol(symbol),
+        orderId
+      };
+      const { headers, bodyStr } = this.signPost(payload);
+      const res = await fetch(`${this.getActiveBaseUrl()}/v5/order/cancel`, {
+        method: 'POST',
+        headers,
+        body: bodyStr
+      });
+
+      const json = (await res.json()) as any;
+      if (!res.ok || json.retCode !== 0) {
+        return { success: false, error: json.retMsg || `Bybit HTTP ${res.status}` };
+      }
+      return { success: true };
+    } catch (e: any) {
+      return { success: false, error: e.message };
+    }
+  }
+}
+
+export const bybitAdapter = new BybitAdapter();

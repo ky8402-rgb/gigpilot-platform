@@ -9,7 +9,7 @@ export type AutonomyLevel = 0 | 1 | 2 | 3 | 4;
 
 export type TradingMode = 'LIVE'; // STRICTLY LIVE-ONLY. No demo, simulation, or paper mode.
 
-export type SupportedExchange = 'BINANCE' | 'BYBIT' | 'KUCOIN';
+export type SupportedExchange = 'BYBIT' | 'KUCOIN';
 
 export type EngineId =
   | 'DATA_ENGINE'

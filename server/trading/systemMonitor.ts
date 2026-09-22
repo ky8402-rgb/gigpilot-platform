@@ -195,8 +195,8 @@ export class SystemMonitorSecurity implements EngineModule {
         category: 'RISK_RULE',
         action: 'Verified Multi-Mirror Ingestion Pipeline',
         details: {
-          binanceMirrorsCount: 5,
-          bybitFallbackActive: true,
+          bybitMirrorsCount: 5,
+          bybitDirectActive: true,
           pricePrecisionFormatted: true
         }
       }
@@ -213,7 +213,7 @@ export class SystemMonitorSecurity implements EngineModule {
         changes: [
           'Enforced zero-synthetic-data rule with strict fail-closed posture across all 10 modular engines',
           'Introduced dedicated health checks, error surfaces, and individual off-switches for each subsystem',
-          'Multi-exchange execution engine supporting trade-only keys for Binance, Bybit, and KuCoin'
+          'Multi-exchange execution engine supporting trade-only keys for Bybit and KuCoin'
         ]
       }
     ];

@@ -352,7 +352,7 @@ export interface MasterTradingState {
   serverTime: string;
 }
 
-export interface BinanceAssetWithUsd {
+export interface ExchangeAssetWithUsd {
   asset: string;
   free: number;
   locked: number;
@@ -363,7 +363,9 @@ export interface BinanceAssetWithUsd {
   change24hPct?: number;
 }
 
-export interface BinanceAccountState {
+export type BybitAssetWithUsd = ExchangeAssetWithUsd;
+
+export interface ExchangeAccountState {
   status: 'CONNECTED' | 'RESTRICTED' | 'DISCONNECTED' | 'ERROR';
   message: string;
   serverIp: string;
@@ -371,7 +373,7 @@ export interface BinanceAccountState {
   totalEquityUsd: number;
   availableCashUsd: number;
   lockedInOrdersUsd: number;
-  spotBalances: BinanceAssetWithUsd[];
+  spotBalances: ExchangeAssetWithUsd[];
   realizedProfitUsd: number;
   unrealizedProfitUsd: number;
   todayPnLUsd: number;
@@ -384,7 +386,10 @@ export interface BinanceAccountState {
   accountType: string;
   apiKeyConfigured: boolean;
   keyMask: string;
+  isTestnet?: boolean;
 }
+
+export type BybitAccountState = ExchangeAccountState;
 
 export interface OwnerAuthStatus {
   isAuthenticated: boolean;
@@ -429,7 +434,7 @@ export interface EngineHealth {
   details?: Record<string, any>;
 }
 
-export type SupportedExchange = 'BINANCE' | 'BYBIT' | 'KUCOIN';
+export type SupportedExchange = 'BYBIT' | 'KUCOIN';
 
 export interface ExchangeCredentialsInfo {
   exchange: SupportedExchange;

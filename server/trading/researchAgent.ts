@@ -107,9 +107,9 @@ export class AutonomousResearchAgent implements EngineModule {
       {
         id: 'res-fact-02',
         timestamp: new Date(Date.now() - 3600000 * 5).toISOString(),
-        title: 'Binance Scheduled Match Engine Maintenance Window',
-        source: 'Binance Official System Status',
-        url: 'https://binance.com/en/support',
+        title: 'Bybit Scheduled Match Engine Maintenance Window',
+        source: 'Bybit Official System Status',
+        url: 'https://bybit.com/en/help-center',
         category: 'FACT',
         sentiment: 'NEUTRAL',
         impactScore: 6,

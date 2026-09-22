@@ -21,7 +21,7 @@ const KEYS_FILE = path.join(process.cwd(), '.exchange-trade-only-keys.json');
 
 export class ExchangeExecutionEngine implements EngineModule {
   public readonly id = 'EXCHANGE_EXECUTION_ENGINE';
-  public readonly name = 'Exchange Execution Engine (Binance / Bybit / KuCoin)';
+  public readonly name = 'Exchange Execution Engine (Bybit / KuCoin)';
 
   private enabled: boolean = true; // Off-switch
   private status: 'HEALTHY' | 'DEGRADED' | 'DOWN' | 'OFF' = 'HEALTHY';
@@ -49,21 +49,7 @@ export class ExchangeExecutionEngine implements EngineModule {
       }
     }
 
-    // 1. Binance
-    const binanceKey = saved.binance?.apiKey || process.env.BINANCE_API_KEY || '';
-    const binanceSecret = saved.binance?.apiSecret || process.env.BINANCE_API_SECRET || '';
-    this.credentials.set('BINANCE', {
-      exchange: 'BINANCE',
-      apiKey: binanceKey,
-      apiSecret: binanceSecret,
-      isConfigured: Boolean(binanceKey && binanceSecret),
-      canTrade: true,
-      canWithdraw: false,
-      status: binanceKey && binanceSecret ? 'CONNECTED' : 'DISCONNECTED',
-      lastChecked: new Date().toISOString()
-    });
-
-    // 2. Bybit
+    // 1. Bybit (PRIMARY EXCHANGE DEFAULT)
     const bybitKey = saved.bybit?.apiKey || process.env.BYBIT_API_KEY || '';
     const bybitSecret = saved.bybit?.apiSecret || process.env.BYBIT_API_SECRET || '';
     this.credentials.set('BYBIT', {
@@ -77,7 +63,7 @@ export class ExchangeExecutionEngine implements EngineModule {
       lastChecked: new Date().toISOString()
     });
 
-    // 3. KuCoin
+    // 2. KuCoin
     const kucoinKey = saved.kucoin?.apiKey || process.env.KUCOIN_API_KEY || '';
     const kucoinSecret = saved.kucoin?.apiSecret || process.env.KUCOIN_API_SECRET || '';
     const kucoinPass = saved.kucoin?.passphrase || process.env.KUCOIN_PASSPHRASE || '';
@@ -112,7 +98,8 @@ export class ExchangeExecutionEngine implements EngineModule {
       lastError: this.errorSurface[0]?.message,
       errorSurface: [...this.errorSurface.slice(0, 10)],
       details: {
-        supportedExchanges: ['BINANCE', 'BYBIT', 'KUCOIN'],
+        supportedExchanges: ['BYBIT', 'KUCOIN'],
+        defaultExchange: 'BYBIT',
         configuredExchangesCount: configuredCount,
         openOrdersCount: this.openOrders.size,
         fillsCount: this.fills.length,
@@ -203,7 +190,7 @@ export class ExchangeExecutionEngine implements EngineModule {
   }
 
   /**
-   * Execute real live order across Binance, Bybit, or KuCoin
+   * Execute real live order across Bybit or KuCoin
    * Fails visibly and fails closed if credentials missing or exchange rejects
    */
   public async executeOrder(spec: {
@@ -224,7 +211,7 @@ export class ExchangeExecutionEngine implements EngineModule {
     }
 
     const start = Date.now();
-    const targetExchange: SupportedExchange = spec.exchange || 'BINANCE';
+    const targetExchange: SupportedExchange = spec.exchange || 'BYBIT';
     const cred = this.credentials.get(targetExchange);
 
     if (!cred || !cred.isConfigured) {
@@ -259,16 +246,7 @@ export class ExchangeExecutionEngine implements EngineModule {
 
     // Dispatch directly to selected exchange using signed HMAC-SHA256
     try {
-      if (targetExchange === 'BINANCE') {
-        const binanceResult = await this.dispatchBinanceOrder(cred, spec);
-        if (!binanceResult.success) {
-          order.status = 'REJECTED';
-          order.rejectionReason = binanceResult.error;
-          this.recordError('ERROR', `Binance live order rejected: ${binanceResult.error}`);
-          return { success: false, order, error: binanceResult.error };
-        }
-        if (binanceResult.orderId) order.id = binanceResult.orderId;
-      } else if (targetExchange === 'BYBIT') {
+      if (targetExchange === 'BYBIT') {
         const bybitResult = await this.dispatchBybitOrder(cred, spec);
         if (!bybitResult.success) {
           order.status = 'REJECTED';
@@ -302,44 +280,6 @@ export class ExchangeExecutionEngine implements EngineModule {
       this.recordError('ERROR', `Exchange execution error on ${targetExchange}: ${err.message}`);
       return { success: false, order, error: err.message };
     }
-  }
-
-  private async dispatchBinanceOrder(cred: ExchangeApiCredentials, spec: any): Promise<{ success: boolean; orderId?: string; error?: string }> {
-    const rawSymbol = spec.symbol.replace(/[\/\-_]/g, '').toUpperCase();
-    const endpoint = 'https://api.binance.com/api/v3/order';
-    const timestamp = Date.now();
-
-    const params: Record<string, string> = {
-      symbol: rawSymbol,
-      side: spec.side,
-      type: spec.type === 'MARKET' ? 'MARKET' : 'LIMIT',
-      quantity: spec.amount.toString(),
-      timestamp: timestamp.toString()
-    };
-
-    if (params.type === 'LIMIT') {
-      params.timeInForce = 'GTC';
-      params.price = spec.price.toString();
-    }
-
-    const query = Object.keys(params).map(k => `${k}=${encodeURIComponent(params[k])}`).join('&');
-    const signature = crypto.createHmac('sha256', cred.apiSecret).update(query).digest('hex');
-    const fullUrl = `${endpoint}?${query}&signature=${signature}`;
-
-    const res = await fetch(fullUrl, {
-      method: 'POST',
-      headers: {
-        'X-MBX-APIKEY': cred.apiKey,
-        'Accept': 'application/json'
-      }
-    });
-
-    const json = (await res.json()) as any;
-    if (!res.ok || json.code) {
-      return { success: false, error: json.msg || `Binance HTTP ${res.status}: ${JSON.stringify(json)}` };
-    }
-
-    return { success: true, orderId: json.orderId?.toString() };
   }
 
   private async dispatchBybitOrder(cred: ExchangeApiCredentials, spec: any): Promise<{ success: boolean; orderId?: string; error?: string }> {

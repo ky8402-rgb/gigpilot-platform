@@ -1,7 +1,7 @@
 import {
   AuditLog,
   AutonomyLevel,
-  BinanceAccountState,
+  BybitAccountState,
   CapitalAccounting,
   DestinationWallet,
   GridConfiguration,
@@ -960,12 +960,12 @@ export async function fetchAuditLogs(): Promise<{ logs: AuditLog[] }> {
 }
 
 // ==========================================
-// REAL BINANCE ASSETS & OWNER AUTHENTICATION
+// REAL BYBIT ASSETS & OWNER AUTHENTICATION
 // ==========================================
 
-export async function fetchLiveAssets(forceRefresh = false): Promise<{ success: boolean; assets: BinanceAccountState }> {
+export async function fetchLiveAssets(forceRefresh = false): Promise<{ success: boolean; assets: BybitAccountState }> {
   try {
-    return await fetchWithFailover<{ success: boolean; assets: BinanceAccountState }>(
+    return await fetchWithFailover<{ success: boolean; assets: BybitAccountState }>(
       `/assets${forceRefresh ? '?refresh=true' : ''}`,
       { timeoutMs: 15000 }
     );
@@ -974,7 +974,7 @@ export async function fetchLiveAssets(forceRefresh = false): Promise<{ success: 
       success: false,
       assets: {
         status: 'DISCONNECTED',
-        message: err.message || 'Failed to reach Binance assets API',
+        message: err.message || 'Failed to reach Bybit assets API',
         serverIp: '3.222.149.9',
         timestamp: new Date().toISOString(),
         totalEquityUsd: 0,
@@ -990,7 +990,7 @@ export async function fetchLiveAssets(forceRefresh = false): Promise<{ success: 
         canTrade: false,
         canWithdraw: false,
         canDeposit: false,
-        accountType: 'SPOT',
+        accountType: 'SPOT / UTA',
         apiKeyConfigured: false,
         keyMask: 'NOT CONFIGURED'
       }
@@ -998,7 +998,7 @@ export async function fetchLiveAssets(forceRefresh = false): Promise<{ success: 
   }
 }
 
-export async function fetchBinanceStatus(): Promise<{
+export async function fetchBybitStatus(): Promise<{
   success: boolean;
   apiKeyConfigured: boolean;
   keyMask: string;
@@ -1007,33 +1007,43 @@ export async function fetchBinanceStatus(): Promise<{
   status: string;
 }> {
   try {
-    return await fetchWithFailover('/binance/status', { timeoutMs: 10000 });
+    const credsRes = await fetchWithFailover<{ success: boolean; credentials: any[] }>('/exchanges/credentials', { timeoutMs: 10000 });
+    const bybitCred = credsRes.credentials?.find((c: any) => c.exchange === 'BYBIT');
+    return {
+      success: true,
+      apiKeyConfigured: Boolean(bybitCred?.configured),
+      keyMask: bybitCred?.apiKeyMask || 'NOT CONFIGURED',
+      serverIp: '3.222.149.9',
+      baseUrl: 'https://api.bybit.com',
+      status: bybitCred?.status || 'UNCONFIGURED'
+    };
   } catch {
     return {
       success: true,
       apiKeyConfigured: false,
       keyMask: 'NOT CONFIGURED',
       serverIp: '3.222.149.9',
-      baseUrl: 'https://api.binance.com',
+      baseUrl: 'https://api.bybit.com',
       status: 'UNCONFIGURED'
     };
   }
 }
 
-export async function updateBinanceKeys(
+export async function updateBybitKeys(
   apiKey: string,
   apiSecret: string,
-  baseUrl?: string
+  isTestnet?: boolean
 ): Promise<{ success: boolean; message: string; accountState?: any; error?: string }> {
   try {
-    return await fetchWithFailover('/binance/update-keys', {
+    const res = await fetchWithFailover<{ success: boolean; message?: string; error?: string }>('/exchanges/keys', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ apiKey, apiSecret, baseUrl }),
+      body: JSON.stringify({ exchange: 'BYBIT', apiKey, apiSecret, isTestnet }),
       timeoutMs: 25000
     });
+    return { success: res.success, message: res.message || 'Keys updated', error: res.error };
   } catch (err: any) {
-    return { success: false, message: '', error: err.message || 'Failed to update Binance credentials' };
+    return { success: false, message: '', error: err.message || 'Failed to update Bybit credentials' };
   }
 }
 

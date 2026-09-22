@@ -18,8 +18,8 @@ import {
   TrendingUp,
   Clock
 } from 'lucide-react';
-import { BinanceAccountState, BinanceAssetWithUsd, Fill } from '../../types/trading';
-import { fetchLiveAssets, updateBinanceKeys } from '../../services/tradingService';
+import { BybitAccountState, BybitAssetWithUsd, Fill } from '../../types/trading';
+import { fetchLiveAssets, updateBybitKeys } from '../../services/tradingService';
 
 interface AssetDashboardProps {
   onNavigateToTrade?: () => void;
@@ -34,7 +34,7 @@ export const AssetDashboard: React.FC<AssetDashboardProps> = ({
 }) => {
   const [loading, setLoading] = useState<boolean>(true);
   const [refreshing, setRefreshing] = useState<boolean>(false);
-  const [account, setAccount] = useState<BinanceAccountState | null>(null);
+  const [account, setAccount] = useState<BybitAccountState | null>(null);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [hideSmallBalances, setHideSmallBalances] = useState<boolean>(true);
@@ -44,7 +44,7 @@ export const AssetDashboard: React.FC<AssetDashboardProps> = ({
   const [showKeyModal, setShowKeyModal] = useState<boolean>(false);
   const [newApiKey, setNewApiKey] = useState<string>('');
   const [newApiSecret, setNewApiSecret] = useState<string>('');
-  const [selectedBaseUrl, setSelectedBaseUrl] = useState<string>('https://api.binance.com');
+  const [isTestnet, setIsTestnet] = useState<boolean>(false);
   const [updatingKeys, setUpdatingKeys] = useState<boolean>(false);
   const [keyUpdateFeedback, setKeyUpdateFeedback] = useState<string | null>(null);
 
@@ -92,9 +92,9 @@ export const AssetDashboard: React.FC<AssetDashboardProps> = ({
     setUpdatingKeys(true);
     setKeyUpdateFeedback(null);
     try {
-      const res = await updateBinanceKeys(newApiKey.trim(), newApiSecret.trim(), selectedBaseUrl);
+      const res = await updateBybitKeys(newApiKey.trim(), newApiSecret.trim(), isTestnet);
       if (res.success) {
-        setKeyUpdateFeedback('Success! Binance credentials applied and verified.');
+        setKeyUpdateFeedback('Success! Bybit credentials applied and verified.');
         setTimeout(() => {
           setShowKeyModal(false);
           setNewApiKey('');
@@ -105,7 +105,7 @@ export const AssetDashboard: React.FC<AssetDashboardProps> = ({
       } else {
         const rawErr = res.error || 'Failed to update credentials.';
         if (rawErr.toLowerCase().includes('aborted') || rawErr.toLowerCase().includes('timed out') || rawErr.toLowerCase().includes('timeout')) {
-          setKeyUpdateFeedback('Connection timed out while communicating with Binance or the server. Please verify your internet connection, ensure your keys are accurate, and try again.');
+          setKeyUpdateFeedback('Connection timed out while communicating with Bybit or the server. Please verify your internet connection, ensure your keys are accurate, and try again.');
         } else {
           setKeyUpdateFeedback(rawErr);
         }
@@ -113,7 +113,7 @@ export const AssetDashboard: React.FC<AssetDashboardProps> = ({
     } catch (err: any) {
       const rawErr = err.message || '';
       if (rawErr.toLowerCase().includes('aborted') || rawErr.toLowerCase().includes('timed out') || rawErr.toLowerCase().includes('timeout')) {
-        setKeyUpdateFeedback('Connection timed out while communicating with Binance or the server. Please verify your internet connection, ensure your keys are accurate, and try again.');
+        setKeyUpdateFeedback('Connection timed out while communicating with Bybit or the server. Please verify your internet connection, ensure your keys are accurate, and try again.');
       } else {
         setKeyUpdateFeedback(rawErr || 'Error communicating with server.');
       }
@@ -123,7 +123,7 @@ export const AssetDashboard: React.FC<AssetDashboardProps> = ({
   };
 
   // Filter balances
-  const filteredBalances = (account?.spotBalances || []).filter((item: BinanceAssetWithUsd) => {
+  const filteredBalances = (account?.spotBalances || []).filter((item: BybitAssetWithUsd) => {
     const matchesSearch = item.asset.toLowerCase().includes(searchQuery.toLowerCase().trim());
     if (!matchesSearch) return false;
     if (hideSmallBalances && item.usdValue < 1.0) return false;
@@ -143,13 +143,13 @@ export const AssetDashboard: React.FC<AssetDashboardProps> = ({
           </div>
           <div>
             <div className="flex items-center gap-2">
-              <h1 className="text-xl font-bold text-slate-100 tracking-tight">Real Binance Spot Assets</h1>
+              <h1 className="text-xl font-bold text-slate-100 tracking-tight">Real Bybit Spot Assets</h1>
               <span className="text-[11px] font-mono font-semibold px-2 py-0.5 rounded bg-amber-500/20 text-amber-300 border border-amber-500/30">
                 LIVE EXCHANGE
               </span>
             </div>
             <p className="text-xs text-slate-400 mt-0.5">
-              Personal portfolio balances and verified trade executions from Binance Spot REST API.
+              Personal portfolio balances and verified trade executions from Bybit Spot V5 REST API.
             </p>
           </div>
         </div>
@@ -169,7 +169,7 @@ export const AssetDashboard: React.FC<AssetDashboardProps> = ({
             className="flex items-center gap-2 px-3.5 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white text-xs font-semibold transition shadow-md shadow-emerald-950"
           >
             <RefreshCw className={`w-3.5 h-3.5 ${refreshing ? 'animate-spin' : ''}`} />
-            <span>{refreshing ? 'Syncing...' : 'Sync from Binance'}</span>
+            <span>{refreshing ? 'Syncing...' : 'Sync from Bybit'}</span>
           </button>
         </div>
       </div>
@@ -180,10 +180,10 @@ export const AssetDashboard: React.FC<AssetDashboardProps> = ({
           <div className="flex items-start gap-3">
             <AlertTriangle className="w-5 h-5 text-amber-400 shrink-0 mt-0.5" />
             <div>
-              <p className="font-semibold text-amber-300">Binance API Notice (Error Code -2015: Restricted IP or Permissions)</p>
+              <p className="font-semibold text-amber-300">Bybit API Notice (IP or Permission Restriction)</p>
               <p className="text-amber-300/80 mt-1 leading-relaxed">
-                Your Binance API keys are configured, but Binance requires your EC2 Server IP to be added to your IP Whitelist,
-                or set to "Unrestricted" in Binance API Management.
+                Your Bybit API keys are configured, but Bybit requires your EC2 Server IP to be added to your IP Whitelist,
+                or set to "No IP restriction" in Bybit API Management.
               </p>
             </div>
           </div>
@@ -203,14 +203,14 @@ export const AssetDashboard: React.FC<AssetDashboardProps> = ({
         <div className="p-3.5 rounded-xl bg-emerald-950/30 border border-emerald-800/40 text-emerald-300 text-xs flex flex-wrap items-center justify-between gap-3">
           <div className="flex items-center gap-2">
             <ShieldCheck className="w-4 h-4 text-emerald-400" />
-            <span className="font-semibold">Binance Spot Connected</span>
+            <span className="font-semibold">Bybit Spot Connected</span>
             <span className="text-slate-400">•</span>
             <span className="text-slate-300 font-mono">Key: {account?.keyMask}</span>
           </div>
           <div className="flex items-center gap-3 text-slate-400 text-[11px]">
             <span>Trading Permissions: <strong className="text-emerald-400">{account?.canTrade ? 'Enabled' : 'Read-Only'}</strong></span>
             <span>•</span>
-            <span>Account Type: <strong className="text-slate-300">{account?.accountType || 'SPOT'}</strong></span>
+            <span>Account Type: <strong className="text-slate-300">{account?.accountType || 'SPOT / UTA'}</strong></span>
           </div>
         </div>
       ) : (
@@ -218,9 +218,9 @@ export const AssetDashboard: React.FC<AssetDashboardProps> = ({
           <div className="flex items-center gap-3">
             <Key className="w-5 h-5 text-amber-400 shrink-0" />
             <div>
-              <p className="font-semibold text-slate-200">Connect Your Binance Spot Account</p>
+              <p className="font-semibold text-slate-200">Connect Your Bybit Account</p>
               <p className="text-slate-400 text-[11px] mt-0.5">
-                Enter your Binance API key and Secret to stream real balances and manage orders with real capital.
+                Enter your Bybit API key and Secret to stream real balances and manage orders with real capital.
               </p>
             </div>
           </div>
@@ -265,7 +265,7 @@ export const AssetDashboard: React.FC<AssetDashboardProps> = ({
             </div>
             <div className="flex items-center gap-1.5 mt-1 text-[11px] text-slate-400">
               <Clock className="w-3 h-3 text-slate-500" />
-              <span>Real-time Binance Spot Mark</span>
+              <span>Real-time Bybit Spot Mark</span>
             </div>
           </div>
         </div>
@@ -380,13 +380,13 @@ export const AssetDashboard: React.FC<AssetDashboardProps> = ({
                     {loading ? (
                       <div className="flex items-center justify-center gap-2">
                         <RefreshCw className="w-4 h-4 animate-spin text-amber-500" />
-                        <span>Querying live Binance spot balances...</span>
+                        <span>Querying live Bybit spot balances...</span>
                       </div>
                     ) : isRestricted ? (
                       <div className="max-w-md mx-auto p-4 rounded-lg bg-amber-950/20 border border-amber-800/40 text-amber-300 text-xs">
-                        <p className="font-semibold">Binance API Key is Restricted</p>
+                        <p className="font-semibold">Bybit API Key is Restricted</p>
                         <p className="mt-1 text-slate-400 font-normal">
-                          Please whitelist server IP <strong className="text-amber-300 font-mono">{account?.serverIp}</strong> in Binance or update your keys to load your live balances.
+                          Please whitelist server IP <strong className="text-amber-300 font-mono">{account?.serverIp}</strong> in Bybit or update your keys to load your live balances.
                         </p>
                       </div>
                     ) : (
@@ -451,14 +451,14 @@ export const AssetDashboard: React.FC<AssetDashboardProps> = ({
         </div>
       </div>
 
-      {/* 5. VERIFIED BINANCE TRADE HISTORY */}
+      {/* 5. VERIFIED BYBIT TRADE HISTORY */}
       <div className="bg-slate-900/90 border border-slate-800 rounded-xl overflow-hidden shadow-xl">
         <div className="p-4 border-b border-slate-800 flex items-center justify-between bg-slate-950/40">
           <div className="flex items-center gap-2">
             <TrendingUp className="w-4 h-4 text-amber-400" />
-            <h2 className="text-sm font-bold text-slate-200 uppercase tracking-wider">Recent Binance Spot Trades</h2>
+            <h2 className="text-sm font-bold text-slate-200 uppercase tracking-wider">Recent Bybit Spot Trades</h2>
           </div>
-          <span className="text-xs text-slate-500 font-mono">Live from myTrades</span>
+          <span className="text-xs text-slate-500 font-mono">Live from Bybit V5 Execution</span>
         </div>
 
         <div className="overflow-x-auto">
@@ -478,7 +478,7 @@ export const AssetDashboard: React.FC<AssetDashboardProps> = ({
               {!account?.recentTrades || account.recentTrades.length === 0 ? (
                 <tr>
                   <td colSpan={7} className="py-8 text-center text-slate-500 font-sans">
-                    No historical trade executions recorded on this Binance Spot pair yet.
+                    No historical trade executions recorded on this Bybit Spot pair yet.
                   </td>
                 </tr>
               ) : (
@@ -513,14 +513,14 @@ export const AssetDashboard: React.FC<AssetDashboardProps> = ({
         </div>
       </div>
 
-      {/* 6. MODAL: UPDATE BINANCE API CREDENTIALS */}
+      {/* 6. MODAL: UPDATE BYBIT API CREDENTIALS */}
       {showKeyModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm">
           <div className="bg-slate-900 border border-slate-800 rounded-2xl max-w-md w-full p-6 shadow-2xl space-y-4">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2">
                 <Key className="w-5 h-5 text-amber-400" />
-                <h3 className="text-base font-bold text-slate-100">Binance API Configuration</h3>
+                <h3 className="text-base font-bold text-slate-100">Bybit API Configuration</h3>
               </div>
               <button
                 onClick={() => setShowKeyModal(false)}
@@ -531,7 +531,7 @@ export const AssetDashboard: React.FC<AssetDashboardProps> = ({
             </div>
 
             <p className="text-xs text-slate-400 leading-relaxed">
-              Enter your personal Binance Spot API credentials. Keys are saved securely server-side for personal algorithmic execution.
+              Enter your personal Bybit Spot API credentials. Keys are saved securely server-side for personal algorithmic execution.
             </p>
 
             {/* Quick API Setup Guide & Safety Notice */}
@@ -541,9 +541,9 @@ export const AssetDashboard: React.FC<AssetDashboardProps> = ({
                 <span className="text-[10px] text-emerald-400 bg-emerald-950/50 px-1.5 py-0.5 rounded border border-emerald-800/40">PERSONAL USE ONLY</span>
               </div>
               <ul className="text-slate-400 list-disc list-inside space-y-0.5 leading-normal">
-                <li>Permissions needed: <strong className="text-slate-200">Enable Reading</strong> & <strong className="text-slate-200">Enable Spot & Margin Trading</strong></li>
-                <li>Leave <strong className="text-rose-400">Enable Withdrawals UNCHECKED</strong> (keeps your funds strictly protected)</li>
-                <li>Whitelist EC2 Server IP: <code className="text-amber-300 font-mono font-bold">{account?.serverIp || '3.222.149.9'}</code></li>
+                <li>Permissions needed: <strong className="text-slate-200">Spot & Margin Trading</strong></li>
+                <li>Leave <strong className="text-rose-400">Withdrawals UNCHECKED</strong> (keeps your funds strictly protected)</li>
+                <li>Optionally whitelist EC2 Server IP: <code className="text-amber-300 font-mono font-bold">{account?.serverIp || '3.222.149.9'}</code></li>
               </ul>
               <div className="flex items-center justify-between pt-1 border-t border-slate-800/80">
                 <span className="text-slate-400">Server IP Whitelist:</span>
@@ -560,37 +560,36 @@ export const AssetDashboard: React.FC<AssetDashboardProps> = ({
 
             <form onSubmit={handleSaveKeys} className="space-y-3.5">
               <div>
-                <label className="block text-xs font-semibold text-slate-300 mb-1">Binance Endpoint / Region</label>
+                <label className="block text-xs font-semibold text-slate-300 mb-1">Network Environment</label>
                 <select
-                  value={selectedBaseUrl}
-                  onChange={(e) => setSelectedBaseUrl(e.target.value)}
+                  value={isTestnet ? 'testnet' : 'live'}
+                  onChange={(e) => setIsTestnet(e.target.value === 'testnet')}
                   className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-lg text-xs text-slate-100 font-mono focus:outline-none focus:border-amber-500"
                 >
-                  <option value="https://api.binance.com">Binance Global (https://api.binance.com)</option>
-                  <option value="https://api.binance.us">Binance US (https://api.binance.us)</option>
-                  <option value="https://testnet.binance.vision">Binance Testnet (https://testnet.binance.vision)</option>
+                  <option value="live">Bybit Live Production (https://api.bybit.com)</option>
+                  <option value="testnet">Bybit Testnet (https://api-testnet.bybit.com)</option>
                 </select>
               </div>
 
               <div>
-                <label className="block text-xs font-semibold text-slate-300 mb-1">Binance API Key</label>
+                <label className="block text-xs font-semibold text-slate-300 mb-1">Bybit API Key</label>
                 <input
                   type="text"
                   value={newApiKey}
                   onChange={(e) => setNewApiKey(e.target.value)}
-                  placeholder="Paste your Binance API Key..."
+                  placeholder="Paste your Bybit API Key..."
                   className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-lg text-xs text-slate-100 font-mono placeholder-slate-600 focus:outline-none focus:border-amber-500"
                   required
                 />
               </div>
 
               <div>
-                <label className="block text-xs font-semibold text-slate-300 mb-1">Binance API Secret</label>
+                <label className="block text-xs font-semibold text-slate-300 mb-1">Bybit API Secret</label>
                 <input
                   type="password"
                   value={newApiSecret}
                   onChange={(e) => setNewApiSecret(e.target.value)}
-                  placeholder="Paste your Binance API Secret..."
+                  placeholder="Paste your Bybit API Secret..."
                   className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-lg text-xs text-slate-100 font-mono placeholder-slate-600 focus:outline-none focus:border-amber-500"
                   required
                 />

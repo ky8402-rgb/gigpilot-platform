@@ -323,7 +323,7 @@ export const GridMatrixAndOrders: React.FC<GridMatrixAndOrdersProps> = ({
               <div className="flex items-center justify-between text-[11px] text-slate-400 mb-2">
                 <span>Manual Execution Ticket</span>
                 <span className="text-[10px] font-bold text-amber-400 bg-amber-950/60 border border-amber-800/60 px-2 py-0.5 rounded">
-                  BINANCE SPOT (PERSONAL)
+                  BYBIT SPOT (PERSONAL)
                 </span>
               </div>
 
@@ -408,9 +408,9 @@ export const GridMatrixAndOrders: React.FC<GridMatrixAndOrdersProps> = ({
                 </span>
               </div>
 
-              {Number(manualPrice) * Number(manualAmount) > 0 && Number(manualPrice) * Number(manualAmount) < 5.0 && (
+              {Number(manualPrice) * Number(manualAmount) > 0 && Number(manualPrice) * Number(manualAmount) < 1.0 && (
                 <div className="text-[10px] text-amber-400 bg-amber-950/40 border border-amber-800/50 p-1.5 rounded mb-3">
-                  ⚠️ Minimum notional for Binance Spot is $5.00 USD. Increase amount or price.
+                  ⚠️ Minimum notional for Bybit Spot is $1.00 USD. Increase amount or price.
                 </div>
               )}
 

@@ -11,7 +11,7 @@ export interface LivePairMarketData {
   candles: Candle[];
   orderBook: OrderBook;
   lastUpdated: string;
-  source: 'BINANCE_LIVE' | 'BYBIT_LIVE' | 'COINBASE_LIVE' | 'KUCOIN_LIVE' | 'UNAVAILABLE';
+  source: 'BYBIT_LIVE' | 'UNAVAILABLE';
 }
 
 export class DataEngine implements EngineModule {
@@ -39,13 +39,10 @@ export class DataEngine implements EngineModule {
     'XRP/USDT'
   ];
 
-  // Official public mirrors for live market data (NO synthetic data allowed)
-  private binanceMirrors = [
-    'https://api.binance.com',
-    'https://data-api.binance.vision',
-    'https://api1.binance.com',
-    'https://api2.binance.com',
-    'https://api3.binance.com'
+  // Official public endpoints for Bybit V5 live market data (NO synthetic data allowed)
+  private bybitEndpoints = [
+    'https://api.bybit.com',
+    'https://api-testnet.bybit.com'
   ];
 
   constructor() {
@@ -169,49 +166,21 @@ export class DataEngine implements EngineModule {
     try {
       let anySuccess = false;
 
-      // 1. Fetch 24h tickers from Binance public mirrors
+      // 1. Fetch 24h tickers from Bybit V5 public endpoints
       let tickerMap: Record<string, { price: number; open: number; high: number; low: number; volume: number; changePct: number }> = {};
       let tickerFetchSuccess = false;
 
-      for (const mirror of this.binanceMirrors) {
+      for (const endpoint of this.bybitEndpoints) {
         try {
           const controller = new AbortController();
-          const timer = setTimeout(() => controller.abort(), 2000);
-          const res = await fetch(`${mirror}/api/v3/ticker/24hr`, {
+          const timer = setTimeout(() => controller.abort(), 2500);
+          const res = await fetch(`${endpoint}/v5/market/tickers?category=spot`, {
             signal: controller.signal,
-            headers: { 'Accept': 'application/json', 'User-Agent': 'GigPilot-DataEngine/2.5' }
+            headers: { 'Accept': 'application/json' }
           });
           clearTimeout(timer);
           if (res.ok) {
-            const list = (await res.json()) as any[];
-            if (Array.isArray(list) && list.length > 0) {
-              for (const item of list) {
-                tickerMap[item.symbol] = {
-                  price: parseFloat(item.lastPrice) || 0,
-                  open: parseFloat(item.openPrice) || 0,
-                  high: parseFloat(item.highPrice) || 0,
-                  low: parseFloat(item.lowPrice) || 0,
-                  volume: parseFloat(item.volume) || 0,
-                  changePct: parseFloat(item.priceChangePercent) || 0
-                };
-              }
-              tickerFetchSuccess = true;
-              break;
-            }
-          }
-        } catch {
-          // Try next mirror
-        }
-      }
-
-      // If Binance ticker failed, try Bybit public V5 ticker as real alternative
-      if (!tickerFetchSuccess) {
-        try {
-          const bybitRes = await fetch('https://api.bybit.com/v5/market/tickers?category=spot', {
-            headers: { 'Accept': 'application/json' }
-          });
-          if (bybitRes.ok) {
-            const bybitJson = (await bybitRes.json()) as any;
+            const bybitJson = (await res.json()) as any;
             if (bybitJson?.result?.list && Array.isArray(bybitJson.result.list)) {
               for (const item of bybitJson.result.list) {
                 tickerMap[item.symbol] = {
@@ -224,20 +193,21 @@ export class DataEngine implements EngineModule {
                 };
               }
               tickerFetchSuccess = true;
+              break;
             }
           }
-        } catch (e: any) {
-          this.recordError('WARN', `Bybit live ticker fallback failed: ${e.message}`);
+        } catch {
+          // Try next endpoint
         }
       }
 
       if (!tickerFetchSuccess) {
         this.status = 'DOWN';
-        this.recordError('CRITICAL', 'All live public market feeds (Binance & Bybit) are unreachable. Live trading paused (FAIL-CLOSED).');
+        this.recordError('CRITICAL', 'Live Bybit V5 market feeds are unreachable. Live trading paused (FAIL-CLOSED).');
         return;
       }
 
-      // 2. Fetch candles and depth for tracked symbols
+      // 2. Fetch candles and depth for tracked symbols from Bybit V5
       for (const sym of this.trackedSymbols) {
         const raw = this.toExchangeSymbol(sym);
         const ticker = tickerMap[raw];
@@ -245,47 +215,46 @@ export class DataEngine implements EngineModule {
 
         anySuccess = true;
 
-        // Fetch real order book depth
+        // Fetch real order book depth from Bybit V5
         let bids: OrderBookLevel[] = [];
         let asks: OrderBookLevel[] = [];
         let spread = 0;
         let spreadBps = 0;
 
         try {
-          const depthRes = await fetch(`https://data-api.binance.vision/api/v3/depth?symbol=${raw}&limit=10`, {
+          const depthRes = await fetch(`https://api.bybit.com/v5/market/orderbook?category=spot&symbol=${raw}&limit=15`, {
             headers: { 'Accept': 'application/json' }
           });
           if (depthRes.ok) {
             const depthJson = (await depthRes.json()) as any;
-            let cumB = 0;
-            let cumA = 0;
-            if (Array.isArray(depthJson.bids)) {
-              bids = depthJson.bids.map((b: any) => {
+            const resData = depthJson?.result;
+            if (resData && (Array.isArray(resData.b) || Array.isArray(resData.a))) {
+              let cumB = 0;
+              let cumA = 0;
+              bids = (resData.b || []).map((b: any[]) => {
                 const p = parseFloat(b[0]);
                 const a = parseFloat(b[1]);
                 cumB += a;
                 return { price: p, amount: a, total: Number(cumB.toFixed(4)) };
               });
-            }
-            if (Array.isArray(depthJson.asks)) {
-              asks = depthJson.asks.map((a: any) => {
+              asks = (resData.a || []).map((a: any[]) => {
                 const p = parseFloat(a[0]);
                 const aAmt = parseFloat(a[1]);
                 cumA += aAmt;
                 return { price: p, amount: aAmt, total: Number(cumA.toFixed(4)) };
               });
-            }
 
-            if (bids.length > 0 && asks.length > 0) {
-              spread = Number((asks[0].price - bids[0].price).toFixed(6));
-              spreadBps = Number(((spread / ticker.price) * 10000).toFixed(1));
+              if (bids.length > 0 && asks.length > 0) {
+                spread = Number((asks[0].price - bids[0].price).toFixed(6));
+                spreadBps = Number(((spread / ticker.price) * 10000).toFixed(1));
+              }
             }
           }
         } catch {
           // Depth network timeout
         }
 
-        // Fetch real klines (1m, limit 30)
+        // Fetch real klines (1m, limit 30) from Bybit V5
         let candles: Candle[] = [];
         const existing = this.marketData.get(sym);
         if (existing && existing.candles && existing.candles.length > 0) {
@@ -293,14 +262,15 @@ export class DataEngine implements EngineModule {
         }
 
         try {
-          const klineRes = await fetch(`https://data-api.binance.vision/api/v3/klines?symbol=${raw}&interval=1m&limit=30`, {
+          const klineRes = await fetch(`https://api.bybit.com/v5/market/kline?category=spot&symbol=${raw}&interval=1&limit=30`, {
             headers: { 'Accept': 'application/json' }
           });
           if (klineRes.ok) {
-            const klines = (await klineRes.json()) as any[];
-            if (Array.isArray(klines) && klines.length > 0) {
-              candles = klines.map(k => ({
-                timestamp: typeof k[0] === 'number' ? k[0] : Number(k[0]),
+            const klineJson = (await klineRes.json()) as any;
+            const list = klineJson?.result?.list;
+            if (Array.isArray(list) && list.length > 0) {
+              candles = list.slice().reverse().map((k: any[]) => ({
+                timestamp: Number(k[0]),
                 open: parseFloat(k[1]),
                 high: parseFloat(k[2]),
                 low: parseFloat(k[3]),
@@ -333,7 +303,7 @@ export class DataEngine implements EngineModule {
             timestamp: Date.now()
           },
           lastUpdated: new Date().toISOString(),
-          source: 'BINANCE_LIVE'
+          source: 'BYBIT_LIVE'
         };
 
         this.marketData.set(sym, liveData);

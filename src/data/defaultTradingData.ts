@@ -254,7 +254,7 @@ export const DEFAULT_CHAMPION_STRATEGY: StrategyVersion = {
 export const DEFAULT_DESTINATION_WALLET: DestinationWallet = {
   address: '0x178166ffac90e6d94d2c1f822c1026f87641a0ec',
   chain: 'bsc',
-  label: 'Binance Deposit Vault (USDT - BSC)',
+  label: 'Bybit Deposit Vault (USDT - BSC)',
   isWhitelisted: true,
   addedAt: '2026-09-21T09:50:00.000Z',
   lastVerifiedAt: '2026-09-21T09:50:00.000Z'
@@ -463,7 +463,7 @@ export const DEFAULT_RESEARCH_ITEMS: ResearchItem[] = [
     timestamp: '2026-09-20T08:15:00.000Z',
     category: 'FACT',
     title: 'Perpetual Funding Rate Equilibrium & Volatility Compression',
-    source: 'Binance / Deribit Live Telemetry',
+    source: 'Bybit / Deribit Live Telemetry',
     summary: 'BTC 8h funding rate remains neutral (+0.004%). Bollinger bandwidth at 14-day low of 3.4%, signaling high probability of mean-reversion range-bound continuation.',
     sentiment: 'NEUTRAL',
     impactScore: 88,

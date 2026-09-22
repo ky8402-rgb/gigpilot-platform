@@ -212,7 +212,7 @@ export const OwnerLoginScreen: React.FC<OwnerLoginScreenProps> = ({ onAuthentica
             </span>
           </h1>
           <p className="text-xs text-slate-400 mt-1">
-            Autonomous Binance Spot Algorithmic Execution System
+            Autonomous Bybit Spot Algorithmic Execution System
           </p>
         </div>
 
@@ -566,7 +566,7 @@ export const OwnerLoginScreen: React.FC<OwnerLoginScreenProps> = ({ onAuthentica
           <div className="bg-[#090D18] border border-slate-800/80 rounded-xl p-2.5">
             <div className="flex items-center justify-center gap-1 text-[11px] font-mono text-slate-400">
               <Zap className="w-3 h-3 text-cyan-400" />
-              <span>Binance Direct</span>
+              <span>Bybit Direct</span>
             </div>
             <div className="text-[11px] font-mono text-cyan-300 font-semibold mt-0.5">
               Zero Simulation
