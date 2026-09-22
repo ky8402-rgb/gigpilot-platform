@@ -254,7 +254,7 @@ export class BybitAdapter {
         headers: { 'Accept': 'application/json' }
       });
       if (res.ok) {
-        const json = (await res.json()) as any;
+        const json = await this.readJsonResponse<any>(res);
         const item = json?.result?.list?.[0];
         if (item) {
           const price = parseFloat(item.lastPrice) || 0;
@@ -608,11 +608,12 @@ export class BybitAdapter {
     });
 
     if (!res.ok) {
-      const err = await res.json().catch(() => ({}));
+      const err = await res.text().then((raw) => { try { return raw ? JSON.parse(raw) : {}; } catch { return {}; } }).catch(() => ({}));
       throw new Error(err.retMsg || `HTTP ${res.status}`);
     }
 
-    const json = (await res.json()) as any;
+    const json = await this.readJsonResponse<any>(res);
+    if (json?.retCode !== 0) throw new Error(formatBybitError(json?.retCode, json?.retMsg || `Bybit HTTP ${res.status}`));
     const rawList = json?.result?.list || [];
 
     return rawList.map((o: any) => ({
@@ -649,7 +650,8 @@ export class BybitAdapter {
     });
 
     if (!res.ok) return [];
-    const json = (await res.json()) as any;
+    const json = await this.readJsonResponse<any>(res);
+    if (json?.retCode !== 0) return [];
     const list = json?.result?.list || [];
 
     return list.map((t: any) => ({
@@ -740,7 +742,7 @@ export class BybitAdapter {
         body: bodyStr
       });
 
-      const json = (await res.json()) as any;
+      const json = await this.readJsonResponse<any>(res);
 
       if (!res.ok || json.retCode !== 0) {
         const errorMsg = formatBybitError(json?.retCode, json?.retMsg || `HTTP ${res.status}`);
