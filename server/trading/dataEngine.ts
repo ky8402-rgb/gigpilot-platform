@@ -16,6 +16,25 @@ export interface LivePairMarketData {
 }
 
 export class DataEngine implements EngineModule {
+  /** Parse live Bybit HTTP responses defensively; never leak a raw JSON parser exception. */
+  private async readBybitJson<T = any>(res: Response): Promise<T | null> {
+    const raw = await res.text();
+    const text = raw.replace(/^\\uFEFF/, '').trim();
+    if (!text) return null;
+    try {
+      return JSON.parse(text) as T;
+    } catch (error: any) {
+      const preview = text.slice(0, 160).replace(/\\s+/g, ' ');
+      this.recordError('WARN', 'Bybit returned a non-JSON live market response.', {
+        httpStatus: res.status,
+        contentType: res.headers.get('content-type') || 'unknown',
+        responsePreview: preview,
+        parserError: error?.message || 'parse error'
+      });
+      return null;
+    }
+  }
+
   public readonly id = 'DATA_ENGINE';
   public readonly name = 'Data Engine (Live WS & Public Feeds)';
 
@@ -322,7 +341,7 @@ export class DataEngine implements EngineModule {
           });
           clearTimeout(timer);
           if (res.ok) {
-            const bybitJson = (await res.json()) as any;
+            const bybitJson = await this.readBybitJson<any>(res);
             if (bybitJson?.result?.list && Array.isArray(bybitJson.result.list)) {
               for (const item of bybitJson.result.list) {
                 tickerMap[item.symbol] = {
@@ -375,7 +394,7 @@ export class DataEngine implements EngineModule {
             headers: { 'Accept': 'application/json' }
           });
           if (depthRes.ok) {
-            const depthJson = (await depthRes.json()) as any;
+            const depthJson = await this.readBybitJson<any>(depthRes);
             const resData = depthJson?.result;
             if (resData && (Array.isArray(resData.b) || Array.isArray(resData.a))) {
               let cumB = 0;
@@ -411,7 +430,7 @@ export class DataEngine implements EngineModule {
             headers: { 'Accept': 'application/json' }
           });
           if (klineRes.ok) {
-            const klineJson = (await klineRes.json()) as any;
+            const klineJson = await this.readBybitJson<any>(klineRes);
             const list = klineJson?.result?.list;
             if (Array.isArray(list) && list.length > 0) {
               candles = list.slice().reverse().map((k: any[]) => ({
