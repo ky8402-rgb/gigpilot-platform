@@ -153,11 +153,17 @@ export class TradingStore {
       if (liveData?.currentPrice) {
         await this.exchangeExec.cancelAllOrders(this.activeSymbol);
         const nextSpacing = decision.newGridSpacingPct || this.activeGrid.gridSpacingPct;
+        const build = decision.strategyBuildId
+          ? this.autonomousProfitOptimizer.getStrategyBuilds().find(b => b.id === decision.strategyBuildId)
+          : undefined;
+        const nextLevels = build?.status === 'BUILT' && build.parameters.gridLevels
+          ? build.parameters.gridLevels
+          : this.activeGrid.levelsCount;
         const gridRes = this.gridEngine.generateGrid({
           symbol: this.activeSymbol,
           currentPrice: liveData.currentPrice,
           totalAllocatedUsd: this.activeGrid.totalAllocatedUsd,
-          levelsCount: this.activeGrid.levelsCount,
+          levelsCount: nextLevels,
           spacingType: this.activeGrid.spacingType,
           volatilityAdjustment: true,
           trendProtection: true,
