@@ -44,7 +44,6 @@ export const AssetDashboard: React.FC<AssetDashboardProps> = ({
   const [showKeyModal, setShowKeyModal] = useState<boolean>(false);
   const [newApiKey, setNewApiKey] = useState<string>('');
   const [newApiSecret, setNewApiSecret] = useState<string>('');
-  const [isTestnet, setIsTestnet] = useState<boolean>(false);
   const [updatingKeys, setUpdatingKeys] = useState<boolean>(false);
   const [keyUpdateFeedback, setKeyUpdateFeedback] = useState<string | null>(null);
   const assetsRequestInFlight = useRef(false);
@@ -106,7 +105,7 @@ export const AssetDashboard: React.FC<AssetDashboardProps> = ({
     setUpdatingKeys(true);
     setKeyUpdateFeedback(null);
     try {
-      const res = await updateBybitKeys(newApiKey.trim(), newApiSecret.trim(), isTestnet);
+      const res = await updateBybitKeys(newApiKey.trim(), newApiSecret.trim());
       if (res.success) {
         setKeyUpdateFeedback('Success! Bybit credentials applied and verified.');
         setTimeout(() => {
@@ -573,16 +572,10 @@ export const AssetDashboard: React.FC<AssetDashboardProps> = ({
             </div>
 
             <form onSubmit={handleSaveKeys} className="space-y-3.5">
-              <div>
-                <label className="block text-xs font-semibold text-slate-300 mb-1">Network Environment</label>
-                <select
-                  value={isTestnet ? 'testnet' : 'live'}
-                  onChange={(e) => setIsTestnet(e.target.value === 'testnet')}
-                  className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-lg text-xs text-slate-100 font-mono focus:outline-none focus:border-amber-500"
-                >
-                  <option value="live">Bybit Live Production (https://api.bybit.com)</option>
-                  <option value="testnet">Bybit Testnet (https://api-testnet.bybit.com)</option>
-                </select>
+              <div className="p-3 bg-emerald-950/20 border border-emerald-800/40 rounded-lg text-[11px] text-emerald-300">
+                <div className="font-semibold">Execution Environment: Bybit Live Production</div>
+                <div className="mt-1 text-slate-400 font-mono">https://api.bybit.com</div>
+                <div className="mt-1 text-slate-500">Testnet and sandbox credentials are not accepted.</div>
               </div>
 
               <div>
