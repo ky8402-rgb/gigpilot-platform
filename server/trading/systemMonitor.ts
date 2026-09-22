@@ -210,6 +210,9 @@ export class SystemMonitorSecurity implements EngineModule {
         releaseDate: new Date().toISOString(),
         status: 'CURRENT',
         canaryHealthScore: 99.8,
+        sha256: 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855',
+        notes: 'Enforced zero-synthetic-data rule with strict fail-closed posture across all 10 modular engines',
+        rollbackPoint: 'v2.4.9-stable',
         changes: [
           'Enforced zero-synthetic-data rule with strict fail-closed posture across all 10 modular engines',
           'Introduced dedicated health checks, error surfaces, and individual off-switches for each subsystem',

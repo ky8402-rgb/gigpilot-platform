@@ -238,9 +238,11 @@ export const GridMatrixAndOrders: React.FC<GridMatrixAndOrdersProps> = ({
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-800/60">
-                  {openOrders.map(ord => (
-                    <tr key={ord.id} className="hover:bg-slate-800/40 transition-colors">
-                      <td className="py-2 px-2 text-slate-400">{ord.id.substring(0, 10)}...</td>
+                  {openOrders.map((ord, oIdx) => (
+                    <tr key={ord.id || `ord-${oIdx}`} className="hover:bg-slate-800/40 transition-colors">
+                      <td className="py-2 px-2 text-slate-400">
+                        {typeof ord.id === 'string' && ord.id.length > 0 ? `${ord.id.substring(0, 10)}...` : 'ORDER'}
+                      </td>
                       <td className="py-2 px-2">
                         <span className={`px-1.5 py-0.5 rounded text-[10px] font-bold ${
                           ord.side === 'BUY' ? 'bg-emerald-950/80 text-emerald-300' : 'bg-rose-950/80 text-rose-300'
@@ -289,9 +291,11 @@ export const GridMatrixAndOrders: React.FC<GridMatrixAndOrdersProps> = ({
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-800/60">
-                  {recentFills.map(f => (
-                    <tr key={f.id} className="hover:bg-slate-800/40 transition-colors">
-                      <td className="py-2 px-2 text-slate-400">{f.id.substring(0, 10)}...</td>
+                  {recentFills.map((f, fIdx) => (
+                    <tr key={f.id || `fill-${fIdx}`} className="hover:bg-slate-800/40 transition-colors">
+                      <td className="py-2 px-2 text-slate-400">
+                        {typeof f.id === 'string' && f.id.length > 0 ? `${f.id.substring(0, 10)}...` : 'FILL'}
+                      </td>
                       <td className="py-2 px-2">
                         <span className={`px-1.5 py-0.5 rounded text-[10px] font-bold ${
                           f.side === 'BUY' ? 'bg-emerald-950/80 text-emerald-300' : 'bg-rose-950/80 text-rose-300'

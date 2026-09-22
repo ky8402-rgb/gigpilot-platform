@@ -83,8 +83,12 @@ export const ProfitSweepView: React.FC<ProfitSweepViewProps> = ({
       if (!res.success) {
         setSweepErrorMessage(res.error || 'Failed to execute profit sweep');
       } else {
-        const destStr = destinationWallet?.address ? `${destinationWallet.address.substring(0, 10)}...` : 'vault';
-        const txStr = res.sweep?.txHash ? ` (Tx: ${res.sweep.txHash.substring(0, 16)}...)` : '';
+        const destStr = typeof destinationWallet?.address === 'string' && destinationWallet.address.length > 0
+          ? `${destinationWallet.address.substring(0, 10)}...`
+          : 'vault';
+        const txStr = typeof res.sweep?.txHash === 'string' && res.sweep.txHash.length > 0
+          ? ` (Tx: ${res.sweep.txHash.substring(0, 16)}...)`
+          : '';
         setSweepSuccessMessage(
           `Successfully swept $${Number(sweepAmount).toLocaleString()} USD to ${destStr}${txStr}`
         );
@@ -296,14 +300,16 @@ export const ProfitSweepView: React.FC<ProfitSweepViewProps> = ({
                       {new Date(s.timestamp).toLocaleString()}
                     </td>
                     <td className="py-2.5 px-3 text-slate-300 font-bold">
-                      {s.destinationWallet ? `${s.destinationWallet.substring(0, 8)}...${s.destinationWallet.slice(-6)}` : 'N/A'}
+                      {typeof s.destinationWallet === 'string' && s.destinationWallet.length >= 14
+                        ? `${s.destinationWallet.substring(0, 8)}...${s.destinationWallet.slice(-6)}`
+                        : (s.destinationWallet || 'N/A')}
                     </td>
                     <td className="py-2.5 px-3 text-slate-400">{s.chain || 'N/A'}</td>
                     <td className="py-2.5 px-3 text-emerald-400 font-extrabold">
                       ${(s.grossSweepAmount ?? 0).toLocaleString()} USD
                     </td>
                     <td className="py-2.5 px-3 text-cyan-400 flex items-center gap-1 font-mono">
-                      <span>{s.txHash ? `${s.txHash.substring(0, 12)}...` : 'N/A'}</span>
+                      <span>{typeof s.txHash === 'string' && s.txHash.length > 0 ? `${s.txHash.substring(0, 12)}...` : 'N/A'}</span>
                       <ExternalLink className="w-3 h-3 opacity-70" />
                     </td>
                     <td className="py-2.5 px-3">

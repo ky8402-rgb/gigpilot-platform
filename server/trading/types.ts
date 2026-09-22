@@ -321,6 +321,9 @@ export interface SystemUpdateRecord {
   status: 'CURRENT' | 'STAGED' | 'ROLLED_BACK';
   canaryHealthScore: number;
   changes: string[];
+  sha256?: string;
+  notes?: string;
+  rollbackPoint?: string;
 }
 
 export interface BacktestRun {
