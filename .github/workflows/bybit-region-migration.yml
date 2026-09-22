@@ -74,8 +74,7 @@ jobs:
         id: network
         run: |
           set -euo pipefail
-          printf '%s
-' "$EC2_SSH_KEY" > /tmp/gigpilot.pem
+          printf '%s\\n' "$EC2_SSH_KEY" > /tmp/gigpilot.pem
           chmod 600 /tmp/gigpilot.pem
           ssh-keygen -y -f /tmp/gigpilot.pem > /tmp/gigpilot.pub
           KEY="gigpilot-migration-$GITHUB_RUN_ID"
@@ -129,8 +128,7 @@ jobs:
           git fetch origin main --prune || true
           git reset --hard "$SHA" || git reset --hard origin/main
           touch .env
-          put(){ grep -q "^$1=" .env && sed -i "s|^$1=.*|$1=$2|" .env || printf '%s=%s
-' "$1" "$2" >> .env; }
+          put(){ grep -q "^$1=" .env && sed -i "s|^$1=.*|$1=$2|" .env || printf '%s=%s\\n' "$1" "$2" >> .env; }
           put NODE_ENV production
           put PORT 3000
           put EC2_PUBLIC_IP "$IP"
@@ -166,6 +164,7 @@ jobs:
           mkdir -p deployment
           echo "$IP" > deployment/backend-host.txt
           DOMAIN=$(echo "$IP" | tr '.' '-')".sslip.io"
+          export DOMAIN
           python3 -c 'from pathlib import Path; import os; p=Path("amplify.yml"); p.write_text(p.read_text().replace("https://3-222-149-9.sslip.io", "https://"+os.environ["DOMAIN"]))'
           git config user.name "gigpilot-migration-bot"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
