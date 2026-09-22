@@ -484,8 +484,12 @@ export async function fetchBybitStatus(): Promise<{
 
 export async function updateBybitKeys(
   apiKey: string,
-  apiSecret: string
+  apiSecret: string,
+  legacyTestnetFlag?: boolean
 ): Promise<{ success: boolean; message: string; accountState?: any; error?: string }> {
+  if (legacyTestnetFlag === true) {
+    throw new Error('GigPilot is live-only; Bybit testnet credentials are not permitted.');
+  }
   return await fetchWithFailover<{ success: boolean; message?: string; error?: string }>('/exchanges/keys', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
