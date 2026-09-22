@@ -74,7 +74,7 @@ jobs:
         id: network
         run: |
           set -euo pipefail
-          printf '%s\\n' "$EC2_SSH_KEY" > /tmp/gigpilot.pem
+          printf '%s\n' "$EC2_SSH_KEY" > /tmp/gigpilot.pem
           chmod 600 /tmp/gigpilot.pem
           ssh-keygen -y -f /tmp/gigpilot.pem > /tmp/gigpilot.pub
           KEY="gigpilot-migration-$GITHUB_RUN_ID"
