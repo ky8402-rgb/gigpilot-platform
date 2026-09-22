@@ -45,7 +45,7 @@ export const EngineHealthView: React.FC<EngineHealthViewProps> = ({ onEngineTogg
 
   // Key configuration modal state
   const [activeExchangeModal, setActiveExchangeModal] = useState<SupportedExchange | null>(null);
-  const [keyInput, setKeyInput] = useState({ apiKey: '', apiSecret: '', passphrase: '' });
+  const [keyInput, setKeyInput] = useState({ apiKey: '', apiSecret: '' });
   const [keySaveMsg, setKeySaveMsg] = useState<{ success?: boolean; text?: string } | null>(null);
 
   const fetchHealthAndCreds = async () => {
@@ -136,13 +136,12 @@ export const EngineHealthView: React.FC<EngineHealthViewProps> = ({ onEngineTogg
         body: JSON.stringify({
           exchange: activeExchangeModal,
           apiKey: keyInput.apiKey,
-          apiSecret: keyInput.apiSecret,
-          passphrase: keyInput.passphrase
+          apiSecret: keyInput.apiSecret
         })
       });
       if (data.success) {
         setKeySaveMsg({ success: true, text: `Successfully updated ${activeExchangeModal} trade-only keys!` });
-        setKeyInput({ apiKey: '', apiSecret: '', passphrase: '' });
+        setKeyInput({ apiKey: '', apiSecret: '' });
         await fetchHealthAndCreds();
         setTimeout(() => {
           setActiveExchangeModal(null);
@@ -476,8 +475,8 @@ export const EngineHealthView: React.FC<EngineHealthViewProps> = ({ onEngineTogg
               Execution engine connects exclusively using trade-only credentials. Any key with withdrawal permissions is rejected by policy.
             </p>
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              {(['BYBIT', 'KUCOIN'] as SupportedExchange[]).map((ex) => {
+            <div className="grid grid-cols-1 gap-3 max-w-md">
+              {(['BYBIT'] as SupportedExchange[]).map((ex) => {
                 const cred = credentials.find(c => c.exchange === ex);
                 const isConfigured = cred?.configured;
 
@@ -488,7 +487,7 @@ export const EngineHealthView: React.FC<EngineHealthViewProps> = ({ onEngineTogg
                   >
                     <div>
                       <div className="flex items-center justify-between">
-                        <span className="text-sm font-bold text-zinc-200">{ex}</span>
+                        <span className="text-sm font-bold text-zinc-200">Bybit Spot V5</span>
                         {isConfigured ? (
                           <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-emerald-950 text-emerald-400 border border-emerald-800">
                             CONFIGURED
@@ -507,7 +506,7 @@ export const EngineHealthView: React.FC<EngineHealthViewProps> = ({ onEngineTogg
                     <button
                       onClick={() => {
                         setActiveExchangeModal(ex);
-                        setKeyInput({ apiKey: '', apiSecret: '', passphrase: '' });
+                        setKeyInput({ apiKey: '', apiSecret: '' });
                         setKeySaveMsg(null);
                       }}
                       className="w-full py-1.5 px-2.5 rounded bg-zinc-800 hover:bg-zinc-700 text-zinc-200 text-xs font-medium border border-zinc-700 flex items-center justify-center gap-1.5 transition-colors"
@@ -528,7 +527,7 @@ export const EngineHealthView: React.FC<EngineHealthViewProps> = ({ onEngineTogg
           <div className="bg-zinc-900 border border-zinc-800 rounded-xl max-w-md w-full p-6 space-y-4 shadow-2xl">
             <div className="flex items-center justify-between border-b border-zinc-800 pb-3">
               <h3 className="text-base font-bold text-zinc-100 flex items-center gap-2">
-                <Key className="w-4 h-4 text-emerald-400" /> Configure {activeExchangeModal} Keys
+                <Key className="w-4 h-4 text-emerald-400" /> Configure Bybit Keys
               </h3>
               <button
                 onClick={() => setActiveExchangeModal(null)}
@@ -545,11 +544,11 @@ export const EngineHealthView: React.FC<EngineHealthViewProps> = ({ onEngineTogg
 
             <form onSubmit={handleSaveKeys} className="space-y-3">
               <div>
-                <label className="block text-xs font-medium text-zinc-400 mb-1">API Key</label>
+                <label className="block text-xs font-medium text-zinc-400 mb-1">Bybit API Key</label>
                 <input
                   type="text"
                   required
-                  placeholder="Paste exchange API key"
+                  placeholder="Paste Bybit API key"
                   value={keyInput.apiKey}
                   onChange={e => setKeyInput({ ...keyInput, apiKey: e.target.value })}
                   className="w-full bg-zinc-950 border border-zinc-800 rounded-lg px-3 py-2 text-xs font-mono text-zinc-200 focus:outline-none focus:border-sky-500"
@@ -557,29 +556,16 @@ export const EngineHealthView: React.FC<EngineHealthViewProps> = ({ onEngineTogg
               </div>
 
               <div>
-                <label className="block text-xs font-medium text-zinc-400 mb-1">API Secret</label>
+                <label className="block text-xs font-medium text-zinc-400 mb-1">Bybit API Secret</label>
                 <input
                   type="password"
                   required
-                  placeholder="Paste exchange API secret"
+                  placeholder="Paste Bybit API secret"
                   value={keyInput.apiSecret}
                   onChange={e => setKeyInput({ ...keyInput, apiSecret: e.target.value })}
                   className="w-full bg-zinc-950 border border-zinc-800 rounded-lg px-3 py-2 text-xs font-mono text-zinc-200 focus:outline-none focus:border-sky-500"
                 />
               </div>
-
-              {activeExchangeModal === 'KUCOIN' && (
-                <div>
-                  <label className="block text-xs font-medium text-zinc-400 mb-1">API Passphrase</label>
-                  <input
-                    type="password"
-                    placeholder="KuCoin API Passphrase"
-                    value={keyInput.passphrase}
-                    onChange={e => setKeyInput({ ...keyInput, passphrase: e.target.value })}
-                    className="w-full bg-zinc-950 border border-zinc-800 rounded-lg px-3 py-2 text-xs font-mono text-zinc-200 focus:outline-none focus:border-sky-500"
-                  />
-                </div>
-              )}
 
               {keySaveMsg && (
                 <div

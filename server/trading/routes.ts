@@ -101,7 +101,7 @@ tradingRouter.post('/engines/:id/clear-errors', (req: Request, res: Response) =>
   }
 });
 
-// 5. Multi-Exchange Credentials Management (Trade-Only Keys for Bybit, KuCoin)
+// 5. Exchange Credentials Management (Trade-Only Keys for Bybit)
 tradingRouter.get('/exchanges/credentials', (req: Request, res: Response) => {
   try {
     const creds = globalTradingStore.exchangeExec.getExchangeCredentials();
@@ -117,23 +117,21 @@ tradingRouter.get('/exchanges/credentials', (req: Request, res: Response) => {
 
 tradingRouter.post('/exchanges/keys', (req: Request, res: Response) => {
   try {
-    const { exchange, apiKey, apiSecret, passphrase, isTestnet } = req.body || {};
-    if (!exchange || !['BYBIT', 'KUCOIN'].includes(exchange)) {
-      return res.status(400).json({ success: false, error: 'Valid exchange (BYBIT, KUCOIN) is required.' });
+    const { exchange, apiKey, apiSecret, isTestnet } = req.body || {};
+    if (!exchange || exchange !== 'BYBIT') {
+      return res.status(400).json({ success: false, error: 'Valid exchange (BYBIT) is required.' });
     }
     if (!apiKey || !apiSecret) {
       return res.status(400).json({ success: false, error: 'Both apiKey and apiSecret are required.' });
     }
 
-    const result = globalTradingStore.exchangeExec.configureKeys(exchange as SupportedExchange, apiKey, apiSecret, passphrase);
+    const result = globalTradingStore.exchangeExec.configureKeys('BYBIT', apiKey, apiSecret);
     if (!result.success) {
       return res.status(400).json(result);
     }
 
-    // Also update bybitAdapter if Bybit
-    if (exchange === 'BYBIT') {
-      bybitAdapter.updateCredentials(apiKey, apiSecret, undefined, isTestnet);
-    }
+    // Update bybitAdapter
+    bybitAdapter.updateCredentials(apiKey, apiSecret, undefined, isTestnet);
 
     globalTradingStore.monitor.logAudit({
       category: 'CONFIG_CHANGE',

@@ -213,7 +213,7 @@ export class SystemMonitorSecurity implements EngineModule {
         changes: [
           'Enforced zero-synthetic-data rule with strict fail-closed posture across all 10 modular engines',
           'Introduced dedicated health checks, error surfaces, and individual off-switches for each subsystem',
-          'Multi-exchange execution engine supporting trade-only keys for Bybit and KuCoin'
+          'Exchange execution engine supporting trade-only keys for Bybit Spot V5'
         ]
       }
     ];

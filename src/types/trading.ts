@@ -434,7 +434,7 @@ export interface EngineHealth {
   details?: Record<string, any>;
 }
 
-export type SupportedExchange = 'BYBIT' | 'KUCOIN';
+export type SupportedExchange = 'BYBIT';
 
 export interface ExchangeCredentialsInfo {
   exchange: SupportedExchange;

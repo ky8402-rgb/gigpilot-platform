@@ -7,7 +7,6 @@ export interface ExchangeApiCredentials {
   exchange: SupportedExchange;
   apiKey: string;
   apiSecret: string;
-  passphrase?: string; // Required for KuCoin
   label?: string;
   isConfigured: boolean;
   canTrade: boolean;
@@ -21,7 +20,7 @@ const KEYS_FILE = path.join(process.cwd(), '.exchange-trade-only-keys.json');
 
 export class ExchangeExecutionEngine implements EngineModule {
   public readonly id = 'EXCHANGE_EXECUTION_ENGINE';
-  public readonly name = 'Exchange Execution Engine (Bybit / KuCoin)';
+  public readonly name = 'Exchange Execution Engine (Bybit Spot V5)';
 
   private enabled: boolean = true; // Off-switch
   private status: 'HEALTHY' | 'DEGRADED' | 'DOWN' | 'OFF' = 'HEALTHY';
@@ -49,7 +48,7 @@ export class ExchangeExecutionEngine implements EngineModule {
       }
     }
 
-    // 1. Bybit (PRIMARY EXCHANGE DEFAULT)
+    // Bybit (PRIMARY LIVE SPOT EXCHANGE)
     const bybitKey = saved.bybit?.apiKey || process.env.BYBIT_API_KEY || '';
     const bybitSecret = saved.bybit?.apiSecret || process.env.BYBIT_API_SECRET || '';
     this.credentials.set('BYBIT', {
@@ -60,22 +59,6 @@ export class ExchangeExecutionEngine implements EngineModule {
       canTrade: true,
       canWithdraw: false,
       status: bybitKey && bybitSecret ? 'CONNECTED' : 'DISCONNECTED',
-      lastChecked: new Date().toISOString()
-    });
-
-    // 2. KuCoin
-    const kucoinKey = saved.kucoin?.apiKey || process.env.KUCOIN_API_KEY || '';
-    const kucoinSecret = saved.kucoin?.apiSecret || process.env.KUCOIN_API_SECRET || '';
-    const kucoinPass = saved.kucoin?.passphrase || process.env.KUCOIN_PASSPHRASE || '';
-    this.credentials.set('KUCOIN', {
-      exchange: 'KUCOIN',
-      apiKey: kucoinKey,
-      apiSecret: kucoinSecret,
-      passphrase: kucoinPass,
-      isConfigured: Boolean(kucoinKey && kucoinSecret && kucoinPass),
-      canTrade: true,
-      canWithdraw: false,
-      status: kucoinKey && kucoinSecret ? 'CONNECTED' : 'DISCONNECTED',
       lastChecked: new Date().toISOString()
     });
   }
@@ -98,7 +81,7 @@ export class ExchangeExecutionEngine implements EngineModule {
       lastError: this.errorSurface[0]?.message,
       errorSurface: [...this.errorSurface.slice(0, 10)],
       details: {
-        supportedExchanges: ['BYBIT', 'KUCOIN'],
+        supportedExchanges: ['BYBIT'],
         defaultExchange: 'BYBIT',
         configuredExchangesCount: configuredCount,
         openOrdersCount: this.openOrders.size,
@@ -147,12 +130,11 @@ export class ExchangeExecutionEngine implements EngineModule {
     return Array.from(this.credentials.values()).map(c => ({
       ...c,
       apiKey: c.apiKey ? `${c.apiKey.substring(0, 4)}...${c.apiKey.slice(-4)}` : '',
-      apiSecret: c.apiSecret ? '••••••••••••••••' : '',
-      passphrase: c.passphrase ? '••••••' : undefined
+      apiSecret: c.apiSecret ? '••••••••••••••••' : ''
     }));
   }
 
-  public configureKeys(exchange: SupportedExchange, apiKey: string, apiSecret: string, passphrase?: string): { success: boolean; error?: string } {
+  public configureKeys(exchange: SupportedExchange, apiKey: string, apiSecret: string): { success: boolean; error?: string } {
     if (!apiKey || !apiSecret) {
       return { success: false, error: 'API key and API secret are required.' };
     }
@@ -162,7 +144,6 @@ export class ExchangeExecutionEngine implements EngineModule {
       exchange,
       apiKey: apiKey.trim(),
       apiSecret: apiSecret.trim(),
-      passphrase: passphrase?.trim(),
       isConfigured: true,
       canTrade: true,
       canWithdraw: false, // Strict: Never permit withdrawals
@@ -177,8 +158,7 @@ export class ExchangeExecutionEngine implements EngineModule {
       const current = fs.existsSync(KEYS_FILE) ? JSON.parse(fs.readFileSync(KEYS_FILE, 'utf-8')) : {};
       current[exchange.toLowerCase()] = {
         apiKey: cred.apiKey,
-        apiSecret: cred.apiSecret,
-        passphrase: cred.passphrase
+        apiSecret: cred.apiSecret
       };
       fs.writeFileSync(KEYS_FILE, JSON.stringify(current, null, 2), { mode: 0o600 });
     } catch (err: any) {
@@ -190,7 +170,7 @@ export class ExchangeExecutionEngine implements EngineModule {
   }
 
   /**
-   * Execute real live order across Bybit or KuCoin
+   * Execute real live order across Bybit
    * Fails visibly and fails closed if credentials missing or exchange rejects
    */
   public async executeOrder(spec: {
@@ -244,27 +224,16 @@ export class ExchangeExecutionEngine implements EngineModule {
       placedAt: new Date().toISOString()
     };
 
-    // Dispatch directly to selected exchange using signed HMAC-SHA256
+    // Dispatch directly to Bybit using signed HMAC-SHA256
     try {
-      if (targetExchange === 'BYBIT') {
-        const bybitResult = await this.dispatchBybitOrder(cred, spec);
-        if (!bybitResult.success) {
-          order.status = 'REJECTED';
-          order.rejectionReason = bybitResult.error;
-          this.recordError('ERROR', `Bybit live order rejected: ${bybitResult.error}`);
-          return { success: false, order, error: bybitResult.error };
-        }
-        if (bybitResult.orderId) order.id = bybitResult.orderId;
-      } else if (targetExchange === 'KUCOIN') {
-        const kucoinResult = await this.dispatchKucoinOrder(cred, spec);
-        if (!kucoinResult.success) {
-          order.status = 'REJECTED';
-          order.rejectionReason = kucoinResult.error;
-          this.recordError('ERROR', `KuCoin live order rejected: ${kucoinResult.error}`);
-          return { success: false, order, error: kucoinResult.error };
-        }
-        if (kucoinResult.orderId) order.id = kucoinResult.orderId;
+      const bybitResult = await this.dispatchBybitOrder(cred, spec);
+      if (!bybitResult.success) {
+        order.status = 'REJECTED';
+        order.rejectionReason = bybitResult.error;
+        this.recordError('ERROR', `Bybit live order rejected: ${bybitResult.error}`);
+        return { success: false, order, error: bybitResult.error };
       }
+      if (bybitResult.orderId) order.id = bybitResult.orderId;
 
       order.latencyMs = Date.now() - start;
       this.openOrders.set(order.id, order);
@@ -318,46 +287,6 @@ export class ExchangeExecutionEngine implements EngineModule {
     }
 
     return { success: true, orderId: json.result?.orderId };
-  }
-
-  private async dispatchKucoinOrder(cred: ExchangeApiCredentials, spec: any): Promise<{ success: boolean; orderId?: string; error?: string }> {
-    const rawSymbol = spec.symbol.replace(/[\/]/g, '-').toUpperCase();
-    const timestamp = Date.now().toString();
-    const endpoint = 'https://api.kucoin.com/api/v1/orders';
-
-    const body = {
-      clientOid: `ku_${Date.now()}`,
-      side: spec.side.toLowerCase(),
-      symbol: rawSymbol,
-      type: spec.type === 'MARKET' ? 'market' : 'limit',
-      size: spec.amount.toString(),
-      price: spec.type === 'LIMIT' ? spec.price.toString() : undefined
-    };
-
-    const bodyStr = JSON.stringify(body);
-    const strForSign = `${timestamp}POST/api/v1/orders${bodyStr}`;
-    const signature = crypto.createHmac('sha256', cred.apiSecret).update(strForSign).digest('base64');
-    const passphraseSign = crypto.createHmac('sha256', cred.apiSecret).update(cred.passphrase || '').digest('base64');
-
-    const res = await fetch(endpoint, {
-      method: 'POST',
-      headers: {
-        'KC-API-KEY': cred.apiKey,
-        'KC-API-SIGN': signature,
-        'KC-API-TIMESTAMP': timestamp,
-        'KC-API-PASSPHRASE': passphraseSign,
-        'KC-API-KEY-VERSION': '2',
-        'Content-Type': 'application/json'
-      },
-      body: bodyStr
-    });
-
-    const json = (await res.json()) as any;
-    if (!res.ok || json.code !== '200000') {
-      return { success: false, error: json.msg || `KuCoin HTTP ${res.status}` };
-    }
-
-    return { success: true, orderId: json.data?.orderId };
   }
 
   public async cancelOrder(orderId: string): Promise<{ success: boolean; error?: string }> {
