@@ -8,11 +8,7 @@ declare global {
 // Check if a real DATABASE_URL is configured
 const rawDbUrl = (process.env.DATABASE_URL || '').trim();
 const isValidPostgresUrl = (url: string) => url.startsWith('postgresql://') || url.startsWith('postgres://');
-const fallbackDbUrl = 'postgresql://postgres:postgres@127.0.0.1:5432/freelancedb?schema=public';
-
-if (!process.env.DATABASE_URL || !isValidPostgresUrl(process.env.DATABASE_URL.trim())) {
-  process.env.DATABASE_URL = fallbackDbUrl;
-}
+const isValidPostgresUrl = (url: string) => url.startsWith('postgresql://') || url.startsWith('postgres://');
 
 export const isDatabaseConfigured = Boolean(
   rawDbUrl &&
@@ -22,20 +18,19 @@ export const isDatabaseConfigured = Boolean(
   !rawDbUrl.includes('dummy')
 );
 
-// Lazy real prisma instance creator
 let realPrismaInstance: PrismaClient | null = null;
 function getRealPrisma(): PrismaClient {
   if (!realPrismaInstance) {
-    const activeUrl = isValidPostgresUrl((process.env.DATABASE_URL || '').trim())
-      ? (process.env.DATABASE_URL || '').trim()
-      : fallbackDbUrl;
+    if (!isDatabaseConfigured) {
+      throw new Error('DATABASE_URL is not configured with a valid production PostgreSQL connection.');
+    }
 
     realPrismaInstance =
       globalThis.prismaGlobal ??
       new PrismaClient({
         datasources: {
           db: {
-            url: activeUrl,
+            url: rawDbUrl,
           },
         },
         log: ['warn'],
@@ -49,108 +44,38 @@ function getRealPrisma(): PrismaClient {
 }
 
 /**
- * Safe Proxy for Prisma Client:
- * When isDatabaseConfigured is false, queries resolve safely with sensible defaults
- * without invoking network queries or throwing unhandled Prisma errors in logs.
+ * Fail-closed Prisma access:
+ * If a real production database is unavailable or unconfigured, database operations
+ * must fail explicitly rather than fabricate users, records, balances, or success.
  */
-function createSafePrisma(): PrismaClient {
+function createFailClosedPrisma(): PrismaClient {
   const handler: ProxyHandler<any> = {
-    get(target, prop: string | symbol) {
+    get(_target, prop: string | symbol) {
       if (prop === '$connect' || prop === '$disconnect') {
-        return async () => {};
-      }
-      if (prop === '$queryRaw' || prop === '$executeRaw') {
         return async () => {
-          if (!isDatabaseConfigured) return [];
-          const client = getRealPrisma();
-          return (client as any)[prop];
+          if (!isDatabaseConfigured) {
+            throw new Error('DATABASE_UNAVAILABLE: configure a real PostgreSQL DATABASE_URL before using database-backed operations.');
+          }
+          return (getRealPrisma() as any)[prop]();
         };
       }
 
-      // Delegate to real prisma if configured
-      if (isDatabaseConfigured) {
-        const client = getRealPrisma();
-        const member = (client as any)[prop];
-        if (typeof member === 'function') {
-          return member.bind(client);
-        }
-        return member;
+      if (!isDatabaseConfigured) {
+        return () => {
+          throw new Error('DATABASE_UNAVAILABLE: configure a real PostgreSQL DATABASE_URL before using database-backed operations.');
+        };
       }
 
-      // Safe Model Mock Proxy when database is not configured
-      return new Proxy({}, {
-        get(_, modelAction: string) {
-          return async (args?: any) => {
-            switch (modelAction) {
-              case 'findUnique':
-              case 'findFirst':
-                if (prop === 'user') {
-                  const email = args?.where?.email || 'ky8402@gmail.com';
-                  const id = args?.where?.id || 'user_active_1';
-                  return {
-                    id,
-                    email,
-                    passwordHash: 'active_hash',
-                    credits: 25,
-                    subscriptionStatus: 'active',
-                    createdAt: new Date(),
-                  };
-                }
-                return null;
-
-              case 'findMany':
-                return [];
-
-              case 'count':
-                return prop === 'user' ? 1 : 0;
-
-              case 'create':
-                if (prop === 'user') {
-                  return {
-                    id: args?.data?.id || 'user_active_1',
-                    email: args?.data?.email || 'ky8402@gmail.com',
-                    passwordHash: args?.data?.passwordHash || 'active_hash',
-                    credits: args?.data?.credits ?? 25,
-                    subscriptionStatus: args?.data?.subscriptionStatus || 'active',
-                    createdAt: new Date(),
-                  };
-                }
-                return { id: `item_${Date.now()}`, ...args?.data, createdAt: new Date() };
-
-              case 'update':
-                if (prop === 'user') {
-                  return {
-                    id: args?.where?.id || 'user_active_1',
-                    email: 'ky8402@gmail.com',
-                    passwordHash: 'active_hash',
-                    credits: typeof args?.data?.credits?.decrement === 'number'
-                      ? 24
-                      : (args?.data?.credits?.increment ? 35 : 25),
-                    subscriptionStatus: 'active',
-                    createdAt: new Date(),
-                  };
-                }
-                return { id: args?.where?.id || `item_${Date.now()}`, ...args?.data };
-
-              case 'updateMany':
-              case 'delete':
-              case 'deleteMany':
-              case 'upsert':
-                return { count: 1 };
-
-              default:
-                return null;
-            }
-          };
-        }
-      });
+      const client = getRealPrisma();
+      const member = (client as any)[prop];
+      return typeof member === 'function' ? member.bind(client) : member;
     }
   };
 
   return new Proxy({}, handler) as PrismaClient;
 }
 
-export const prisma: PrismaClient = createSafePrisma();
+export const prisma: PrismaClient = createFailClosedPrisma();
 
 /**
  * Persists normalized live jobs from Remote OK, We Work Remotely & FlexJobs into PostgreSQL
