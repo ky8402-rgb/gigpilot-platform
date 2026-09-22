@@ -28,6 +28,17 @@ export function getLastSyncTime(): string {
   return lastSyncTimestamp || '';
 }
 
+function normalizeTradingBaseUrl(rawUrl: string): string {
+  const trimmed = rawUrl.trim().replace(/\/+$/, '');
+  if (!trimmed) return '';
+
+  // Accept either a backend origin or an already-prefixed API URL. Never
+  // create /api/trading/api/trading from an already-prefixed environment value.
+  return trimmed
+    .replace(/\/api\/trading$/i, '')
+    .replace(/\/api$/i, '');
+}
+
 export function getCandidateBaseUrls(): string[] {
   const envUrl =
     (import.meta as any).env?.VITE_BACKEND_URL ||
@@ -37,15 +48,19 @@ export function getCandidateBaseUrls(): string[] {
 
   if (workingBaseUrl) urls.push(workingBaseUrl);
   if (typeof envUrl === 'string' && envUrl.trim()) {
-    urls.push(`${envUrl.replace(/\/$/, '')}/api/trading`);
+    const normalized = normalizeTradingBaseUrl(envUrl);
+    if (normalized) urls.push(`${normalized}/api/trading`);
   }
 
-  // Production safety net: prevent the Amplify SPA from becoming the trading API.
-  // This is the canonical live backend used by the production deployment configuration.
+  // Canonical live backend comes before any SPA same-origin fallback.
   urls.push('https://3-222-149-9.sslip.io/api/trading');
 
-  // Same-origin remains only as a final local/development fallback.
-  urls.push('/api/trading');
+  // Same-origin is useful for local/dev reverse proxies. In Amplify production,
+  // a failed rewrite can return index.html (text/html), not the trading API.
+  const isAmplifyHost =
+    typeof window !== 'undefined' &&
+    window.location.hostname.endsWith('.amplifyapp.com');
+  if (!isAmplifyHost) urls.push('/api/trading');
 
   return [...new Set(urls)];
 }
