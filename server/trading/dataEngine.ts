@@ -33,7 +33,6 @@ export class DataEngine implements EngineModule {
     'BTC/USDT',
     'ETH/USDT',
     'SOL/USDT',
-    'LUNA/USDT',
     'BNB/USDT',
     'AVAX/USDT',
     'DOGE/USDT',
