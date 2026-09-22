@@ -161,8 +161,6 @@ jobs:
       - name: Persist new production host
         env:
           IP: ${{ steps.launch.outputs.ip }}
-        env:
-          IP: ${{ steps.launch.outputs.ip }}
         run: |
           set -euo pipefail
           mkdir -p deployment
