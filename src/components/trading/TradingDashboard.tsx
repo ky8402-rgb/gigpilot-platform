@@ -537,7 +537,7 @@ export const TradingDashboard: React.FC<TradingDashboardProps> = ({ onLogout }) 
 
         {activeTab === 'ADAPTIVE_GRID' && (
           <AdaptiveGridConfigurator
-            currentPrice={pairDetails?.currentPrice || 66850}
+            currentPrice={pairDetails?.currentPrice || 0}
             activeGrid={state.activeGrid}
             regime={state.currentRegime}
             onApplyConfig={async (cfg) => {
