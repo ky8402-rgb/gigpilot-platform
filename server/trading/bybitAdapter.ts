@@ -49,7 +49,7 @@ const BYBIT_CONFIG_FILE = path.join(process.cwd(), '.bybit-quant-keys.json');
 export class BybitAdapter {
   private apiKey: string = '';
   private apiSecret: string = '';
-  private baseUrl: string = 'https://api.bybit.com';
+  private baseUrl: string = process.env.BYBIT_API_BASE_URL || 'https://api.bybit.com';
   private serverIp: string = process.env.EC2_PUBLIC_IP || process.env.SERVER_PUBLIC_IP || '';
   private priceCache: Map<string, { price: number; time: number }> = new Map();
   private lastAccountState: BybitAccountState | null = null;
@@ -86,6 +86,12 @@ export class BybitAdapter {
       return JSON.parse(text) as T;
     } catch (error: any) {
       const preview = text.slice(0, 160).replace(/\\s+/g, ' ');
+      const lower = text.toLowerCase();
+      if (res.status === 403 && (lower.includes('cloudfront') || lower.includes('configured to block access') || lower.includes('block access from your country'))) {
+        throw new Error(
+          `BYBIT_REGION_BLOCKED: Bybit rejected the server egress IP (HTTP 403 CloudFront country restriction). This is an infrastructure/geolocation restriction, not an API-key or JSON-format error. Move the GigPilot backend to a Bybit-supported AWS region or set BYBIT_API_BASE_URL to the correct Bybit regional API domain for the account region.`
+        );
+      }
       throw new Error(
         `Bybit returned invalid JSON (HTTP ${res.status}, content-type ${res.headers.get('content-type') || 'unknown'}): ${error?.message || 'parse error'}; response=${preview}`
       );
@@ -113,7 +119,7 @@ export class BybitAdapter {
   public updateCredentials(apiKey: string, apiSecret: string): void {
     this.apiKey = apiKey.trim();
     this.apiSecret = apiSecret.trim();
-    this.baseUrl = 'https://api.bybit.com';
+    this.baseUrl = process.env.BYBIT_API_BASE_URL || 'https://api.bybit.com';
     this.saveConfig();
     this.lastAccountState = null;
     this.lastAccountFetchTime = 0;
