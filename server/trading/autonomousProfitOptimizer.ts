@@ -57,7 +57,7 @@ export class AutonomousProfitOptimizer implements EngineModule {
 
   private recordError(level: EngineErrorRecord['level'], message: string, details?: any) {
     this.errorSurface.unshift({
-      id: \`err_profitopt_\${Date.now()}_\${Math.random().toString(36).slice(2, 7)}\`,
+      id: `err_profitopt_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
       timestamp: new Date().toISOString(), level, message, details
     });
     if (this.errorSurface.length > 50) this.errorSurface.pop();
@@ -89,7 +89,7 @@ export class AutonomousProfitOptimizer implements EngineModule {
       return this.saveDecision('PAUSE_OPTIMIZATION', 1, 'GEMINI_API_KEY is not configured; autonomous AI decisioning is paused fail-closed.', 'No live parameter change.', false);
     }
 
-    const prompt = \`You are GigPilot's autonomous production profit auditor.
+    const prompt = `You are GigPilot's autonomous production profit auditor.
 
 Audit ONLY REAL LIVE TRADING STATE and decide whether an improvement is justified.
 Objective: maximize sustainable NET REALIZED PROFIT AFTER FEES.
@@ -100,7 +100,7 @@ If evidence is insufficient, choose NO_CHANGE.
 Return JSON only: {"decision":"NO_CHANGE|TIGHTEN_GRID|WIDEN_GRID|BUILD_STRATEGY","confidence":0..1,"reason":"...","expectedEffect":"..."}
 
 LIVE ACCOUNTING:
-\${JSON.stringify({
+${JSON.stringify({
   totalEquity: input.capital.totalEquity,
   availableCash: input.capital.availableCash,
   lockedInOrders: input.capital.lockedInOrders,
@@ -111,16 +111,16 @@ LIVE ACCOUNTING:
 })}
 
 LIVE GRID:
-\${JSON.stringify({ spacingPct: input.grid.gridSpacingPct, levels: input.grid.levelsCount, allocatedUsd: input.grid.totalAllocatedUsd })}
+${JSON.stringify({ spacingPct: input.grid.gridSpacingPct, levels: input.grid.levelsCount, allocatedUsd: input.grid.totalAllocatedUsd })}
 
 LIVE REGIME:
-\${JSON.stringify(input.regime)}
+${JSON.stringify(input.regime)}
 
 LATEST LIVE RESEARCH:
-\${JSON.stringify(input.research.slice(0, 5))}
+${JSON.stringify(input.research.slice(0, 5))}
 
 CURRENT LIVE STRATEGY:
-\${JSON.stringify({ id: input.champion.id, version: input.champion.version, parameters: input.champion.parameters, liveResults: input.champion.liveTradingResults })}\`;
+${JSON.stringify({ id: input.champion.id, version: input.champion.version, parameters: input.champion.parameters, liveResults: input.champion.liveTradingResults })}`;
 
     const start = Date.now();
     try {
@@ -179,8 +179,8 @@ CURRENT LIVE STRATEGY:
       return result;
     } catch (err: any) {
       this.status = 'DEGRADED';
-      this.recordError('ERROR', \`Autonomous optimization failed: \${err?.message || 'unknown error'}\`);
-      return this.saveDecision('PAUSE_OPTIMIZATION', 1, \`AI audit failed: \${err?.message || 'unknown error'}\`, 'No live parameter change.', false);
+      this.recordError('ERROR', `Autonomous optimization failed: ${err?.message || 'unknown error'}`);
+      return this.saveDecision('PAUSE_OPTIMIZATION', 1, `AI audit failed: ${err?.message || 'unknown error'}`, 'No live parameter change.', false);
     }
   }
 
@@ -195,7 +195,7 @@ CURRENT LIVE STRATEGY:
     strategyBuildId?: string
   ): AutonomousOptimizationDecision {
     const item: AutonomousOptimizationDecision = {
-      id: \`opt_\${Date.now()}_\${Math.random().toString(36).slice(2, 7)}\`,
+      id: `opt_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
       timestamp: new Date().toISOString(),
       objective: 'NET_REALIZED_PROFIT_AFTER_FEES',
       decision, confidence, reason, expectedEffect, applied,
