@@ -1,3 +1,4 @@
+import WebSocket from 'ws';
 import { Candle, EngineErrorRecord, EngineHealth, EngineModule, OrderBook, OrderBookLevel } from './types.js';
 
 export interface LivePairMarketData {
@@ -24,7 +25,15 @@ export class DataEngine implements EngineModule {
   private lastHeartbeat: string = new Date().toISOString();
   private errorSurface: EngineErrorRecord[] = [];
   private pollInterval: NodeJS.Timeout | null = null;
+  private wsPingInterval: NodeJS.Timeout | null = null;
+  private wsReconnectTimeout: NodeJS.Timeout | null = null;
   private isPolling: boolean = false;
+  private consecutiveFailures: number = 0;
+
+  // Real-time WebSocket connection to Bybit V5 public spot stream
+  private ws: WebSocket | null = null;
+  private wsConnected: boolean = false;
+  private wsUrl: string = 'wss://stream.bybit.com/v5/public/spot';
 
   private marketData: Map<string, LivePairMarketData> = new Map();
   private tickCallbacks: Array<(symbol: string, price: number, data: LivePairMarketData) => void> = [];
@@ -39,7 +48,7 @@ export class DataEngine implements EngineModule {
     'XRP/USDT'
   ];
 
-  // Official public endpoints for Bybit V5 live market data (NO synthetic data allowed)
+  // Official public endpoints for Bybit V5 live market data
   private bybitEndpoints = [
     'https://api.bybit.com',
     'https://api-testnet.bybit.com'
@@ -63,7 +72,8 @@ export class DataEngine implements EngineModule {
       details: {
         trackedPairsCount: this.trackedSymbols.length,
         liveFeedsActive: Array.from(this.marketData.keys()).length,
-        source: 'EXCHANGE_LIVE_PUBLIC_MIRRORS',
+        wsConnected: this.wsConnected,
+        source: this.wsConnected ? 'BYBIT_V5_WEBSOCKET_STREAM' : 'BYBIT_V5_PUBLIC_REST_POLL',
         isFailClosed: true
       }
     };
@@ -81,14 +91,11 @@ export class DataEngine implements EngineModule {
     this.enabled = enabled;
     if (!enabled) {
       this.status = 'OFF';
-      this.recordError('WARN', 'Data Engine switched OFF by operator. Live WebSocket ingestion stopped. Downstream engines will fail closed.');
-      if (this.pollInterval) {
-        clearInterval(this.pollInterval);
-        this.pollInterval = null;
-      }
+      this.recordError('WARN', 'Data Engine switched OFF by operator. Ingestion halted. Downstream engines will fail closed.');
+      this.cleanup();
     } else {
       this.status = 'HEALTHY';
-      this.recordError('WARN', 'Data Engine switched ON. Resuming live feed ingestion.');
+      this.recordError('WARN', 'Data Engine switched ON. Resuming live feeds and WebSocket streaming.');
       this.startLiveIngestion();
     }
   }
@@ -142,17 +149,153 @@ export class DataEngine implements EngineModule {
   }
 
   private startLiveIngestion() {
-    if (this.pollInterval) clearInterval(this.pollInterval);
-    // Initial fetch immediately
+    this.cleanup();
+
+    // 1. Initial snapshot fetch immediately
     this.fetchLiveTick().catch(err => {
       this.recordError('ERROR', `Initial live market ingestion failed: ${err.message}`);
     });
-    // Continuous live poll every 2.5 seconds
+
+    // 2. Connect Bybit V5 public WebSocket for ultra-low-latency real-time streaming
+    this.connectWebSocket();
+
+    // 3. Fallback / complementary poll loop for deep orderbook, 24h metrics and candles
     this.pollInterval = setInterval(() => {
       if (this.enabled) {
         this.fetchLiveTick().catch(() => {});
       }
     }, 2500);
+  }
+
+  /**
+   * Connect to Bybit V5 Public Spot WebSocket
+   * Subscribes to tickers for tracked symbols
+   */
+  private connectWebSocket(): void {
+    if (!this.enabled || this.ws) return;
+
+    try {
+      this.ws = new WebSocket(this.wsUrl);
+
+      this.ws.on('open', () => {
+        this.wsConnected = true;
+        this.status = 'HEALTHY';
+
+        // Subscribe to tickers for all tracked symbols on Bybit V5 Spot
+        const topics = this.trackedSymbols.map(s => `tickers.${this.toExchangeSymbol(s)}`);
+        const subMsg = {
+          op: 'subscribe',
+          args: topics
+        };
+        this.ws?.send(JSON.stringify(subMsg));
+
+        // Start 20s heartbeat ping
+        if (this.wsPingInterval) clearInterval(this.wsPingInterval);
+        this.wsPingInterval = setInterval(() => {
+          if (this.ws && this.ws.readyState === WebSocket.OPEN) {
+            this.ws.send(JSON.stringify({ op: 'ping' }));
+          }
+        }, 20000);
+      });
+
+      this.ws.on('message', (data: WebSocket.RawData) => {
+        try {
+          const str = data.toString();
+          const json = JSON.parse(str);
+
+          // Handle ping/pong
+          if (json.op === 'pong' || json.ret_msg === 'pong') return;
+
+          // Handle ticker updates: topic "tickers.BTCUSDT"
+          if (json.topic && json.topic.startsWith('tickers.') && json.data) {
+            this.handleWsTickerUpdate(json.data);
+          }
+        } catch {
+          // Ignore parse errors on malformed frames
+        }
+      });
+
+      this.ws.on('error', (err: any) => {
+        this.recordError('WARN', `Bybit WebSocket stream warning: ${err.message || 'connection glitch'}`);
+      });
+
+      this.ws.on('close', () => {
+        this.wsConnected = false;
+        this.ws = null;
+        if (this.wsPingInterval) {
+          clearInterval(this.wsPingInterval);
+          this.wsPingInterval = null;
+        }
+
+        // Auto-reconnect with exponential backoff if enabled
+        if (this.enabled) {
+          if (this.wsReconnectTimeout) clearTimeout(this.wsReconnectTimeout);
+          this.wsReconnectTimeout = setTimeout(() => {
+            this.connectWebSocket();
+          }, 3000);
+        }
+      });
+    } catch (err: any) {
+      this.wsConnected = false;
+      this.ws = null;
+      this.recordError('WARN', `Could not initiate Bybit WebSocket connection: ${err.message}`);
+    }
+  }
+
+  /**
+   * Process live streaming ticker update from WebSocket
+   */
+  private handleWsTickerUpdate(data: any): void {
+    const rawSymbol = data.symbol;
+    if (!rawSymbol) return;
+
+    const matchedSym = this.trackedSymbols.find(s => this.toExchangeSymbol(s) === rawSymbol);
+    if (!matchedSym) return;
+
+    const lastPrice = parseFloat(data.lastPrice);
+    if (isNaN(lastPrice) || lastPrice <= 0) return;
+
+    const existing = this.marketData.get(matchedSym);
+    const open24h = parseFloat(data.prevPrice24h) || existing?.open24h || lastPrice;
+    const high24h = parseFloat(data.highPrice24h) || existing?.high24h || lastPrice;
+    const low24h = parseFloat(data.lowPrice24h) || existing?.low24h || lastPrice;
+    const volume24h = parseFloat(data.volume24h) || existing?.volume24h || 0;
+    const priceChangePct = data.price24hPcnt != null
+      ? parseFloat(data.price24hPcnt) * 100
+      : (existing?.priceChangePct || 0);
+
+    const nowIso = new Date().toISOString();
+    const updatedData: LivePairMarketData = {
+      symbol: matchedSym,
+      currentPrice: lastPrice,
+      open24h,
+      high24h,
+      low24h,
+      volume24h,
+      priceChangePct,
+      candles: existing?.candles || [],
+      orderBook: existing?.orderBook || {
+        symbol: matchedSym,
+        bids: [],
+        asks: [],
+        spread: 0,
+        spreadBps: 0,
+        midPrice: lastPrice,
+        timestamp: Date.now()
+      },
+      lastUpdated: nowIso,
+      source: 'BYBIT_LIVE'
+    };
+
+    this.marketData.set(matchedSym, updatedData);
+    this.lastHeartbeat = nowIso;
+
+    // Dispatch tick event to listeners immediately
+    for (const cb of this.tickCallbacks) {
+      try {
+        cb(matchedSym, lastPrice, updatedData);
+      } catch {}
+    }
   }
 
   /**
@@ -201,25 +344,32 @@ export class DataEngine implements EngineModule {
         }
       }
 
-      if (!tickerFetchSuccess) {
-        this.status = 'DOWN';
-        this.recordError('CRITICAL', 'Live Bybit V5 market feeds are unreachable. Live trading paused (FAIL-CLOSED).');
+      if (!tickerFetchSuccess && !this.wsConnected) {
+        this.consecutiveFailures++;
+        if (this.consecutiveFailures >= 3) {
+          this.status = 'DOWN';
+          this.recordError('CRITICAL', 'Live Bybit V5 market feeds are unreachable. Live trading paused (FAIL-CLOSED).');
+        }
         return;
       }
+
+      this.consecutiveFailures = 0;
 
       // 2. Fetch candles and depth for tracked symbols from Bybit V5
       for (const sym of this.trackedSymbols) {
         const raw = this.toExchangeSymbol(sym);
         const ticker = tickerMap[raw];
-        if (!ticker || ticker.price <= 0) continue;
+        const existing = this.marketData.get(sym);
+        const resolvedPrice = ticker?.price || existing?.currentPrice || 0;
+        if (resolvedPrice <= 0) continue;
 
         anySuccess = true;
 
         // Fetch real order book depth from Bybit V5
-        let bids: OrderBookLevel[] = [];
-        let asks: OrderBookLevel[] = [];
-        let spread = 0;
-        let spreadBps = 0;
+        let bids: OrderBookLevel[] = existing?.orderBook?.bids || [];
+        let asks: OrderBookLevel[] = existing?.orderBook?.asks || [];
+        let spread = existing?.orderBook?.spread || 0;
+        let spreadBps = existing?.orderBook?.spreadBps || 0;
 
         try {
           const depthRes = await fetch(`https://api.bybit.com/v5/market/orderbook?category=spot&symbol=${raw}&limit=15`, {
@@ -246,7 +396,7 @@ export class DataEngine implements EngineModule {
 
               if (bids.length > 0 && asks.length > 0) {
                 spread = Number((asks[0].price - bids[0].price).toFixed(6));
-                spreadBps = Number(((spread / ticker.price) * 10000).toFixed(1));
+                spreadBps = Number(((spread / resolvedPrice) * 10000).toFixed(1));
               }
             }
           }
@@ -255,11 +405,7 @@ export class DataEngine implements EngineModule {
         }
 
         // Fetch real klines (1m, limit 30) from Bybit V5
-        let candles: Candle[] = [];
-        const existing = this.marketData.get(sym);
-        if (existing && existing.candles && existing.candles.length > 0) {
-          candles = existing.candles;
-        }
+        let candles: Candle[] = existing?.candles || [];
 
         try {
           const klineRes = await fetch(`https://api.bybit.com/v5/market/kline?category=spot&symbol=${raw}&interval=1&limit=30`, {
@@ -280,18 +426,18 @@ export class DataEngine implements EngineModule {
             }
           }
         } catch {
-          // Fall back to existing cached real candles if available
+          // Fall back to existing cached real candles
         }
 
-        const currentPrice = ticker.price;
+        const currentPrice = resolvedPrice;
         const liveData: LivePairMarketData = {
           symbol: sym,
           currentPrice,
-          open24h: ticker.open,
-          high24h: ticker.high,
-          low24h: ticker.low,
-          volume24h: ticker.volume,
-          priceChangePct: ticker.changePct,
+          open24h: ticker?.open || existing?.open24h || currentPrice,
+          high24h: ticker?.high || existing?.high24h || currentPrice,
+          low24h: ticker?.low || existing?.low24h || currentPrice,
+          volume24h: ticker?.volume || existing?.volume24h || 0,
+          priceChangePct: ticker?.changePct != null ? ticker.changePct : (existing?.priceChangePct || 0),
           candles,
           orderBook: {
             symbol: sym,
@@ -318,19 +464,40 @@ export class DataEngine implements EngineModule {
 
       this.latencyMs = Date.now() - start;
       this.lastHeartbeat = new Date().toISOString();
-      this.status = anySuccess ? 'HEALTHY' : 'DEGRADED';
+      this.status = (anySuccess || this.wsConnected) ? 'HEALTHY' : 'DEGRADED';
     } catch (err: any) {
-      this.status = 'DOWN';
-      this.recordError('CRITICAL', `Data Engine ingestion fatal error: ${err.message}`);
+      if (!this.wsConnected) {
+        this.status = 'DOWN';
+        this.recordError('CRITICAL', `Data Engine ingestion fatal error: ${err.message}`);
+      }
     } finally {
       this.isPolling = false;
     }
   }
 
-  public destroy() {
+  private cleanup(): void {
     if (this.pollInterval) {
       clearInterval(this.pollInterval);
       this.pollInterval = null;
     }
+    if (this.wsPingInterval) {
+      clearInterval(this.wsPingInterval);
+      this.wsPingInterval = null;
+    }
+    if (this.wsReconnectTimeout) {
+      clearTimeout(this.wsReconnectTimeout);
+      this.wsReconnectTimeout = null;
+    }
+    if (this.ws) {
+      try {
+        this.ws.terminate();
+      } catch {}
+      this.ws = null;
+      this.wsConnected = false;
+    }
+  }
+
+  public destroy() {
+    this.cleanup();
   }
 }

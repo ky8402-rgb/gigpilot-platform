@@ -2,6 +2,7 @@ import crypto from 'crypto';
 import fs from 'fs';
 import path from 'path';
 import { Candle, Fill, Order, OrderBook, OrderBookLevel } from './types.js';
+import { formatBybitError } from './bybitErrors.js';
 
 export interface BybitBalanceItem {
   asset: string;
@@ -702,7 +703,8 @@ export class BybitAdapter {
     type: 'LIMIT' | 'MARKET';
     price?: number;
     quantity: number;
-  }): Promise<{ success: boolean; orderId?: string; error?: string; raw?: any }> {
+    orderLinkId?: string;
+  }): Promise<{ success: boolean; orderId?: string; orderLinkId?: string; error?: string; raw?: any }> {
     if (!this.apiKey || !this.apiSecret) {
       return { success: false, error: 'Bybit API credentials missing. Please configure your API key & secret.' };
     }
@@ -716,12 +718,16 @@ export class BybitAdapter {
       };
     }
 
+    // Client-side unique idempotency key (prevents double execution on network retry)
+    const orderLinkId = params.orderLinkId || `gp_${Date.now()}_${Math.random().toString(36).substring(2, 8)}`;
+
     const payload: Record<string, any> = {
       category: 'spot',
       symbol: this.normalizeSymbol(params.symbol),
       side: params.side === 'BUY' ? 'Buy' : 'Sell',
       orderType: params.type === 'MARKET' ? 'Market' : 'Limit',
-      qty: formattedQty.toString()
+      qty: formattedQty.toString(),
+      orderLinkId
     };
 
     if (params.type === 'LIMIT') {
@@ -752,12 +758,14 @@ export class BybitAdapter {
       const json = (await res.json()) as any;
 
       if (!res.ok || json.retCode !== 0) {
-        return { success: false, error: json.retMsg || `Bybit HTTP ${res.status}: ${JSON.stringify(json)}`, raw: json };
+        const errorMsg = formatBybitError(json?.retCode, json?.retMsg || `HTTP ${res.status}`);
+        return { success: false, error: errorMsg, raw: json };
       }
 
       return {
         success: true,
         orderId: json.result?.orderId || json.result?.orderLinkId,
+        orderLinkId: json.result?.orderLinkId || orderLinkId,
         raw: json.result
       };
     } catch (e: any) {
@@ -774,11 +782,16 @@ export class BybitAdapter {
     }
 
     try {
-      const payload = {
+      const payload: Record<string, any> = {
         category: 'spot',
-        symbol: this.normalizeSymbol(symbol),
-        orderId
+        symbol: this.normalizeSymbol(symbol)
       };
+      if (orderId.startsWith('gp_')) {
+        payload.orderLinkId = orderId;
+      } else {
+        payload.orderId = orderId;
+      }
+
       const { headers, bodyStr } = this.signPost(payload);
       const res = await fetch(`${this.getActiveBaseUrl()}/v5/order/cancel`, {
         method: 'POST',
@@ -788,7 +801,7 @@ export class BybitAdapter {
 
       const json = (await res.json()) as any;
       if (!res.ok || json.retCode !== 0) {
-        return { success: false, error: json.retMsg || `Bybit HTTP ${res.status}` };
+        return { success: false, error: formatBybitError(json?.retCode, json?.retMsg || `HTTP ${res.status}`) };
       }
       return { success: true };
     } catch (e: any) {

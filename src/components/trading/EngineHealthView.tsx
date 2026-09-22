@@ -242,8 +242,33 @@ export const EngineHealthView: React.FC<EngineHealthViewProps> = ({ onEngineTogg
       )}
 
       {apiError && (
-        <div className="bg-amber-950/40 border border-amber-800/80 rounded-lg p-3 text-xs text-amber-300">
-          {apiError}
+        <div className="bg-amber-950/60 border border-amber-500/80 rounded-xl p-4 flex items-center justify-between gap-4 text-xs text-amber-200 shadow-md">
+          <div className="flex items-center gap-2.5">
+            <AlertTriangle className="w-5 h-5 text-amber-400 shrink-0" />
+            <div>
+              <span className="font-bold text-amber-300">Engine Health Diagnostics Notice: </span>
+              <span>{apiError}</span>
+            </div>
+          </div>
+          <button
+            onClick={fetchHealthAndCreds}
+            className="px-3 py-1.5 rounded-lg bg-amber-500/20 hover:bg-amber-500/30 text-amber-200 border border-amber-500/40 text-xs font-semibold flex items-center gap-1.5 transition-colors shrink-0"
+          >
+            <RefreshCw className="w-3 h-3" /> Retry Connection
+          </button>
+        </div>
+      )}
+
+      {/* Loading Skeleton */}
+      {loading && engines.length === 0 && (
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 animate-pulse">
+          <div className="lg:col-span-5 space-y-3">
+            <div className="h-6 bg-zinc-800 rounded w-1/2"></div>
+            {[1, 2, 3, 4, 5].map(i => (
+              <div key={i} className="h-20 bg-zinc-900 border border-zinc-800 rounded-xl"></div>
+            ))}
+          </div>
+          <div className="lg:col-span-7 h-96 bg-zinc-900 border border-zinc-800 rounded-xl"></div>
         </div>
       )}
 
