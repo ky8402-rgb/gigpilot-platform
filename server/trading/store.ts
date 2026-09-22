@@ -161,10 +161,10 @@ export class TradingStore {
           spacingType: this.activeGrid.spacingType,
           volatilityAdjustment: true,
           trendProtection: true,
-          regime: this.currentRegime
+          regime: this.currentRegime,
+          targetGridSpacingPct: nextSpacing
         });
         if (gridRes.grid) {
-          gridRes.grid.gridSpacingPct = nextSpacing;
           this.activeGrid = gridRes.grid;
           this.placeGridOrdersInExchange(this.activeGrid, liveData.currentPrice);
           this.monitor.logAudit({
