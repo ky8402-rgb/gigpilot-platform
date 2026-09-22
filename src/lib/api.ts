@@ -33,6 +33,20 @@ export const DEFAULT_API_URL =
   )) ||
   DEFAULT_PRODUCTION_BACKEND_URL;
 
+function normalizeApiBaseUrl(candidate: unknown): string | null {
+  if (typeof candidate !== 'string') return null;
+  const value = candidate.trim();
+  if (!value) return null;
+  try {
+    const parsed = new URL(value);
+    if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') return null;
+    if (!parsed.hostname) return null;
+    return parsed.origin.replace(/\\/+$/, '');
+  } catch {
+    return null;
+  }
+}
+
 export function getBaseApiUrl(): string {
   if (typeof window !== 'undefined' && window.location) {
     const host = window.location.hostname;
@@ -47,7 +61,8 @@ export function getBaseApiUrl(): string {
     if (isDetachedStaticHost) {
       return DEFAULT_PRODUCTION_BACKEND_URL;
     }
-    return window.location.origin;
+    const normalizedOrigin = normalizeApiBaseUrl(window.location.origin);
+    return normalizedOrigin || DEFAULT_PRODUCTION_BACKEND_URL;
   }
 
   const customUrl =
@@ -72,7 +87,8 @@ export function getBaseApiUrl(): string {
     !customUrl.includes('render.com') &&
     !(typeof window !== 'undefined' && window.location?.protocol === 'https:' && customUrl.startsWith('http://'))
   ) {
-    return customUrl.trim().replace(/\/+$/, '');
+    const normalizedCustomUrl = normalizeApiBaseUrl(customUrl);
+    if (normalizedCustomUrl) return normalizedCustomUrl;
   }
 
   return DEFAULT_PRODUCTION_BACKEND_URL;
