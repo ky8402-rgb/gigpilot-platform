@@ -96,7 +96,7 @@ export class BybitAdapter {
     try {
       const res = await fetch(`${this.getActiveBaseUrl()}/v5/market/time`);
       if (res.ok) {
-        const data = (await res.json()) as any;
+        const data = await this.readJsonResponse<any>(res);
         const serverTime = Number(data?.time || (data?.result?.timeSecond ? data.result.timeSecond * 1000 : Date.now()));
         this.timeOffset = serverTime - Date.now();
       }
@@ -300,7 +300,7 @@ export class BybitAdapter {
         headers: { 'Accept': 'application/json' }
       });
       if (res.ok) {
-        const json = (await res.json()) as any;
+        const json = await this.readJsonResponse<any>(res);
         const list = json?.result?.list;
         if (Array.isArray(list) && list.length > 0) {
           // Bybit returns newest first, reverse for chronological ascending
@@ -333,7 +333,7 @@ export class BybitAdapter {
         headers: { 'Accept': 'application/json' }
       });
       if (res.ok) {
-        const json = (await res.json()) as any;
+        const json = await this.readJsonResponse<any>(res);
         const result = json?.result;
         if (result && (Array.isArray(result.b) || Array.isArray(result.a))) {
           let cumB = 0;
@@ -435,7 +435,7 @@ export class BybitAdapter {
         res = await fetch(`${this.getActiveBaseUrl()}/v5/account/wallet-balance?${signed.queryString}`, {
           headers: signed.headers
         });
-        json = (await res.json()) as any;
+        json = await this.readJsonResponse<any>(res);
       }
 
       if (!res.ok || json.retCode !== 0) {
@@ -608,8 +608,13 @@ export class BybitAdapter {
     });
 
     if (!res.ok) {
-      const err = await res.text().then((raw) => { try { return raw ? JSON.parse(raw) : {}; } catch { return {}; } }).catch(() => ({}));
-      throw new Error(err.retMsg || `HTTP ${res.status}`);
+      let err: any = {};
+      try {
+        err = await this.readJsonResponse<any>(res);
+      } catch (parseError: any) {
+        throw new Error(parseError?.message || `Bybit HTTP ${res.status}`);
+      }
+      throw new Error(formatBybitError(err?.retCode, err?.retMsg || `HTTP ${res.status}`));
     }
 
     const json = await this.readJsonResponse<any>(res);
@@ -786,7 +791,7 @@ export class BybitAdapter {
         body: bodyStr
       });
 
-      const json = (await res.json()) as any;
+      const json = await this.readJsonResponse<any>(res);
       if (!res.ok || json.retCode !== 0) {
         return { success: false, error: formatBybitError(json?.retCode, json?.retMsg || `HTTP ${res.status}`) };
       }
