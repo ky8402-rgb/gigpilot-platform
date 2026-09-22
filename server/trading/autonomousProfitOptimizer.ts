@@ -15,7 +15,7 @@ export interface AutonomousOptimizationDecision {
 }
 
 export class AutonomousProfitOptimizer implements EngineModule {
-  public readonly id = 'SELF_LEARN_OPTIMIZER';
+  public readonly id = 'AUTONOMOUS_PROFIT_OPTIMIZER';
   public readonly name = 'Autonomous Profit Optimizer (AI Audit → Decision → Live Parameter Improvement)';
 
   private enabled = true;
