@@ -98,9 +98,19 @@ jobs:
           SG: ${{ steps.network.outputs.sg }}
         run: |
           set -euo pipefail
-          IAM_ARG=()
-          if [ -n "$IAM" ]; then IAM_ARG=(--iam-instance-profile "Name=$(basename "$IAM")"); fi
-          ID=$(aws ec2 run-instances --region "$TARGET_REGION" --image-id "$AMI" --instance-type "$TYPE" --key-name "$KEY" --security-group-ids "$SG" --associate-public-ip-address "${IAM_ARG[@]}" --tag-specifications 'ResourceType=instance,Tags=[{Key=Name,Value=GigPilot-Bybit-Production-Mumbai},{Key=Purpose,Value=Bybit-region-migration}]' --query 'Instances[0].InstanceId' --output text)
+          RUN_ARGS=(
+            --region "$TARGET_REGION"
+            --image-id "$AMI"
+            --instance-type "$TYPE"
+            --key-name "$KEY"
+            --security-group-ids "$SG"
+            --associate-public-ip-address
+            --tag-specifications 'ResourceType=instance,Tags=[{Key=Name,Value=GigPilot-Bybit-Production-Mumbai},{Key=Purpose,Value=Bybit-region-migration}]'
+            --query 'Instances[0].InstanceId'
+            --output text
+          )
+          if [ -n "$IAM" ]; then RUN_ARGS+=(--iam-instance-profile "Name=$(basename "$IAM")"); fi
+          ID=$(aws ec2 run-instances "${RUN_ARGS[@]}")
           aws ec2 wait instance-running --region "$TARGET_REGION" --instance-ids "$ID"
           aws ec2 wait instance-status-ok --region "$TARGET_REGION" --instance-ids "$ID"
           IP=$(aws ec2 describe-instances --region "$TARGET_REGION" --instance-ids "$ID" --query 'Reservations[0].Instances[0].PublicIpAddress' --output text)
@@ -114,6 +124,10 @@ jobs:
           SG: ${{ steps.network.outputs.sg }}
         run: |
           set -euo pipefail
+          cleanup_ssh() {
+            aws ec2 revoke-security-group-ingress --region "$TARGET_REGION" --group-id "$SG" --protocol tcp --port 22 --cidr 0.0.0.0/0 >/dev/null 2>&1 || true
+          }
+          trap cleanup_ssh EXIT
           DOMAIN=$(echo "$IP" | tr '.' '-')".sslip.io"
           echo "::add-mask::$IP"
           chmod 600 /tmp/gigpilot.pem
