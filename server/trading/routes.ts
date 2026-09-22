@@ -498,7 +498,29 @@ tradingRouter.post('/research/analyze', async (req: Request, res: Response) => {
   res.json(result);
 });
 
-// 17. Profit Sweep Subsystem
+// 17. Autonomous AI Profit Audit & Improvement
+tradingRouter.get('/optimizer', (req: Request, res: Response) => {
+  const store = globalTradingStore;
+  res.json({
+    success: true,
+    objective: 'NET_REALIZED_PROFIT_AFTER_FEES',
+    autonomousDecisioning: true,
+    decisions: store.autonomousProfitOptimizer.getDecisions(),
+    engine: store.autonomousProfitOptimizer.healthCheck()
+  });
+});
+
+tradingRouter.post('/optimizer/run', async (req: Request, res: Response) => {
+  const store = globalTradingStore;
+  const result = await store.runAutonomousProfitOptimization();
+  res.json({
+    success: true,
+    objective: 'NET_REALIZED_PROFIT_AFTER_FEES',
+    decision: result
+  });
+});
+
+// 18. Profit Sweep Subsystem
 tradingRouter.get('/sweep/info', (req: Request, res: Response) => {
   const store = globalTradingStore;
   res.json({
