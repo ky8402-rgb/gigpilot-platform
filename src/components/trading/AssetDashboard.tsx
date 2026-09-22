@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   Wallet,
   ArrowUpRight,
@@ -47,8 +47,13 @@ export const AssetDashboard: React.FC<AssetDashboardProps> = ({
   const [isTestnet, setIsTestnet] = useState<boolean>(false);
   const [updatingKeys, setUpdatingKeys] = useState<boolean>(false);
   const [keyUpdateFeedback, setKeyUpdateFeedback] = useState<string | null>(null);
+  const assetsRequestInFlight = useRef(false);
+  const updatingKeysRef = useRef(false);
+  const showKeyModalRef = useRef(false);
 
   const loadAssets = async (force = false) => {
+    if (assetsRequestInFlight.current) return;
+    assetsRequestInFlight.current = true;
     if (force) setRefreshing(true);
     try {
       const res = await fetchLiveAssets(force);
@@ -61,20 +66,29 @@ export const AssetDashboard: React.FC<AssetDashboardProps> = ({
     } catch (err: any) {
       setErrorMsg(err.message || 'Failed to load exchange assets');
     } finally {
+      assetsRequestInFlight.current = false;
       setLoading(false);
       setRefreshing(false);
     }
   };
 
   useEffect(() => {
+    updatingKeysRef.current = updatingKeys;
+  }, [updatingKeys]);
+
+  useEffect(() => {
+    showKeyModalRef.current = showKeyModal;
+  }, [showKeyModal]);
+
+  useEffect(() => {
     loadAssets(false);
     const interval = setInterval(() => {
-      if (!updatingKeys && !showKeyModal) {
+      if (!updatingKeysRef.current && !showKeyModalRef.current) {
         loadAssets(false);
       }
     }, 12000);
     return () => clearInterval(interval);
-  }, [updatingKeys, showKeyModal]);
+  }, []);
 
   const handleCopyIp = (ip: string) => {
     navigator.clipboard.writeText(ip);
