@@ -39,6 +39,12 @@ export function getCandidateBaseUrls(): string[] {
   if (typeof envUrl === 'string' && envUrl.trim()) {
     urls.push(`${envUrl.replace(/\/$/, '')}/api/trading`);
   }
+
+  // Production safety net: prevent the Amplify SPA from becoming the trading API.
+  // This is the canonical live backend used by the production deployment configuration.
+  urls.push('https://3-222-149-9.sslip.io/api/trading');
+
+  // Same-origin remains only as a final local/development fallback.
   urls.push('/api/trading');
 
   return [...new Set(urls)];
