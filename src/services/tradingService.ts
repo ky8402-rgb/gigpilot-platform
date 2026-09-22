@@ -18,6 +18,7 @@ import {
 import {
   DEFAULT_AUDIT_LOGS,
   DEFAULT_CHAMPION_STRATEGY,
+  DEFAULT_INDICATORS,
   DEFAULT_DESTINATION_WALLET,
   DEFAULT_PAIRS,
   DEFAULT_RESEARCH_ITEMS,
@@ -331,13 +332,42 @@ export async function fetchPairDetails(symbol: string) {
       };
     }
 
+    const sourceIndicators = data?.indicators ?? fallbackMasterState.indicators;
+    const fallbackIndicators = fallbackMasterState.indicators;
+    const safeNumber = (value: unknown, fallback: number): number =>
+      typeof value === 'number' && Number.isFinite(value) ? value : fallback;
+    const safeMacd = sourceIndicators?.macd ?? fallbackIndicators?.macd ?? DEFAULT_INDICATORS.macd;
+    const safeBands = sourceIndicators?.bollingerBands ?? fallbackIndicators?.bollingerBands ?? DEFAULT_INDICATORS.bollingerBands;
+    const indicators = {
+      rsi14: safeNumber(sourceIndicators?.rsi14, safeNumber(fallbackIndicators?.rsi14, DEFAULT_INDICATORS.rsi14)),
+      macd: {
+        macd: safeNumber(safeMacd?.macd, DEFAULT_INDICATORS.macd.macd),
+        signal: safeNumber(safeMacd?.signal, DEFAULT_INDICATORS.macd.signal),
+        histogram: safeNumber(safeMacd?.histogram, DEFAULT_INDICATORS.macd.histogram)
+      },
+      ema9: safeNumber(sourceIndicators?.ema9, safeNumber(fallbackIndicators?.ema9, DEFAULT_INDICATORS.ema9)),
+      ema21: safeNumber(sourceIndicators?.ema21, safeNumber(fallbackIndicators?.ema21, DEFAULT_INDICATORS.ema21)),
+      ema50: safeNumber(sourceIndicators?.ema50, safeNumber(fallbackIndicators?.ema50, DEFAULT_INDICATORS.ema50)),
+      ema200: safeNumber(sourceIndicators?.ema200, safeNumber(fallbackIndicators?.ema200, DEFAULT_INDICATORS.ema200)),
+      bollingerBands: {
+        upper: safeNumber(safeBands?.upper, DEFAULT_INDICATORS.bollingerBands.upper),
+        middle: safeNumber(safeBands?.middle, DEFAULT_INDICATORS.bollingerBands.middle),
+        lower: safeNumber(safeBands?.lower, DEFAULT_INDICATORS.bollingerBands.lower),
+        bandwidth: safeNumber(safeBands?.bandwidth, DEFAULT_INDICATORS.bollingerBands.bandwidth)
+      },
+      atr14: safeNumber(sourceIndicators?.atr14, safeNumber(fallbackIndicators?.atr14, DEFAULT_INDICATORS.atr14)),
+      vwap: safeNumber(sourceIndicators?.vwap, safeNumber(fallbackIndicators?.vwap, DEFAULT_INDICATORS.vwap)),
+      spreadBps: safeNumber(sourceIndicators?.spreadBps, safeNumber(fallbackIndicators?.spreadBps, DEFAULT_INDICATORS.spreadBps)),
+      volatility24h: safeNumber(sourceIndicators?.volatility24h, safeNumber(fallbackIndicators?.volatility24h, DEFAULT_INDICATORS.volatility24h))
+    };
+
     return {
       success: true,
       symbol,
       currentPrice: resolvedPrice,
       candles,
       orderBook,
-      indicators: data?.indicators || fallbackMasterState.indicators
+      indicators
     };
   } catch {
     const norm = symbol.replace(/[\/\-_]/g, '').toUpperCase();
