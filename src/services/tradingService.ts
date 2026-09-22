@@ -43,7 +43,7 @@ export function getLastSyncTime(): string {
   return lastSyncTimestamp;
 }
 
-// In-memory simulated fallback store so user can test all controls even if offline
+// Legacy local state retained only for compatibility; live API failures must never be reported as successful operations.
 let fallbackMasterState: MasterTradingState = generateDefaultMasterState();
 let fallbackPairs = [...DEFAULT_PAIRS];
 let fallbackStrategies: StrategyVersion[] = [
