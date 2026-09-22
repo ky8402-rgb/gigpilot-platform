@@ -97,7 +97,7 @@ jobs:
         continue-on-error: true
         env:
           SSH_KEY: ${{ secrets.EC2_SSH_KEY }}
-          EC2_HOST: ${{ secrets.EC2_HOST || '3.222.149.9' }}
+          EC2_HOST: ${{ secrets.EC2_HOST }}
           EC2_USER: ${{ secrets.EC2_USER || 'ubuntu' }}
           EC2_INSTANCE_ID: ${{ secrets.EC2_INSTANCE_ID }}
         run: |
@@ -153,7 +153,7 @@ jobs:
       - name: Trigger EC2 Push-to-Deploy Webhook (Parallel / Fallback)
         continue-on-error: true
         env:
-          EC2_HOST: ${{ secrets.EC2_HOST || '3.222.149.9' }}
+          EC2_HOST: ${{ secrets.EC2_HOST }}
           WEBHOOK_SECRET: ${{ secrets.GITHUB_WEBHOOK_SECRET || secrets.WEBHOOK_SECRET || '' }}
           COMMIT_MSG: ${{ github.event.head_commit.message }}
         run: |
@@ -219,7 +219,7 @@ jobs:
 
       - name: Verify EC2 Backend Health
         env:
-          EC2_HOST: ${{ secrets.EC2_HOST || '3.222.149.9' }}
+          EC2_HOST: ${{ secrets.EC2_HOST }}
         run: |
           HEALTH_URL="https://${EC2_HOST//./-}.sslip.io/api/health"
           FALLBACK_URL="http://${EC2_HOST}:3000/api/health"
@@ -244,7 +244,7 @@ jobs:
 
       - name: Report EC2 Status to Step Summary
         env:
-          EC2_HOST: ${{ secrets.EC2_HOST || '3.222.149.9' }}
+          EC2_HOST: ${{ secrets.EC2_HOST }}
         run: |
           echo "### 🛡️ AWS EC2 Backend Auto-Deploy" >> $GITHUB_STEP_SUMMARY
           echo "- **App Name:** gigpilot-backend" >> $GITHUB_STEP_SUMMARY
