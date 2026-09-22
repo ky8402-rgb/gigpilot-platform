@@ -41,7 +41,7 @@ function normalizeApiBaseUrl(candidate: unknown): string | null {
     const parsed = new URL(value);
     if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') return null;
     if (!parsed.hostname) return null;
-    return parsed.origin.replace(/\\/+$/, '');
+    return parsed.origin.replace(/\/+$/, '');
   } catch {
     return null;
   }
