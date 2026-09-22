@@ -315,6 +315,26 @@ export async function cancelAllOrders() {
   });
 }
 
+export async function fetchAutonomousOptimizer(): Promise<{
+  success: boolean;
+  objective: 'NET_REALIZED_PROFIT_AFTER_FEES';
+  autonomousDecisioning: boolean;
+  decisions: any[];
+  strategyBuilds: any[];
+  engine: any;
+}> {
+  const res = await fetchWithFailover<any>('/optimizer');
+  if (!res?.success) throw new Error('Autonomous optimizer telemetry unavailable.');
+  return res;
+}
+
+export async function runAutonomousOptimizer() {
+  return await fetchWithFailover<any>('/optimizer/run', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' }
+  });
+}
+
 export async function fetchStrategies(): Promise<{
   champion: StrategyVersion;
   challengers: StrategyVersion[];
