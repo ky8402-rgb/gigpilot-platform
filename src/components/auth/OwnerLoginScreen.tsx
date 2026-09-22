@@ -330,7 +330,7 @@ export const OwnerLoginScreen: React.FC<OwnerLoginScreenProps> = ({ onAuthentica
                   <input
                     type="text"
                     inputMode="numeric"
-                    pattern="[0-9]*"
+                    autoComplete="one-time-code"
                     maxLength={6}
                     value={totpCode}
                     onChange={(e) => setTotpCode(e.target.value.replace(/\D/g, ''))}
@@ -500,7 +500,7 @@ export const OwnerLoginScreen: React.FC<OwnerLoginScreenProps> = ({ onAuthentica
                 <input
                   type="text"
                   inputMode="numeric"
-                  pattern="[0-9]*"
+                  autoComplete="one-time-code"
                   maxLength={6}
                   value={totpCode}
                   onChange={(e) => setTotpCode(e.target.value.replace(/\D/g, ''))}

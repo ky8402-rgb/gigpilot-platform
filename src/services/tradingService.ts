@@ -128,7 +128,7 @@ export function setStoredOwnerToken(token: string | null): void {
  * Resilient multi-endpoint HTTP fetch with timeout and automatic failover.
  * Never throws an uncaught fatal error that crashes the UI.
  */
-async function fetchWithFailover<T>(
+export async function fetchWithFailover<T>(
   endpointPath: string,
   options?: RequestInit & { timeoutMs?: number }
 ): Promise<T> {

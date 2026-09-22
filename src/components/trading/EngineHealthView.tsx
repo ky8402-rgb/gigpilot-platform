@@ -14,6 +14,18 @@ import {
   ExternalLink
 } from 'lucide-react';
 import { EngineHealth, EngineId, ExchangeCredentialsInfo, SupportedExchange } from '../../types/trading';
+import { fetchWithFailover } from '../../services/tradingService';
+
+function formatTimestamp(rawTimestamp?: string | number | null): string {
+  if (!rawTimestamp) return 'Just now';
+  try {
+    const d = new Date(rawTimestamp);
+    if (isNaN(d.getTime())) return 'Just now';
+    return d.toLocaleTimeString();
+  } catch {
+    return 'Just now';
+  }
+}
 
 interface EngineHealthViewProps {
   onEngineToggled?: () => void;
@@ -39,31 +51,31 @@ export const EngineHealthView: React.FC<EngineHealthViewProps> = ({ onEngineTogg
   const fetchHealthAndCreds = async () => {
     try {
       setLoading(true);
-      const [hRes, cRes] = await Promise.all([
-        fetch('/api/trading/engines/health'),
-        fetch('/api/trading/exchanges/credentials')
+      const [hData, cData] = await Promise.all([
+        fetchWithFailover<{ success: boolean; engines: EngineHealth[]; failClosed: { failClosed: boolean; downEngines: string[] } }>('/engines/health').catch(err => {
+          console.warn('[EngineHealthView] Health fetch notice:', err?.message || err);
+          return null;
+        }),
+        fetchWithFailover<{ success: boolean; credentials: ExchangeCredentialsInfo[] }>('/exchanges/credentials').catch(err => {
+          console.warn('[EngineHealthView] Credentials fetch notice:', err?.message || err);
+          return null;
+        })
       ]);
 
-      if (hRes.ok) {
-        const hData = await hRes.json();
-        if (hData.success) {
-          setEngines(hData.engines || []);
-          setFailClosed(hData.failClosed || { failClosed: false, downEngines: [] });
-          if (!selectedEngineId && hData.engines?.length > 0) {
-            setSelectedEngineId(hData.engines[0].id);
-          }
+      if (hData && hData.success) {
+        setEngines(hData.engines || []);
+        setFailClosed(hData.failClosed || { failClosed: false, downEngines: [] });
+        if (!selectedEngineId && hData.engines?.length > 0) {
+          setSelectedEngineId(hData.engines[0].id);
         }
       }
 
-      if (cRes.ok) {
-        const cData = await cRes.json();
-        if (cData.success) {
-          setCredentials(cData.credentials || []);
-        }
+      if (cData && cData.success) {
+        setCredentials(cData.credentials || []);
       }
       setApiError(null);
     } catch (e: any) {
-      setApiError(e.message || 'Failed to connect to engine monitor');
+      setApiError(e?.message || 'Failed to connect to engine monitor');
     } finally {
       setLoading(false);
     }
@@ -78,12 +90,11 @@ export const EngineHealthView: React.FC<EngineHealthViewProps> = ({ onEngineTogg
   const handleToggleOffSwitch = async (engineId: EngineId, currentEnabled: boolean) => {
     try {
       setActionLoading(`toggle_${engineId}`);
-      const res = await fetch(`/api/trading/engines/${engineId}/off-switch`, {
+      const data = await fetchWithFailover<{ success: boolean; error?: string }>(`/engines/${engineId}/off-switch`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ enabled: !currentEnabled })
       });
-      const data = await res.json();
       if (data.success) {
         await fetchHealthAndCreds();
         onEngineToggled?.();
@@ -91,7 +102,7 @@ export const EngineHealthView: React.FC<EngineHealthViewProps> = ({ onEngineTogg
         setApiError(data.error || 'Failed to toggle engine off-switch');
       }
     } catch (e: any) {
-      setApiError(e.message);
+      setApiError(e?.message || 'Failed to toggle engine');
     } finally {
       setActionLoading(null);
     }
@@ -100,15 +111,14 @@ export const EngineHealthView: React.FC<EngineHealthViewProps> = ({ onEngineTogg
   const handleClearErrors = async (engineId: EngineId) => {
     try {
       setActionLoading(`clear_${engineId}`);
-      const res = await fetch(`/api/trading/engines/${engineId}/clear-errors`, {
+      const data = await fetchWithFailover<{ success: boolean; error?: string }>(`/engines/${engineId}/clear-errors`, {
         method: 'POST'
       });
-      const data = await res.json();
       if (data.success) {
         await fetchHealthAndCreds();
       }
     } catch (e: any) {
-      setApiError(e.message);
+      setApiError(e?.message || 'Failed to clear error surface');
     } finally {
       setActionLoading(null);
     }
@@ -120,7 +130,7 @@ export const EngineHealthView: React.FC<EngineHealthViewProps> = ({ onEngineTogg
 
     try {
       setKeySaveMsg(null);
-      const res = await fetch('/api/trading/exchanges/keys', {
+      const data = await fetchWithFailover<{ success: boolean; error?: string }>('/exchanges/keys', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -130,7 +140,6 @@ export const EngineHealthView: React.FC<EngineHealthViewProps> = ({ onEngineTogg
           passphrase: keyInput.passphrase
         })
       });
-      const data = await res.json();
       if (data.success) {
         setKeySaveMsg({ success: true, text: `Successfully updated ${activeExchangeModal} trade-only keys!` });
         setKeyInput({ apiKey: '', apiSecret: '', passphrase: '' });
@@ -143,7 +152,7 @@ export const EngineHealthView: React.FC<EngineHealthViewProps> = ({ onEngineTogg
         setKeySaveMsg({ success: false, text: data.error || 'Failed to update keys' });
       }
     } catch (err: any) {
-      setKeySaveMsg({ success: false, text: err.message });
+      setKeySaveMsg({ success: false, text: err?.message || 'Failed to update keys' });
     }
   };
 
@@ -317,7 +326,7 @@ export const EngineHealthView: React.FC<EngineHealthViewProps> = ({ onEngineTogg
                   <p className="text-xs text-zinc-400 font-mono mt-1">
                     ENGINE_ID: <span className="text-sky-400">{selectedEngine.id}</span> | Heartbeat:{' '}
                     <span className="text-zinc-300">
-                      {new Date(selectedEngine.lastHeartbeat).toLocaleTimeString()}
+                      {formatTimestamp(selectedEngine.lastHeartbeat)}
                     </span>
                   </p>
                 </div>
@@ -427,7 +436,7 @@ export const EngineHealthView: React.FC<EngineHealthViewProps> = ({ onEngineTogg
                               {err.level}
                             </span>
                             <span className="text-[11px] text-zinc-500">
-                              {new Date(err.timestamp).toLocaleTimeString()}
+                              {formatTimestamp(err.timestamp)}
                             </span>
                           </div>
                           <p className="font-semibold text-zinc-200">{err.message}</p>
