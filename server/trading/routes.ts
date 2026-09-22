@@ -136,7 +136,7 @@ tradingRouter.post('/exchanges/keys', (req: Request, res: Response) => {
     globalTradingStore.monitor.logAudit({
       category: 'CONFIG_CHANGE',
       action: `Updated Trade-Only API Keys for ${exchange}`,
-      details: { exchange, isTestnet }
+      details: { exchange, environment: 'LIVE_PRODUCTION' }
     });
 
     return res.json({
