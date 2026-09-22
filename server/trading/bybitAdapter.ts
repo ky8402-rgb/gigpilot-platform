@@ -76,6 +76,22 @@ export class BybitAdapter {
     return this.baseUrl;
   }
 
+  private async readJsonResponse<T = any>(res: Response): Promise<T> {
+    const raw = await res.text();
+    const text = raw.replace(/^\uFEFF/, '').trim();
+    if (!text) {
+      throw new Error(`Bybit returned an empty response (HTTP ${res.status})`);
+    }
+    try {
+      return JSON.parse(text) as T;
+    } catch (error: any) {
+      const preview = text.slice(0, 160).replace(/\\s+/g, ' ');
+      throw new Error(
+        `Bybit returned invalid JSON (HTTP ${res.status}, content-type ${res.headers.get('content-type') || 'unknown'}): ${error?.message || 'parse error'}; response=${preview}`
+      );
+    }
+  }
+
   public async syncServerTime(): Promise<number> {
     try {
       const res = await fetch(`${this.getActiveBaseUrl()}/v5/market/time`);
@@ -205,7 +221,7 @@ export class BybitAdapter {
         headers: { 'Accept': 'application/json' }
       });
       if (res.ok) {
-        const json = (await res.json()) as any;
+        const json = await this.readJsonResponse<any>(res);
         const item = json?.result?.list?.[0];
         const p = parseFloat(item?.lastPrice);
         if (p > 0) {
@@ -410,7 +426,7 @@ export class BybitAdapter {
         headers: signed.headers
       });
 
-      let json = (await res.json()) as any;
+      let json = await this.readJsonResponse<any>(res);
 
       // If UNIFIED fails or empty, try SPOT
       if (!res.ok || json.retCode !== 0 || !json?.result?.list?.length) {
