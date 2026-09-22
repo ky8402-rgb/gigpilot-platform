@@ -53,7 +53,7 @@ export class BybitAdapter {
   private baseUrl: string = 'https://api.bybit.com';
   private testnetBaseUrl: string = 'https://api-testnet.bybit.com';
   private isTestnet: boolean = false;
-  private serverIp: string = '3.222.149.9';
+  private serverIp: string = process.env.EC2_PUBLIC_IP || process.env.SERVER_PUBLIC_IP || '';
   private priceCache: Map<string, { price: number; time: number }> = new Map();
   private lastAccountState: BybitAccountState | null = null;
   private lastAccountFetchTime = 0;
