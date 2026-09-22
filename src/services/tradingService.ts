@@ -1005,7 +1005,7 @@ export async function fetchLiveAssets(forceRefresh = false): Promise<{ success: 
       assets: {
         status: 'DISCONNECTED',
         message: err.message || 'Failed to reach Bybit assets API',
-        serverIp: '3.222.149.9',
+        serverIp: '',
         timestamp: new Date().toISOString(),
         totalEquityUsd: 0,
         availableCashUsd: 0,
@@ -1043,7 +1043,7 @@ export async function fetchBybitStatus(): Promise<{
       success: true,
       apiKeyConfigured: Boolean(bybitCred?.configured),
       keyMask: bybitCred?.apiKeyMask || 'NOT CONFIGURED',
-      serverIp: '3.222.149.9',
+      serverIp: '',
       baseUrl: 'https://api.bybit.com',
       status: bybitCred?.status || 'UNCONFIGURED'
     };
