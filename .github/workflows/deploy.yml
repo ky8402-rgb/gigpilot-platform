@@ -99,7 +99,7 @@ jobs:
           SSH_KEY: ${{ secrets.EC2_SSH_KEY }}
           EC2_HOST: ${{ secrets.EC2_HOST || '3.222.149.9' }}
           EC2_USER: ${{ secrets.EC2_USER || 'ubuntu' }}
-          EC2_INSTANCE_ID: 'i-02f24350d31f5aa51'
+          EC2_INSTANCE_ID: ${{ secrets.EC2_INSTANCE_ID }}
         run: |
           echo "=========================================================="
           echo "Deploying to AWS EC2 via Secure SSH ($EC2_USER@$EC2_HOST)..."
