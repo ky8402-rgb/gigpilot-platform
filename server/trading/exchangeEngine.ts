@@ -1,5 +1,5 @@
 import { Candle, Fill, Order, OrderBook, OrderBookLevel, Position, TradingMode } from './types.js';
-import { binanceAdapter, FALLBACK_BASELINE_PRICES } from './binanceAdapter.js';
+import { binanceAdapter } from './binanceAdapter.js';
 
 export interface ExchangePairState {
   symbol: string;
@@ -24,6 +24,8 @@ export class ExchangeEngine {
   private tickInterval: NodeJS.Timeout | null = null;
   private onTickCallbacks: Array<(symbol: string, price: number) => void> = [];
   private isUpdating = false;
+  private lastAccountSyncAt = 0;
+  private readonly accountSyncIntervalMs = 10000;
 
   private trackedSymbols = [
     'BTC/USDT',
@@ -44,7 +46,12 @@ export class ExchangeEngine {
   // Normalize any variation of a trading pair ("BTC-USDT", "BTCUSDT", "btc/usdt") to standard "BTC/USDT"
   public normalizeSymbol(sym: string): string {
     if (!sym) return 'BTC/USDT';
-    let s = decodeURIComponent(sym).trim().toUpperCase();
+    let s: string;
+    try {
+      s = decodeURIComponent(sym).trim().toUpperCase();
+    } catch {
+      s = String(sym).trim().toUpperCase();
+    }
     s = s.replace(/[-_]/g, '/');
     if (!s.includes('/')) {
       if (s.endsWith('USDT')) s = `${s.slice(0, -4)}/USDT`;
@@ -56,68 +63,28 @@ export class ExchangeEngine {
   }
 
   private async initRealPairs() {
+    // Live-only startup: do not fabricate candles, prices, or order-book depth.
+    // The UI can render an empty/zero state until the first verified Binance snapshot arrives.
     for (const symbol of this.trackedSymbols) {
-      const norm = symbol.replace(/[\/\-_]/g, '').toUpperCase();
-      const fb = FALLBACK_BASELINE_PRICES[norm] || FALLBACK_BASELINE_PRICES['BTCUSDT'];
-      const price = fb.price;
-
-      // Seed initial candles so UI charts render immediately on startup
-      const initialCandles: Candle[] = [];
-      const now = Date.now();
-      let cClose = price * 0.995;
-      for (let i = 30; i >= 0; i--) {
-        const timeMs = now - i * 60000;
-        const wave = Math.sin(i * 0.4) * 0.002;
-        const open = Number(cClose.toFixed(4));
-        const close = Number((cClose * (1 + wave)).toFixed(4));
-        const high = Number((Math.max(open, close) * 1.002).toFixed(4));
-        const low = Number((Math.min(open, close) * 0.998).toFixed(4));
-        cClose = close;
-        initialCandles.push({
-          timestamp: timeMs,
-          open,
-          high,
-          low,
-          close,
-          volume: Number((100 + i * 5).toFixed(2))
-        });
-      }
-
-      // Seed initial order book
-      const bids: OrderBookLevel[] = [];
-      const asks: OrderBookLevel[] = [];
-      let cumB = 0;
-      let cumA = 0;
-      for (let i = 1; i <= 10; i++) {
-        const bidP = Number((price * (1 - i * 0.0008)).toFixed(4));
-        const askP = Number((price * (1 + i * 0.0008)).toFixed(4));
-        const bAmt = Number((Math.random() * 2 + 0.5).toFixed(4));
-        const aAmt = Number((Math.random() * 2 + 0.5).toFixed(4));
-        cumB += bAmt;
-        cumA += aAmt;
-        bids.push({ price: bidP, amount: bAmt, total: Number(cumB.toFixed(4)) });
-        asks.push({ price: askP, amount: aAmt, total: Number(cumA.toFixed(4)) });
-      }
-
       this.pairs.set(symbol, {
         symbol,
-        currentPrice: price,
-        open24h: fb.open24h,
-        high24h: fb.high24h,
-        low24h: fb.low24h,
-        volume24h: fb.volume,
-        priceChangePct: fb.change24hPct,
-        candles: initialCandles,
+        currentPrice: 0,
+        open24h: 0,
+        high24h: 0,
+        low24h: 0,
+        volume24h: 0,
+        priceChangePct: 0,
+        candles: [],
         orderBook: {
           symbol,
-          bids,
-          asks,
-          spread: Number((price * 0.0016).toFixed(4)),
-          spreadBps: 16,
-          midPrice: price,
-          timestamp: Date.now()
+          bids: [],
+          asks: [],
+          spread: 0,
+          spreadBps: 0,
+          midPrice: 0,
+          timestamp: 0
         },
-        lastUpdated: new Date().toISOString()
+        lastUpdated: ''
       });
 
       this.positions.set(symbol, {
@@ -125,7 +92,7 @@ export class ExchangeEngine {
         baseAmount: 0,
         quoteAmount: 0,
         entryPrice: 0,
-        currentPrice: price,
+        currentPrice: 0,
         unrealizedPnL: 0,
         unrealizedPnLPct: 0,
         realizedPnL: 0,
@@ -134,7 +101,7 @@ export class ExchangeEngine {
       });
     }
 
-    // Immediate background fetch from Binance public mirrors
+    // Immediate verified live snapshot from Binance public endpoints.
     this.refreshLiveMarketData().catch(err => {
       console.warn('[ExchangeEngine] Initial live market fetch warning:', err.message);
     });
@@ -192,8 +159,10 @@ export class ExchangeEngine {
         }
       }
 
-      // Sync real positions and open orders from Binance account if keys configured
-      if (binanceAdapter.isKeyConfigured()) {
+      // Account state is authenticated and comparatively expensive; sync it separately
+      // from the faster public market-data cadence.
+      if (binanceAdapter.isKeyConfigured() && Date.now() - this.lastAccountSyncAt >= this.accountSyncIntervalMs) {
+        this.lastAccountSyncAt = Date.now();
         try {
           const acct = await binanceAdapter.getRealAccountState();
           if (acct.status === 'CONNECTED') {
@@ -223,10 +192,10 @@ export class ExchangeEngine {
   }
 
   private startLiveExchangePoller() {
-    // Poll real Binance Spot ticker & order book every 4 seconds
+    // Poll verified Binance Spot market data every 3 seconds; overlap is prevented by isUpdating.
     this.tickInterval = setInterval(() => {
       this.refreshLiveMarketData().catch(() => {});
-    }, 4000);
+    }, 3000);
   }
 
   public registerTickCallback(cb: (symbol: string, price: number) => void) {
