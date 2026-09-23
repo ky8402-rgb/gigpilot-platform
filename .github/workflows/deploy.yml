@@ -93,7 +93,7 @@ jobs:
         with:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID || secrets.ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY || secrets.AWS }}
-          aws-region: 'us-east-1'
+          aws-region: 'ap-south-1'
 
       - name: Deploy via SSH (Direct EC2 Execution)
         continue-on-error: true
@@ -142,7 +142,7 @@ jobs:
                 --instance-id "$EC2_INSTANCE_ID" \
                 --instance-os-user "$EC2_USER" \
                 --ssh-public-key file://~/.ssh/ec2_connect.pub \
-                --region us-east-1 2>/dev/null; then
+                --region ap-south-1 2>/dev/null; then
               echo "✔ Successfully pushed temporary SSH key via EC2 Instance Connect."
               SSH_KEY_FILE=~/.ssh/ec2_connect
               SSH_CONNECTED=1
