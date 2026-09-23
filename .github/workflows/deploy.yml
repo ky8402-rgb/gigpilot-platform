@@ -19,14 +19,24 @@ jobs:
       - name: Checkout Source Code
         uses: actions/checkout@v4
 
-      - name: Configure AWS Credentials (Optional)
+      - name: Check AWS Secrets Availability
+        id: check_amplify_aws
         env:
-          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
-        if: env.AWS_ACCESS_KEY_ID != ''
+          AWS_KEY: ${{ secrets.AWS_ACCESS_KEY_ID || secrets.ID }}
+        run: |
+          if [ -n "$AWS_KEY" ]; then
+            echo "has_creds=true" >> $GITHUB_OUTPUT
+          else
+            echo "has_creds=false" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Configure AWS Credentials (Optional)
+        if: steps.check_amplify_aws.outputs.has_creds == 'true'
         uses: aws-actions/configure-aws-credentials@v4
+        continue-on-error: true
         with:
-          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID || secrets.ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY || secrets.AWS }}
           aws-region: ${{ secrets.AWS_REGION || 'ap-south-1' }}
 
       - name: Trigger AWS Amplify Release Job
@@ -76,18 +86,25 @@ jobs:
 
   deploy-ec2:
     name: 🛡️ Deploy Backend (AWS EC2 - gigpilot-backend)
-    # Do not fall back to the old US backend. The Bybit production backend must be an explicitly configured host or the migrated host file.
-    if: ${{ secrets.EC2_HOST != '' || hashFiles('deployment/backend-host.txt') != '' }}
     runs-on: ubuntu-latest
     steps:
       - name: Checkout Source Code
         uses: actions/checkout@v4
 
-      - name: Configure AWS Credentials (Optional for EC2 Connect)
+      - name: Check AWS Secrets for EC2 Connect
+        id: check_ec2_aws
         env:
           AWS_KEY: ${{ secrets.AWS_ACCESS_KEY_ID || secrets.ID }}
           AWS_SECRET: ${{ secrets.AWS_SECRET_ACCESS_KEY || secrets.AWS }}
-        if: env.AWS_KEY != '' && env.AWS_SECRET != ''
+        run: |
+          if [ -n "$AWS_KEY" ] && [ -n "$AWS_SECRET" ]; then
+            echo "has_creds=true" >> $GITHUB_OUTPUT
+          else
+            echo "has_creds=false" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Configure AWS Credentials (Optional for EC2 Connect)
+        if: steps.check_ec2_aws.outputs.has_creds == 'true'
         uses: aws-actions/configure-aws-credentials@v4
         continue-on-error: true
         with:
