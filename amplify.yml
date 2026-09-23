@@ -3,7 +3,7 @@ frontend:
   phases:
     preBuild:
       commands:
-        - if [ -z "$VITE_BACKEND_URL" ] && [ -z "$API_BASE_URL" ] && [ -f deployment/backend-host.txt ]; then BACKEND_URL="https://$(tr -d "\r\n" < deployment/backend-host.txt).sslip.io"; else BACKEND_URL="${VITE_BACKEND_URL:-${API_BASE_URL:-https://3-222-149-9.sslip.io}}"; fi
+        - BACKEND_URL="${VITE_BACKEND_URL:-${API_BASE_URL:-https://65-0-73-85.sslip.io}}"
         - echo "REACT_APP_API_URL=${BACKEND_URL}" > .env.production
         - echo "API_BASE_URL=${BACKEND_URL}" >> .env.production
         - echo "VITE_BACKEND_URL=${BACKEND_URL}" >> .env.production
@@ -40,6 +40,10 @@ customHeaders:
       - key: 'Referrer-Policy'
         value: 'strict-origin-when-cross-origin'
 
+customRules:
+  - source: '/api/<*>'
+    target: 'https://65-0-73-85.sslip.io/api/<*>'
+    status: '200'
   - source: '</^[^.]+$|\.(?!(css|gif|ico|jpg|js|png|txt|svg|woff|woff2|ttf|map|json|html)$)([^.]+$)/>'
     target: '/index.html'
     status: '200'

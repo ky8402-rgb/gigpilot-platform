@@ -3,7 +3,7 @@
 # GigPilot Final Production Launch Verification Suite (verify-production.sh)
 #
 # Production Diagnostics for:
-#   1. EC2 Backend Health & SSL (https://3-222-149-9.sslip.io/api/health -> 200 & database: "ok")
+#   1. EC2 Backend Health & SSL (https://65-0-73-85.sslip.io/api/health -> 200 & database: "ok")
 #   2. Amplify Frontend Availability (https://main.d2qe2q720fbn3x.amplifyapp.com -> 200/304)
 #   3. CORS Preflight & Headers (OPTIONS Handshake with Access-Control-Allow-Origin)
 #   4. Neon PostgreSQL Database Connectivity (Direct SELECT 1 & Health Telemetry)
@@ -29,16 +29,16 @@ BOLD='\033[1m'
 NC='\033[0m'
 
 # Default Targets
-BACKEND_URL="${VITE_BACKEND_URL:-https://3-222-149-9.sslip.io}"
+BACKEND_URL="${VITE_BACKEND_URL:-https://65-0-73-85.sslip.io}"
 FRONTEND_URL="${FRONTEND_URL:-https://main.d2qe2q720fbn3x.amplifyapp.com}"
-EC2_HOST="${EC2_HOST:-3.222.149.9}"
+EC2_HOST="${EC2_HOST:-65.0.73.85}"
 
 # Auto-remediate stale legacy host overrides from container env
 if [[ "$BACKEND_URL" == *"13-233-54-120"* ]]; then
-  BACKEND_URL="https://3-222-149-9.sslip.io"
+  BACKEND_URL="https://65-0-73-85.sslip.io"
 fi
 if [[ "$EC2_HOST" == "i-04837168e688a5c0b" ]]; then
-  EC2_HOST="3.222.149.9"
+  EC2_HOST="65.0.73.85"
 fi
 if [[ "$FRONTEND_URL" == *"localhost"* ]]; then
   FRONTEND_URL="https://main.d2qe2q720fbn3x.amplifyapp.com"

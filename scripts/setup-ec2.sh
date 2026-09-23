@@ -27,8 +27,12 @@ APP_USER="ubuntu"
 APP_DIR="/home/ubuntu/gigpilot"
 REPO_URL="https://github.com/ky8402-rgb/gigpilot-platform.git"
 TARGET_BRANCH="main"
-DOMAIN="3-222-149-9.sslip.io"
-PUBLIC_IP="3.222.149.9"
+
+# Dynamic Public IP detection (supports ap-south-1 Mumbai, us-east-1, or manual IP argument)
+DETECTED_IP=$(curl -s --connect-timeout 3 http://169.254.169.254/latest/meta-data/public-ipv4 2>/dev/null || curl -s --connect-timeout 3 http://checkip.amazonaws.com 2>/dev/null || curl -s --connect-timeout 3 https://ifconfig.me 2>/dev/null || echo "")
+PUBLIC_IP="${1:-${DETECTED_IP:-3.222.149.9}}"
+IP_DASH=$(echo "$PUBLIC_IP" | tr '.' '-')
+DOMAIN="${2:-${IP_DASH}.sslip.io}"
 FRONTEND_URL="https://main.d2qe2q720fbn3x.amplifyapp.com"
 
 # Neon PostgreSQL Database Connection String
@@ -141,14 +145,30 @@ echo -e "  ${GREEN}✔ Firewall configured (Ports 22, 80, 443, 3000 allowed).${N
 echo -e "\n${BOLD}[5/9] Setting up GigPilot workspace at ${APP_DIR}...${NC}"
 mkdir -p "$(dirname "$APP_DIR")"
 
+# Check for GitHub token for private repository access
+AUTH_REPO_URL="$REPO_URL"
+if [ -n "${GITHUB_TOKEN:-}" ]; then
+  AUTH_REPO_URL="https://x-access-token:${GITHUB_TOKEN}@github.com/ky8402-rgb/gigpilot-platform.git"
+elif [ -n "${GH_TOKEN:-}" ]; then
+  AUTH_REPO_URL="https://x-access-token:${GH_TOKEN}@github.com/ky8402-rgb/gigpilot-platform.git"
+fi
+
 if [ ! -d "${APP_DIR}/.git" ]; then
   echo -e "  ${BLUE}📥 Cloning repository from ${REPO_URL}...${NC}"
   rm -rf "$APP_DIR"
-  sudo -u "$ACTUAL_USER" git clone "$REPO_URL" "$APP_DIR"
+  if ! sudo -u "$ACTUAL_USER" git clone "$AUTH_REPO_URL" "$APP_DIR"; then
+    echo -e "  ${YELLOW}⚠ Git clone without authentication failed (repository may be private).${NC}"
+    echo -e "  ${CYAN}You can provide your GitHub token by running:${NC}"
+    echo -e "    ${BOLD}GITHUB_TOKEN=\"ghp_xxx\" sudo -E bash setup-ec2.sh${NC}"
+    echo -e "  ${CYAN}Or transfer files directly from your existing US-East-1 instance:${NC}"
+    echo -e "    ${BOLD}rsync -avz ubuntu@3.222.149.9:/home/ubuntu/gigpilot ${USER_HOME}/${NC}"
+    exit 1
+  fi
 else
   echo -e "  ${BLUE}🔄 Existing repository detected. Pulling latest commits...${NC}"
   cd "$APP_DIR"
-  sudo -u "$ACTUAL_USER" git fetch origin "$TARGET_BRANCH" || sudo -u "$ACTUAL_USER" git fetch origin
+  sudo -u "$ACTUAL_USER" git remote set-url origin "$AUTH_REPO_URL" 2>/dev/null || true
+  sudo -u "$ACTUAL_USER" git fetch origin "$TARGET_BRANCH" 2>/dev/null || sudo -u "$ACTUAL_USER" git fetch origin 2>/dev/null || true
   sudo -u "$ACTUAL_USER" git reset --hard "origin/${TARGET_BRANCH}" 2>/dev/null || sudo -u "$ACTUAL_USER" git reset --hard origin/main 2>/dev/null || true
 fi
 

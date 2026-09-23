@@ -10,7 +10,7 @@
 import axios, { AxiosInstance, AxiosRequestConfig } from 'axios';
 
 // Default production backend URL on AWS EC2
-export const DEFAULT_PRODUCTION_BACKEND_URL = 'https://3-222-149-9.sslip.io';
+export const DEFAULT_PRODUCTION_BACKEND_URL = 'https://65-0-73-85.sslip.io';
 
 // Default backend URL (dynamically resolves to same-origin in container, or live EC2 on Amplify)
 export const DEFAULT_API_URL =
