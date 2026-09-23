@@ -27,8 +27,8 @@ godaddyRoutes.get('/status', async (req: Request, res: Response) => {
         {
           id: 'ec2',
           name: 'AWS EC2 Backend / Fullstack',
-          target: '3.222.149.9',
-          description: 'Points apex @ to EC2 (3.222.149.9) and www to @',
+          target: '35.154.110.156',
+          description: 'Points apex @ to EC2 (35.154.110.156) and www to @',
         },
         {
           id: 'amplify',

@@ -19,8 +19,8 @@ BOLD='\033[1m'
 NC='\033[0m' # No Color
 
 # Defaults
-DEFAULT_EC2_HOST="3.222.149.9"
-DEFAULT_WEBHOOK_URL="https://3-222-149-9.sslip.io/api/github/webhook"
+DEFAULT_EC2_HOST="35.154.110.156"
+DEFAULT_WEBHOOK_URL="https://35-154-110-156.sslip.io/api/github/webhook"
 DEFAULT_REPO="ky8402-rgb/gigpilot-platform"
 DEFAULT_BRANCH="main"
 

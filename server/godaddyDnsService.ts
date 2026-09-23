@@ -166,7 +166,7 @@ export async function autoFixGoDaddyDns(options: {
   const domain = options.domain || 'gigpilot.com';
   const target = options.target || 'ec2';
   const rawEc2 = process.env.EC2_HOST;
-  const defaultEc2 = (!rawEc2 || rawEc2.startsWith('i-') || rawEc2 === '13.233.54.120') ? '3.222.149.9' : rawEc2;
+  const defaultEc2 = (!rawEc2 || rawEc2.startsWith('i-') || rawEc2 === '13.233.54.120') ? '35.154.110.156' : rawEc2;
   const ec2Ip = options.ec2Ip || defaultEc2;
   const rawAmplify = process.env.AMPLIFY_APP_ID;
   const defaultAmplify = (!rawAmplify || rawAmplify.startsWith('AKIA')) ? 'd2qe2q720fbn3x' : rawAmplify;

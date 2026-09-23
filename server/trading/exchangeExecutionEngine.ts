@@ -254,7 +254,7 @@ export class ExchangeExecutionEngine implements EngineModule {
   private async dispatchBybitOrder(cred: ExchangeApiCredentials, spec: any): Promise<{ success: boolean; orderId?: string; error?: string }> {
     const rawSymbol = spec.symbol.replace(/[\/\-_]/g, '').toUpperCase();
     const timestamp = Date.now().toString();
-    const endpoint = `${process.env.BYBIT_API_BASE_URL || 'https://api.bybit.com'}/v5/order/create`;
+    const endpoint = 'https://api.bybit.com/v5/order/create';
 
     const body = {
       category: 'spot',
@@ -281,20 +281,9 @@ export class ExchangeExecutionEngine implements EngineModule {
       body: bodyStr
     });
 
-    const raw = await res.text();
-    const text = raw.replace(/^\\uFEFF/, '').trim();
-    let json: any = null;
-    try {
-      json = text ? JSON.parse(text) : null;
-    } catch (error: any) {
-      const lower = text.toLowerCase();
-      if (res.status === 403 && (lower.includes('cloudfront') || lower.includes('configured to block access') || lower.includes('block access from your country'))) {
-        return { success: false, error: 'BYBIT_REGION_BLOCKED: Bybit rejected the GigPilot backend egress IP with a CloudFront country restriction. Move the backend to a Bybit-supported region or configure BYBIT_API_BASE_URL for the account region.' };
-      }
-      return { success: false, error: `Bybit returned invalid JSON (HTTP ${res.status}): ${error?.message || 'parse error'}` };
-    }
-    if (!res.ok || json?.retCode !== 0) {
-      return { success: false, error: json?.retMsg || `Bybit HTTP ${res.status}` };
+    const json = (await res.json()) as any;
+    if (!res.ok || json.retCode !== 0) {
+      return { success: false, error: json.retMsg || `Bybit HTTP ${res.status}` };
     }
 
     return { success: true, orderId: json.result?.orderId };

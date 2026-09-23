@@ -2,13 +2,13 @@
 # ==============================================================================
 # GigPilot Platform - Fresh EC2 Production Provisioning & Setup Script
 #
-# Target OS: Ubuntu 20.04 / 22.04 / 24.04 LTS (AWS EC2 - 3.222.149.9)
+# Target OS: Ubuntu 20.04 / 22.04 / 24.04 LTS (AWS EC2 - 35.154.110.156)
 # Repo:      https://github.com/ky8402-rgb/gigpilot-platform.git
 # Directory: /home/ubuntu/gigpilot
 # Backend:   Node.js + Express (PM2: gigpilot)
 # ML:        Python ML Microservice (Docker: self-healing-ml-service on port 8000)
 # Database:  Neon Serverless PostgreSQL (Connection Pooler)
-# SSL:       sslip.io via Nginx Reverse Proxy (3-222-149-9.sslip.io)
+# SSL:       sslip.io via Nginx Reverse Proxy (35-154-110-156.sslip.io)
 # ==============================================================================
 
 set -uo pipefail
@@ -30,7 +30,7 @@ TARGET_BRANCH="main"
 
 # Dynamic Public IP detection (supports ap-south-1 Mumbai, us-east-1, or manual IP argument)
 DETECTED_IP=$(curl -s --connect-timeout 3 http://169.254.169.254/latest/meta-data/public-ipv4 2>/dev/null || curl -s --connect-timeout 3 http://checkip.amazonaws.com 2>/dev/null || curl -s --connect-timeout 3 https://ifconfig.me 2>/dev/null || echo "")
-PUBLIC_IP="${1:-${DETECTED_IP:-3.222.149.9}}"
+PUBLIC_IP="${1:-${DETECTED_IP:-35.154.110.156}}"
 IP_DASH=$(echo "$PUBLIC_IP" | tr '.' '-')
 DOMAIN="${2:-${IP_DASH}.sslip.io}"
 FRONTEND_URL="https://main.d2qe2q720fbn3x.amplifyapp.com"
@@ -161,7 +161,7 @@ if [ ! -d "${APP_DIR}/.git" ]; then
     echo -e "  ${CYAN}You can provide your GitHub token by running:${NC}"
     echo -e "    ${BOLD}GITHUB_TOKEN=\"ghp_xxx\" sudo -E bash setup-ec2.sh${NC}"
     echo -e "  ${CYAN}Or transfer files directly from your existing US-East-1 instance:${NC}"
-    echo -e "    ${BOLD}rsync -avz ubuntu@3.222.149.9:/home/ubuntu/gigpilot ${USER_HOME}/${NC}"
+    echo -e "    ${BOLD}rsync -avz ubuntu@35.154.110.156:/home/ubuntu/gigpilot ${USER_HOME}/${NC}"
     exit 1
   fi
 else

@@ -30,9 +30,9 @@ BOLD='\033[1m'
 NC='\033[0m'
 
 # Targets and Configuration
-BACKEND_URL="${VITE_BACKEND_URL:-https://3-222-149-9.sslip.io}"
+BACKEND_URL="${VITE_BACKEND_URL:-https://35-154-110-156.sslip.io}"
 FRONTEND_URL="${FRONTEND_URL:-https://main.d2qe2q720fbn3x.amplifyapp.com}"
-EC2_HOST="${EC2_HOST:-3.222.149.9}"
+EC2_HOST="${EC2_HOST:-35.154.110.156}"
 EC2_USER="${EC2_USER:-ubuntu}"
 EC2_KEY_FILE="${EC2_KEY_FILE:-}"
 APP_DIR="${APP_DIR:-/home/ubuntu/gigpilot}"

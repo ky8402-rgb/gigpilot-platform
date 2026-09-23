@@ -117,7 +117,7 @@ tradingRouter.get('/exchanges/credentials', (req: Request, res: Response) => {
 
 tradingRouter.post('/exchanges/keys', (req: Request, res: Response) => {
   try {
-    const { exchange, apiKey, apiSecret } = req.body || {};
+    const { exchange, apiKey, apiSecret, isTestnet } = req.body || {};
     if (!exchange || exchange !== 'BYBIT') {
       return res.status(400).json({ success: false, error: 'Valid exchange (BYBIT) is required.' });
     }
@@ -131,12 +131,12 @@ tradingRouter.post('/exchanges/keys', (req: Request, res: Response) => {
     }
 
     // Update bybitAdapter
-    bybitAdapter.updateCredentials(apiKey, apiSecret);
+    bybitAdapter.updateCredentials(apiKey, apiSecret, undefined, isTestnet);
 
     globalTradingStore.monitor.logAudit({
       category: 'CONFIG_CHANGE',
       action: `Updated Trade-Only API Keys for ${exchange}`,
-      details: { exchange, environment: 'LIVE_PRODUCTION' }
+      details: { exchange, isTestnet }
     });
 
     return res.json({
@@ -498,32 +498,7 @@ tradingRouter.post('/research/analyze', async (req: Request, res: Response) => {
   res.json(result);
 });
 
-// 17. Autonomous AI Profit Audit & Improvement
-tradingRouter.get('/optimizer', (req: Request, res: Response) => {
-  const store = globalTradingStore;
-  res.json({
-    success: true,
-    objective: 'NET_REALIZED_PROFIT_AFTER_FEES',
-    autonomousDecisioning: true,
-    autonomousBuild: true,
-    sourceData: 'LIVE_PRODUCTION_ONLY',
-    decisions: store.autonomousProfitOptimizer.getDecisions(),
-    strategyBuilds: store.autonomousProfitOptimizer.getStrategyBuilds(),
-    engine: store.autonomousProfitOptimizer.healthCheck()
-  });
-});
-
-tradingRouter.post('/optimizer/run', async (req: Request, res: Response) => {
-  const store = globalTradingStore;
-  const result = await store.runAutonomousProfitOptimization();
-  res.json({
-    success: true,
-    objective: 'NET_REALIZED_PROFIT_AFTER_FEES',
-    decision: result
-  });
-});
-
-// 18. Profit Sweep Subsystem
+// 17. Profit Sweep Subsystem
 tradingRouter.get('/sweep/info', (req: Request, res: Response) => {
   const store = globalTradingStore;
   res.json({
@@ -609,7 +584,21 @@ function isOwner(req: Request): boolean {
   return token ? ownerAuth.verifyToken(token) : false;
 }
 
-tradingRouter.get('/auth/status', (req: Request, res: Response) => {
+function parseBody(req: Request): any {
+  if (!req.body) return {};
+  if (typeof req.body === 'string') {
+    try {
+      return JSON.parse(req.body);
+    } catch {
+      return {};
+    }
+  }
+  return req.body;
+}
+
+tradingRouter.all(['/auth/status', '/auth/status/', '/status', '/status/'], (req: Request, res: Response) => {
+  res.setHeader('Content-Type', 'application/json; charset=utf-8');
+  if (req.method === 'OPTIONS') return res.sendStatus(200);
   const authenticated = isOwner(req);
   return res.json({
     success: true,
@@ -619,40 +608,61 @@ tradingRouter.get('/auth/status', (req: Request, res: Response) => {
   });
 });
 
-tradingRouter.post('/auth/setup-init', async (req: Request, res: Response) => {
+tradingRouter.all(['/auth/setup-init', '/auth/setup-init/', '/setup-init', '/setup-init/'], async (req: Request, res: Response) => {
+  res.setHeader('Content-Type', 'application/json; charset=utf-8');
+  if (req.method === 'OPTIONS') return res.sendStatus(200);
+  if (req.method !== 'POST') {
+    return res.status(405).json({ success: false, error: 'Method Not Allowed. POST is required.' });
+  }
   try {
-    const { email } = req.body || {};
+    const { email } = parseBody(req);
     const setupData = await ownerAuth.initiateTotpSetup(email);
     return res.json({ success: true, ...setupData });
   } catch (err: any) {
-    return res.status(500).json({ success: false, error: err.message });
+    return res.status(500).json({ success: false, error: err.message || 'Failed to initialize TOTP setup' });
   }
 });
 
-tradingRouter.post('/auth/setup-complete', (req: Request, res: Response) => {
+tradingRouter.all(['/auth/setup-complete', '/auth/setup-complete/', '/setup-complete', '/setup-complete/'], (req: Request, res: Response) => {
+  res.setHeader('Content-Type', 'application/json; charset=utf-8');
+  if (req.method === 'OPTIONS') return res.sendStatus(200);
+  if (req.method !== 'POST') {
+    return res.status(405).json({ success: false, error: 'Method Not Allowed. POST is required.' });
+  }
   try {
-    const { password, totpCode, email } = req.body || {};
+    const { password, totpCode, email } = parseBody(req);
     const result = ownerAuth.completeSetup(password, totpCode, email);
     if (!result.success) return res.status(400).json(result);
     return res.json(result);
   } catch (err: any) {
-    return res.status(500).json({ success: false, error: err.message });
+    return res.status(500).json({ success: false, error: err.message || 'Failed to complete setup' });
   }
 });
 
-tradingRouter.post('/auth/login', (req: Request, res: Response) => {
+tradingRouter.all(['/auth/login', '/auth/login/', '/login', '/login/'], (req: Request, res: Response) => {
+  res.setHeader('Content-Type', 'application/json; charset=utf-8');
+  if (req.method === 'OPTIONS') return res.sendStatus(200);
+  if (req.method !== 'POST') {
+    return res.status(405).json({ success: false, error: 'Method Not Allowed. POST is required for authentication.' });
+  }
   try {
-    const { email, password, totpCode, emergencyPin } = req.body || {};
-    if (!email) return res.status(400).json({ success: false, error: 'Owner email is required.' });
+    const { email, password, totpCode, emergencyPin } = parseBody(req);
+    if (!email) {
+      return res.status(400).json({ success: false, error: 'Owner email is required.' });
+    }
     const result = ownerAuth.login({ email, password, totpCode, emergencyPin });
-    if (!result.success) return res.status(401).json(result);
+    if (!result.success) {
+      return res.status(401).json(result);
+    }
     return res.json(result);
   } catch (err: any) {
-    return res.status(500).json({ success: false, error: err.message });
+    return res.status(500).json({ success: false, error: err.message || 'Internal authentication error' });
   }
 });
 
-tradingRouter.post('/auth/logout', (req: Request, res: Response) => {
+tradingRouter.all(['/auth/logout', '/auth/logout/', '/logout', '/logout/'], (req: Request, res: Response) => {
+  res.setHeader('Content-Type', 'application/json; charset=utf-8');
+  if (req.method === 'OPTIONS') return res.sendStatus(200);
   return res.json({ success: true, message: 'Logged out successfully' });
 });
 

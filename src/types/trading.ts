@@ -1,6 +1,5 @@
 export type AutonomyLevel = 0 | 1 | 2 | 3 | 4;
-// Production trading is intentionally live-only; non-live modes are not part of the runtime contract.
-export type TradingMode = 'LIVE';
+export type TradingMode = 'SIMULATION' | 'PAPER' | 'LIVE';
 
 export type MarketRegimeType = 
   | 'RANGE_BOUND_LOW_VOL' 
@@ -387,6 +386,7 @@ export interface ExchangeAccountState {
   accountType: string;
   apiKeyConfigured: boolean;
   keyMask: string;
+  isTestnet?: boolean;
 }
 
 export type BybitAccountState = ExchangeAccountState;

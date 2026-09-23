@@ -42,6 +42,7 @@ export interface BybitAccountState {
   accountType: string;
   apiKeyConfigured: boolean;
   keyMask: string;
+  isTestnet?: boolean;
 }
 
 const BYBIT_CONFIG_FILE = path.join(process.cwd(), '.bybit-quant-keys.json');
@@ -49,8 +50,12 @@ const BYBIT_CONFIG_FILE = path.join(process.cwd(), '.bybit-quant-keys.json');
 export class BybitAdapter {
   private apiKey: string = '';
   private apiSecret: string = '';
-  private baseUrl: string = process.env.BYBIT_API_BASE_URL || 'https://api.bybit.com';
-  private serverIp: string = process.env.EC2_PUBLIC_IP || process.env.SERVER_PUBLIC_IP || '';
+  private baseUrl: string = 'https://api.bybit.com';
+  private testnetBaseUrl: string = 'https://api-testnet.bybit.com';
+  private isTestnet: boolean = false;
+  private serverIp: string = process.env.EC2_HOST && !process.env.EC2_HOST.startsWith('i-') && process.env.EC2_HOST !== '3.222.149.9' && process.env.EC2_HOST !== '65.0.73.85'
+    ? process.env.EC2_HOST
+    : '35.154.110.156';
   private priceCache: Map<string, { price: number; time: number }> = new Map();
   private lastAccountState: BybitAccountState | null = null;
   private lastAccountFetchTime = 0;
@@ -68,41 +73,35 @@ export class BybitAdapter {
 
     this.apiKey = savedKeys.apiKey || process.env.BYBIT_API_KEY || '';
     this.apiSecret = savedKeys.apiSecret || process.env.BYBIT_API_SECRET || '';
+    this.isTestnet = Boolean(savedKeys.isTestnet ?? (process.env.BYBIT_TESTNET === 'true'));
+    if (savedKeys.baseUrl) {
+      this.baseUrl = savedKeys.baseUrl;
+    } else if (this.isTestnet) {
+      this.baseUrl = this.testnetBaseUrl;
+    }
 
     this.syncServerTime().catch(() => {});
   }
 
   public getActiveBaseUrl(): string {
-    return this.baseUrl;
+    return this.isTestnet ? this.testnetBaseUrl : this.baseUrl;
   }
 
-  private async readJsonResponse<T = any>(res: Response): Promise<T> {
-    const raw = await res.text();
-    const text = raw.replace(/^\uFEFF/, '').trim();
-    if (!text) {
-      throw new Error(`Bybit returned an empty response (HTTP ${res.status})`);
-    }
-    try {
-      return JSON.parse(text) as T;
-    } catch (error: any) {
-      const preview = text.slice(0, 160).replace(/\\s+/g, ' ');
-      const lower = text.toLowerCase();
-      if (res.status === 403 && (lower.includes('cloudfront') || lower.includes('configured to block access') || lower.includes('block access from your country'))) {
-        throw new Error(
-          `BYBIT_REGION_BLOCKED: Bybit rejected the server egress IP (HTTP 403 CloudFront country restriction). This is an infrastructure/geolocation restriction, not an API-key or JSON-format error. Move the GigPilot backend to a Bybit-supported AWS region or set BYBIT_API_BASE_URL to the correct Bybit regional API domain for the account region.`
-        );
-      }
-      throw new Error(
-        `Bybit returned invalid JSON (HTTP ${res.status}, content-type ${res.headers.get('content-type') || 'unknown'}): ${error?.message || 'parse error'}; response=${preview}`
-      );
-    }
+  public getIsTestnet(): boolean {
+    return this.isTestnet;
+  }
+
+  public setTestnet(testnet: boolean): void {
+    this.isTestnet = testnet;
+    this.baseUrl = testnet ? this.testnetBaseUrl : 'https://api.bybit.com';
+    this.saveConfig();
   }
 
   public async syncServerTime(): Promise<number> {
     try {
       const res = await fetch(`${this.getActiveBaseUrl()}/v5/market/time`);
       if (res.ok) {
-        const data = await this.readJsonResponse<any>(res);
+        const data = (await res.json()) as any;
         const serverTime = Number(data?.time || (data?.result?.timeSecond ? data.result.timeSecond * 1000 : Date.now()));
         this.timeOffset = serverTime - Date.now();
       }
@@ -116,10 +115,17 @@ export class BybitAdapter {
     return Date.now() + this.timeOffset;
   }
 
-  public updateCredentials(apiKey: string, apiSecret: string): void {
+  public updateCredentials(apiKey: string, apiSecret: string, baseUrl?: string, isTestnet?: boolean): void {
     this.apiKey = apiKey.trim();
     this.apiSecret = apiSecret.trim();
-    this.baseUrl = process.env.BYBIT_API_BASE_URL || 'https://api.bybit.com';
+    if (typeof isTestnet === 'boolean') {
+      this.isTestnet = isTestnet;
+    }
+    if (baseUrl) {
+      this.baseUrl = baseUrl.trim();
+    } else {
+      this.baseUrl = this.isTestnet ? this.testnetBaseUrl : 'https://api.bybit.com';
+    }
     this.saveConfig();
     this.lastAccountState = null;
     this.lastAccountFetchTime = 0;
@@ -134,7 +140,8 @@ export class BybitAdapter {
           {
             apiKey: this.apiKey,
             apiSecret: this.apiSecret,
-            baseUrl: 'https://api.bybit.com',
+            baseUrl: this.baseUrl,
+            isTestnet: this.isTestnet,
             updatedAt: new Date().toISOString()
           },
           null,
@@ -227,7 +234,7 @@ export class BybitAdapter {
         headers: { 'Accept': 'application/json' }
       });
       if (res.ok) {
-        const json = await this.readJsonResponse<any>(res);
+        const json = (await res.json()) as any;
         const item = json?.result?.list?.[0];
         const p = parseFloat(item?.lastPrice);
         if (p > 0) {
@@ -260,7 +267,7 @@ export class BybitAdapter {
         headers: { 'Accept': 'application/json' }
       });
       if (res.ok) {
-        const json = await this.readJsonResponse<any>(res);
+        const json = (await res.json()) as any;
         const item = json?.result?.list?.[0];
         if (item) {
           const price = parseFloat(item.lastPrice) || 0;
@@ -306,7 +313,7 @@ export class BybitAdapter {
         headers: { 'Accept': 'application/json' }
       });
       if (res.ok) {
-        const json = await this.readJsonResponse<any>(res);
+        const json = (await res.json()) as any;
         const list = json?.result?.list;
         if (Array.isArray(list) && list.length > 0) {
           // Bybit returns newest first, reverse for chronological ascending
@@ -339,7 +346,7 @@ export class BybitAdapter {
         headers: { 'Accept': 'application/json' }
       });
       if (res.ok) {
-        const json = await this.readJsonResponse<any>(res);
+        const json = (await res.json()) as any;
         const result = json?.result;
         if (result && (Array.isArray(result.b) || Array.isArray(result.a))) {
           let cumB = 0;
@@ -420,6 +427,7 @@ export class BybitAdapter {
         accountType: 'SPOT / UTA',
         apiKeyConfigured: false,
         keyMask: 'NOT_CONFIGURED',
+        isTestnet: this.isTestnet
       };
     }
 
@@ -432,7 +440,7 @@ export class BybitAdapter {
         headers: signed.headers
       });
 
-      let json = await this.readJsonResponse<any>(res);
+      let json = (await res.json()) as any;
 
       // If UNIFIED fails or empty, try SPOT
       if (!res.ok || json.retCode !== 0 || !json?.result?.list?.length) {
@@ -441,7 +449,7 @@ export class BybitAdapter {
         res = await fetch(`${this.getActiveBaseUrl()}/v5/account/wallet-balance?${signed.queryString}`, {
           headers: signed.headers
         });
-        json = await this.readJsonResponse<any>(res);
+        json = (await res.json()) as any;
       }
 
       if (!res.ok || json.retCode !== 0) {
@@ -472,6 +480,7 @@ export class BybitAdapter {
           accountType: queryType,
           apiKeyConfigured: true,
           keyMask: this.getKeyMask(),
+          isTestnet: this.isTestnet
         };
       }
 
@@ -547,7 +556,7 @@ export class BybitAdapter {
 
       const state: BybitAccountState = {
         status: 'CONNECTED',
-        message: `Connected to Bybit Live Spot/UTA. Real-time balances synchronized.`,
+        message: `Connected to Bybit ${this.isTestnet ? 'Testnet' : 'Live Spot/UTA'}. Real-time balances synchronized.`,
         serverIp: this.serverIp,
         timestamp: new Date().toISOString(),
         totalEquityUsd: Number(totalEquityUsd.toFixed(2)),
@@ -566,6 +575,7 @@ export class BybitAdapter {
         accountType: queryType,
         apiKeyConfigured: true,
         keyMask: this.getKeyMask(),
+        isTestnet: this.isTestnet
       };
 
       this.lastAccountState = state;
@@ -593,6 +603,7 @@ export class BybitAdapter {
         accountType: 'SPOT / UTA',
         apiKeyConfigured: true,
         keyMask: this.getKeyMask(),
+        isTestnet: this.isTestnet
       };
     }
   }
@@ -614,17 +625,11 @@ export class BybitAdapter {
     });
 
     if (!res.ok) {
-      let err: any = {};
-      try {
-        err = await this.readJsonResponse<any>(res);
-      } catch (parseError: any) {
-        throw new Error(parseError?.message || `Bybit HTTP ${res.status}`);
-      }
-      throw new Error(formatBybitError(err?.retCode, err?.retMsg || `HTTP ${res.status}`));
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.retMsg || `HTTP ${res.status}`);
     }
 
-    const json = await this.readJsonResponse<any>(res);
-    if (json?.retCode !== 0) throw new Error(formatBybitError(json?.retCode, json?.retMsg || `Bybit HTTP ${res.status}`));
+    const json = (await res.json()) as any;
     const rawList = json?.result?.list || [];
 
     return rawList.map((o: any) => ({
@@ -661,8 +666,7 @@ export class BybitAdapter {
     });
 
     if (!res.ok) return [];
-    const json = await this.readJsonResponse<any>(res);
-    if (json?.retCode !== 0) return [];
+    const json = (await res.json()) as any;
     const list = json?.result?.list || [];
 
     return list.map((t: any) => ({
@@ -753,7 +757,7 @@ export class BybitAdapter {
         body: bodyStr
       });
 
-      const json = await this.readJsonResponse<any>(res);
+      const json = (await res.json()) as any;
 
       if (!res.ok || json.retCode !== 0) {
         const errorMsg = formatBybitError(json?.retCode, json?.retMsg || `HTTP ${res.status}`);
@@ -797,7 +801,7 @@ export class BybitAdapter {
         body: bodyStr
       });
 
-      const json = await this.readJsonResponse<any>(res);
+      const json = (await res.json()) as any;
       if (!res.ok || json.retCode !== 0) {
         return { success: false, error: formatBybitError(json?.retCode, json?.retMsg || `HTTP ${res.status}`) };
       }

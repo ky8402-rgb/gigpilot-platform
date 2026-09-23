@@ -37,9 +37,9 @@ NEW_IP_DASH=$(echo "$NEW_IP" | tr '.' '-')
 NEW_DOMAIN="${NEW_IP_DASH}.sslip.io"
 NEW_URL="https://${NEW_DOMAIN}"
 
-OLD_IP="3.222.149.9"
-OLD_IP_DASH="3-222-149-9"
-OLD_DOMAIN="3-222-149-9.sslip.io"
+OLD_IP="35.154.110.156"
+OLD_IP_DASH="35-154-110-156"
+OLD_DOMAIN="35-154-110-156.sslip.io"
 
 echo -e "\n${BOLD}${CYAN}====================================================================${NC}"
 echo -e "${BOLD}${CYAN}  🔄 SWITCHING TO AWS ASIA PACIFIC (MUMBAI) EC2 ENDPOINTS${NC}"

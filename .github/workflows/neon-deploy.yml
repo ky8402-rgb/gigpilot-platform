@@ -15,9 +15,9 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  API_BASE_URL: https://3-222-149-9.sslip.io
-  REACT_APP_API_URL: https://3-222-149-9.sslip.io
-  VITE_BACKEND_URL: https://3-222-149-9.sslip.io
+  API_BASE_URL: https://35-154-110-156.sslip.io
+  REACT_APP_API_URL: https://35-154-110-156.sslip.io
+  VITE_BACKEND_URL: https://35-154-110-156.sslip.io
 
 jobs:
   migrate-to-neon:

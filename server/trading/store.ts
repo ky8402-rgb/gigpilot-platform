@@ -17,7 +17,6 @@ import { ProfitAccountingEngine } from './profitAccounting.js';
 import { ProfitSweepEngine } from './profitSweep.js';
 import { AutonomousResearchAgent } from './researchAgent.js';
 import { LearningLoopEngine } from './learningLoop.js';
-import { AutonomousProfitOptimizer } from './autonomousProfitOptimizer.js';
 import { ScriptingSandboxEngine } from './scriptingEngine.js';
 import { SystemMonitorSecurity } from './systemMonitor.js';
 import { EmergencyKillSwitch } from './killSwitch.js';
@@ -34,7 +33,6 @@ export class TradingStore {
   public sweeper: ProfitSweepEngine;
   public research: AutonomousResearchAgent;
   public learningLoop: LearningLoopEngine;
-  public autonomousProfitOptimizer: AutonomousProfitOptimizer;
   public scripting: ScriptingSandboxEngine;
   public monitor: SystemMonitorSecurity;
   public killSwitch: EmergencyKillSwitch;
@@ -61,7 +59,6 @@ export class TradingStore {
     this.sweeper = new ProfitSweepEngine();
     this.research = new AutonomousResearchAgent();
     this.learningLoop = new LearningLoopEngine();
-    this.autonomousProfitOptimizer = new AutonomousProfitOptimizer();
     this.scripting = new ScriptingSandboxEngine();
     this.monitor = new SystemMonitorSecurity();
     this.killSwitch = new EmergencyKillSwitch();
@@ -72,7 +69,6 @@ export class TradingStore {
     this.monitor.registerEngine(this.gridEngine);
     this.monitor.registerEngine(this.research);
     this.monitor.registerEngine(this.learningLoop);
-    this.monitor.registerEngine(this.autonomousProfitOptimizer);
     this.monitor.registerEngine(this.scripting);
     this.monitor.registerEngine(this.exchangeExec);
     this.monitor.registerEngine(this.risk);
@@ -114,12 +110,6 @@ export class TradingStore {
     setInterval(() => {
       this.syncCapitalFromRealExchange().catch(() => {});
     }, 10000);
-    // Autonomous AI audit loop: live state only; fail-closed and bounded parameter changes.
-    setInterval(() => {
-      if (this.autonomyLevel >= 2 && !this.GLOBAL_KILL_SWITCH_ACTIVE) {
-        this.runAutonomousProfitOptimization().catch(() => {});
-      }
-    }, 60000);
 
     this.monitor.logAudit({
       category: 'SYSTEM_BOOT',
@@ -135,55 +125,6 @@ export class TradingStore {
 
   public get capital(): CapitalAccounting {
     return this.profitAccounting.getCapital();
-  }
-
-  public async runAutonomousProfitOptimization(): Promise<any> {
-    const failStatus = this.monitor.isSystemFailClosed();
-    const decision = await this.autonomousProfitOptimizer.auditAndOptimize({
-      capital: this.capital,
-      grid: this.activeGrid,
-      regime: this.currentRegime,
-      research: this.research.getResearchItems(),
-      champion: this.learningLoop.getChampionStrategy(),
-      systemHealthy: !failStatus.failClosed && !this.GLOBAL_KILL_SWITCH_ACTIVE
-    });
-
-    if (decision.applied && this.activeGrid && this.autonomyLevel >= 2 && !this.GLOBAL_KILL_SWITCH_ACTIVE) {
-      const liveData = this.dataEngine.getPairData(this.activeSymbol);
-      if (liveData?.currentPrice) {
-        await this.exchangeExec.cancelAllOrders(this.activeSymbol);
-        const nextSpacing = decision.newGridSpacingPct || this.activeGrid.gridSpacingPct;
-        const build = decision.strategyBuildId
-          ? this.autonomousProfitOptimizer.getStrategyBuilds().find(b => b.id === decision.strategyBuildId)
-          : undefined;
-        const nextLevels = build?.status === 'BUILT' && build.parameters.gridLevels
-          ? build.parameters.gridLevels
-          : this.activeGrid.levelsCount;
-        const gridRes = this.gridEngine.generateGrid({
-          symbol: this.activeSymbol,
-          currentPrice: liveData.currentPrice,
-          totalAllocatedUsd: this.activeGrid.totalAllocatedUsd,
-          levelsCount: nextLevels,
-          spacingType: this.activeGrid.spacingType,
-          volatilityAdjustment: true,
-          trendProtection: true,
-          regime: this.currentRegime,
-          targetGridSpacingPct: nextSpacing
-        });
-        if (gridRes.grid) {
-          this.activeGrid = gridRes.grid;
-          this.placeGridOrdersInExchange(this.activeGrid, liveData.currentPrice);
-          this.monitor.logAudit({
-            category: 'AUTONOMOUS_OPTIMIZATION',
-            operator: 'AUTONOMOUS_AGENT',
-            action: `Applied AI-selected grid spacing change ${decision.previousGridSpacingPct}% -> ${nextSpacing}%`,
-            details: { decisionId: decision.id, confidence: decision.confidence, objective: decision.objective },
-            result: 'SUCCESS'
-          });
-        }
-      }
-    }
-    return decision;
   }
 
   public async syncCapitalFromRealExchange(): Promise<void> {

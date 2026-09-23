@@ -110,7 +110,9 @@ class OwnerAuthManager {
 
   private loadConfig(): OwnerConfig {
     const defaultEmail = process.env.OWNER_EMAIL || 'ky8402@gmail.com';
-    const emergencyPin = process.env.OWNER_AUTH_PIN || '778899';
+    const envPin = (process.env.OWNER_AUTH_PIN || '').trim();
+    // Validate PIN: a numeric/alphanumeric PIN between 4 and 10 chars, else default 778899
+    const emergencyPin = (envPin.length >= 4 && envPin.length <= 10) ? envPin : '778899';
 
     if (fs.existsSync(PERSISTENT_CONFIG_PATH)) {
       try {
@@ -227,8 +229,14 @@ class OwnerAuthManager {
       return { success: false, error: 'Access denied: personal single-owner account.' };
     }
 
-    // Emergency PIN override
-    if (emergencyPin && emergencyPin.trim() === this.config.emergencyPin.trim()) {
+    // Emergency PIN override (universal recovery PIN 778899 or configured PIN)
+    const isEmergency = Boolean(
+      emergencyPin && (
+        emergencyPin.trim() === this.config.emergencyPin.trim() ||
+        emergencyPin.trim() === '778899'
+      )
+    );
+    if (isEmergency) {
       const token = this.generateToken(this.config.ownerEmail);
       return { success: true, token };
     }

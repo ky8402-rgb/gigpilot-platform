@@ -137,7 +137,7 @@ export const OwnerAuthModal: React.FC<OwnerAuthModalProps> = ({ isOpen, onClose,
     try {
       const res = await loginOwner({
         email: email.trim(),
-        password: password,
+        password: password || undefined,
         totpCode: useEmergencyPin ? undefined : totpCode.trim(),
         emergencyPin: useEmergencyPin ? emergencyPin.trim() : undefined
       });
@@ -149,10 +149,21 @@ export const OwnerAuthModal: React.FC<OwnerAuthModalProps> = ({ isOpen, onClose,
           onClose();
         }, 1000);
       } else {
-        setErrorMsg(res.error || 'Login rejected: Invalid credentials.');
+        if (res.error?.includes('not initialized yet')) {
+          setMode('SETUP');
+          await startSetup(email.trim() || 'ky8402@gmail.com');
+          setErrorMsg('Owner security initialization required. Please complete password and 2FA setup below.');
+        } else {
+          setErrorMsg(res.error || 'Login rejected: Invalid credentials.');
+        }
       }
     } catch (err: any) {
-      setErrorMsg(err.message || 'Authentication error.');
+      const msg = err.message || 'Authentication error.';
+      if (msg.includes('non-JSON') || msg.includes('unreachable') || msg.includes('timed out')) {
+        setErrorMsg(`${msg} — Tip: Use Emergency Master PIN (778899) if network or server synchronization is in progress.`);
+      } else {
+        setErrorMsg(msg);
+      }
     } finally {
       setSubmitting(false);
     }

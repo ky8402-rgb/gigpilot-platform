@@ -275,7 +275,7 @@ export async function validateSessionCookies(platform: 'upwork' | 'freelancer', 
             headers: {
               'Authorization': `Bearer ${activeToken}`,
               'Cookie': normalized,
-              'User-Agent': 'FreelanceAutoBidder/1.0 (+https://3-222-149-9.sslip.io)'
+              'User-Agent': 'FreelanceAutoBidder/1.0 (+https://35-154-110-156.sslip.io)'
             },
             timeout: 4000
           });

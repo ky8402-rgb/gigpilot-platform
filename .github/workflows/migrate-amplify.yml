@@ -4,9 +4,9 @@ on:
   workflow_dispatch:
     inputs:
       new_backend_url:
-        description: 'New Backend URL (e.g., https://3-222-149-9.sslip.io)'
+        description: 'New Backend URL (e.g., https://35-154-110-156.sslip.io)'
         required: false
-        default: 'https://3-222-149-9.sslip.io'
+        default: 'https://35-154-110-156.sslip.io'
       amplify_app_name:
         description: 'Amplify App Name (optional, defaults to gigpilot-platform)'
         required: false
@@ -23,11 +23,11 @@ on:
         default: false
 
 env:
-  API_BASE_URL: https://3-222-149-9.sslip.io
-  REACT_APP_API_URL: https://3-222-149-9.sslip.io
-  VITE_BACKEND_URL: https://3-222-149-9.sslip.io
-  VITE_API_BASE_URL: https://3-222-149-9.sslip.io
-  VITE_API_URL: https://3-222-149-9.sslip.io
+  API_BASE_URL: https://35-154-110-156.sslip.io
+  REACT_APP_API_URL: https://35-154-110-156.sslip.io
+  VITE_BACKEND_URL: https://35-154-110-156.sslip.io
+  VITE_API_BASE_URL: https://35-154-110-156.sslip.io
+  VITE_API_URL: https://35-154-110-156.sslip.io
 
 jobs:
   migrate:

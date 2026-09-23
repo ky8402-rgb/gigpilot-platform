@@ -1267,7 +1267,7 @@ export function getWebhookInfo(): {
   lastDeployment?: DeploymentRecord;
 } {
   const rawEc2 = process.env.EC2_HOST;
-  const ec2Host = (!rawEc2 || rawEc2.startsWith('i-') || rawEc2 === '13.233.54.120') ? '3.222.149.9' : rawEc2;
+  const ec2Host = (!rawEc2 || rawEc2.startsWith('i-') || rawEc2 === '13.233.54.120' || rawEc2 === '3.222.149.9' || rawEc2 === '65.0.73.85') ? '35.154.110.156' : rawEc2;
   const customDomain = process.env.BASE_URL || `http://${ec2Host}:3000`;
   const normalizedBase = customDomain.endsWith('/') ? customDomain.slice(0, -1) : customDomain;
   const webhookUrl = `${normalizedBase}/api/github/webhook`;
@@ -1466,7 +1466,7 @@ export async function pushAndDeployAll(options: {
 
   // Step 6: AWS EC2 Backend Deployment (gigpilot-backend)
   const rawEc2 = process.env.EC2_HOST;
-  const ec2Host = (!rawEc2 || rawEc2.startsWith('i-') || rawEc2 === '13.233.54.120') ? '3.222.149.9' : rawEc2;
+  const ec2Host = (!rawEc2 || rawEc2.startsWith('i-') || rawEc2 === '13.233.54.120' || rawEc2 === '3.222.149.9' || rawEc2 === '65.0.73.85') ? '35.154.110.156' : rawEc2;
   const ec2WebhookUrl = `http://${ec2Host}:3000/api/github/webhook`;
   let ec2Status: 'DEPLOYED_LOCAL' | 'DEPLOYED_WEBHOOK' | 'SKIPPED' | 'FAILED' = 'SKIPPED';
   let ec2Message = '';

@@ -75,9 +75,9 @@ export interface AutoDeployRunResult {
 
 export function getEffectiveEc2Host(): string {
   const envHost = process.env.EC2_HOST;
-  // If envHost is missing, or is an AWS instance ID (starts with i-), or is the old IP, use 3.222.149.9
+  // If envHost is missing, or is an AWS instance ID (starts with i-), or is the old IP, use 35.154.110.156
   if (!envHost || envHost.startsWith('i-') || envHost === '13.233.54.120') {
-    return '3.222.149.9';
+    return '35.154.110.156';
   }
   return envHost;
 }
@@ -394,7 +394,7 @@ jobs:
       - name: Deploy via SSH (Direct EC2 Execution)
         env:
           SSH_KEY: \${{ secrets.EC2_SSH_KEY }}
-          EC2_HOST: \${{ secrets.EC2_HOST || '3.222.149.9' }}
+          EC2_HOST: \${{ secrets.EC2_HOST || '35.154.110.156' }}
           EC2_USER: \${{ secrets.EC2_USER || 'ubuntu' }}
         if: env.SSH_KEY != ''
         run: |
@@ -447,7 +447,7 @@ jobs:
 
       - name: Trigger EC2 Push-to-Deploy Webhook (Parallel / Fallback)
         env:
-          EC2_HOST: \${{ secrets.EC2_HOST || '3.222.149.9' }}
+          EC2_HOST: \${{ secrets.EC2_HOST || '35.154.110.156' }}
           WEBHOOK_SECRET: \${{ secrets.GITHUB_WEBHOOK_SECRET || secrets.WEBHOOK_SECRET }}
           COMMIT_MSG: \${{ github.event.head_commit.message }}
         run: |
@@ -513,7 +513,7 @@ jobs:
 
       - name: Verify EC2 Backend Health
         env:
-          EC2_HOST: \${{ secrets.EC2_HOST || '3.222.149.9' }}
+          EC2_HOST: \${{ secrets.EC2_HOST || '35.154.110.156' }}
         run: |
           HEALTH_URL="https://\${EC2_HOST//./-}.sslip.io/api/health"
           FALLBACK_URL="http://\${EC2_HOST}:3000/api/health"
@@ -538,7 +538,7 @@ jobs:
 
       - name: Report EC2 Status to Step Summary
         env:
-          EC2_HOST: \${{ secrets.EC2_HOST || '3.222.149.9' }}
+          EC2_HOST: \${{ secrets.EC2_HOST || '35.154.110.156' }}
         run: |
           echo "### 🛡️ AWS EC2 Backend Auto-Deploy" >> $GITHUB_STEP_SUMMARY
           echo "- **App Name:** gigpilot-backend" >> $GITHUB_STEP_SUMMARY
@@ -699,7 +699,7 @@ export function getSecretsConfigurationGuide(): {
       {
         key: 'EC2_HOST',
         description: 'Public IPv4 address or DNS hostname of your AWS EC2 instance (e.g. i-02f24350d31f5aa51)',
-        defaultValue: '3.222.149.9',
+        defaultValue: '35.154.110.156',
         isSecret: false,
       },
       {

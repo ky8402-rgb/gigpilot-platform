@@ -98,7 +98,7 @@ verify_prerequisites() {
   CALLER_IDENTITY=$(aws sts get-caller-identity --region "$AWS_REGION" 2>&1 || true)
   if [ $? -ne 0 ] || echo "$CALLER_IDENTITY" | grep -qiE "(error|unable|failed|invalid)"; then
     log_warn "AWS STS authentication was not verified with current credentials."
-    log_info "Note: Frontend codebase and 'amplify.yml' have already migrated backend URL to: ${NEW_BACKEND_URL:-https://3-222-149-9.sslip.io}"
+    log_info "Note: Frontend codebase and 'amplify.yml' have already migrated backend URL to: ${NEW_BACKEND_URL:-https://35-154-110-156.sslip.io}"
     log_info "When code is pushed to GitHub, Amplify automatically builds with the updated backend URL."
     if [ "${FORCE_MIGRATE}" = "true" ]; then
       log_warn "FORCE_MIGRATE=true set; proceeding..."
@@ -206,7 +206,7 @@ backup_current_environment() {
     --query "app.environmentVariables.${ENV_VAR_NAME}" --output text 2>/dev/null || echo "")
 
   if [ -z "$OLD_BACKEND_URL" ] || [ "$OLD_BACKEND_URL" == "None" ]; then
-    OLD_BACKEND_URL="https://3-222-149-9.sslip.io"
+    OLD_BACKEND_URL="https://35-154-110-156.sslip.io"
     log_warn "Previous '${ENV_VAR_NAME}' was not set. Using fallback: ${OLD_BACKEND_URL}"
   else
     log_info "Current '${ENV_VAR_NAME}' value: ${BOLD}${OLD_BACKEND_URL}${NC}"
@@ -431,7 +431,7 @@ execute_rollback() {
   if [ -f "$BACKUP_STATE_FILE" ]; then
     RESTORE_URL=$(grep -o '"previousBackendUrl": "[^"]*' "$BACKUP_STATE_FILE" | cut -d'"' -f4)
   else
-    RESTORE_URL="https://3-222-149-9.sslip.io"
+    RESTORE_URL="https://35-154-110-156.sslip.io"
   fi
 
   log_info "Restoring '${ENV_VAR_NAME}' to previous URL: ${BOLD}${RESTORE_URL}${NC}"
@@ -461,7 +461,7 @@ manual_rollback_mode() {
   if [ -f "$BACKUP_STATE_FILE" ]; then
     RESTORE_URL=$(grep -o '"previousBackendUrl": "[^"]*' "$BACKUP_STATE_FILE" | cut -d'"' -f4)
   else
-    RESTORE_URL="https://3-222-149-9.sslip.io"
+    RESTORE_URL="https://35-154-110-156.sslip.io"
   fi
 
   log_info "Restoring Amplify environment variable '${ENV_VAR_NAME}' -> ${RESTORE_URL}"
@@ -510,9 +510,9 @@ main() {
     else
       echo -e "${RED}[ERROR] NEW_BACKEND_URL is required.${NC}"
       echo "Usage:"
-      echo "  NEW_BACKEND_URL=\"https://3-222-149-9.sslip.io\" ./scripts/migrate-amplify-backend.sh"
-      echo "  or: ./scripts/migrate-amplify-backend.sh https://3-222-149-9.sslip.io"
-      echo "  or: ./scripts/migrate-amplify-backend.sh https://3-222-149-9.sslip.io --force"
+      echo "  NEW_BACKEND_URL=\"https://35-154-110-156.sslip.io\" ./scripts/migrate-amplify-backend.sh"
+      echo "  or: ./scripts/migrate-amplify-backend.sh https://35-154-110-156.sslip.io"
+      echo "  or: ./scripts/migrate-amplify-backend.sh https://35-154-110-156.sslip.io --force"
       echo "  or: ./scripts/migrate-amplify-backend.sh --rollback"
       exit 1
     fi

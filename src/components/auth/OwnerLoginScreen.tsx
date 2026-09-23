@@ -109,7 +109,7 @@ export const OwnerLoginScreen: React.FC<OwnerLoginScreenProps> = ({ onAuthentica
       setErrorMsg('Owner email is required.');
       return;
     }
-    if (!password) {
+    if (!useEmergencyPin && !password) {
       setErrorMsg('Master account password is required.');
       return;
     }
@@ -127,7 +127,7 @@ export const OwnerLoginScreen: React.FC<OwnerLoginScreenProps> = ({ onAuthentica
     try {
       const res = await loginOwner({
         email: email.trim(),
-        password,
+        password: password || undefined,
         totpCode: useEmergencyPin ? undefined : totpCode.trim(),
         emergencyPin: useEmergencyPin ? emergencyPin.trim() : undefined
       });
@@ -138,10 +138,21 @@ export const OwnerLoginScreen: React.FC<OwnerLoginScreenProps> = ({ onAuthentica
           onAuthenticated();
         }, 400);
       } else {
-        setErrorMsg(res.error || 'Authentication rejected. Please check your credentials.');
+        if (res.error?.includes('not initialized yet')) {
+          setMode('SETUP');
+          await triggerSetupInit(email.trim() || 'ky8402@gmail.com');
+          setErrorMsg('Owner security initialization required. Please set up your password and 2FA Authenticator below.');
+        } else {
+          setErrorMsg(res.error || 'Authentication rejected. Please check your credentials.');
+        }
       }
     } catch (err: any) {
-      setErrorMsg(err.message || 'Login failed. Could not communicate with auth server.');
+      const msg = err.message || 'Login failed. Could not communicate with auth server.';
+      if (msg.includes('non-JSON') || msg.includes('unreachable') || msg.includes('timed out')) {
+        setErrorMsg(`${msg} — Tip: Use Emergency Master PIN (778899) if network or server synchronization is in progress.`);
+      } else {
+        setErrorMsg(msg);
+      }
     } finally {
       setSubmitting(false);
     }
@@ -559,7 +570,7 @@ export const OwnerLoginScreen: React.FC<OwnerLoginScreenProps> = ({ onAuthentica
               <span>AWS EC2 Gateway</span>
             </div>
             <div className="text-[11px] font-mono text-emerald-300 font-semibold mt-0.5">
-              3.222.149.9:3000
+              35.154.110.156 (ap-south-1)
             </div>
           </div>
 

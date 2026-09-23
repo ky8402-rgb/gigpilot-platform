@@ -3,7 +3,7 @@ frontend:
   phases:
     preBuild:
       commands:
-        - BACKEND_URL="${VITE_BACKEND_URL:-${API_BASE_URL:-https://65-0-73-85.sslip.io}}"
+        - BACKEND_URL="${VITE_BACKEND_URL:-${API_BASE_URL:-https://35-154-110-156.sslip.io}}"
         - echo "REACT_APP_API_URL=${BACKEND_URL}" > .env.production
         - echo "API_BASE_URL=${BACKEND_URL}" >> .env.production
         - echo "VITE_BACKEND_URL=${BACKEND_URL}" >> .env.production
@@ -42,7 +42,7 @@ customHeaders:
 
 customRules:
   - source: '/api/<*>'
-    target: 'https://65-0-73-85.sslip.io/api/<*>'
+    target: 'https://35-154-110-156.sslip.io/api/<*>'
     status: '200'
   - source: '</^[^.]+$|\.(?!(css|gif|ico|jpg|js|png|txt|svg|woff|woff2|ttf|map|json|html)$)([^.]+$)/>'
     target: '/index.html'

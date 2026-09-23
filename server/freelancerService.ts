@@ -94,7 +94,7 @@ export function getFreelancerRequestHeaders(customHeaders: Record<string, string
   const headers: Record<string, string> = {
     'Content-Type': 'application/json',
     'Accept': 'application/json, text/plain, */*',
-    'User-Agent': 'FreelanceAutoBidder/1.0 (+https://3-222-149-9.sslip.io)',
+    'User-Agent': 'FreelanceAutoBidder/1.0 (+https://35-154-110-156.sslip.io)',
     ...customHeaders,
   };
 
@@ -327,7 +327,7 @@ export async function testFreelancerToken(candidateToken: string): Promise<{
       headers: {
         'Authorization': `Bearer ${token}`,
         'Accept': 'application/json',
-        'User-Agent': 'FreelanceAutoBidder/1.0 (+https://3-222-149-9.sslip.io)',
+        'User-Agent': 'FreelanceAutoBidder/1.0 (+https://35-154-110-156.sslip.io)',
       },
       timeout: 9000,
     });
@@ -599,7 +599,7 @@ export function getFreelancerOAuth2Config(): FreelancerOAuth2Config {
 
   const defaultRedirectUri = process.env.BASE_URL 
     ? `${process.env.BASE_URL.replace(/\/+$/, '')}/api/freelancer/oauth2/callback`
-    : 'https://3-222-149-9.sslip.io/api/freelancer/oauth2/callback';
+    : 'https://35-154-110-156.sslip.io/api/freelancer/oauth2/callback';
 
   const redirectUri = (
     process.env.FREELANCER_REDIRECT_URI ||
@@ -791,7 +791,7 @@ export async function exchangeFreelancerOAuth2Code(
       headers: {
         'Content-Type': 'application/x-www-form-urlencoded',
         'Accept': 'application/json',
-        'User-Agent': 'FreelanceAutoBidder/1.0 (+https://3-222-149-9.sslip.io)'
+        'User-Agent': 'FreelanceAutoBidder/1.0 (+https://35-154-110-156.sslip.io)'
       },
       timeout: 15000
     });
@@ -932,7 +932,7 @@ export async function refreshFreelancerOAuth2Token(): Promise<FreelancerOAuth2Ex
       headers: {
         'Content-Type': 'application/x-www-form-urlencoded',
         'Accept': 'application/json',
-        'User-Agent': 'FreelanceAutoBidder/1.0 (+https://3-222-149-9.sslip.io)'
+        'User-Agent': 'FreelanceAutoBidder/1.0 (+https://35-154-110-156.sslip.io)'
       },
       timeout: 15000
     });

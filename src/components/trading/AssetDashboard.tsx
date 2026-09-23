@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   Wallet,
   ArrowUpRight,
@@ -44,15 +44,11 @@ export const AssetDashboard: React.FC<AssetDashboardProps> = ({
   const [showKeyModal, setShowKeyModal] = useState<boolean>(false);
   const [newApiKey, setNewApiKey] = useState<string>('');
   const [newApiSecret, setNewApiSecret] = useState<string>('');
+  const [isTestnet, setIsTestnet] = useState<boolean>(false);
   const [updatingKeys, setUpdatingKeys] = useState<boolean>(false);
   const [keyUpdateFeedback, setKeyUpdateFeedback] = useState<string | null>(null);
-  const assetsRequestInFlight = useRef(false);
-  const updatingKeysRef = useRef(false);
-  const showKeyModalRef = useRef(false);
 
   const loadAssets = async (force = false) => {
-    if (assetsRequestInFlight.current) return;
-    assetsRequestInFlight.current = true;
     if (force) setRefreshing(true);
     try {
       const res = await fetchLiveAssets(force);
@@ -65,29 +61,20 @@ export const AssetDashboard: React.FC<AssetDashboardProps> = ({
     } catch (err: any) {
       setErrorMsg(err.message || 'Failed to load exchange assets');
     } finally {
-      assetsRequestInFlight.current = false;
       setLoading(false);
       setRefreshing(false);
     }
   };
 
   useEffect(() => {
-    updatingKeysRef.current = updatingKeys;
-  }, [updatingKeys]);
-
-  useEffect(() => {
-    showKeyModalRef.current = showKeyModal;
-  }, [showKeyModal]);
-
-  useEffect(() => {
     loadAssets(false);
     const interval = setInterval(() => {
-      if (!updatingKeysRef.current && !showKeyModalRef.current) {
+      if (!updatingKeys && !showKeyModal) {
         loadAssets(false);
       }
     }, 12000);
     return () => clearInterval(interval);
-  }, []);
+  }, [updatingKeys, showKeyModal]);
 
   const handleCopyIp = (ip: string) => {
     navigator.clipboard.writeText(ip);
@@ -105,7 +92,7 @@ export const AssetDashboard: React.FC<AssetDashboardProps> = ({
     setUpdatingKeys(true);
     setKeyUpdateFeedback(null);
     try {
-      const res = await updateBybitKeys(newApiKey.trim(), newApiSecret.trim());
+      const res = await updateBybitKeys(newApiKey.trim(), newApiSecret.trim(), isTestnet);
       if (res.success) {
         setKeyUpdateFeedback('Success! Bybit credentials applied and verified.');
         setTimeout(() => {
@@ -202,9 +189,9 @@ export const AssetDashboard: React.FC<AssetDashboardProps> = ({
           </div>
           <div className="flex items-center gap-2 shrink-0 bg-slate-900/90 border border-amber-800/80 px-3 py-2 rounded-lg">
             <span className="text-[11px] text-slate-400">Server Public IP:</span>
-            <code className="text-xs font-mono font-bold text-amber-300">{account?.serverIp || 'Unavailable'}</code>
+            <code className="text-xs font-mono font-bold text-amber-300">{account?.serverIp || '35.154.110.156'}</code>
             <button
-              onClick={() => handleCopyIp(account?.serverIp || 'Unavailable')}
+              onClick={() => handleCopyIp(account?.serverIp || '35.154.110.156')}
               className="p-1 text-slate-400 hover:text-white transition"
               title="Copy Server IP"
             >
@@ -556,26 +543,32 @@ export const AssetDashboard: React.FC<AssetDashboardProps> = ({
               <ul className="text-slate-400 list-disc list-inside space-y-0.5 leading-normal">
                 <li>Permissions needed: <strong className="text-slate-200">Spot & Margin Trading</strong></li>
                 <li>Leave <strong className="text-rose-400">Withdrawals UNCHECKED</strong> (keeps your funds strictly protected)</li>
-                <li>Optionally whitelist EC2 Server IP: <code className="text-amber-300 font-mono font-bold">{account?.serverIp || 'Unavailable'}</code></li>
+                <li>Optionally whitelist EC2 Server IP: <code className="text-amber-300 font-mono font-bold">{account?.serverIp || '35.154.110.156'}</code></li>
               </ul>
               <div className="flex items-center justify-between pt-1 border-t border-slate-800/80">
                 <span className="text-slate-400">Server IP Whitelist:</span>
                 <button
                   type="button"
-                  onClick={() => handleCopyIp(account?.serverIp || 'Unavailable')}
+                  onClick={() => handleCopyIp(account?.serverIp || '35.154.110.156')}
                   className="text-xs text-amber-400 hover:text-amber-300 flex items-center gap-1 font-mono font-semibold"
                 >
                   {copiedIp ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
-                  <span>{copiedIp ? 'Copied' : account?.serverIp || 'Unavailable'}</span>
+                  <span>{copiedIp ? 'Copied' : account?.serverIp || '35.154.110.156'}</span>
                 </button>
               </div>
             </div>
 
             <form onSubmit={handleSaveKeys} className="space-y-3.5">
-              <div className="p-3 bg-emerald-950/20 border border-emerald-800/40 rounded-lg text-[11px] text-emerald-300">
-                <div className="font-semibold">Execution Environment: Bybit Live Production</div>
-                <div className="mt-1 text-slate-400 font-mono">https://api.bybit.com</div>
-                <div className="mt-1 text-slate-500">Testnet and sandbox credentials are not accepted.</div>
+              <div>
+                <label className="block text-xs font-semibold text-slate-300 mb-1">Network Environment</label>
+                <select
+                  value={isTestnet ? 'testnet' : 'live'}
+                  onChange={(e) => setIsTestnet(e.target.value === 'testnet')}
+                  className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-lg text-xs text-slate-100 font-mono focus:outline-none focus:border-amber-500"
+                >
+                  <option value="live">Bybit Live Production (https://api.bybit.com)</option>
+                  <option value="testnet">Bybit Testnet (https://api-testnet.bybit.com)</option>
+                </select>
               </div>
 
               <div>

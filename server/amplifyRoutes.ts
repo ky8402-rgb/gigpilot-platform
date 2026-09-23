@@ -168,12 +168,12 @@ router.get("/dns-check", async (req: Request, res: Response) => {
         "  1. In GoDaddy, use Domain Forwarding: Forward 'gigpilot.com' -> 'https://www.gigpilot.com' (301 Permanent, Forward with HTTPS).",
         "  2. In DNS Records, add CNAME: Name 'www', Value 'd2qe2q720fbn3x.amplifyapp.com' (or the CloudFront target from Amplify Domain Management).",
         "OR for AWS EC2 Backend directly:",
-        "  1. Add/Edit A record: Name '@', Value '3.222.149.9'.",
+        "  1. Add/Edit A record: Name '@', Value '35.154.110.156'.",
         "  2. In DNS Records, add CNAME: Name 'www', Value '@'."
       ];
-    } else if (results.aRecords.includes("3.222.149.9") || results.aRecords.includes("13.233.54.120")) {
+    } else if (results.aRecords.includes("35.154.110.156") || results.aRecords.includes("13.233.54.120")) {
       results.detectedIssue = null;
-      results.recommendation = ["A record is correctly pointing to AWS EC2 instance 3.222.149.9."];
+      results.recommendation = ["A record is correctly pointing to AWS EC2 instance 35.154.110.156."];
     }
 
     return res.json({

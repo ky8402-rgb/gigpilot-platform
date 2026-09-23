@@ -31,9 +31,9 @@ BOLD='\033[1m'
 NC='\033[0m' # No Color
 
 # Defaults
-BACKEND_URL="${BACKEND_URL:-http://3.222.149.9:3000}"
+BACKEND_URL="${BACKEND_URL:-http://35.154.110.156:3000}"
 FRONTEND_URL="https://main.d2qe2q720fbn3x.amplifyapp.com"
-EC2_HOST="${EC2_HOST:-3.222.149.9}"
+EC2_HOST="${EC2_HOST:-35.154.110.156}"
 REMOTE_NAME="origin"
 DEFAULT_BRANCH="master"
 COMMIT_MSG=""

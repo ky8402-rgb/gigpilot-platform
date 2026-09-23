@@ -16,25 +16,6 @@ export interface LivePairMarketData {
 }
 
 export class DataEngine implements EngineModule {
-  /** Parse live Bybit HTTP responses defensively; never leak a raw JSON parser exception. */
-  private async readBybitJson<T = any>(res: Response): Promise<T | null> {
-    const raw = await res.text();
-    const text = raw.replace(/^\\uFEFF/, '').trim();
-    if (!text) return null;
-    try {
-      return JSON.parse(text) as T;
-    } catch (error: any) {
-      const preview = text.slice(0, 160).replace(/\\s+/g, ' ');
-      this.recordError('WARN', 'Bybit returned a non-JSON live market response.', {
-        httpStatus: res.status,
-        contentType: res.headers.get('content-type') || 'unknown',
-        responsePreview: preview,
-        parserError: error?.message || 'parse error'
-      });
-      return null;
-    }
-  }
-
   public readonly id = 'DATA_ENGINE';
   public readonly name = 'Data Engine (Live WS & Public Feeds)';
 
@@ -52,7 +33,7 @@ export class DataEngine implements EngineModule {
   // Real-time WebSocket connection to Bybit V5 public spot stream
   private ws: WebSocket | null = null;
   private wsConnected: boolean = false;
-  private wsUrl: string = process.env.BYBIT_WS_URL || 'wss://stream.bybit.com/v5/public/spot';
+  private wsUrl: string = 'wss://stream.bybit.com/v5/public/spot';
 
   private marketData: Map<string, LivePairMarketData> = new Map();
   private tickCallbacks: Array<(symbol: string, price: number, data: LivePairMarketData) => void> = [];
@@ -68,9 +49,10 @@ export class DataEngine implements EngineModule {
   ];
 
   // Official public endpoints for Bybit V5 live market data
-  private bybitEndpoints = (process.env.BYBIT_API_BASE_URL
-    ? [process.env.BYBIT_API_BASE_URL]
-    : ['https://api.bybit.com', 'https://api.bytick.com']);
+  private bybitEndpoints = [
+    'https://api.bybit.com',
+    'https://api-testnet.bybit.com'
+  ];
 
   constructor() {
     this.startLiveIngestion();
@@ -341,7 +323,7 @@ export class DataEngine implements EngineModule {
           });
           clearTimeout(timer);
           if (res.ok) {
-            const bybitJson = await this.readBybitJson<any>(res);
+            const bybitJson = (await res.json()) as any;
             if (bybitJson?.result?.list && Array.isArray(bybitJson.result.list)) {
               for (const item of bybitJson.result.list) {
                 tickerMap[item.symbol] = {
@@ -390,11 +372,11 @@ export class DataEngine implements EngineModule {
         let spreadBps = existing?.orderBook?.spreadBps || 0;
 
         try {
-          const depthRes = await fetch(`${this.bybitEndpoints[0]}/v5/market/orderbook?category=spot&symbol=${raw}&limit=15`, {
+          const depthRes = await fetch(`https://api.bybit.com/v5/market/orderbook?category=spot&symbol=${raw}&limit=15`, {
             headers: { 'Accept': 'application/json' }
           });
           if (depthRes.ok) {
-            const depthJson = await this.readBybitJson<any>(depthRes);
+            const depthJson = (await depthRes.json()) as any;
             const resData = depthJson?.result;
             if (resData && (Array.isArray(resData.b) || Array.isArray(resData.a))) {
               let cumB = 0;
@@ -426,11 +408,11 @@ export class DataEngine implements EngineModule {
         let candles: Candle[] = existing?.candles || [];
 
         try {
-          const klineRes = await fetch(`${this.bybitEndpoints[0]}/v5/market/kline?category=spot&symbol=${raw}&interval=1&limit=30`, {
+          const klineRes = await fetch(`https://api.bybit.com/v5/market/kline?category=spot&symbol=${raw}&interval=1&limit=30`, {
             headers: { 'Accept': 'application/json' }
           });
           if (klineRes.ok) {
-            const klineJson = await this.readBybitJson<any>(klineRes);
+            const klineJson = (await klineRes.json()) as any;
             const list = klineJson?.result?.list;
             if (Array.isArray(list) && list.length > 0) {
               candles = list.slice().reverse().map((k: any[]) => ({

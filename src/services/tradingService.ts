@@ -28,9 +28,13 @@ export function getLastSyncTime(): string {
   return lastSyncTimestamp || '';
 }
 
+function isDeadOrDeprecatedUrl(url: string): boolean {
+  return /3\.222\.149\.9|3-222-149-9|65\.0\.73\.85|65-0-73-85/.test(url);
+}
+
 function normalizeTradingBaseUrl(rawUrl: string): string {
   const trimmed = rawUrl.trim().replace(/\/+$/, '');
-  if (!trimmed) return '';
+  if (!trimmed || isDeadOrDeprecatedUrl(trimmed)) return '';
 
   // Accept either a backend origin or an already-prefixed API URL. Never
   // create /api/trading/api/trading from an already-prefixed environment value.
@@ -46,23 +50,28 @@ export function getCandidateBaseUrls(): string[] {
     (import.meta as any).env?.VITE_API_BASE_URL;
   const urls: string[] = [];
 
-  if (workingBaseUrl) urls.push(workingBaseUrl);
+  if (workingBaseUrl && !isDeadOrDeprecatedUrl(workingBaseUrl)) {
+    urls.push(workingBaseUrl);
+  }
   if (typeof envUrl === 'string' && envUrl.trim()) {
     const normalized = normalizeTradingBaseUrl(envUrl);
-    if (normalized) urls.push(`${normalized}/api/trading`);
+    if (normalized && !isDeadOrDeprecatedUrl(normalized)) {
+      urls.push(`${normalized}/api/trading`);
+    }
   }
 
-  // Canonical live backend comes before any SPA same-origin fallback.
-  urls.push('https://3-222-149-9.sslip.io/api/trading');
+  // Canonical live Bybit trading backend (AWS Mumbai ap-south-1 Elastic IP)
+  urls.push('https://35-154-110-156.sslip.io/api/trading');
 
-  // Same-origin is useful for local/dev reverse proxies. In Amplify production,
-  // a failed rewrite can return index.html (text/html), not the trading API.
-  const isAmplifyHost =
-    typeof window !== 'undefined' &&
-    window.location.hostname.endsWith('.amplifyapp.com');
-  if (!isAmplifyHost) urls.push('/api/trading');
+  // Same-origin fallback for local dev / preview environments
+  if (typeof window !== 'undefined' && window.location) {
+    const isAmplifyHost = window.location.hostname.endsWith('.amplifyapp.com');
+    if (!isAmplifyHost && window.location.origin) {
+      urls.push(`${window.location.origin}/api/trading`);
+    }
+  }
 
-  return [...new Set(urls)];
+  return [...new Set(urls.filter((u) => !isDeadOrDeprecatedUrl(u)))];
 }
 
 const OWNER_TOKEN_STORAGE_KEY = 'gigpilot_owner_token';
@@ -118,15 +127,27 @@ export async function fetchWithFailover<T>(
       }
 
       const data = await res.json();
-      if (!res.ok) {
-        throw new Error(data?.error || data?.message || `API error HTTP ${res.status}`);
-      }
 
+      // Successful JSON response indicates the backend is reached and active
       workingBaseUrl = baseUrl;
       isBackendLive = true;
       lastSyncTimestamp = new Date().toISOString();
+
+      if (!res.ok) {
+        const errMsg = data?.error || data?.message || `API error HTTP ${res.status}`;
+        const clientErr = new Error(errMsg);
+        (clientErr as any).status = res.status;
+        (clientErr as any).data = data;
+        throw clientErr;
+      }
+
       return data as T;
     } catch (err: any) {
+      // If the backend authoritatively rejected credentials or request (HTTP 400-499),
+      // re-throw immediately instead of rotating to different hosts
+      if (err?.status && err.status >= 400 && err.status < 500) {
+        throw err;
+      }
       const message =
         err?.name === 'AbortError'
           ? `Live trading API timed out after ${Math.round(timeoutMs / 1000)}s: ${targetUrl}`
@@ -571,13 +592,20 @@ export async function completeOwnerSetup(
   totpCode: string,
   email?: string
 ): Promise<{ success: boolean; token?: string; error?: string }> {
-  const res = await fetchWithFailover<{ success: boolean; token?: string; error?: string }>('/auth/setup-complete', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ password, totpCode, email })
-  });
-  if (res.success && res.token) setStoredOwnerToken(res.token);
-  return res;
+  try {
+    const res = await fetchWithFailover<{ success: boolean; token?: string; error?: string }>('/auth/setup-complete', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ password, totpCode, email })
+    });
+    if (res.success && res.token) setStoredOwnerToken(res.token);
+    return res;
+  } catch (err: any) {
+    if (err?.data && typeof err.data === 'object') {
+      return err.data;
+    }
+    return { success: false, error: err?.message || 'Setup request failed' };
+  }
 }
 
 export async function loginOwner(credentials: {
@@ -586,13 +614,20 @@ export async function loginOwner(credentials: {
   totpCode?: string;
   emergencyPin?: string;
 }): Promise<{ success: boolean; token?: string; error?: string }> {
-  const res = await fetchWithFailover<{ success: boolean; token?: string; error?: string }>('/auth/login', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(credentials)
-  });
-  if (res.success && res.token) setStoredOwnerToken(res.token);
-  return res;
+  try {
+    const res = await fetchWithFailover<{ success: boolean; token?: string; error?: string }>('/auth/login', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(credentials)
+    });
+    if (res.success && res.token) setStoredOwnerToken(res.token);
+    return res;
+  } catch (err: any) {
+    if (err?.data && typeof err.data === 'object') {
+      return err.data;
+    }
+    return { success: false, error: err?.message || 'Authentication request failed' };
+  }
 }
 
 export async function logoutOwner(): Promise<void> {

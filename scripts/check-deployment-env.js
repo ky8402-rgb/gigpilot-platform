@@ -52,7 +52,7 @@ const CHECKS = [
     name: 'AWS EC2 Production Host',
     category: 'cloud',
     required: false,
-    default: '3.222.149.9',
+    default: '35.154.110.156',
     hint: 'Host IP or public DNS for backend zero-downtime reload.'
   },
   {
