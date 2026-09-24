@@ -427,16 +427,46 @@ tradingRouter.get('/strategies', (req: Request, res: Response) => {
 });
 
 tradingRouter.post('/strategy/promote', (req: Request, res: Response) => {
-  const { challengerId, reason } = req.body;
+  const { challengerId, reason, stability } = req.body;
+  if (!challengerId) return res.status(400).json({ success: false, error: 'challengerId is required' });
+
+  // Parameter stability is a hard promotion criterion. The optimizer must demonstrate
+  // that nearby parameter values remain profitable rather than promoting a single historical peak.
+  if (stability?.parameter && Number.isFinite(Number(stability.baselineValue)) && Array.isArray(stability.samples)) {
+    const assessment = globalTradingStore.learningLoop.assessParameterStability(
+      challengerId,
+      String(stability.parameter),
+      Number(stability.baselineValue),
+      stability.samples
+    );
+    if (!assessment.stable) {
+      return res.status(422).json({
+        success: false,
+        error: assessment.reason || 'Parameter stability validation failed',
+        parameterStability: assessment.report
+      });
+    }
+  } else {
+    return res.status(422).json({
+      success: false,
+      error: 'Promotion requires parameter stability evidence: parameter, baselineValue, and at least 3 nearby samples.'
+    });
+  }
+
   const promoted = globalTradingStore.learningLoop.promoteChallenger(challengerId, reason);
   if (!promoted) {
-    return res.status(400).json({ success: false, error: 'Challenger not found or optimizer offline' });
+    return res.status(400).json({ success: false, error: 'Challenger not found, optimizer offline, or promotion criteria failed' });
   }
 
   globalTradingStore.monitor.logAudit({
     category: 'CONFIG_CHANGE',
     action: `Strategy promoted: ${promoted.id}`,
-    details: { promotedId: promoted.id, reason }
+    details: {
+      promotedId: promoted.id,
+      reason,
+      promotionScore: promoted.promotionScore,
+      parameterStability: promoted.parameterStability
+    }
   });
 
   res.json({ success: true, champion: promoted });
