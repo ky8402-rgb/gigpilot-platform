@@ -36,16 +36,50 @@ export class ExchangeExecutionEngine implements EngineModule {
   private executionTelemetry: Order[] = [];
   private pendingFillTimers: Map<string, ReturnType<typeof setTimeout>[]> = new Map();
 
-  private estimateBook(symbol: string, price: number): OrderBook {
-    const spread = Math.max(price * 0.0001, 0.01);
+  private async fetchLiveBybitBook(symbol: string): Promise<OrderBook> {
+    const rawSymbol = symbol.replace(/[\\/\\-_]/g, '').toUpperCase();
+    const res = await fetch(`https://api.bybit.com/v5/market/orderbook?category=spot&symbol=${encodeURIComponent(rawSymbol)}&limit=50`, {
+      headers: { Accept: 'application/json' }
+    });
+    if (!res.ok) throw new Error(`BYBIT_ORDERBOOK_HTTP_${res.status}`);
+    const json = await res.json() as any;
+    if (json?.retCode !== 0) throw new Error(json?.retMsg || 'BYBIT_ORDERBOOK_UNAVAILABLE');
+    const bidsRaw = Array.isArray(json?.result?.b) ? json.result.b : [];
+    const asksRaw = Array.isArray(json?.result?.a) ? json.result.a : [];
+    if (!bidsRaw.length || !asksRaw.length) throw new Error('BYBIT_ORDERBOOK_EMPTY');
+    let bidTotal = 0;
+    let askTotal = 0;
+    const bids = bidsRaw.map((x: any[]) => {
+      const price = Number(x[0]); const amount = Number(x[1]);
+      if (!Number.isFinite(price) || !Number.isFinite(amount)) throw new Error('BYBIT_ORDERBOOK_INVALID_BID');
+      bidTotal += amount; return { price, amount, total: bidTotal };
+    });
+    const asks = asksRaw.map((x: any[]) => {
+      const price = Number(x[0]); const amount = Number(x[1]);
+      if (!Number.isFinite(price) || !Number.isFinite(amount)) throw new Error('BYBIT_ORDERBOOK_INVALID_ASK');
+      askTotal += amount; return { price, amount, total: askTotal };
+    });
+    const bestBid = bids[0].price;
+    const bestAsk = asks[0].price;
+    const midPrice = (bestBid + bestAsk) / 2;
+    const spread = bestAsk - bestBid;
+    if (!(midPrice > 0) || !(spread >= 0)) throw new Error('BYBIT_ORDERBOOK_INVALID_SPREAD');
     return {
-      symbol, bids: Array.from({ length: 50 }, (_, i) => ({ price: price - spread * (i + 1), amount: 0, total: 0 })),
-      asks: Array.from({ length: 50 }, (_, i) => ({ price: price + spread * (i + 1), amount: 0, total: 0 })),
-      spread, spreadBps: price > 0 ? (spread / price) * 10000 : 0, midPrice: price, timestamp: Date.now()
+      symbol: rawSymbol,
+      bids, asks, spread,
+      spreadBps: (spread / midPrice) * 10000,
+      midPrice,
+      timestamp: Number(json?.result?.ts || Date.now())
     };
   }
 
-  public recordFillTelemetry(orderId: string, actualFillPrice: number, feeUsd: number, bookAtFill?: OrderBook): void {
+  private async requireLiveBook(symbol: string): Promise<OrderBook> {
+    const book = await this.fetchLiveBybitBook(symbol);
+    if (!book.bids.length || !book.asks.length) throw new Error('FAIL-CLOSED: LIVE_BYBIT_ORDERBOOK_UNAVAILABLE');
+    return book;
+  }
+
+  public async recordFillTelemetry(orderId: string, actualFillPrice: number, feeUsd: number, bookAtFill?: OrderBook): Promise<void> {
     const order = this.openOrders.get(orderId) || this.orderHistory.find(o => o.id === orderId);
     if (!order || !Number.isFinite(actualFillPrice)) return;
     const fillTs = Date.now();
@@ -56,16 +90,19 @@ export class ExchangeExecutionEngine implements EngineModule {
       ? ((actualFillPrice - order.expectedPrice) / order.expectedPrice) * 10000 * (order.side === 'BUY' ? 1 : -1)
       : undefined;
     order.ackToFillLatencyMs = order.exchangeAckTimestamp ? Math.max(0, fillTs - Date.parse(order.exchangeAckTimestamp)) : undefined;
-    order.bookStateAtFill = bookAtFill || this.estimateBook(order.symbol, actualFillPrice);
+    const liveFillBook = bookAtFill || await this.requireLiveBook(order.symbol);
+    order.bookStateAtFill = liveFillBook;
     order.adverseSelectionMidPrices = {};
     const timers = [100, 500, 1000, 5000].map(delay => setTimeout(() => {
-      const futureMid = this.estimateBook(order.symbol, actualFillPrice).midPrice;
+      this.requireLiveBook(order.symbol).then(book => {
+        const futureMid = book.midPrice;
       if (delay === 100) order.adverseSelectionMidPrices!.after100ms = futureMid;
       if (delay === 500) order.adverseSelectionMidPrices!.after500ms = futureMid;
       if (delay === 1000) order.adverseSelectionMidPrices!.after1s = futureMid;
       if (delay === 5000) order.adverseSelectionMidPrices!.after5s = futureMid;
       const adverse = order.side === 'BUY' ? actualFillPrice - futureMid : futureMid - actualFillPrice;
-      order.adverseSelectionScore = actualFillPrice > 0 ? (adverse / actualFillPrice) * 10000 : 0;
+        order.adverseSelectionScore = actualFillPrice > 0 ? (adverse / actualFillPrice) * 10000 : 0;
+      }).catch(err => this.recordError('ERROR', `FAIL-CLOSED: Live Bybit book unavailable during adverse-selection measurement: ${err.message}`));
     }, delay));
     this.pendingFillTimers.set(orderId, timers);
     this.openOrders.delete(orderId);
@@ -271,7 +308,7 @@ export class ExchangeExecutionEngine implements EngineModule {
       latencyMs: 0,
       decisionTimestamp,
       expectedPrice: spec.price,
-      bookStateAtDecision: this.estimateBook(spec.symbol, spec.price),
+      bookStateAtDecision: await this.requireLiveBook(spec.symbol),
       placedAt: new Date().toISOString()
     };
 
