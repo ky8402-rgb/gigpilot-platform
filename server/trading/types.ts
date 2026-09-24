@@ -264,6 +264,26 @@ export interface ProfitSweep {
 
 export type SweepRecord = ProfitSweep;
 
+export interface ParameterStabilitySample {
+  parameter: string;
+  value: number;
+  metrics: StrategyPerformanceMetrics;
+}
+
+export interface ParameterStabilityReport {
+  parameter: string;
+  baselineValue: number;
+  samples: ParameterStabilitySample[];
+  medianNetProfit: number;
+  medianSharpeRatio: number;
+  worstCaseNetProfit: number;
+  worstCaseSharpeRatio: number;
+  coefficientOfVariation: number;
+  robustnessScore: number; // 0-100; higher means performance remains stable around the candidate
+  stable: boolean;
+  generatedAt: string;
+}
+
 export interface StrategyPerformanceMetrics {
   netProfit: number;
   grossProfit: number;
@@ -309,6 +329,8 @@ export interface StrategyVersion {
   paperTradingResults?: StrategyPerformanceMetrics;
   liveTradingResults?: StrategyPerformanceMetrics;
   validationScore?: number; // 0 - 100
+  parameterStability?: ParameterStabilityReport;
+  promotionScore?: number; // robustness × net expectancy × risk-adjusted return, normalized 0-100
   expectedEffect?: string;
   actualEffect?: string;
   code?: string;
