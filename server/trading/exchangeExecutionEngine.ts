@@ -1,7 +1,7 @@
 import crypto from 'crypto';
 import fs from 'fs';
 import path from 'path';
-import { EngineErrorRecord, EngineHealth, EngineModule, Fill, Order, Position, SupportedExchange } from './types.js';
+import { EngineErrorRecord, EngineHealth, EngineModule, Fill, Order, OrderBook, Position, SupportedExchange } from './types.js';
 
 export interface ExchangeApiCredentials {
   exchange: SupportedExchange;
@@ -33,6 +33,53 @@ export class ExchangeExecutionEngine implements EngineModule {
   private orderHistory: Order[] = [];
   private fills: Fill[] = [];
   private positions: Map<string, Position> = new Map();
+  private executionTelemetry: Order[] = [];
+  private pendingFillTimers: Map<string, ReturnType<typeof setTimeout>[]> = new Map();
+
+  private estimateBook(symbol: string, price: number): OrderBook {
+    const spread = Math.max(price * 0.0001, 0.01);
+    return {
+      symbol, bids: Array.from({ length: 50 }, (_, i) => ({ price: price - spread * (i + 1), amount: 0, total: 0 })),
+      asks: Array.from({ length: 50 }, (_, i) => ({ price: price + spread * (i + 1), amount: 0, total: 0 })),
+      spread, spreadBps: price > 0 ? (spread / price) * 10000 : 0, midPrice: price, timestamp: Date.now()
+    };
+  }
+
+  public recordFillTelemetry(orderId: string, actualFillPrice: number, feeUsd: number, bookAtFill?: OrderBook): void {
+    const order = this.openOrders.get(orderId) || this.orderHistory.find(o => o.id === orderId);
+    if (!order || !Number.isFinite(actualFillPrice)) return;
+    const fillTs = Date.now();
+    order.actualFillPrice = actualFillPrice;
+    order.filledAt = new Date(fillTs).toISOString();
+    order.feesPaid += feeUsd;
+    order.executionSlippageBps = order.expectedPrice && order.expectedPrice > 0
+      ? ((actualFillPrice - order.expectedPrice) / order.expectedPrice) * 10000 * (order.side === 'BUY' ? 1 : -1)
+      : undefined;
+    order.ackToFillLatencyMs = order.exchangeAckTimestamp ? Math.max(0, fillTs - Date.parse(order.exchangeAckTimestamp)) : undefined;
+    order.bookStateAtFill = bookAtFill || this.estimateBook(order.symbol, actualFillPrice);
+    order.adverseSelectionMidPrices = {};
+    const timers = [100, 500, 1000, 5000].map(delay => setTimeout(() => {
+      const futureMid = this.estimateBook(order.symbol, actualFillPrice).midPrice;
+      if (delay === 100) order.adverseSelectionMidPrices!.after100ms = futureMid;
+      if (delay === 500) order.adverseSelectionMidPrices!.after500ms = futureMid;
+      if (delay === 1000) order.adverseSelectionMidPrices!.after1s = futureMid;
+      if (delay === 5000) order.adverseSelectionMidPrices!.after5s = futureMid;
+      const adverse = order.side === 'BUY' ? actualFillPrice - futureMid : futureMid - actualFillPrice;
+      order.adverseSelectionScore = actualFillPrice > 0 ? (adverse / actualFillPrice) * 10000 : 0;
+    }, delay));
+    this.pendingFillTimers.set(orderId, timers);
+    this.openOrders.delete(orderId);
+    this.fills.unshift({
+      id: `fill_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
+      orderId, symbol: order.symbol, side: order.side, price: actualFillPrice, amount: order.amount,
+      feeUsd, slippageBps: Math.abs(order.executionSlippageBps || 0), realizedPnL: 0,
+      timestamp: order.filledAt, midPriceAtFill: order.bookStateAtFill.midPrice
+    });
+    this.executionTelemetry.unshift(order);
+    if (this.executionTelemetry.length > 1000) this.executionTelemetry.pop();
+  }
+
+  public getExecutionTelemetry(): Order[] { return [...this.executionTelemetry]; }
 
   constructor() {
     this.initCredentials();
@@ -200,6 +247,7 @@ export class ExchangeExecutionEngine implements EngineModule {
       return { success: false, error: err };
     }
 
+    const decisionTimestamp = new Date().toISOString();
     const id = `ord_${targetExchange.toLowerCase()}_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
     const costUsd = Number((spec.price * spec.amount).toFixed(2));
 
@@ -221,11 +269,16 @@ export class ExchangeExecutionEngine implements EngineModule {
       feesPaid: 0,
       slippageBps: 0,
       latencyMs: 0,
+      decisionTimestamp,
+      expectedPrice: spec.price,
+      bookStateAtDecision: this.estimateBook(spec.symbol, spec.price),
       placedAt: new Date().toISOString()
     };
 
     // Dispatch directly to Bybit using signed HMAC-SHA256
     try {
+      order.orderSubmitTimestamp = new Date().toISOString();
+      order.decisionToSubmissionLatencyMs = Date.parse(order.orderSubmitTimestamp) - Date.parse(decisionTimestamp);
       const bybitResult = await this.dispatchBybitOrder(cred, spec);
       if (!bybitResult.success) {
         order.status = 'REJECTED';
@@ -233,6 +286,8 @@ export class ExchangeExecutionEngine implements EngineModule {
         this.recordError('ERROR', `Bybit live order rejected: ${bybitResult.error}`);
         return { success: false, order, error: bybitResult.error };
       }
+      order.exchangeAckTimestamp = new Date().toISOString();
+      order.submissionToAckLatencyMs = Date.parse(order.exchangeAckTimestamp) - Date.parse(order.orderSubmitTimestamp || order.exchangeAckTimestamp);
       if (bybitResult.orderId) order.id = bybitResult.orderId;
 
       order.latencyMs = Date.now() - start;
