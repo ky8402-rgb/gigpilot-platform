@@ -27,6 +27,11 @@ export class RiskEngine implements EngineModule {
       minOrderBookLiquidityUsd: 10000,
       minAccountReserveUsd: 200,
       autoKillSwitchTriggerDrawdownPct: 20,
+      maxGlobalExposureUsd: 20000,
+      maxStrategyExposureUsd: 10000,
+      maxSymbolExposureUsd: 7500,
+      maxCorrelatedExposureUsd: 15000,
+      maxPositionExposureUsd: 7500,
       ...initialConfig
     };
   }
@@ -125,7 +130,10 @@ export class RiskEngine implements EngineModule {
     capital: CapitalAccounting,
     currentPositions: Position[],
     openOrdersCount: number,
-    midPrice?: number
+    midPrice?: number,
+    strategyId?: string,
+    currentOrderExposureByStrategy: Record<string, number> = {},
+    currentOrderExposureBySymbol: Record<string, number> = {}
   ): { allowed: boolean; reason?: string; event?: RiskEvent } {
     const start = Date.now();
 
@@ -200,7 +208,25 @@ export class RiskEngine implements EngineModule {
       }
     }
 
-    // 6. Max Single Order Exposure
+    // 6. Hierarchical portfolio exposure gates: global -> strategy -> symbol -> position -> order
+    const currentGlobal = currentPositions.reduce((sum, p) => sum + Math.abs(p.currentPrice * p.baseAmount), 0);
+    const currentSymbol = Math.abs(currentPositions.find(p => p.symbol === proposedOrder.symbol)?.currentPrice || 0) * Math.abs(currentPositions.find(p => p.symbol === proposedOrder.symbol)?.baseAmount || 0);
+    const currentStrategy = strategyId ? (currentOrderExposureByStrategy[strategyId] || 0) : 0;
+    const currentOrderSymbol = currentOrderExposureBySymbol[proposedOrder.symbol] || 0;
+    const limits: Array<[string, number, number]> = [
+      ['GLOBAL_EXPOSURE_LIMIT', currentGlobal + orderCostUsd, this.config.maxGlobalExposureUsd || Infinity],
+      ['STRATEGY_EXPOSURE_LIMIT', currentStrategy + orderCostUsd, this.config.maxStrategyExposureUsd || Infinity],
+      ['SYMBOL_EXPOSURE_LIMIT', currentSymbol + currentOrderSymbol + orderCostUsd, this.config.maxSymbolExposureUsd || Infinity],
+      ['POSITION_EXPOSURE_LIMIT', currentSymbol + orderCostUsd, this.config.maxPositionExposureUsd || Infinity]
+    ];
+    for (const [rule, exposure, limit] of limits) {
+      if (exposure > limit) {
+        const event = this.recordEvent(rule, 'ORDER_REJECTED', `${rule} exceeded: exposure ${exposure.toFixed(2)} > limit ${limit.toFixed(2)}`, proposedOrder);
+        return { allowed: false, reason: `${rule} exceeded`, event };
+      }
+    }
+
+    // 7. Max Single Order Exposure
     if (orderCostUsd > this.config.maxExposureUsd) {
       const event = this.recordEvent(
         'MAX_ORDER_EXPOSURE_EXCEEDED',
