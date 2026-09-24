@@ -1,0 +1,119 @@
+// Prisma schema for Autonomous Crypto Grid Trading Platform
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id                    String        @id @default(cuid())
+  email                 String        @unique
+  passwordHash          String
+  role                  String        @default("OWNER")
+  createdAt             DateTime      @default(now())
+}
+
+model GridConfiguration {
+  id                    String        @id @default(cuid())
+  symbol                String
+  upperBoundary         Float
+  lowerBoundary         Float
+  levelsCount           Int
+  spacingType           String        // ARITHMETIC or GEOMETRIC
+  totalAllocatedUsd     Float
+  volatilityAdjustment  Boolean       @default(true)
+  trendProtection       Boolean       @default(true)
+  status                String        @default("ACTIVE") // ACTIVE, PAUSED, TERMINATED
+  createdAt             DateTime      @default(now())
+  updatedAt             DateTime      @updatedAt
+}
+
+model StrategyVersion {
+  id                    String        @id @default(cuid())
+  name                  String
+  version               String
+  status                String        // CHAMPION, CHALLENGER, RETIRED, CANDIDATE
+  parentVersionId       String?
+  reasonForChange       String
+  expectedEffect        String
+  parametersJson        String        // Serialized parameters JSON
+  backtestResultsJson   String        // Serialized metrics JSON
+  validationScore       Float         @default(0.0)
+  createdAt             DateTime      @default(now())
+  updatedAt             DateTime      @updatedAt
+}
+
+model Order {
+  id                    String        @id @default(cuid())
+  clientOrderId         String        @unique
+  symbol                String
+  side                  String        // BUY or SELL
+  type                  String        // LIMIT or MARKET
+  price                 Float
+  amount                Float
+  filled                Float         @default(0.0)
+  remaining             Float
+  status                String        // OPEN, FILLED, PARTIALLY_FILLED, CANCELLED, REJECTED
+  gridLevelIndex        Int?
+  createdAt             DateTime      @default(now())
+  updatedAt             DateTime      @updatedAt
+}
+
+model Fill {
+  id                    String        @id @default(cuid())
+  orderId               String
+  symbol                String
+  side                  String
+  price                 Float
+  amount                Float
+  feeUsd                Float
+  realizedPnl           Float         @default(0.0)
+  liquidity             String        @default("MAKER") // MAKER or TAKER
+  timestamp             DateTime      @default(now())
+}
+
+model ProfitSweep {
+  id                    String        @id @default(cuid())
+  grossSweepAmount      Float
+  netSweepAmount        Float
+  gasFeeUsd             Float
+  destinationWallet     String
+  chain                 String
+  txHash                String        @unique
+  status                String        @default("CONFIRMED")
+  timestamp             DateTime      @default(now())
+}
+
+model RiskEvent {
+  id                    String        @id @default(cuid())
+  ruleViolated          String
+  severity              String        // WARNING, VETO, EMERGENCY_HALT
+  reason                String
+  actionTaken           String
+  timestamp             DateTime      @default(now())
+}
+
+model AuditLogEntry {
+  id                    String        @id @default(cuid())
+  operator              String        // AUTONOMOUS_AGENT, OWNER, RISK_ENGINE, SWEEP_DAEMON
+  action                String
+  detailsJson           String
+  result                String        @default("SUCCESS")
+  timestamp             DateTime      @default(now())
+}
+
+model MarketIntelligence {
+  id                    String        @id @default(cuid())
+  title                 String
+  source                String
+  summary               String
+  category              String        // FACT, ANALYSIS, UNVERIFIED_CLAIM, SPECULATION
+  sentiment             String        // BULLISH, BEARISH, NEUTRAL
+  impactScore           Float
+  quantAdjustmentJson   String
+  createdAt             DateTime      @default(now())
+}

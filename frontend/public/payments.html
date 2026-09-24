@@ -1,0 +1,538 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>PayPal Business Invoices & Payout Reality — KUNDANVISION369</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          colors: {
+            brand: {
+              50: '#f0f9ff',
+              500: '#0284c7',
+              600: '#0369a1',
+              900: '#0c4a6e'
+            }
+          }
+        }
+      }
+    }
+  </script>
+  <style>
+    body {
+      background-color: #0b0f19;
+      color: #f1f5f9;
+      font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    }
+    .custom-scrollbar::-webkit-scrollbar {
+      height: 6px;
+      width: 6px;
+    }
+    .custom-scrollbar::-webkit-scrollbar-track {
+      background: #0f172a;
+    }
+    .custom-scrollbar::-webkit-scrollbar-thumb {
+      background: #334155;
+      border-radius: 3px;
+    }
+  </style>
+</head>
+<body class="min-h-screen antialiased selection:bg-cyan-500 selection:text-white pb-20">
+
+  <!-- TOP NAVIGATION / HEADER -->
+  <header class="border-b border-slate-800 bg-[#0f172a]/90 backdrop-blur sticky top-0 z-40">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
+      <div class="flex items-center space-x-3">
+        <div class="w-9 h-9 rounded-lg bg-gradient-to-tr from-cyan-600 to-blue-500 flex items-center justify-center font-bold text-white shadow-lg shadow-cyan-500/20 text-sm">
+          KV
+        </div>
+        <div>
+          <div class="flex items-center space-x-2">
+            <span class="font-bold text-white tracking-tight">KUNDANVISION369</span>
+            <span class="px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider bg-blue-950 text-blue-400 border border-blue-800/60 rounded">PayPal Business v2</span>
+          </div>
+          <p class="text-xs text-slate-400">Invoices • Realized Net INR Ledger • Regulatory Auto-Sweep</p>
+        </div>
+      </div>
+      
+      <div class="flex items-center space-x-3">
+        <a href="leads.html" class="px-3 py-1.5 rounded-lg border border-slate-700 bg-slate-800/60 hover:bg-slate-800 text-xs text-slate-300 font-medium transition">
+          Leads Feed
+        </a>
+        <a href="deliverables.html" class="px-3 py-1.5 rounded-lg border border-slate-700 bg-slate-800/60 hover:bg-slate-800 text-xs text-slate-300 font-medium transition">
+          Deliverables QA
+        </a>
+        <a href="payments.html" class="px-3 py-1.5 rounded-lg border border-cyan-500/60 bg-cyan-950/40 text-cyan-300 text-xs font-semibold transition">
+          Payments & Invoices
+        </a>
+        <button onclick="openNewInvoiceModal()" class="px-3.5 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-500 text-xs font-semibold text-white shadow-md shadow-blue-600/30 transition flex items-center space-x-1.5">
+          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/></svg>
+          <span>Create Invoice</span>
+        </button>
+      </div>
+    </div>
+  </header>
+
+  <!-- MAIN CONTAINER -->
+  <main class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-8">
+
+    <!-- ALERT / REGULATORY NOTICE BANNER -->
+    <div class="bg-blue-950/30 border border-blue-800/60 rounded-xl p-4 flex items-start space-x-3 text-xs text-blue-200">
+      <svg class="w-5 h-5 text-blue-400 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
+      </svg>
+      <div class="space-y-1">
+        <div class="font-bold text-white tracking-wide uppercase text-[11px]">Factual Payout & Regulatory Guardrail Policy</div>
+        <p class="text-slate-300 leading-relaxed">
+          <strong>PayPal India Auto-Sweep:</strong> Under Reserve Bank of India (RBI) Export Regulations, PayPal India does not retain persistent USD balances. All export remittances are automatically converted to INR and auto-swept to the linked Indian bank account within 24–48 business hours. Programmatic custom auto-withdrawals are strictly prohibited.
+        </p>
+      </div>
+    </div>
+
+    <!-- METRIC STATS ROW (GROSS USD, NET INR, LIVE BALANCE, PROJECTED SEGREGATED) -->
+    <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+      
+      <!-- Card 1: Gross USD Billed -->
+      <div class="bg-[#111827] border border-slate-800 rounded-xl p-5 relative overflow-hidden">
+        <div class="flex items-center justify-between text-xs text-slate-400 mb-1">
+          <span class="font-mono uppercase font-bold text-[10px] text-blue-400 tracking-wider">Gross USD Billed</span>
+          <span class="px-1.5 py-0.5 rounded text-[10px] bg-blue-950 text-blue-300 font-mono">ALL INVOICES</span>
+        </div>
+        <div class="text-2xl font-bold font-mono text-white mt-2" id="statGrossBilled">
+          $0.00 <span class="text-xs font-normal text-slate-400 font-sans">USD</span>
+        </div>
+        <div class="mt-2 text-[11px] text-slate-400">
+          Total value dispatched across v2 invoices
+        </div>
+      </div>
+
+      <!-- Card 2: Net INR Realized -->
+      <div class="bg-[#111827] border border-emerald-800/40 rounded-xl p-5 relative overflow-hidden">
+        <div class="flex items-center justify-between text-xs text-slate-400 mb-1">
+          <span class="font-mono uppercase font-bold text-[10px] text-emerald-400 tracking-wider">Net Realized Bank Settlement</span>
+          <span class="px-1.5 py-0.5 rounded text-[10px] bg-emerald-950 text-emerald-300 font-mono">PAID ONLY</span>
+        </div>
+        <div class="text-2xl font-bold font-mono text-emerald-400 mt-2" id="statNetInr">
+          ₹0 <span class="text-xs font-normal text-slate-400 font-sans">INR</span>
+        </div>
+        <div class="mt-2 text-[11px] text-slate-400">
+          After ~4.4% merchant fees • Swept to Indian bank
+        </div>
+      </div>
+
+      <!-- Card 3: Live PayPal Balance (API Probe) -->
+      <div class="bg-[#111827] border border-slate-800 rounded-xl p-5 relative overflow-hidden">
+        <div class="flex items-center justify-between text-xs text-slate-400 mb-1">
+          <span class="font-mono uppercase font-bold text-[10px] text-cyan-400 tracking-wider">Live PayPal Balance</span>
+          <span class="px-1.5 py-0.5 rounded text-[10px] bg-cyan-950 text-cyan-300 font-mono" id="statSweepStatus">SWEEP ACTIVE</span>
+        </div>
+        <div class="text-2xl font-bold font-mono text-white mt-2" id="statLiveBalance">
+          $0.00 <span class="text-xs font-normal text-slate-400 font-sans">USD</span>
+        </div>
+        <div class="mt-2 text-[11px] text-slate-400 flex items-center justify-between">
+          <span>In-transit sweep window</span>
+          <span class="text-cyan-400 font-mono text-[10px]">24-48h daily</span>
+        </div>
+      </div>
+
+      <!-- Card 4: Projected Pipeline (Segregated With Secondary Visual Weight) -->
+      <div class="bg-[#0e131f]/70 border border-slate-800/60 rounded-xl p-5 relative opacity-75">
+        <div class="flex items-center justify-between text-xs text-slate-500 mb-1">
+          <span class="font-mono uppercase font-semibold text-[10px] text-slate-400 tracking-wider">Projected Unsettled</span>
+          <span class="px-1.5 py-0.5 rounded text-[10px] bg-slate-800 text-slate-400 font-mono">FORECAST ONLY</span>
+        </div>
+        <div class="text-xl font-semibold font-mono text-slate-300 mt-2" id="statPendingUsd">
+          $0.00 <span class="text-xs font-normal text-slate-500 font-sans">USD</span>
+        </div>
+        <div class="mt-2 text-[11px] text-slate-500">
+          Unconfirmed • Lower weight guardrail enforced
+        </div>
+      </div>
+
+    </div>
+
+    <!-- MAIN SECTION: PAYPAL BUSINESS INVOICES PANEL -->
+    <section class="bg-[#111827] border border-slate-800 rounded-xl overflow-hidden shadow-xl">
+      <div class="p-5 border-b border-slate-800 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+        <div>
+          <h2 class="text-base font-bold text-white flex items-center space-x-2">
+            <span>PayPal Business — Invoices</span>
+            <span class="text-xs font-normal text-slate-400 font-mono" id="invoiceCountLabel">(3 active)</span>
+          </h2>
+          <p class="text-xs text-slate-400 mt-0.5">
+            Real REST API v2 lifecycle: Draft → Sent → Paid. Automatic 4.4% fee & INR conversion ledger tracking.
+          </p>
+        </div>
+        
+        <div class="flex items-center space-x-2 text-xs">
+          <button onclick="fetchInvoices()" class="px-3 py-1.5 rounded-lg border border-slate-700 bg-slate-800 hover:bg-slate-700 text-slate-300 font-medium transition flex items-center space-x-1">
+            <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg>
+            <span>Refresh</span>
+          </button>
+        </div>
+      </div>
+
+      <!-- Invoices Table -->
+      <div class="overflow-x-auto">
+        <table class="w-full text-left text-xs text-slate-300">
+          <thead class="bg-[#0b0f19] text-[10px] uppercase font-mono text-slate-400 border-b border-slate-800">
+            <tr>
+              <th class="py-3 px-4">Invoice ID</th>
+              <th class="py-3 px-4">Client & Deliverable</th>
+              <th class="py-3 px-4">USD Gross</th>
+              <th class="py-3 px-4">Fee (~4.4%)</th>
+              <th class="py-3 px-4">INR Net Realized</th>
+              <th class="py-3 px-4">Status</th>
+              <th class="py-3 px-4 text-right">Actions</th>
+            </tr>
+          </thead>
+          <tbody id="invoiceTableBody" class="divide-y divide-slate-800/80 font-sans">
+            <!-- Rendered by JS -->
+            <tr>
+              <td colspan="7" class="py-8 text-center text-slate-500 font-mono">Loading invoices from PayPal Business REST API...</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- SECTION 2: FACTUAL PER-PLATFORM PAYOUT REALITY GUIDE -->
+    <section class="bg-[#111827] border border-slate-800 rounded-xl p-6 shadow-xl space-y-4">
+      <div>
+        <h3 class="text-sm font-bold text-white uppercase tracking-wider font-mono text-cyan-400">
+          Platform Payout Reality & Fee Mechanics
+        </h3>
+        <p class="text-xs text-slate-400 mt-1">
+          Factual payout channel constraints for Indian software engineering and data extraction operations.
+        </p>
+      </div>
+
+      <div class="grid grid-cols-1 md:grid-cols-3 gap-4 text-xs">
+        <!-- Platform 1: Freelancer.com -->
+        <div class="p-4 rounded-xl border border-slate-800 bg-[#0c101a] space-y-2">
+          <div class="flex items-center justify-between">
+            <span class="font-bold text-white text-sm">Freelancer.com</span>
+            <span class="px-2 py-0.5 rounded bg-blue-950 text-blue-400 text-[10px] font-mono border border-blue-900">ESCROW</span>
+          </div>
+          <div class="text-slate-300 font-medium">Payoneer USD or Wire</div>
+          <p class="text-slate-400 text-[11px] leading-relaxed">
+            Minimum withdrawal: <strong>$50 USD</strong> via Payoneer Citibank checking route. Alternatively direct international bank wire with $15-25 intermediary fees.
+          </p>
+          <div class="text-[10px] text-emerald-400 font-mono pt-1">✓ Integrated with Citibank routing</div>
+        </div>
+
+        <!-- Platform 2: Upwork India -->
+        <div class="p-4 rounded-xl border border-slate-800 bg-[#0c101a] space-y-2">
+          <div class="flex items-center justify-between">
+            <span class="font-bold text-white text-sm">Upwork (India)</span>
+            <span class="px-2 py-0.5 rounded bg-amber-950 text-amber-400 text-[10px] font-mono border border-amber-900">RESTRICTION</span>
+          </div>
+          <div class="text-slate-300 font-medium">Wise or Direct USD Wire</div>
+          <p class="text-slate-400 text-[11px] leading-relaxed">
+            <strong>Crucial Reality:</strong> PayPal and Payoneer are <em>NOT</em> available as withdrawal methods for Indian freelancers on Upwork. Funds must be withdrawn via Wise or direct local INR wire ($0.99 fee + ~1.5% FX).
+          </p>
+          <div class="text-[10px] text-amber-400 font-mono pt-1">⚠ PayPal/Payoneer blocked for India on Upwork</div>
+        </div>
+
+        <!-- Platform 3: Direct Clients -->
+        <div class="p-4 rounded-xl border border-slate-800 bg-[#0c101a] space-y-2">
+          <div class="flex items-center justify-between">
+            <span class="font-bold text-white text-sm">Direct Clients</span>
+            <span class="px-2 py-0.5 rounded bg-emerald-950 text-emerald-400 text-[10px] font-mono border border-emerald-900">RECOMMENDED</span>
+          </div>
+          <div class="text-slate-300 font-medium">PayPal Business or Skydo</div>
+          <p class="text-slate-400 text-[11px] leading-relaxed">
+            <strong>PayPal Business Invoice v2:</strong> Auto-converts to INR with ~4.4% + $0.30 merchant fee.<br>
+            <strong>Skydo Virtual Account:</strong> Flat $19-$29 per transaction with zero FX markup and instant FIRA.
+          </p>
+          <div class="text-[10px] text-cyan-400 font-mono pt-1">✓ Automated daily bank sweeps</div>
+        </div>
+      </div>
+    </section>
+
+  </main>
+
+  <!-- MODAL: CREATE NEW PAYPAL INVOICE -->
+  <div id="newInvoiceModal" class="fixed inset-0 z-50 bg-black/75 backdrop-blur-sm hidden items-center justify-center p-4">
+    <div class="bg-[#111827] border border-slate-800 rounded-2xl max-w-lg w-full p-6 shadow-2xl space-y-5">
+      <div class="flex items-center justify-between border-b border-slate-800 pb-4">
+        <div>
+          <h3 class="text-base font-bold text-white">Create PayPal Business Invoice</h3>
+          <p class="text-xs text-slate-400">Official REST API v2 invoice with automatic fee deduction</p>
+        </div>
+        <button onclick="closeNewInvoiceModal()" class="text-slate-400 hover:text-white text-lg font-bold">&times;</button>
+      </div>
+
+      <form id="invoiceForm" onsubmit="handleCreateInvoice(event)" class="space-y-4 text-xs">
+        <div>
+          <label class="block text-slate-300 font-semibold mb-1">Client Email Address *</label>
+          <input type="email" id="formClientEmail" required placeholder="client@company.com" class="w-full bg-[#0b0f19] border border-slate-700 rounded-lg px-3 py-2 text-white placeholder-slate-500 focus:outline-none focus:border-blue-500">
+        </div>
+
+        <div class="grid grid-cols-2 gap-3">
+          <div>
+            <label class="block text-slate-300 font-semibold mb-1">Client / Company Name</label>
+            <input type="text" id="formClientName" placeholder="Acme Analytics Inc." class="w-full bg-[#0b0f19] border border-slate-700 rounded-lg px-3 py-2 text-white placeholder-slate-500 focus:outline-none focus:border-blue-500">
+          </div>
+          <div>
+            <label class="block text-slate-300 font-semibold mb-1">USD Amount *</label>
+            <input type="number" id="formAmount" required min="1" step="0.01" value="199.00" class="w-full bg-[#0b0f19] border border-slate-700 rounded-lg px-3 py-2 text-white placeholder-slate-500 font-mono focus:outline-none focus:border-blue-500">
+          </div>
+        </div>
+
+        <div>
+          <label class="block text-slate-300 font-semibold mb-1">Deliverable Title & Description</label>
+          <input type="text" id="formDescription" required value="E-Commerce Catalog Scraping Deliverable" class="w-full bg-[#0b0f19] border border-slate-700 rounded-lg px-3 py-2 text-white placeholder-slate-500 focus:outline-none focus:border-blue-500">
+        </div>
+
+        <div>
+          <label class="block text-slate-300 font-semibold mb-1">Payment Terms Note</label>
+          <textarea id="formNote" rows="2" class="w-full bg-[#0b0f19] border border-slate-700 rounded-lg px-3 py-2 text-white placeholder-slate-500 focus:outline-none focus:border-blue-500">Delivered with verified schema compliance, zero duplicates, and human QA certification.</textarea>
+        </div>
+
+        <div class="p-3 rounded-lg bg-blue-950/40 border border-blue-900/60 text-[11px] text-blue-300 flex justify-between items-center">
+          <span>Fee Estimate (~4.4% + $0.30):</span>
+          <span class="font-mono font-bold" id="formFeeEstimate">$9.06 USD (Net: ~₹16,049 INR)</span>
+        </div>
+
+        <div class="flex items-center justify-end space-x-3 pt-2">
+          <button type="button" onclick="closeNewInvoiceModal()" class="px-4 py-2 rounded-lg border border-slate-700 hover:bg-slate-800 text-slate-300 font-medium">Cancel</button>
+          <button type="submit" id="submitInvoiceBtn" class="px-4 py-2 rounded-lg bg-blue-600 hover:bg-blue-500 font-bold text-white shadow-md shadow-blue-600/30">Create & Send Invoice</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- TOAST NOTIFICATION CONTAINER -->
+  <div id="toast" class="fixed bottom-5 right-5 z-50 px-4 py-3 rounded-xl shadow-2xl text-xs font-semibold text-white border transition-all duration-300 transform translate-y-20 opacity-0 pointer-events-none"></div>
+
+  <!-- CLIENT-SIDE SCRIPT -->
+  <script>
+    let currentInvoices = [];
+
+    function showToast(msg, type = 'success') {
+      const el = document.getElementById('toast');
+      el.textContent = msg;
+      el.className = `fixed bottom-5 right-5 z-50 px-4 py-3 rounded-xl shadow-2xl text-xs font-semibold text-white border transition-all duration-300 transform translate-y-0 opacity-100 ${
+        type === 'success' ? 'bg-emerald-900/90 border-emerald-500 text-emerald-100' : 'bg-red-900/90 border-red-500 text-red-100'
+      }`;
+      setTimeout(() => {
+        el.className += ' translate-y-20 opacity-0 pointer-events-none';
+      }, 4000);
+    }
+
+    async function fetchBalance() {
+      try {
+        const res = await fetch('/api/paypal/balance');
+        if (res.ok) {
+          const data = await res.json();
+          document.getElementById('statLiveBalance').innerHTML = `$${(data.settledBalanceUsd || 0).toFixed(2)} <span class="text-xs font-normal text-slate-400 font-sans">USD</span>`;
+        }
+      } catch (err) {
+        console.warn('Live balance fetch error:', err);
+      }
+    }
+
+    async function fetchInvoices() {
+      try {
+        const res = await fetch('/api/paypal/invoices');
+        if (!res.ok) throw new Error('HTTP ' + res.status);
+        const data = await res.json();
+        
+        currentInvoices = data.invoices || [];
+        const totals = data.ledgerTotals || {};
+
+        // Update stats
+        document.getElementById('statGrossBilled').innerHTML = `$${(totals.grossUsdBilled || 0).toLocaleString(undefined, { minimumFractionDigits: 2 })} <span class="text-xs font-normal text-slate-400 font-sans">USD</span>`;
+        document.getElementById('statNetInr').innerHTML = `₹${(totals.netInrSettled || 0).toLocaleString()} <span class="text-xs font-normal text-slate-400 font-sans">INR</span>`;
+        document.getElementById('statPendingUsd').innerHTML = `$${(totals.pendingUsd || 0).toFixed(2)} <span class="text-xs font-normal text-slate-500 font-sans">USD</span>`;
+        document.getElementById('invoiceCountLabel').textContent = `(${currentInvoices.length} active)`;
+
+        renderInvoices(currentInvoices);
+      } catch (err) {
+        console.error('Failed to load invoices:', err);
+        document.getElementById('invoiceTableBody').innerHTML = `<tr><td colspan="7" class="py-6 text-center text-red-400 font-mono">Error loading invoices: ${err.message}</td></tr>`;
+      }
+    }
+
+    function renderInvoices(invoices) {
+      const tbody = document.getElementById('invoiceTableBody');
+      if (!invoices || invoices.length === 0) {
+        tbody.innerHTML = `<tr><td colspan="7" class="py-8 text-center text-slate-500 font-mono">No invoices recorded yet. Click "Create Invoice" to dispatch a v2 invoice.</td></tr>`;
+        return;
+      }
+
+      tbody.innerHTML = invoices.map(inv => {
+        const statusPillClass = {
+          'PAID': 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40',
+          'SENT': 'bg-blue-500/20 text-blue-300 border-blue-500/40',
+          'OVERDUE': 'bg-amber-500/20 text-amber-300 border-amber-500/40',
+          'CANCELLED': 'bg-slate-700/50 text-slate-400 border-slate-700'
+        }[inv.status] || 'bg-slate-800 text-slate-300 border-slate-700';
+
+        return `
+          <tr class="hover:bg-slate-800/40 transition">
+            <td class="py-3 px-4 font-mono font-medium text-white">
+              <div>${inv.id}</div>
+              <div class="text-[10px] text-slate-500">${inv.invoiceNumber || ''}</div>
+            </td>
+            <td class="py-3 px-4">
+              <div class="font-medium text-slate-200">${inv.clientName || 'Client'}</div>
+              <div class="text-[11px] text-slate-400 font-mono">${inv.clientEmail}</div>
+              <div class="text-[11px] text-slate-500 line-clamp-1">${inv.description}</div>
+            </td>
+            <td class="py-3 px-4 font-mono font-bold text-white">
+              $${inv.usdAmount.toFixed(2)}
+            </td>
+            <td class="py-3 px-4 font-mono text-slate-400 text-[11px]">
+              -$${(inv.feeUsd || (inv.usdAmount * 0.044 + 0.30)).toFixed(2)}
+            </td>
+            <td class="py-3 px-4 font-mono font-bold text-emerald-400">
+              ₹${(inv.netInr || 0).toLocaleString()}
+            </td>
+            <td class="py-3 px-4">
+              <span class="px-2 py-0.5 rounded text-[10px] font-mono border ${statusPillClass}">
+                ${inv.status}
+              </span>
+            </td>
+            <td class="py-3 px-4 text-right">
+              <div class="flex items-center justify-end space-x-1.5">
+                <button onclick="handleRemind('${inv.id}')" title="Send day 3/7/14 SES & PayPal Reminder" class="px-2 py-1 rounded bg-slate-800 hover:bg-slate-700 text-slate-300 text-[10px] font-medium transition">
+                  Remind
+                </button>
+                <button onclick="handleResend('${inv.id}')" title="Resend Invoice Notification" class="px-2 py-1 rounded bg-slate-800 hover:bg-slate-700 text-slate-300 text-[10px] font-medium transition">
+                  Resend
+                </button>
+                ${inv.status !== 'CANCELLED' && inv.status !== 'PAID' ? `
+                  <button onclick="handleCancel('${inv.id}')" title="Cancel Invoice" class="px-2 py-1 rounded bg-red-950/40 hover:bg-red-900/60 text-red-300 text-[10px] font-medium border border-red-900/50 transition">
+                    Cancel
+                  </button>
+                ` : ''}
+                <a href="${inv.paypalViewUrl}" target="_blank" rel="noopener noreferrer" class="px-2 py-1 rounded bg-blue-600/80 hover:bg-blue-600 text-white text-[10px] font-medium transition inline-flex items-center space-x-1">
+                  <span>View</span>
+                  <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"/></svg>
+                </a>
+              </div>
+            </td>
+          </tr>
+        `;
+      }).join('');
+    }
+
+    async function handleRemind(id) {
+      try {
+        const res = await fetch(`/api/paypal/invoice/${id}/remind`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ day: 3 })
+        });
+        const data = await res.json();
+        if (data.ok) {
+          showToast(`✓ Reminder dispatched via AWS SES to client`, 'success');
+          fetchInvoices();
+        } else {
+          showToast(`Error: ${data.error || 'Failed to send reminder'}`, 'error');
+        }
+      } catch (err) {
+        showToast(`Remind failed: ${err.message}`, 'error');
+      }
+    }
+
+    async function handleResend(id) {
+      try {
+        const res = await fetch(`/api/paypal/invoice/${id}/remind`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ day: 1 })
+        });
+        showToast(`✓ Invoice re-sent to client email`, 'success');
+      } catch (err) {
+        showToast(`Resend failed: ${err.message}`, 'error');
+      }
+    }
+
+    async function handleCancel(id) {
+      if (!confirm(`Are you sure you want to cancel invoice ${id}?`)) return;
+      try {
+        const res = await fetch(`/api/paypal/invoice/${id}/cancel`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ reason: 'Cancelled by user from payments panel' })
+        });
+        const data = await res.json();
+        if (data.ok) {
+          showToast(`✓ Invoice ${id} cancelled`, 'success');
+          fetchInvoices();
+        } else {
+          showToast(`Error: ${data.error || 'Failed to cancel'}`, 'error');
+        }
+      } catch (err) {
+        showToast(`Cancel failed: ${err.message}`, 'error');
+      }
+    }
+
+    function openNewInvoiceModal() {
+      document.getElementById('newInvoiceModal').classList.remove('hidden');
+      document.getElementById('newInvoiceModal').classList.add('flex');
+    }
+
+    function closeNewInvoiceModal() {
+      document.getElementById('newInvoiceModal').classList.add('hidden');
+      document.getElementById('newInvoiceModal').classList.remove('flex');
+    }
+
+    // Dynamic fee preview
+    document.getElementById('formAmount').addEventListener('input', (e) => {
+      const amt = parseFloat(e.target.value) || 0;
+      const fee = amt * 0.044 + 0.30;
+      const netUsd = Math.max(0, amt - fee);
+      const netInr = Math.round(netUsd * 84.50);
+      document.getElementById('formFeeEstimate').textContent = `$${fee.toFixed(2)} USD (Net: ~₹${netInr.toLocaleString()} INR)`;
+    });
+
+    async function handleCreateInvoice(e) {
+      e.preventDefault();
+      const btn = document.getElementById('submitInvoiceBtn');
+      btn.disabled = true;
+      btn.textContent = 'Generating & Sending...';
+
+      const payload = {
+        clientEmail: document.getElementById('formClientEmail').value,
+        clientName: document.getElementById('formClientName').value,
+        amount: parseFloat(document.getElementById('formAmount').value),
+        description: document.getElementById('formDescription').value,
+        note: document.getElementById('formNote').value
+      };
+
+      try {
+        const res = await fetch('/api/paypal/invoice', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload)
+        });
+        const data = await res.json();
+        if (data.ok) {
+          showToast(`✓ Invoice ${data.invoice?.id || ''} created & sent!`, 'success');
+          closeNewInvoiceModal();
+          fetchInvoices();
+        } else {
+          showToast(`Error: ${data.error || 'Failed to create invoice'}`, 'error');
+        }
+      } catch (err) {
+        showToast(`Creation failed: ${err.message}`, 'error');
+      } finally {
+        btn.disabled = false;
+        btn.textContent = 'Create & Send Invoice';
+      }
+    }
+
+    // Initial Load
+    fetchBalance();
+    fetchInvoices();
+  </script>
+</body>
+</html>

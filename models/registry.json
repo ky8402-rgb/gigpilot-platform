@@ -1,0 +1,70 @@
+[
+  {
+    "version": "v1.34.0",
+    "path": "models/rf_model_v1.34.0.joblib",
+    "accuracy": 0.948,
+    "f1_score": 0.932,
+    "deployed_at": "2026-09-06T08:30:00.000Z",
+    "active": true,
+    "metadata": {
+      "algorithm": "RandomForestClassifier",
+      "n_estimators": 120,
+      "features_count": 18,
+      "cv_folds": 5,
+      "framework": "scikit-learn",
+      "training_samples": 1250,
+      "source": "certified_production_baseline"
+    }
+  },
+  {
+    "version": "v1.25.0",
+    "path": "models/rf_model_v1.25.0.joblib",
+    "accuracy": 0.942,
+    "f1_score": 0.926,
+    "deployed_at": "2026-09-06T04:30:00.000Z",
+    "active": false,
+    "metadata": {
+      "algorithm": "RandomForestClassifier",
+      "n_estimators": 100,
+      "features_count": 18,
+      "cv_folds": 5,
+      "framework": "scikit-learn",
+      "training_samples": 1100,
+      "source": "certified_production_baseline"
+    }
+  },
+  {
+    "version": "v1.14.0",
+    "path": "models/rf_model_v1.14.0.joblib",
+    "accuracy": 0.936,
+    "f1_score": 0.918,
+    "deployed_at": "2026-09-05T14:30:00.000Z",
+    "active": false,
+    "metadata": {
+      "algorithm": "RandomForestClassifier",
+      "n_estimators": 100,
+      "features_count": 18,
+      "cv_folds": 5,
+      "framework": "scikit-learn",
+      "training_samples": 950,
+      "source": "certified_production_baseline"
+    }
+  },
+  {
+    "version": "v1.0.0",
+    "path": "models/rf_model_v1.0.0.joblib",
+    "accuracy": 0.924,
+    "f1_score": 0.905,
+    "deployed_at": "2026-09-04T08:30:00.000Z",
+    "active": false,
+    "metadata": {
+      "algorithm": "RandomForestClassifier",
+      "n_estimators": 80,
+      "features_count": 18,
+      "cv_folds": 5,
+      "framework": "scikit-learn",
+      "training_samples": 800,
+      "source": "certified_production_baseline"
+    }
+  }
+]

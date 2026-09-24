@@ -1,0 +1,13 @@
+version: 1.0
+runtime: nodejs20
+build:
+  commands:
+    pre-build:
+      - npm ci || npm install
+    build:
+      - npm run build
+run:
+  command: node dist/server.cjs
+  network:
+    port: 3000
+    env: PORT

@@ -1,0 +1,6 @@
+{
+  "name": "kundanvision369",
+  "description": "Private autonomous cryptocurrency grid trading platform featuring adaptive grid engine, dynamic market regime detection, champion/challenger learning loop, risk controls, sandboxed strategy IDE, wallet profit sweeping, and autonomous market research.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

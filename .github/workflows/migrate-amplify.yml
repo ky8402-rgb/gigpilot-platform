@@ -1,0 +1,79 @@
+name: Migrate Amplify Frontend Backend URL
+
+on:
+  workflow_dispatch:
+    inputs:
+      new_backend_url:
+        description: 'New Backend URL (e.g., https://35-154-110-156.sslip.io)'
+        required: false
+        default: 'https://35-154-110-156.sslip.io'
+      amplify_app_name:
+        description: 'Amplify App Name (optional, defaults to gigpilot-platform)'
+        required: false
+        default: 'gigpilot-platform'
+      rollback:
+        description: 'Set to true to rollback to previous backend URL'
+        type: boolean
+        required: false
+        default: false
+      force:
+        description: 'Force update Amplify env even if target backend pre-check is offline'
+        type: boolean
+        required: false
+        default: false
+
+env:
+  API_BASE_URL: https://35-154-110-156.sslip.io
+  REACT_APP_API_URL: https://35-154-110-156.sslip.io
+  VITE_BACKEND_URL: https://35-154-110-156.sslip.io
+  VITE_API_BASE_URL: https://35-154-110-156.sslip.io
+  VITE_API_URL: https://35-154-110-156.sslip.io
+
+jobs:
+  migrate:
+    name: Update Amplify Environment & Trigger Build
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Check AWS Secrets Availability
+        id: check_creds
+        env:
+          KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID || secrets.ID }}
+        run: |
+          if [ -n "$KEY_ID" ]; then
+            echo "has_creds=true" >> $GITHUB_OUTPUT
+            echo "AWS Credentials detected in repository secrets."
+          else
+            echo "has_creds=false" >> $GITHUB_OUTPUT
+            echo "AWS IAM Credentials not detected in secrets; will proceed with Git-driven Amplify migration."
+          fi
+
+      - name: Configure AWS Credentials
+        if: steps.check_creds.outputs.has_creds == 'true'
+        uses: aws-actions/configure-aws-credentials@v4
+        continue-on-error: true
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID || secrets.ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY || secrets.AWS }}
+          aws-region: ${{ secrets.AWS_REGION || 'us-east-1' }}
+
+      - name: Run Migration Script
+        env:
+          NEW_BACKEND_URL: ${{ github.event.inputs.new_backend_url }}
+          AMPLIFY_APP_NAME: ${{ github.event.inputs.amplify_app_name }}
+          AMPLIFY_APP_ID: ${{ secrets.AMPLIFY_APP_ID || 'd2qe2q720fbn3x' }}
+          FORCE_MIGRATE: ${{ github.event.inputs.force }}
+          AWS_REGION: ${{ secrets.AWS_REGION || 'us-east-1' }}
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+        run: |
+          chmod +x ./scripts/migrate-amplify-backend.sh
+          if [ "${{ github.event.inputs.rollback }}" = "true" ]; then
+            ./scripts/migrate-amplify-backend.sh --rollback
+          elif [ "${{ github.event.inputs.force }}" = "true" ]; then
+            ./scripts/migrate-amplify-backend.sh "$NEW_BACKEND_URL" --force
+          else
+            ./scripts/migrate-amplify-backend.sh "$NEW_BACKEND_URL"
+          fi
