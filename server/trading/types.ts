@@ -169,6 +169,19 @@ export interface Order {
   feesPaid: number;
   slippageBps: number;
   latencyMs: number;
+  decisionTimestamp?: string;
+  orderSubmitTimestamp?: string;
+  exchangeAckTimestamp?: string;
+  expectedPrice?: number;
+  actualFillPrice?: number;
+  bookStateAtDecision?: OrderBook;
+  bookStateAtFill?: OrderBook;
+  decisionToSubmissionLatencyMs?: number;
+  submissionToAckLatencyMs?: number;
+  ackToFillLatencyMs?: number;
+  executionSlippageBps?: number;
+  adverseSelectionScore?: number;
+  adverseSelectionMidPrices?: { after100ms?: number; after500ms?: number; after1s?: number; after5s?: number };
   placedAt: string;
   filledAt?: string;
   rejectionReason?: string;
@@ -185,6 +198,11 @@ export interface Fill {
   slippageBps: number;
   realizedPnL: number;
   timestamp: string;
+  midPriceAtFill?: number;
+  midPrice100ms?: number;
+  midPrice500ms?: number;
+  midPrice1s?: number;
+  midPrice5s?: number;
 }
 
 export interface Position {
@@ -393,6 +411,11 @@ export interface RiskRuleConfig {
   minOrderBookLiquidityUsd: number;
   minAccountReserveUsd: number;
   autoKillSwitchTriggerDrawdownPct: number;
+  maxGlobalExposureUsd?: number;
+  maxStrategyExposureUsd?: number;
+  maxSymbolExposureUsd?: number;
+  maxCorrelatedExposureUsd?: number;
+  maxPositionExposureUsd?: number;
 }
 
 export interface RiskEvent {
