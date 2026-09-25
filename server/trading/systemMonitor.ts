@@ -14,10 +14,7 @@ export class SystemMonitorSecurity implements EngineModule {
   private auditLogs: AuditLogEntry[] = [];
   private systemUpdates: SystemUpdateRecord[] = [];
 
-  constructor() {
-    this.seedInitialAudits();
-    this.seedInitialUpdates();
-  }
+  constructor() {}
 
   public registerEngine(engine: EngineModule) {
     this.registeredEngines.set(engine.id, engine);
@@ -175,50 +172,4 @@ export class SystemMonitorSecurity implements EngineModule {
     return [...this.systemUpdates];
   }
 
-  private seedInitialAudits() {
-    this.auditLogs = [
-      {
-        id: 'audit-01',
-        timestamp: new Date(Date.now() - 3600000 * 4).toISOString(),
-        category: 'SYSTEM_BOOT',
-        action: 'GigPilot Core Initialized in STRICT LIVE-ONLY mode',
-        details: {
-          simulationAllowed: false,
-          paperTradingAllowed: false,
-          syntheticFallbackAllowed: false,
-          killSwitchDefault: true
-        }
-      },
-      {
-        id: 'audit-02',
-        timestamp: new Date(Date.now() - 3600000 * 2).toISOString(),
-        category: 'RISK_RULE',
-        action: 'Verified Multi-Mirror Ingestion Pipeline',
-        details: {
-          bybitMirrorsCount: 5,
-          bybitDirectActive: true,
-          pricePrecisionFormatted: true
-        }
-      }
-    ];
-  }
-
-  private seedInitialUpdates() {
-    this.systemUpdates = [
-      {
-        version: 'v2.5.0-LIVE-QUANT',
-        releaseDate: new Date().toISOString(),
-        status: 'CURRENT',
-        canaryHealthScore: 99.8,
-        sha256: 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855',
-        notes: 'Enforced zero-synthetic-data rule with strict fail-closed posture across all 10 modular engines',
-        rollbackPoint: 'v2.4.9-stable',
-        changes: [
-          'Enforced zero-synthetic-data rule with strict fail-closed posture across all 10 modular engines',
-          'Introduced dedicated health checks, error surfaces, and individual off-switches for each subsystem',
-          'Exchange execution engine supporting trade-only keys for Bybit Spot V5'
-        ]
-      }
-    ];
-  }
 }
