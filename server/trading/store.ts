@@ -39,6 +39,7 @@ export class TradingStore {
   public monitor: SystemMonitorSecurity;
   public killSwitch: EmergencyKillSwitch;
   private accountedSweepIds = new Set<string>();
+  private reconciliationInProgress = false;
 
   // Runtime State
   public activeSymbol: string = 'BTC/USDT';
@@ -116,6 +117,34 @@ export class TradingStore {
     setInterval(() => {
       this.syncCapitalFromRealExchange().catch(() => {});
     }, 10000);
+
+    // Continuous exchange-state watchdog. Never replace an uncertain order; first
+    // reconcile the live Bybit state. Any failure forces the hard kill switch.
+    setInterval(() => {
+      if (this.reconciliationInProgress || this.GLOBAL_KILL_SWITCH_ACTIVE || this.autonomyLevel < 2) return;
+      this.reconciliationInProgress = true;
+      this.exchangeExec.reconcileLiveOrders().then((result) => {
+        if (result.failClosed) {
+          this.GLOBAL_KILL_SWITCH_ACTIVE = true;
+          this.activeBotsDisabled = true;
+          this.previousAutonomyLevel = this.autonomyLevel;
+          this.autonomyLevel = 0;
+          this.killSwitch.activate('ANOMALY_DETECTOR', 'Live Bybit order reconciliation failed. Trading halted until exchange state is verified.');
+          this.monitor.logAudit({ category: 'SECURITY_ALERT', action: 'AUTONOMOUS_TRADING_HALTED_ON_RECONCILIATION_FAILURE', details: result });
+          return;
+        }
+        this.monitor.logAudit({ category: 'RECONCILIATION', action: 'LIVE_BYBIT_ORDER_STATE_VERIFIED', details: result });
+      }).catch((error) => {
+        this.GLOBAL_KILL_SWITCH_ACTIVE = true;
+        this.activeBotsDisabled = true;
+        this.previousAutonomyLevel = this.autonomyLevel;
+        this.autonomyLevel = 0;
+        this.killSwitch.activate('ANOMALY_DETECTOR', 'Unexpected exchange reconciliation exception. Trading halted fail-closed.');
+        this.monitor.logAudit({ category: 'SECURITY_ALERT', action: 'AUTONOMOUS_TRADING_HALTED_ON_RECONCILIATION_EXCEPTION', details: { error: String(error) } });
+      }).finally(() => {
+        this.reconciliationInProgress = false;
+      });
+    }, 15000);
 
     // Automatic profit withdrawal runs only when explicitly enabled and the destination
     // remains persistently configured/verified. Dispatch is real Bybit withdrawal only;
