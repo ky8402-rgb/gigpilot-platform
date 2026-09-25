@@ -636,11 +636,12 @@ export class BybitAdapter {
   /**
    * Private Signed: Real trade execution history from Bybit
    */
-  public async getRealTrades(symbol = 'BTCUSDT', limit = 50): Promise<Fill[]> {
+  public async getRealTrades(symbol?: string, limit = 50): Promise<Fill[]> {
     if (!this.apiKey || !this.apiSecret) return [];
 
-    const norm = this.normalizeSymbol(symbol);
-    const { headers, queryString } = this.signGet({ category: 'spot', symbol: norm, limit });
+    const query: Record<string, string | number> = { category: 'spot', limit };
+    if (symbol) query.symbol = this.normalizeSymbol(symbol);
+    const { headers, queryString } = this.signGet(query);
     const res = await fetch(`${this.getActiveBaseUrl()}/v5/execution/list?${queryString}`, {
       headers
     });
@@ -657,7 +658,9 @@ export class BybitAdapter {
       price: parseFloat(t.execPrice || '0'),
       amount: parseFloat(t.execQty || '0'),
       feeUsd: parseFloat(t.execFee || '0'),
-      slippageBps: 0,
+      slippageBps: Number.isFinite(Number(t.orderPrice)) && Number(t.orderPrice) > 0
+        ? Math.abs((parseFloat(t.execPrice || '0') - Number(t.orderPrice)) / Number(t.orderPrice)) * 10000
+        : 0,
       realizedPnL: 0,
       timestamp: new Date(Number(t.execTime)).toISOString()
     }));
