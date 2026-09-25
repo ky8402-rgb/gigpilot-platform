@@ -273,20 +273,29 @@ jobs:
           
           for i in 1 2 3 4 5; do
             echo "Health verification attempt $i/5..."
-            STATUS=$(curl -k -s -o /dev/null -w "%{http_code}" "$HEALTH_URL" --max-time 5 || true)
-            if [ "$STATUS" = "200" ]; then
-              echo "✔ EC2 backend HTTPS health check passed (HTTP 200)!"
-              exit 0
+            HEALTH_JSON=$(curl -k -sS "$HEALTH_URL" --max-time 5 || true)
+            if [ -n "$HEALTH_JSON" ]; then
+              HEALTH_STATUS=$(node -e "try { const x=JSON.parse(process.argv[1]); process.stdout.write(x.status || '') } catch { process.stdout.write('') }" "$HEALTH_JSON")
+              RUNNING_COMMIT=$(node -e "try { const x=JSON.parse(process.argv[1]); process.stdout.write(x.deployedCommit || '') } catch { process.stdout.write('') }" "$HEALTH_JSON")
+              if [ "$HEALTH_STATUS" = "ok" ] && [ "$RUNNING_COMMIT" = "$GITHUB_SHA" ]; then
+                echo "✔ EC2 backend is healthy and running the exact GitHub SHA: $RUNNING_COMMIT"
+                exit 0
+              fi
+              echo "Health responded, but exact commit verification failed. status=$HEALTH_STATUS runningCommit=$RUNNING_COMMIT expected=$GITHUB_SHA"
             fi
-            
-            FALLBACK_STATUS=$(curl -s -o /dev/null -w "%{http_code}" "$FALLBACK_URL" --max-time 5 || true)
-            if [ "$FALLBACK_STATUS" = "200" ]; then
-              echo "✔ EC2 backend HTTP:3000 health check passed (HTTP 200)!"
-              exit 0
+
+            FALLBACK_JSON=$(curl -sS "$FALLBACK_URL" --max-time 5 || true)
+            if [ -n "$FALLBACK_JSON" ]; then
+              HEALTH_STATUS=$(node -e "try { const x=JSON.parse(process.argv[1]); process.stdout.write(x.status || '') } catch { process.stdout.write('') }" "$FALLBACK_JSON")
+              RUNNING_COMMIT=$(node -e "try { const x=JSON.parse(process.argv[1]); process.stdout.write(x.deployedCommit || '') } catch { process.stdout.write('') }" "$FALLBACK_JSON")
+              if [ "$HEALTH_STATUS" = "ok" ] && [ "$RUNNING_COMMIT" = "$GITHUB_SHA" ]; then
+                echo "✔ EC2 backend HTTP:3000 is healthy and running the exact GitHub SHA: $RUNNING_COMMIT"
+                exit 0
+              fi
             fi
             sleep 3
           done
-          echo "ERROR: EC2 backend health verification failed after deployment delivery."
+          echo "ERROR: EC2 backend health/commit verification failed after deployment delivery."
           exit 1
 
       - name: Report EC2 Status to Step Summary
