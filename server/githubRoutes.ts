@@ -19,6 +19,7 @@ import {
   pushAndDeployAll,
 } from './githubService.js';
 import { logActivityEvent, getActivityLogs } from './activityLogger.js';
+import { requireOwnerAuth } from './trading/ownerAuth.js';
 
 export const githubRoutes = express.Router();
 
@@ -51,7 +52,7 @@ githubRoutes.get('/status', async (req, res) => {
  * POST /api/github/generate-ssh
  * Generates a new SSH key pair (Ed25519 or RSA)
  */
-githubRoutes.post('/generate-ssh', async (req, res) => {
+githubRoutes.post('/generate-ssh', requireOwnerAuth, async (req, res) => {
   try {
     const { keyType = 'ed25519', comment = 'ky8402@gmail.com' } = req.body || {};
     const validKeyType = keyType === 'rsa' ? 'rsa' : 'ed25519';
@@ -77,7 +78,7 @@ githubRoutes.post('/generate-ssh', async (req, res) => {
  * POST /api/github/save-ssh
  * Saves user-provided private and public SSH key
  */
-githubRoutes.post('/save-ssh', async (req, res) => {
+githubRoutes.post('/save-ssh', requireOwnerAuth, async (req, res) => {
   try {
     const { privateKey, publicKey, keyType = 'ed25519', comment = 'ky8402@gmail.com' } = req.body || {};
 
@@ -109,7 +110,7 @@ githubRoutes.post('/save-ssh', async (req, res) => {
  * DELETE /api/github/delete-ssh
  * Deletes configured SSH key
  */
-githubRoutes.delete('/delete-ssh', async (req, res) => {
+githubRoutes.delete('/delete-ssh', requireOwnerAuth, async (req, res) => {
   try {
     const result = deleteSSHKey();
     const repoStatus = await getGitRepoStatus();
@@ -131,7 +132,7 @@ githubRoutes.delete('/delete-ssh', async (req, res) => {
  * POST /api/github/configure-remote
  * Updates Git remote origin URL and user info
  */
-githubRoutes.post('/configure-remote', async (req, res) => {
+githubRoutes.post('/configure-remote', requireOwnerAuth, async (req, res) => {
   try {
     const { remoteUrl, userName, userEmail } = req.body || {};
 
@@ -161,7 +162,7 @@ githubRoutes.post('/configure-remote', async (req, res) => {
  * POST /api/github/test-connection
  * Runs live SSH authentication check with GitHub
  */
-githubRoutes.post('/test-connection', async (req, res) => {
+githubRoutes.post('/test-connection', requireOwnerAuth, async (req, res) => {
   try {
     const result = await testSSHConnection();
     return res.json({
@@ -180,7 +181,7 @@ githubRoutes.post('/test-connection', async (req, res) => {
  * POST /api/github/git-op
  * Executes git fetch, pull, push, or status with SSH authentication
  */
-githubRoutes.post('/git-op', async (req, res) => {
+githubRoutes.post('/git-op', requireOwnerAuth, async (req, res) => {
   try {
     const { operation = 'status', branch = 'main', remote = 'origin' } = req.body || {};
 
@@ -424,7 +425,7 @@ githubRoutes.post('/simulate-webhook', async (req, res) => {
     } = req.body || {};
 
     const deliveryId = `del-sim-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`;
-    const secret = (process.env.GITHUB_WEBHOOK_SECRET || process.env.WEBHOOK_SECRET || 'kundanvision_secret').trim();
+    const secret = (process.env.GITHUB_WEBHOOK_SECRET || process.env.WEBHOOK_SECRET || 'gigpilot_prod_webhook_secret_2026').trim();
 
     const payload = {
       ref: `refs/heads/${branch}`,
@@ -592,7 +593,7 @@ githubRoutes.get('/deployments', (req, res) => {
  * POST /api/github/trigger-deploy
  * Manually initiates push-to-deploy without waiting for GitHub push event
  */
-githubRoutes.post('/trigger-deploy', async (req, res) => {
+githubRoutes.post('/trigger-deploy', requireOwnerAuth, async (req, res) => {
   try {
     const { branch = 'master' } = req.body || {};
     const deployment = await executePushToDeploy({
@@ -638,7 +639,7 @@ githubRoutes.get('/auth-status', async (req, res) => {
  * POST /api/github/save-token
  * Validates and saves a GitHub Personal Access Token
  */
-githubRoutes.post('/save-token', async (req, res) => {
+githubRoutes.post('/save-token', requireOwnerAuth, async (req, res) => {
   try {
     const { token } = req.body || {};
     if (!token || typeof token !== 'string' || !token.trim()) {
@@ -670,7 +671,7 @@ githubRoutes.post('/save-token', async (req, res) => {
  * DELETE /api/github/delete-token
  * Removes stored GitHub Personal Access Token
  */
-githubRoutes.delete('/delete-token', async (req, res) => {
+githubRoutes.delete('/delete-token', requireOwnerAuth, async (req, res) => {
   try {
     const result = deleteGitHubToken();
     const authStatus = await getGitHubAuthStatus();
@@ -693,7 +694,7 @@ githubRoutes.delete('/delete-token', async (req, res) => {
  * Unified Push-to-Deploy: stages & commits pending work, pushes to GitHub,
  * and triggers automated deployments on AWS Amplify and AWS EC2!
  */
-githubRoutes.post('/push-and-deploy', async (req, res) => {
+githubRoutes.post('/push-and-deploy', requireOwnerAuth, async (req, res) => {
   try {
     const {
       commitMessage,

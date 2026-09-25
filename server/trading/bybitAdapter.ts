@@ -42,6 +42,7 @@ export interface BybitAccountState {
   accountType: string;
   apiKeyConfigured: boolean;
   keyMask: string;
+  isTestnet?: boolean;
 }
 
 const BYBIT_CONFIG_FILE = path.join(process.cwd(), '.bybit-quant-keys.json');
@@ -50,6 +51,8 @@ export class BybitAdapter {
   private apiKey: string = '';
   private apiSecret: string = '';
   private baseUrl: string = 'https://api.bybit.com';
+  private testnetBaseUrl: string = 'https://api-testnet.bybit.com';
+  private isTestnet: boolean = false;
   private serverIp: string = process.env.EC2_HOST && !process.env.EC2_HOST.startsWith('i-') && process.env.EC2_HOST !== '3.222.149.9' && process.env.EC2_HOST !== '65.0.73.85'
     ? process.env.EC2_HOST
     : '35.154.110.156';
@@ -70,19 +73,28 @@ export class BybitAdapter {
 
     this.apiKey = savedKeys.apiKey || process.env.BYBIT_API_KEY || '';
     this.apiSecret = savedKeys.apiSecret || process.env.BYBIT_API_SECRET || '';
+    this.isTestnet = Boolean(savedKeys.isTestnet ?? (process.env.BYBIT_TESTNET === 'true'));
     if (savedKeys.baseUrl) {
-      this.baseUrl = 'https://api.bybit.com';
+      this.baseUrl = savedKeys.baseUrl;
+    } else if (this.isTestnet) {
+      this.baseUrl = this.testnetBaseUrl;
     }
 
     this.syncServerTime().catch(() => {});
   }
 
   public getActiveBaseUrl(): string {
-    return this.baseUrl;
+    return this.isTestnet ? this.testnetBaseUrl : this.baseUrl;
   }
 
   public getIsTestnet(): boolean {
-    return false;
+    return this.isTestnet;
+  }
+
+  public setTestnet(testnet: boolean): void {
+    this.isTestnet = testnet;
+    this.baseUrl = testnet ? this.testnetBaseUrl : 'https://api.bybit.com';
+    this.saveConfig();
   }
 
   public async syncServerTime(): Promise<number> {
@@ -103,13 +115,16 @@ export class BybitAdapter {
     return Date.now() + this.timeOffset;
   }
 
-  public updateCredentials(apiKey: string, apiSecret: string, baseUrl?: string): void {
+  public updateCredentials(apiKey: string, apiSecret: string, baseUrl?: string, isTestnet?: boolean): void {
     this.apiKey = apiKey.trim();
     this.apiSecret = apiSecret.trim();
+    if (typeof isTestnet === 'boolean') {
+      this.isTestnet = isTestnet;
+    }
     if (baseUrl) {
       this.baseUrl = baseUrl.trim();
     } else {
-      this.baseUrl = 'https://api.bybit.com';
+      this.baseUrl = this.isTestnet ? this.testnetBaseUrl : 'https://api.bybit.com';
     }
     this.saveConfig();
     this.lastAccountState = null;
@@ -126,6 +141,7 @@ export class BybitAdapter {
             apiKey: this.apiKey,
             apiSecret: this.apiSecret,
             baseUrl: this.baseUrl,
+            isTestnet: this.isTestnet,
             updatedAt: new Date().toISOString()
           },
           null,
@@ -410,7 +426,8 @@ export class BybitAdapter {
         canDeposit: false,
         accountType: 'SPOT / UTA',
         apiKeyConfigured: false,
-        keyMask: 'NOT_CONFIGURED'
+        keyMask: 'NOT_CONFIGURED',
+        isTestnet: this.isTestnet
       };
     }
 
@@ -462,7 +479,8 @@ export class BybitAdapter {
           canDeposit: false,
           accountType: queryType,
           apiKeyConfigured: true,
-          keyMask: this.getKeyMask()
+          keyMask: this.getKeyMask(),
+          isTestnet: this.isTestnet
         };
       }
 
@@ -538,7 +556,7 @@ export class BybitAdapter {
 
       const state: BybitAccountState = {
         status: 'CONNECTED',
-        message: `Connected to Bybit Live Spot/UTA. Real-time balances synchronized.`,
+        message: `Connected to Bybit ${this.isTestnet ? 'Testnet' : 'Live Spot/UTA'}. Real-time balances synchronized.`,
         serverIp: this.serverIp,
         timestamp: new Date().toISOString(),
         totalEquityUsd: Number(totalEquityUsd.toFixed(2)),
@@ -556,7 +574,8 @@ export class BybitAdapter {
         canDeposit: true,
         accountType: queryType,
         apiKeyConfigured: true,
-        keyMask: this.getKeyMask()
+        keyMask: this.getKeyMask(),
+        isTestnet: this.isTestnet
       };
 
       this.lastAccountState = state;
@@ -583,7 +602,8 @@ export class BybitAdapter {
         canDeposit: false,
         accountType: 'SPOT / UTA',
         apiKeyConfigured: true,
-        keyMask: this.getKeyMask()
+        keyMask: this.getKeyMask(),
+        isTestnet: this.isTestnet
       };
     }
   }
@@ -636,12 +656,11 @@ export class BybitAdapter {
   /**
    * Private Signed: Real trade execution history from Bybit
    */
-  public async getRealTrades(symbol?: string, limit = 50): Promise<Fill[]> {
+  public async getRealTrades(symbol = 'BTCUSDT', limit = 50): Promise<Fill[]> {
     if (!this.apiKey || !this.apiSecret) return [];
 
-    const query: Record<string, string | number> = { category: 'spot', limit };
-    if (symbol) query.symbol = this.normalizeSymbol(symbol);
-    const { headers, queryString } = this.signGet(query);
+    const norm = this.normalizeSymbol(symbol);
+    const { headers, queryString } = this.signGet({ category: 'spot', symbol: norm, limit });
     const res = await fetch(`${this.getActiveBaseUrl()}/v5/execution/list?${queryString}`, {
       headers
     });
@@ -658,9 +677,7 @@ export class BybitAdapter {
       price: parseFloat(t.execPrice || '0'),
       amount: parseFloat(t.execQty || '0'),
       feeUsd: parseFloat(t.execFee || '0'),
-      slippageBps: Number.isFinite(Number(t.orderPrice)) && Number(t.orderPrice) > 0
-        ? Math.abs((parseFloat(t.execPrice || '0') - Number(t.orderPrice)) / Number(t.orderPrice)) * 10000
-        : 0,
+      slippageBps: 0,
       realizedPnL: 0,
       timestamp: new Date(Number(t.execTime)).toISOString()
     }));
@@ -755,215 +772,6 @@ export class BybitAdapter {
       };
     } catch (e: any) {
       return { success: false, error: `Bybit Order Dispatch Failed: ${e.message}` };
-    }
-  }
-
-  /**
-   * Private Signed: Verify that a destination is an active Bybit withdrawal address.
-   * The withdrawal API requires the exact address-book value and a whitelisted/verified address.
-   */
-  public async verifyWithdrawalAddress(params: {
-    coin: string;
-    chain: string;
-    address: string;
-  }): Promise<{ verified: boolean; error?: string }> {
-    if (!this.apiKey || !this.apiSecret) {
-      return { verified: false, error: 'Bybit API credentials missing.' };
-    }
-
-    const coin = params.coin.trim().toUpperCase();
-    const chain = params.chain.trim();
-    const address = params.address.trim();
-    if (!coin || !chain || !address) {
-      return { verified: false, error: 'Withdrawal coin, chain, and destination address are required.' };
-    }
-
-    try {
-      const { headers, queryString } = this.signGet({
-        coin,
-        chain,
-        addressType: 0,
-        limit: 50
-      });
-      const res = await fetch(`${this.getActiveBaseUrl()}/v5/asset/withdraw/query-address?${queryString}`, { headers });
-      const json = (await res.json()) as any;
-      if (!res.ok || json.retCode !== 0) {
-        return {
-          verified: false,
-          error: formatBybitError(json?.retCode, json?.retMsg || `HTTP ${res.status}`)
-        };
-      }
-
-      const rows = Array.isArray(json?.result?.rows) ? json.result.rows : [];
-      const match = rows.find((row: any) =>
-        String(row?.address || '') === address &&
-        String(row?.chain || '').toUpperCase() === chain.toUpperCase() &&
-        Number(row?.status) === 0 &&
-        Number(row?.verified) === 1
-      );
-
-      return match
-        ? { verified: true }
-        : { verified: false, error: 'Destination address is not an active verified Bybit withdrawal-address-book entry.' };
-    } catch (e: any) {
-      return { verified: false, error: `Bybit withdrawal-address verification failed: ${e.message}` };
-    }
-  }
-
-  /**
-   * Private Signed: Query the amount Bybit currently allows to be withdrawn.
-   */
-  public async getWithdrawableAmount(coin: string): Promise<{ amount: number; error?: string }> {
-    if (!this.apiKey || !this.apiSecret) {
-      return { amount: 0, error: 'Bybit API credentials missing.' };
-    }
-
-    const normalizedCoin = coin.trim().toUpperCase();
-    try {
-      const { headers, queryString } = this.signGet({ coin: normalizedCoin });
-      const res = await fetch(`${this.getActiveBaseUrl()}/v5/asset/withdraw/withdrawable-amount?${queryString}`, { headers });
-      const json = (await res.json()) as any;
-      if (!res.ok || json.retCode !== 0) {
-        return {
-          amount: 0,
-          error: formatBybitError(json?.retCode, json?.retMsg || `HTTP ${res.status}`)
-        };
-      }
-
-      const result = json?.result?.withdrawableAmount || {};
-      const candidates = [result.FUND, result.UTA, result.SPOT, result.EARN];
-      const amounts = candidates
-        .map((item: any) => Number(item?.withdrawableAmount || 0))
-        .filter((value: number) => Number.isFinite(value) && value > 0);
-
-      return { amount: amounts.length ? Math.max(...amounts) : 0 };
-    } catch (e: any) {
-      return { amount: 0, error: `Bybit withdrawable-balance query failed: ${e.message}` };
-    }
-  }
-
-  /**
-   * Private Signed: Submit a real Bybit V5 withdrawal.
-   * This method never fabricates a transaction hash or confirmation.
-   */
-  public async createWithdrawal(params: {
-    coin: string;
-    chain: string;
-    address: string;
-    amount: number;
-    tag?: string;
-    accountType?: 'FUND' | 'UTA' | 'EARN' | 'FUND,UTA,EARN';
-    forceChain?: 0 | 1;
-    requestId?: string;
-  }): Promise<{ success: boolean; withdrawalId?: string; error?: string; raw?: any }> {
-    if (!this.apiKey || !this.apiSecret) {
-      return { success: false, error: 'Bybit API credentials missing.' };
-    }
-
-    const coin = params.coin.trim().toUpperCase();
-    const chain = params.chain.trim();
-    const address = params.address.trim();
-    const amount = Number(params.amount);
-    if (!coin || !chain || !address || !Number.isFinite(amount) || amount <= 0) {
-      return { success: false, error: 'Valid withdrawal coin, chain, address, and positive amount are required.' };
-    }
-
-    const addressCheck = await this.verifyWithdrawalAddress({ coin, chain, address });
-    if (!addressCheck.verified) {
-      return { success: false, error: addressCheck.error || 'Withdrawal destination is not verified.' };
-    }
-
-    const withdrawable = await this.getWithdrawableAmount(coin);
-    if (withdrawable.error) {
-      return { success: false, error: withdrawable.error };
-    }
-    if (amount > withdrawable.amount) {
-      return {
-        success: false,
-        error: `Requested ${amount} ${coin} exceeds Bybit withdrawable amount ${withdrawable.amount} ${coin}.`
-      };
-    }
-
-    const payload: Record<string, any> = {
-      coin,
-      chain,
-      address,
-      amount: String(amount),
-      timestamp: this.getSyncedTimestamp(),
-      forceChain: params.forceChain ?? 1,
-      accountType: params.accountType || 'UTA'
-    };
-    if (params.tag) payload.tag = params.tag;
-    if (params.requestId) payload.requestId = params.requestId;
-
-    try {
-      const { headers, bodyStr } = this.signPost(payload);
-      const res = await fetch(`${this.getActiveBaseUrl()}/v5/asset/withdraw/create`, {
-        method: 'POST',
-        headers,
-        body: bodyStr
-      });
-      const json = (await res.json()) as any;
-      if (!res.ok || json.retCode !== 0) {
-        return {
-          success: false,
-          error: formatBybitError(json?.retCode, json?.retMsg || `HTTP ${res.status}`),
-          raw: json
-        };
-      }
-
-      const withdrawalId = String(json?.result?.id || '');
-      if (!withdrawalId) {
-        return { success: false, error: 'Bybit accepted the request without returning a withdrawal ID; treating dispatch as unconfirmed.' };
-      }
-
-      return { success: true, withdrawalId, raw: json.result };
-    } catch (e: any) {
-      return { success: false, error: `Bybit withdrawal dispatch failed: ${e.message}` };
-    }
-  }
-
-  /**
-   * Private Signed: Query a specific Bybit withdrawal record after dispatch.
-   */
-  public async getWithdrawalRecord(withdrawalId: string): Promise<{
-    found: boolean;
-    status?: string;
-    txId?: string;
-    amount?: number;
-    fee?: number;
-    error?: string;
-  }> {
-    if (!this.apiKey || !this.apiSecret) {
-      return { found: false, error: 'Bybit API credentials missing.' };
-    }
-
-    try {
-      const { headers, queryString } = this.signGet({
-        withdrawID: withdrawalId,
-        limit: 50
-      });
-      const res = await fetch(`${this.getActiveBaseUrl()}/v5/asset/withdraw/query-record?${queryString}`, { headers });
-      const json = (await res.json()) as any;
-      if (!res.ok || json.retCode !== 0) {
-        return {
-          found: false,
-          error: formatBybitError(json?.retCode, json?.retMsg || `HTTP ${res.status}`)
-        };
-      }
-
-      const row = json?.result?.rows?.[0];
-      if (!row) return { found: false };
-
-      return {
-        found: true,
-        status: String(row.status || ''),
-        txId: row.txID ? String(row.txID) : undefined,
-        amount: Number(row.amount || 0),
-        fee: Number(row.withdrawFee || 0)
-      };
-    } catch (e: any) {
-      return { found: false, error: `Bybit withdrawal-record query failed: ${e.message}` };
     }
   }
 

@@ -35,8 +35,8 @@ IP_DASH=$(echo "$PUBLIC_IP" | tr '.' '-')
 DOMAIN="${2:-${IP_DASH}.sslip.io}"
 FRONTEND_URL="https://main.d2qe2q720fbn3x.amplifyapp.com"
 
-# Neon PostgreSQL Database Connection String
-NEON_DATABASE_URL="postgresql://neondb_owner:npg_L6xTbr0PsJuG@ep-green-bread-ae4bhk9u-pooler.c-2.us-east-2.aws.neon.tech/neondb?sslmode=require&channel_binding=require"
+# Neon PostgreSQL Database Connection String (Read from environment or AWS Secrets Manager)
+NEON_DATABASE_URL="${DATABASE_URL:-${NEON_DATABASE_URL:-}}"
 
 echo -e "${CYAN}${BOLD}"
 echo "=============================================================================="
@@ -47,7 +47,7 @@ echo -e "  • Target Host:       ${BOLD}${PUBLIC_IP}${NC}"
 echo -e "  • SSL Domain:        ${BOLD}${DOMAIN}${NC}"
 echo -e "  • Frontend URL:      ${BOLD}${FRONTEND_URL}${NC}"
 echo -e "  • Installation Dir:  ${BOLD}${APP_DIR}${NC}"
-echo -e "  • Database:          ${BOLD}Neon PostgreSQL (ep-green-bread-ae4bhk9u-pooler)${NC}"
+echo -e "  • Database:          ${BOLD}PostgreSQL Pooler (configured via environment)${NC}"
 echo -e "  • Timestamp:         $(date -u '+%Y-%m-%d %H:%M:%S UTC')"
 echo -e "------------------------------------------------------------------------------\n"
 
@@ -195,22 +195,22 @@ CORS_ALLOWED_ORIGINS="${FRONTEND_URL},https://*.amplifyapp.com,http://localhost:
 DATABASE_URL="${NEON_DATABASE_URL}"
 
 # Redis / Render / ElastiCache Connection
-REDIS_URL=redis://red-daarifid0e5s7392b3k0:6379
+REDIS_URL="${REDIS_URL:-redis://127.0.0.1:6379}"
 
 # PayPal Payment Gateway & Virtual Terminal (Sandbox / Production Mode)
-PAYPAL_CLIENT_ID=BAAv8rRenc5jlfD6eH_8pvgcU250jXTZCnyPKdBby13EAYRKhCempoPQ3Hj41GEfe2qBMu1P8ZslnbdkIc
-PAYPAL_CLIENT_SECRET=EH8CcxBIVPvFhoAKbL-HN8l_jSdOYzlGA2oahgGs1wPV7bogYK_TE4hIOjPtzOVj-mOUUXVy8uMIt6-N
-PAYPAL_MODE=sandbox
-PAYPAL_RECEIVER_EMAIL=kundank4@icloud.com
-PAYPAL_ME_USERNAME=ky8402
+PAYPAL_CLIENT_ID="${PAYPAL_CLIENT_ID:-}"
+PAYPAL_CLIENT_SECRET="${PAYPAL_CLIENT_SECRET:-}"
+PAYPAL_MODE="${PAYPAL_MODE:-sandbox}"
+PAYPAL_RECEIVER_EMAIL="${PAYPAL_RECEIVER_EMAIL:-ky8402@gmail.com}"
+PAYPAL_ME_USERNAME="${PAYPAL_ME_USERNAME:-ky8402}"
 
 # Self-Healing, Python ML Microservice & Telemetry
-ML_SERVICE_URL=http://127.0.0.1:8000
-ML_ENABLED=true
-AUTO_HEAL_ENABLED=true
+ML_SERVICE_URL="${ML_SERVICE_URL:-http://127.0.0.1:8000}"
+ML_ENABLED="${ML_ENABLED:-true}"
+AUTO_HEAL_ENABLED="${AUTO_HEAL_ENABLED:-true}"
 
 # GitHub Automated Push-to-Deploy Webhook Secret
-GITHUB_WEBHOOK_SECRET=gigpilot_prod_webhook_secret_2026
+GITHUB_WEBHOOK_SECRET="${GITHUB_WEBHOOK_SECRET:-gigpilot_prod_webhook_secret_2026}"
 EOF
 
 chmod 600 "${APP_DIR}/.env"

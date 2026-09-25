@@ -7,7 +7,8 @@ import {
   TrendingUp,
   Shield,
   Layers,
-  CheckCircle2
+  CheckCircle2,
+  Scale
 } from 'lucide-react';
 
 interface AdaptiveGridConfiguratorProps {
@@ -132,7 +133,7 @@ export const AdaptiveGridConfigurator: React.FC<AdaptiveGridConfiguratorProps> =
 
       <form onSubmit={handleSubmit} className="space-y-5 font-mono text-xs">
         {/* Regime Context Banner */}
-        <div className="bg-slate-950/80 border border-slate-800/80 rounded-lg p-3 flex items-center justify-between text-xs">
+        <div className="bg-slate-950/80 border border-slate-800/80 rounded-lg p-3 flex flex-wrap items-center justify-between gap-2 text-xs">
           <div className="flex items-center gap-3">
             <span className="text-slate-400">Current Price:</span>
             <span className="text-white font-extrabold text-sm">${currentPrice.toLocaleString()}</span>
@@ -140,10 +141,69 @@ export const AdaptiveGridConfigurator: React.FC<AdaptiveGridConfiguratorProps> =
             <span className="text-slate-400">Regime:</span>
             <span className="text-cyan-300 font-bold">{regime.regime.replace(/_/g, ' ')}</span>
           </div>
-          <div className="text-slate-400 hidden sm:block">
-            ATR: <strong className="text-white">${regime.atr.toFixed(2)}</strong> (ADX: {regime.adx.toFixed(1)})
+          <div className="text-slate-400 flex items-center gap-3">
+            <span>ATR: <strong className="text-white">${regime.atr.toFixed(2)}</strong> (ADX: {regime.adx.toFixed(1)})</span>
+            {regime.transition?.isTransitioning && (
+              <span className="px-2 py-0.5 rounded bg-amber-500/20 text-amber-300 border border-amber-500/40 font-mono font-bold text-[10px]">
+                TRANSITION: {regime.transition.phase}
+              </span>
+            )}
           </div>
         </div>
+
+        {/* Transition Safeguards Banner if in transition */}
+        {regime.transition?.isTransitioning && (
+          <div className="bg-amber-950/40 border border-amber-500/40 rounded-lg p-3 text-xs text-amber-200 flex items-start gap-2.5">
+            <span className="w-2 h-2 rounded-full bg-amber-400 animate-ping mt-1 shrink-0" />
+            <div>
+              <div className="font-bold text-amber-300 font-mono">
+                Regime Transition Safeguards Active [{regime.transition.gridRestrictionStatus}]
+              </div>
+              <div className="text-[11px] text-slate-300 mt-0.5">
+                {regime.transition.restrictionReason} Capital sizing scaled to <strong>{Math.round(regime.transition.positionSizeMultiplier * 100)}%</strong> to mitigate trend breakout inventory risk.
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Inventory Awareness Status & Asymmetric Allocation */}
+        {activeGrid?.inventoryAwareness && (
+          <div className={`border rounded-lg p-3 text-xs flex items-start gap-2.5 ${
+            activeGrid.inventoryAwareness.inventorySkew > 0.2
+              ? 'bg-amber-950/30 border-amber-500/40 text-amber-200'
+              : activeGrid.inventoryAwareness.inventorySkew < -0.2
+              ? 'bg-blue-950/30 border-blue-500/40 text-blue-200'
+              : 'bg-indigo-950/30 border-indigo-500/40 text-indigo-200'
+          }`}>
+            <Scale className="w-4 h-4 text-indigo-400 shrink-0 mt-0.5" />
+            <div className="w-full">
+              <div className="flex items-center justify-between font-mono font-bold">
+                <span>Inventory-Aware Quoting: {activeGrid.inventoryAwareness.inventoryPosturing.replace('_', ' ')} (Skew: {activeGrid.inventoryAwareness.inventorySkew >= 0 ? `+${activeGrid.inventoryAwareness.inventorySkew}` : activeGrid.inventoryAwareness.inventorySkew})</span>
+                <span className="text-[10px] px-2 py-0.5 rounded bg-slate-900 border border-slate-700 text-slate-300">
+                  Liq Buffer: {activeGrid.inventoryAwareness.distanceFromLiquidationPct}% ({activeGrid.inventoryAwareness.liquidationRiskTier})
+                </span>
+              </div>
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 mt-2 pt-2 border-t border-slate-800 text-[11px] font-mono">
+                <div>
+                  <span className="text-slate-400 block">BUY Budget:</span>
+                  <span className="font-bold text-emerald-400">{Math.round(activeGrid.inventoryAwareness.asymmetricBudgeting.buyAllocationPct * 100)}% (${activeGrid.inventoryAwareness.asymmetricBudgeting.buyBudgetUsd})</span>
+                </div>
+                <div>
+                  <span className="text-slate-400 block">SELL Budget:</span>
+                  <span className="font-bold text-rose-400">{Math.round(activeGrid.inventoryAwareness.asymmetricBudgeting.sellAllocationPct * 100)}% (${activeGrid.inventoryAwareness.asymmetricBudgeting.sellBudgetUsd})</span>
+                </div>
+                <div>
+                  <span className="text-slate-400 block">BUY Size Mult:</span>
+                  <span className="font-bold text-white">{activeGrid.inventoryAwareness.asymmetricOrderSizing.buyOrderSizeMultiplier}x</span>
+                </div>
+                <div>
+                  <span className="text-slate-400 block">Req BUY Hurdle:</span>
+                  <span className="font-bold text-yellow-400">{activeGrid.inventoryAwareness.asymmetricEdgeHurdles.requiredBuyEdgeHurdleBps} bps</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* Boundary Parameters Grid */}
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">

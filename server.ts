@@ -9,7 +9,7 @@ import { tradingRouter } from "./server/trading/routes.js";
 import { githubRoutes } from "./server/githubRoutes.js";
 import { pushAndDeployAll } from "./server/githubService.js";
 import { globalTradingStore } from "./server/trading/store.js";
-import { ownerAuth } from "./server/trading/ownerAuth.js";
+import { requireOwnerAuth } from "./server/trading/ownerAuth.js";
 
 const app = express();
 const PORT = 3000;
@@ -20,13 +20,46 @@ app.use(express.json({ limit: "10mb" }));
 app.use(express.urlencoded({ extended: true, limit: "10mb" }));
 app.use(cookieParser());
 
-// Permissive CORS for Multi-Cloud & Local Testing
+// Strict CORS Origin Validation (Protects against reflected origin CSRF)
+function isAllowedOrigin(origin: string | undefined): boolean {
+  if (!origin) return true; // Direct server-to-server, curl, CLI
+  try {
+    const url = new URL(origin);
+    const host = url.hostname;
+    // Allow local development ports
+    if (host === 'localhost' || host === '127.0.0.1' || host === '::1') return true;
+    // Allow AWS Amplify production and branch domains
+    if (host.endsWith('.amplifyapp.com')) return true;
+    // Allow Google Cloud Run and Google preview domains
+    if (host.endsWith('.run.app') || host.endsWith('.googleusercontent.com')) return true;
+    // Allow dynamic EC2 IP DNS domains
+    if (host.endsWith('.sslip.io')) return true;
+
+    // Check optional custom environment list
+    const customList = (process.env.CORS_ALLOWED_ORIGINS || '').split(',').map(s => s.trim().toLowerCase());
+    if (customList.includes(origin.toLowerCase()) || customList.includes(host.toLowerCase())) return true;
+
+    return false;
+  } catch {
+    return false;
+  }
+}
+
 app.use((req, res, next) => {
   const origin = req.headers.origin;
-  res.header("Access-Control-Allow-Origin", origin || "*");
-  res.header("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS, PATCH");
-  res.header("Access-Control-Allow-Headers", "Origin, X-Requested-With, Content-Type, Accept, Authorization, X-GitHub-Event, X-GitHub-Delivery, X-Hub-Signature-256");
-  res.header("Access-Control-Allow-Credentials", "true");
+  if (isAllowedOrigin(origin)) {
+    if (origin) {
+      res.header("Access-Control-Allow-Origin", origin);
+      res.header("Access-Control-Allow-Credentials", "true");
+    } else {
+      res.header("Access-Control-Allow-Origin", "*");
+    }
+    res.header("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS, PATCH");
+    res.header("Access-Control-Allow-Headers", "Origin, X-Requested-With, Content-Type, Accept, Authorization, X-GitHub-Event, X-GitHub-Delivery, X-Hub-Signature-256, X-Owner-Token");
+  } else {
+    // Untrusted cross-origin request: disallow credentials and set null origin
+    res.header("Access-Control-Allow-Origin", "null");
+  }
 
   if (req.method === "OPTIONS") {
     return res.sendStatus(200);
@@ -35,31 +68,6 @@ app.use((req, res, next) => {
 });
 
 // -------------------- CORE API ROUTES --------------------
-// -------------------- OWNER AUTHORIZATION BOUNDARY --------------------
-// All state-changing/trading/GitOps management APIs require the persistent owner token.
-// Public exceptions are limited to health, authentication bootstrap/login, and the signed GitHub webhook.
-function hasOwnerToken(req: express.Request): boolean {
-  const auth = req.headers.authorization;
-  const token = auth?.startsWith("Bearer ") ? auth.slice(7) : (req.headers["x-owner-token"] as string | undefined);
-  return Boolean(token && ownerAuth.verifyToken(token));
-}
-
-app.use("/api/trading", (req, res, next) => {
-  if (hasOwnerToken(req)) return next();
-  return res.status(401).json({ success: false, error: "Owner authentication required." });
-});
-
-app.use("/api/deploy", (req, res, next) => {
-  if (hasOwnerToken(req)) return next();
-  return res.status(401).json({ success: false, error: "Owner authentication required." });
-});
-
-app.use("/api/github", (req, res, next) => {
-  if (req.method === "POST" && req.path === "/webhook") return next();
-  if (hasOwnerToken(req)) return next();
-  return res.status(401).json({ success: false, error: "Owner authentication required." });
-});
-
 
 // 1. Healthcheck Endpoint (for AWS EC2, Amplify, Load Balancer, and Health Monitors)
 app.get("/api/health", (req, res) => {
@@ -100,7 +108,7 @@ app.use("/auth", tradingRouter);
 app.use("/api/github", githubRoutes);
 
 // 4. On-Demand Deployment Trigger Endpoint
-app.post("/api/deploy", async (req, res) => {
+app.post("/api/deploy", requireOwnerAuth, async (req, res) => {
   try {
     const { commitMessage, branch, skipAmplify, skipEc2 } = req.body || {};
     const result = await pushAndDeployAll({
@@ -116,8 +124,8 @@ app.post("/api/deploy", async (req, res) => {
   }
 });
 
-// 5. Automated EC2 Provisioning Script Distribution Endpoint
-app.get(["/setup-ec2.sh", "/scripts/setup-ec2.sh"], (req, res) => {
+// 5. Automated EC2 Provisioning Script Distribution Endpoint (Secured: Owner Auth Required)
+app.get(["/setup-ec2.sh", "/scripts/setup-ec2.sh"], requireOwnerAuth, (req, res) => {
   const rootDir = process.cwd();
   const candidates = [
     path.join(rootDir, "public", "setup-ec2.sh"),

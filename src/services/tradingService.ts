@@ -407,7 +407,7 @@ export async function createStrategyVariant(params: {
   });
 }
 
-export async function validateUserScript(code: string) {
+export async function executeUserScript(code: string) {
   return await fetchWithFailover<{
     success: boolean;
     result: {
@@ -417,7 +417,7 @@ export async function validateUserScript(code: string) {
       executionTimeMs: number;
       error?: string;
     };
-  }>('/script/validate', {
+  }>('/script/execute', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ code })
@@ -438,31 +438,34 @@ export async function analyzeResearchIntelligence(title: string, content: string
   });
 }
 
-export async function fetchProfitSweepInfo(): Promise<any> {
-  return await fetchWithFailover('/sweep/info');
+export async function fetchProfitSweepInfo(): Promise<{
+  destinationWallet: DestinationWallet;
+  minSweepThresholdUsd: number;
+  profitReserveBufferUsd: number;
+  eligibility: {
+    eligibleAmount: number;
+    canSweep: boolean;
+    reserveRetained: number;
+    reason?: string;
+  };
+  history: ProfitSweep[];
+}> {
+  return await fetchWithFailover('/profit-sweep');
 }
 
-export async function updateDestinationWallet(wallet: { address: string; chain: string; label?: string; asset?: string }) {
-  return await fetchWithFailover<{ success: boolean; error?: string; wallet?: DestinationWallet }>('/sweep/wallet', {
+export async function updateDestinationWallet(wallet: { address: string; chain: string; label?: string }) {
+  return await fetchWithFailover<{ success: boolean; wallet: DestinationWallet }>('/profit-sweep/wallet', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(wallet)
   });
 }
 
-export async function executeProfitSweep(amountUsd: number) {
-  return await fetchWithFailover<{ success: boolean; sweep?: ProfitSweep; error?: string }>('/sweep/execute', {
+export async function executeProfitSweep(amount: number) {
+  return await fetchWithFailover<{ success: boolean; sweep?: ProfitSweep; updatedCapital?: CapitalAccounting; error?: string }>('/profit-sweep/execute', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ amountUsd })
-  });
-}
-
-export async function toggleAutomaticProfitSweep(enabled: boolean) {
-  return await fetchWithFailover<{ success: boolean; autoSweepEnabled: boolean; error?: string }>('/sweep/auto', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ enabled })
+    body: JSON.stringify({ amount })
   });
 }
 
@@ -544,11 +547,12 @@ export async function fetchBybitStatus(): Promise<{
 export async function updateBybitKeys(
   apiKey: string,
   apiSecret: string,
+  isTestnet?: boolean
 ): Promise<{ success: boolean; message: string; accountState?: any; error?: string }> {
   return await fetchWithFailover<{ success: boolean; message?: string; error?: string }>('/exchanges/keys', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ exchange: 'BYBIT', apiKey, apiSecret }),
+    body: JSON.stringify({ exchange: 'BYBIT', apiKey, apiSecret, isTestnet }),
     timeoutMs: 25000
   }).then((res) => ({
     success: Boolean(res.success),
@@ -629,4 +633,86 @@ export async function loginOwner(credentials: {
 export async function logoutOwner(): Promise<void> {
   await fetchWithFailover('/auth/logout', { method: 'POST' });
   setStoredOwnerToken(null);
+}
+
+export async function getAutonomousOptimizerStatus(): Promise<{
+  success: boolean;
+  health: any;
+  autoApplyEnabled: boolean;
+  latestAudit: any;
+  latestStrategyAllocation?: any;
+  decisions: any[];
+  builds: any[];
+  championStrategy: any;
+}> {
+  return fetchWithFailover('/autonomous-optimizer/status');
+}
+
+export async function triggerAutonomousOptimizerRun(): Promise<{
+  success: boolean;
+  decision: any;
+  latestAudit: any;
+  latestStrategyAllocation?: any;
+  builds: any[];
+  championStrategy: any;
+}> {
+  return fetchWithFailover('/autonomous-optimizer/run', { method: 'POST' });
+}
+
+export async function fetchStrategyAllocation(): Promise<{
+  success: boolean;
+  allocation: any;
+}> {
+  return fetchWithFailover('/strategy-allocator/current');
+}
+
+export async function reallocateStrategyCapital(): Promise<{
+  success: boolean;
+  decision: any;
+  allocation: any;
+  activeGridCapitalUsd: number;
+}> {
+  return fetchWithFailover('/strategy-allocator/reallocate', { method: 'POST' });
+}
+
+export async function toggleAutonomousOptimizer(enabled?: boolean): Promise<{
+  success: boolean;
+  autoApplyEnabled: boolean;
+}> {
+  return fetchWithFailover('/autonomous-optimizer/toggle', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ enabled })
+  });
+}
+
+// 3-Way Trade Decision Architecture (BUY / SELL / DO NOTHING)
+export async function fetchDecisionStats(): Promise<{
+  success: boolean;
+  stats: import('../types/trading').LearningDecisionStats;
+}> {
+  return fetchWithFailover('/decisions');
+}
+
+export async function evaluateSignalDecision(payload: {
+  symbol?: string;
+  side: 'BUY' | 'SELL';
+  price?: number;
+  amount?: number;
+  source?: string;
+  simulatedRegime?: string;
+  simulatedEdgeBps?: number;
+  simulatedDepthUsd?: number;
+  simulatedBaseRatio?: number;
+  simulatedLiquidationDistancePct?: number;
+}): Promise<{
+  success: boolean;
+  decision: import('../types/trading').TradeDecision;
+  stats: import('../types/trading').LearningDecisionStats;
+}> {
+  return fetchWithFailover('/decisions/evaluate', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload)
+  });
 }

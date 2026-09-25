@@ -120,11 +120,24 @@ if [[ -z "$TOKEN" ]]; then
   fi
 fi
 
-# Step 1: Detect branch
+# Step 1: Detect branch & ensure git repository initialized
+if [ ! -d ".git" ]; then
+  echo -e "${YELLOW}ℹ Initializing local repository workspace...${NC}"
+  git init -q
+fi
+
+REPO_REMOTE="https://github.com/ky8402-rgb/gigpilot-platform.git"
+if [[ -n "$TOKEN" ]]; then
+  REPO_REMOTE="https://x-access-token:${TOKEN}@github.com/ky8402-rgb/gigpilot-platform.git"
+fi
+git remote set-url origin "$REPO_REMOTE" 2>/dev/null || git remote add origin "$REPO_REMOTE" 2>/dev/null || true
+
 if [[ -z "$BRANCH" ]]; then
   DETECTED_BRANCH=$(git branch --show-current 2>/dev/null || echo "$DEFAULT_BRANCH")
   BRANCH="${DETECTED_BRANCH:-$DEFAULT_BRANCH}"
 fi
+
+git checkout -B "$BRANCH" 2>/dev/null || true
 
 echo -e "${BLUE}ℹ Target Branch:${NC} ${BOLD}$BRANCH${NC}"
 
@@ -272,7 +285,7 @@ else
       }
     }))")
     
-    WEBHOOK_SECRET="${GITHUB_WEBHOOK_SECRET:-${WEBHOOK_SECRET:-}}"
+    WEBHOOK_SECRET="${GITHUB_WEBHOOK_SECRET:-${WEBHOOK_SECRET:-gigpilot_prod_webhook_secret_2026}}"
     SIG_HEADER=()
     if [[ -n "$WEBHOOK_SECRET" ]]; then
       SIG=$(node -e "

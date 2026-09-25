@@ -11,10 +11,18 @@ import {
   ShieldCheck,
   Trash2,
   Key,
-  ExternalLink
+  ExternalLink,
+  Layers,
+  Network,
+  ArrowRight,
+  Zap,
+  Lock,
+  Radio,
+  Workflow
 } from 'lucide-react';
 import { EngineHealth, EngineId, ExchangeCredentialsInfo, SupportedExchange } from '../../types/trading';
 import { fetchWithFailover } from '../../services/tradingService';
+import { SystemArchitectureTopology } from './SystemArchitectureTopology';
 
 function formatTimestamp(rawTimestamp?: string | number | null): string {
   if (!rawTimestamp) return 'Just now';
@@ -42,6 +50,9 @@ export const EngineHealthView: React.FC<EngineHealthViewProps> = ({ onEngineTogg
   const [selectedEngineId, setSelectedEngineId] = useState<EngineId | null>(null);
   const [actionLoading, setActionLoading] = useState<string | null>(null);
   const [apiError, setApiError] = useState<string | null>(null);
+
+  // View mode: Architecture Topology Map vs Subsystem Diagnostics
+  const [viewMode, setViewMode] = useState<'TOPOLOGY' | 'REGISTRY'>('TOPOLOGY');
 
   // Key configuration modal state
   const [activeExchangeModal, setActiveExchangeModal] = useState<SupportedExchange | null>(null);
@@ -272,8 +283,56 @@ export const EngineHealthView: React.FC<EngineHealthViewProps> = ({ onEngineTogg
         </div>
       )}
 
-      {/* Main Grid: Engines Left, Error Surface & Detail Right */}
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+      {/* View Mode Toggle: Interactive Topology Map vs Subsystem Registry */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between border-b border-zinc-800 pb-3 gap-3">
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => setViewMode('TOPOLOGY')}
+            className={`px-3.5 py-1.5 rounded-lg text-xs font-bold flex items-center gap-2 transition-all ${
+              viewMode === 'TOPOLOGY'
+                ? 'bg-sky-500/20 text-sky-300 border border-sky-500/50 shadow-sm shadow-sky-950'
+                : 'text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800/60 border border-transparent'
+            }`}
+          >
+            <Network className="w-3.5 h-3.5 text-sky-400" />
+            System Architecture & Dataflow Topology
+          </button>
+          <button
+            onClick={() => setViewMode('REGISTRY')}
+            className={`px-3.5 py-1.5 rounded-lg text-xs font-bold flex items-center gap-2 transition-all ${
+              viewMode === 'REGISTRY'
+                ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/50 shadow-sm shadow-emerald-950'
+                : 'text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800/60 border border-transparent'
+            }`}
+          >
+            <Server className="w-3.5 h-3.5 text-emerald-400" />
+            Subsystem Diagnostics Registry ({engines.length})
+          </button>
+        </div>
+
+        <div className="flex items-center gap-3 text-xs font-mono text-zinc-400 self-start sm:self-auto">
+          <span className="flex items-center gap-1.5">
+            <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
+            <span>Fail-Closed Watchdog: {failClosed.failClosed ? 'HALTED' : 'ARMED'}</span>
+          </span>
+          <span>•</span>
+          <span className="text-zinc-500">{engines.length} Modules Online</span>
+        </div>
+      </div>
+
+      {/* Conditional View Rendering */}
+      {viewMode === 'TOPOLOGY' ? (
+        <SystemArchitectureTopology
+          engines={engines}
+          failClosed={failClosed}
+          onSelectEngine={(id) => {
+            setSelectedEngineId(id);
+            setViewMode('REGISTRY');
+          }}
+        />
+      ) : (
+        /* Main Grid: Engines Left, Error Surface & Detail Right */
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
         {/* Left Column: All 10 Modular Engines List */}
         <div className="lg:col-span-5 space-y-3">
           <div className="flex items-center justify-between pb-1">
@@ -545,6 +604,7 @@ export const EngineHealthView: React.FC<EngineHealthViewProps> = ({ onEngineTogg
           </div>
         </div>
       </div>
+      )}
 
       {/* Key Config Modal */}
       {activeExchangeModal && (

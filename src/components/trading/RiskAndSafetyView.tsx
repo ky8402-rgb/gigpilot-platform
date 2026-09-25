@@ -34,6 +34,7 @@ export const RiskAndSafetyView: React.FC<RiskAndSafetyViewProps> = ({
   const [maxDrawdown, setMaxDrawdown] = useState(config.maxDrawdownLimitPct.toString());
   const [maxOrders, setMaxOrders] = useState(config.maxOpenOrders.toString());
   const [maxSlippage, setMaxSlippage] = useState(config.maxSlippageBps.toString());
+  const [minEdgeThreshold, setMinEdgeThreshold] = useState((config.minimum_edge_threshold ?? config.minExpectedNetEdgeBps ?? 4.0).toString());
   const [autoKillDrawdown, setAutoKillDrawdown] = useState(config.autoKillSwitchTriggerDrawdownPct.toString());
   const [isSaving, setIsSaving] = useState(false);
   const [isResetting, setIsResetting] = useState(false);
@@ -48,6 +49,8 @@ export const RiskAndSafetyView: React.FC<RiskAndSafetyViewProps> = ({
         maxDrawdownLimitPct: Number(maxDrawdown),
         maxOpenOrders: Number(maxOrders),
         maxSlippageBps: Number(maxSlippage),
+        minExpectedNetEdgeBps: Number(minEdgeThreshold),
+        minimum_edge_threshold: Number(minEdgeThreshold),
         autoKillSwitchTriggerDrawdownPct: Number(autoKillDrawdown)
       });
       alert('Risk parameters updated and enforced across all engines!');
@@ -186,6 +189,29 @@ export const RiskAndSafetyView: React.FC<RiskAndSafetyViewProps> = ({
                 onChange={e => setMaxSlippage(e.target.value)}
                 className="w-full bg-slate-950 border border-slate-700 rounded px-3 py-2 text-white font-bold"
               />
+            </div>
+
+            <div className="col-span-1 sm:col-span-2 lg:col-span-3 bg-cyan-950/30 border border-cyan-800/60 rounded-lg p-3">
+              <div className="flex flex-wrap items-center justify-between gap-2 mb-1.5">
+                <label className="text-cyan-300 font-bold block uppercase tracking-wide">
+                  Minimum Edge Threshold (Basis Points) — Invariant: Expected Net Edge &gt; minimum_edge_threshold
+                </label>
+                <span className="text-[10px] text-cyan-400 font-bold bg-cyan-900/60 px-2 py-0.5 rounded border border-cyan-700/50">
+                  FAIL-CLOSED PRE-TRADE GATE
+                </span>
+              </div>
+              <div className="flex items-center gap-3">
+                <input
+                  type="number"
+                  step="0.1"
+                  value={minEdgeThreshold}
+                  onChange={e => setMinEdgeThreshold(e.target.value)}
+                  className="w-36 bg-slate-950 border border-cyan-700 rounded px-3 py-2 text-cyan-200 font-black text-sm"
+                />
+                <p className="text-[11px] text-slate-300 leading-snug">
+                  Orders are strictly permitted to execute <strong>ONLY</strong> when: <code className="text-cyan-300">Expected Net Edge &gt; minimum_edge_threshold</code>. Formula: <span className="text-slate-400">Expected Gross Edge − maker/taker fees − expected spread cost − expected slippage − adverse-selection cost − funding/carrying cost − execution uncertainty</span>.
+                </p>
+              </div>
             </div>
           </div>
 

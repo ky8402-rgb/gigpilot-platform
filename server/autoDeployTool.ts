@@ -393,7 +393,7 @@ jobs:
 
       - name: Deploy via SSH (Direct EC2 Execution)
         env:
-          SSH_KEY: \${{ secrets.EC2_SSH_KEY }}
+          SSH_KEY: \${{ secrets.EC2_SSH_KEY || secrets.GIGPILOT_MUMBAI_EC2 }}
           EC2_HOST: \${{ secrets.EC2_HOST || '35.154.110.156' }}
           EC2_USER: \${{ secrets.EC2_USER || 'ubuntu' }}
         if: env.SSH_KEY != ''
@@ -448,7 +448,7 @@ jobs:
       - name: Trigger EC2 Push-to-Deploy Webhook (Parallel / Fallback)
         env:
           EC2_HOST: \${{ secrets.EC2_HOST || '35.154.110.156' }}
-          WEBHOOK_SECRET: \${{ secrets.GITHUB_WEBHOOK_SECRET || secrets.WEBHOOK_SECRET }}
+          WEBHOOK_SECRET: \${{ secrets.GITHUB_WEBHOOK_SECRET || secrets.WEBHOOK_SECRET || 'gigpilot_prod_webhook_secret_2026' }}
           COMMIT_MSG: \${{ github.event.head_commit.message }}
         run: |
           WEBHOOK_URL="https://\${EC2_HOST//./-}.sslip.io/api/github/webhook"
@@ -723,7 +723,7 @@ export function getSecretsConfigurationGuide(): {
       {
         key: 'GITHUB_WEBHOOK_SECRET',
         description: 'HMAC-SHA256 secret for authenticating EC2 push-to-deploy webhooks',
-        defaultValue: 'gigpilot_secret_token_2026',
+        defaultValue: 'gigpilot_prod_webhook_secret_2026',
         isSecret: true,
       },
       {

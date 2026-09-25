@@ -41,7 +41,7 @@ model StrategyVersion {
   reasonForChange       String
   expectedEffect        String
   parametersJson        String        // Serialized parameters JSON
-  liveTradingResultsJson String        // Serialized live trading metrics JSON
+  backtestResultsJson   String        // Serialized metrics JSON
   validationScore       Float         @default(0.0)
   createdAt             DateTime      @default(now())
   updatedAt             DateTime      @updatedAt

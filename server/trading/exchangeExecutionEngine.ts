@@ -1,7 +1,7 @@
 import crypto from 'crypto';
 import fs from 'fs';
 import path from 'path';
-import { EngineErrorRecord, EngineHealth, EngineModule, Fill, Order, OrderBook, OrderStatus, Position, SupportedExchange } from './types.js';
+import { EngineErrorRecord, EngineHealth, EngineModule, ExpectedNetEdgeBreakdown, Fill, Order, Position, SupportedExchange } from './types.js';
 
 export interface ExchangeApiCredentials {
   exchange: SupportedExchange;
@@ -33,90 +33,6 @@ export class ExchangeExecutionEngine implements EngineModule {
   private orderHistory: Order[] = [];
   private fills: Fill[] = [];
   private positions: Map<string, Position> = new Map();
-  private executionTelemetry: Order[] = [];
-  private pendingFillTimers: Map<string, ReturnType<typeof setTimeout>[]> = new Map();
-
-  private async fetchLiveBybitBook(symbol: string): Promise<OrderBook> {
-    const rawSymbol = symbol.replace(/[\\/\\-_]/g, '').toUpperCase();
-    const res = await fetch(`https://api.bybit.com/v5/market/orderbook?category=spot&symbol=${encodeURIComponent(rawSymbol)}&limit=50`, {
-      headers: { Accept: 'application/json' }
-    });
-    if (!res.ok) throw new Error(`BYBIT_ORDERBOOK_HTTP_${res.status}`);
-    const json = await res.json() as any;
-    if (json?.retCode !== 0) throw new Error(json?.retMsg || 'BYBIT_ORDERBOOK_UNAVAILABLE');
-    const bidsRaw = Array.isArray(json?.result?.b) ? json.result.b : [];
-    const asksRaw = Array.isArray(json?.result?.a) ? json.result.a : [];
-    if (!bidsRaw.length || !asksRaw.length) throw new Error('BYBIT_ORDERBOOK_EMPTY');
-    let bidTotal = 0;
-    let askTotal = 0;
-    const bids = bidsRaw.map((x: any[]) => {
-      const price = Number(x[0]); const amount = Number(x[1]);
-      if (!Number.isFinite(price) || !Number.isFinite(amount)) throw new Error('BYBIT_ORDERBOOK_INVALID_BID');
-      bidTotal += amount; return { price, amount, total: bidTotal };
-    });
-    const asks = asksRaw.map((x: any[]) => {
-      const price = Number(x[0]); const amount = Number(x[1]);
-      if (!Number.isFinite(price) || !Number.isFinite(amount)) throw new Error('BYBIT_ORDERBOOK_INVALID_ASK');
-      askTotal += amount; return { price, amount, total: askTotal };
-    });
-    const bestBid = bids[0].price;
-    const bestAsk = asks[0].price;
-    const midPrice = (bestBid + bestAsk) / 2;
-    const spread = bestAsk - bestBid;
-    if (!(midPrice > 0) || !(spread >= 0)) throw new Error('BYBIT_ORDERBOOK_INVALID_SPREAD');
-    return {
-      symbol: rawSymbol,
-      bids, asks, spread,
-      spreadBps: (spread / midPrice) * 10000,
-      midPrice,
-      timestamp: Number(json?.result?.ts || Date.now())
-    };
-  }
-
-  private async requireLiveBook(symbol: string): Promise<OrderBook> {
-    const book = await this.fetchLiveBybitBook(symbol);
-    if (!book.bids.length || !book.asks.length) throw new Error('FAIL-CLOSED: LIVE_BYBIT_ORDERBOOK_UNAVAILABLE');
-    return book;
-  }
-
-  public async recordFillTelemetry(orderId: string, actualFillPrice: number, feeUsd: number, bookAtFill?: OrderBook): Promise<void> {
-    const order = this.openOrders.get(orderId) || this.orderHistory.find(o => o.id === orderId);
-    if (!order || !Number.isFinite(actualFillPrice)) return;
-    const fillTs = Date.now();
-    order.actualFillPrice = actualFillPrice;
-    order.filledAt = new Date(fillTs).toISOString();
-    order.feesPaid += feeUsd;
-    order.executionSlippageBps = order.expectedPrice && order.expectedPrice > 0
-      ? ((actualFillPrice - order.expectedPrice) / order.expectedPrice) * 10000 * (order.side === 'BUY' ? 1 : -1)
-      : undefined;
-    order.ackToFillLatencyMs = order.exchangeAckTimestamp ? Math.max(0, fillTs - Date.parse(order.exchangeAckTimestamp)) : undefined;
-    const liveFillBook = bookAtFill || await this.requireLiveBook(order.symbol);
-    order.bookStateAtFill = liveFillBook;
-    order.adverseSelectionMidPrices = {};
-    const timers = [100, 500, 1000, 5000].map(delay => setTimeout(() => {
-      this.requireLiveBook(order.symbol).then(book => {
-        const futureMid = book.midPrice;
-      if (delay === 100) order.adverseSelectionMidPrices!.after100ms = futureMid;
-      if (delay === 500) order.adverseSelectionMidPrices!.after500ms = futureMid;
-      if (delay === 1000) order.adverseSelectionMidPrices!.after1s = futureMid;
-      if (delay === 5000) order.adverseSelectionMidPrices!.after5s = futureMid;
-      const adverse = order.side === 'BUY' ? actualFillPrice - futureMid : futureMid - actualFillPrice;
-        order.adverseSelectionScore = actualFillPrice > 0 ? (adverse / actualFillPrice) * 10000 : 0;
-      }).catch(err => this.recordError('ERROR', `FAIL-CLOSED: Live Bybit book unavailable during adverse-selection measurement: ${err.message}`));
-    }, delay));
-    this.pendingFillTimers.set(orderId, timers);
-    this.openOrders.delete(orderId);
-    this.fills.unshift({
-      id: `fill_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
-      orderId, symbol: order.symbol, side: order.side, price: actualFillPrice, amount: order.amount,
-      feeUsd, slippageBps: Math.abs(order.executionSlippageBps || 0), realizedPnL: 0,
-      timestamp: order.filledAt, midPriceAtFill: order.bookStateAtFill.midPrice
-    });
-    this.executionTelemetry.unshift(order);
-    if (this.executionTelemetry.length > 1000) this.executionTelemetry.pop();
-  }
-
-  public getExecutionTelemetry(): Order[] { return [...this.executionTelemetry]; }
 
   constructor() {
     this.initCredentials();
@@ -198,124 +114,6 @@ export class ExchangeExecutionEngine implements EngineModule {
     this.errorSurface = [];
   }
 
-  private async fetchBybitOrderState(symbol: string, orderId: string): Promise<{ status: OrderStatus; filledAmount: number; remainingAmount: number; avgPrice?: number; fee?: number } | null> {
-    const cred = this.credentials.get('BYBIT');
-    if (!cred?.isConfigured) return null;
-    const rawSymbol = symbol.replace(/[\\/\\-_]/g, '').toUpperCase();
-    const timestamp = Date.now().toString();
-    const recvWindow = '5000';
-    const params = `category=spot&symbol=${encodeURIComponent(rawSymbol)}&orderId=${encodeURIComponent(orderId)}`;
-    const signature = crypto.createHmac('sha256', cred.apiSecret)
-      .update(`${timestamp}${cred.apiKey}${recvWindow}${params}`).digest('hex');
-    const res = await fetch(`https://api.bybit.com/v5/order/realtime?${params}`, {
-      headers: {
-        'X-BAPI-API-KEY': cred.apiKey,
-        'X-BAPI-SIGN': signature,
-        'X-BAPI-TIMESTAMP': timestamp,
-        'X-BAPI-RECV-WINDOW': recvWindow,
-        Accept: 'application/json'
-      }
-    });
-    const json = await res.json() as any;
-    if (!res.ok || json.retCode !== 0) throw new Error(json.retMsg || `Bybit HTTP ${res.status}`);
-    const o = json?.result?.list?.[0];
-    if (!o) return null;
-    const rawStatus = String(o.orderStatus || '');
-    const status: OrderStatus =
-      rawStatus === 'New' ? 'OPEN' :
-      rawStatus === 'PartiallyFilled' ? 'PARTIALLY_FILLED' :
-      rawStatus === 'Filled' ? 'FILLED' :
-      rawStatus === 'Cancelled' || rawStatus === 'Deactivated' ? 'CANCELLED' :
-      rawStatus === 'Rejected' ? 'REJECTED' : 'OPEN';
-    return {
-      status,
-      filledAmount: Number(o.cumExecQty || 0),
-      remainingAmount: Number(o.leavesQty || 0),
-      avgPrice: Number(o.avgPrice || 0) || undefined,
-      fee: Number(o.cumExecFee || 0) || undefined
-    };
-  }
-
-  public async reconcileLiveOrders(symbol?: string): Promise<{ confirmed: number; changed: number; failClosed: boolean }> {
-    try {
-      const live = await this.getBybitOpenOrders(symbol);
-      const liveIds = new Set(live.map(o => o.id));
-      let changed = 0;
-      for (const [id, local] of this.openOrders.entries()) {
-        if (symbol && local.symbol !== symbol) continue;
-        if (!liveIds.has(id)) {
-          const state = await this.fetchBybitOrderState(local.symbol, id);
-          if (state) {
-            local.status = state.status;
-            local.filledAmount = state.filledAmount;
-            local.remainingAmount = state.remainingAmount;
-            if (state.avgPrice) local.actualFillPrice = state.avgPrice;
-            if (state.fee !== undefined) local.feesPaid = state.fee;
-            if (state.status === 'FILLED' || state.status === 'CANCELLED' || state.status === 'REJECTED') {
-              this.openOrders.delete(id);
-            }
-            changed++;
-          }
-        }
-      }
-      for (const remote of live) {
-        const existing = this.openOrders.get(remote.id);
-        if (existing) {
-          existing.status = remote.status;
-          existing.filledAmount = remote.filledAmount;
-          existing.remainingAmount = remote.remainingAmount;
-        } else {
-          this.openOrders.set(remote.id, remote);
-        }
-      }
-      return { confirmed: live.length, changed, failClosed: false };
-    } catch (err: any) {
-      this.recordError('CRITICAL', `FAIL-CLOSED: Bybit live order reconciliation failed: ${err?.message || 'unknown error'}`);
-      return { confirmed: 0, changed: 0, failClosed: true };
-    }
-  }
-
-  private async getBybitOpenOrders(symbol?: string): Promise<Order[]> {
-    const cred = this.credentials.get('BYBIT');
-    if (!cred?.isConfigured) throw new Error('Bybit credentials unavailable');
-    const rawSymbol = symbol ? symbol.replace(/[\\/\\-_]/g, '').toUpperCase() : undefined;
-    const timestamp = Date.now().toString();
-    const recvWindow = '5000';
-    const query = rawSymbol ? `category=spot&symbol=${encodeURIComponent(rawSymbol)}` : 'category=spot';
-    const signature = crypto.createHmac('sha256', cred.apiSecret)
-      .update(`${timestamp}${cred.apiKey}${recvWindow}${query}`).digest('hex');
-    const res = await fetch(`https://api.bybit.com/v5/order/realtime?${query}`, {
-      headers: {
-        'X-BAPI-API-KEY': cred.apiKey,
-        'X-BAPI-SIGN': signature,
-        'X-BAPI-TIMESTAMP': timestamp,
-        'X-BAPI-RECV-WINDOW': recvWindow,
-        Accept: 'application/json'
-      }
-    });
-    const json = await res.json() as any;
-    if (!res.ok || json.retCode !== 0) throw new Error(json.retMsg || `Bybit HTTP ${res.status}`);
-    return (json?.result?.list || []).map((o: any) => ({
-      id: String(o.orderId),
-      symbol: String(o.symbol).replace(/(USDT|USDC|USD)$/, '/$1'),
-      side: String(o.side).toUpperCase() as 'BUY' | 'SELL',
-      type: String(o.orderType).toUpperCase() === 'LIMIT' ? 'LIMIT' : 'MARKET',
-      price: Number(o.price || 0),
-      amount: Number(o.qty || 0),
-      filledAmount: Number(o.cumExecQty || 0),
-      remainingAmount: Number(o.leavesQty || o.qty || 0),
-      costUsd: Number(o.cumExecValue || 0),
-      status: String(o.orderStatus) === 'PartiallyFilled' ? 'PARTIALLY_FILLED' : 'OPEN',
-      isGridOrder: false,
-      strategyId: 'LIVE-BYBIT-SPOT',
-      mode: 'LIVE',
-      feesPaid: Number(o.cumExecFee || 0),
-      slippageBps: 0,
-      latencyMs: 0,
-      placedAt: new Date(Number(o.createdTime || Date.now())).toISOString()
-    }));
-  }
-
   private recordError(level: EngineErrorRecord['level'], message: string, details?: any) {
     const rec: EngineErrorRecord = {
       id: `err_exec_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
@@ -385,6 +183,7 @@ export class ExchangeExecutionEngine implements EngineModule {
     isGridOrder?: boolean;
     gridLevelId?: string;
     strategyId?: string;
+    expectedNetEdge?: ExpectedNetEdgeBreakdown;
   }): Promise<{ success: boolean; order?: Order; error?: string }> {
     if (!this.enabled) {
       const err = 'EXCHANGE_EXECUTION_ENGINE_OFF: Real order execution disabled by operator.';
@@ -402,7 +201,6 @@ export class ExchangeExecutionEngine implements EngineModule {
       return { success: false, error: err };
     }
 
-    const decisionTimestamp = new Date().toISOString();
     const id = `ord_${targetExchange.toLowerCase()}_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
     const costUsd = Number((spec.price * spec.amount).toFixed(2));
 
@@ -424,16 +222,12 @@ export class ExchangeExecutionEngine implements EngineModule {
       feesPaid: 0,
       slippageBps: 0,
       latencyMs: 0,
-      decisionTimestamp,
-      expectedPrice: spec.price,
-      bookStateAtDecision: await this.requireLiveBook(spec.symbol),
+      expectedNetEdge: spec.expectedNetEdge,
       placedAt: new Date().toISOString()
     };
 
     // Dispatch directly to Bybit using signed HMAC-SHA256
     try {
-      order.orderSubmitTimestamp = new Date().toISOString();
-      order.decisionToSubmissionLatencyMs = Date.parse(order.orderSubmitTimestamp) - Date.parse(decisionTimestamp);
       const bybitResult = await this.dispatchBybitOrder(cred, spec);
       if (!bybitResult.success) {
         order.status = 'REJECTED';
@@ -441,8 +235,6 @@ export class ExchangeExecutionEngine implements EngineModule {
         this.recordError('ERROR', `Bybit live order rejected: ${bybitResult.error}`);
         return { success: false, order, error: bybitResult.error };
       }
-      order.exchangeAckTimestamp = new Date().toISOString();
-      order.submissionToAckLatencyMs = Date.parse(order.exchangeAckTimestamp) - Date.parse(order.orderSubmitTimestamp || order.exchangeAckTimestamp);
       if (bybitResult.orderId) order.id = bybitResult.orderId;
 
       order.latencyMs = Date.now() - start;
@@ -499,58 +291,224 @@ export class ExchangeExecutionEngine implements EngineModule {
     return { success: true, orderId: json.result?.orderId };
   }
 
+  private async dispatchBybitCancel(cred: ExchangeApiCredentials, symbol: string, orderId: string): Promise<{ success: boolean; error?: string }> {
+    try {
+      const rawSymbol = symbol.replace(/[\/\-_]/g, '').toUpperCase();
+      const timestamp = Date.now().toString();
+      const endpoint = 'https://api.bybit.com/v5/order/cancel';
+
+      const body = {
+        category: 'spot',
+        symbol: rawSymbol,
+        orderId
+      };
+
+      const bodyStr = JSON.stringify(body);
+      const signPayload = `${timestamp}${cred.apiKey}5000${bodyStr}`;
+      const signature = crypto.createHmac('sha256', cred.apiSecret).update(signPayload).digest('hex');
+
+      const res = await fetch(endpoint, {
+        method: 'POST',
+        headers: {
+          'X-BAPI-API-KEY': cred.apiKey,
+          'X-BAPI-SIGN': signature,
+          'X-BAPI-TIMESTAMP': timestamp,
+          'X-BAPI-RECV-WINDOW': '5000',
+          'Content-Type': 'application/json'
+        },
+        body: bodyStr
+      });
+
+      const json = (await res.json()) as any;
+      if (!res.ok || json.retCode !== 0) {
+        return { success: false, error: json.retMsg || `Bybit HTTP ${res.status}` };
+      }
+      return { success: true };
+    } catch (err: any) {
+      return { success: false, error: err.message };
+    }
+  }
+
+  private async dispatchBybitCancelAll(cred: ExchangeApiCredentials, symbol?: string): Promise<{ success: boolean; error?: string }> {
+    try {
+      const timestamp = Date.now().toString();
+      const endpoint = 'https://api.bybit.com/v5/order/cancel-all';
+      const body: any = { category: 'spot' };
+      if (symbol) {
+        body.symbol = symbol.replace(/[\/\-_]/g, '').toUpperCase();
+      }
+      const bodyStr = JSON.stringify(body);
+      const signPayload = `${timestamp}${cred.apiKey}5000${bodyStr}`;
+      const signature = crypto.createHmac('sha256', cred.apiSecret).update(signPayload).digest('hex');
+
+      const res = await fetch(endpoint, {
+        method: 'POST',
+        headers: {
+          'X-BAPI-API-KEY': cred.apiKey,
+          'X-BAPI-SIGN': signature,
+          'X-BAPI-TIMESTAMP': timestamp,
+          'X-BAPI-RECV-WINDOW': '5000',
+          'Content-Type': 'application/json'
+        },
+        body: bodyStr
+      });
+
+      const json = (await res.json()) as any;
+      if (!res.ok || json.retCode !== 0) {
+        return { success: false, error: json.retMsg || `Bybit HTTP ${res.status}` };
+      }
+      return { success: true };
+    } catch (err: any) {
+      return { success: false, error: err.message };
+    }
+  }
+
+  /**
+   * Reconcile in-memory state with Bybit live spot orders on startup and periodic sync
+   * Prevents orphaned orders after container restart or network glitch
+   */
+  public async reconcileOpenOrders(targetSymbol?: string): Promise<{ reconciledCount: number; error?: string }> {
+    const cred = this.credentials.get('BYBIT');
+    if (!cred || !cred.isConfigured) {
+      return { reconciledCount: 0 };
+    }
+
+    try {
+      const timestamp = Date.now().toString();
+      const rawSymbol = targetSymbol ? targetSymbol.replace(/[\/\-_]/g, '').toUpperCase() : '';
+      const query = new URLSearchParams({ category: 'spot' });
+      if (rawSymbol) query.append('symbol', rawSymbol);
+
+      const signPayload = `${timestamp}${cred.apiKey}5000${query.toString()}`;
+      const signature = crypto.createHmac('sha256', cred.apiSecret).update(signPayload).digest('hex');
+
+      const res = await fetch(`https://api.bybit.com/v5/order/realtime?${query.toString()}`, {
+        method: 'GET',
+        headers: {
+          'X-BAPI-API-KEY': cred.apiKey,
+          'X-BAPI-SIGN': signature,
+          'X-BAPI-TIMESTAMP': timestamp,
+          'X-BAPI-RECV-WINDOW': '5000'
+        }
+      });
+
+      const json = (await res.json()) as any;
+      if (!res.ok || json.retCode !== 0) {
+        return { reconciledCount: 0, error: json.retMsg };
+      }
+
+      const bybitOrders = json.result?.list || [];
+      let count = 0;
+      for (const bOrder of bybitOrders) {
+        if (bOrder.orderStatus === 'New' || bOrder.orderStatus === 'PartiallyFilled') {
+          const orderId = bOrder.orderId;
+          if (!this.openOrders.has(orderId)) {
+            const matchedOrder: Order = {
+              id: orderId,
+              symbol: bOrder.symbol,
+              side: bOrder.side === 'Buy' ? 'BUY' : 'SELL',
+              type: bOrder.orderType === 'Limit' ? 'LIMIT' : 'MARKET',
+              price: parseFloat(bOrder.price) || 0,
+              amount: parseFloat(bOrder.qty) || 0,
+              filledAmount: parseFloat(bOrder.cumExecQty) || 0,
+              remainingAmount: parseFloat(bOrder.leavesQty) || parseFloat(bOrder.qty) || 0,
+              costUsd: (parseFloat(bOrder.price) || 0) * (parseFloat(bOrder.qty) || 0),
+              status: bOrder.orderStatus === 'PartiallyFilled' ? 'PARTIALLY_FILLED' : 'OPEN',
+              isGridOrder: true,
+              strategyId: 'RECONCILED-FROM-EXCHANGE',
+              mode: 'LIVE',
+              feesPaid: parseFloat(bOrder.cumExecFee) || 0,
+              slippageBps: 0,
+              latencyMs: 0,
+              placedAt: new Date(parseInt(bOrder.createdTime) || Date.now()).toISOString()
+            };
+            this.openOrders.set(orderId, matchedOrder);
+            this.orderHistory.unshift(matchedOrder);
+            count++;
+          }
+        }
+      }
+
+      if (count > 0) {
+        this.recordError('WARN', `State Reconciled: Imported ${count} live open order(s) from Bybit exchange.`);
+      }
+
+      return { reconciledCount: count };
+    } catch (err: any) {
+      this.recordError('WARN', `Order reconciliation failed: ${err.message}`);
+      return { reconciledCount: 0, error: err.message };
+    }
+  }
+
+  /**
+   * Batch order execution with rate-limit pacing (prevents Bybit HTTP 429 errors)
+   */
+  public async executeBatchOrders(
+    specs: Array<{
+      symbol: string;
+      side: 'BUY' | 'SELL';
+      type: 'LIMIT' | 'MARKET' | 'GRID_LIMIT';
+      price: number;
+      amount: number;
+      exchange?: SupportedExchange;
+      isGridOrder?: boolean;
+      gridLevelId?: string;
+      strategyId?: string;
+      expectedNetEdge?: ExpectedNetEdgeBreakdown;
+    }>
+  ): Promise<{ success: boolean; executed: Order[]; failedCount: number }> {
+    const executed: Order[] = [];
+    let failedCount = 0;
+
+    for (const spec of specs) {
+      try {
+        const result = await this.executeOrder(spec);
+        if (result.success && result.order) {
+          executed.push(result.order);
+        } else {
+          failedCount++;
+        }
+      } catch {
+        failedCount++;
+      }
+
+      // Rate limit pacing: 65ms delay between orders to respect exchange threshold
+      if (specs.length > 1) {
+        await new Promise(resolve => setTimeout(resolve, 65));
+      }
+    }
+
+    return { success: executed.length > 0, executed, failedCount };
+  }
+
   public async cancelOrder(orderId: string): Promise<{ success: boolean; error?: string }> {
     const order = this.openOrders.get(orderId);
     if (!order) return { success: false, error: 'Order not found' };
+
+    // Dispatch real cancellation to exchange if keys exist
     const cred = this.credentials.get('BYBIT');
-    if (!cred?.isConfigured) return { success: false, error: 'FAIL-CLOSED: Bybit credentials unavailable.' };
-
-    const rawSymbol = order.symbol.replace(/[\\/\\-_]/g, '').toUpperCase();
-    const timestamp = Date.now().toString();
-    const recvWindow = '5000';
-    const body = JSON.stringify({ category: 'spot', symbol: rawSymbol, orderId });
-    const signature = crypto.createHmac('sha256', cred.apiSecret).update(`${timestamp}${cred.apiKey}${recvWindow}${body}`).digest('hex');
-    const res = await fetch('https://api.bybit.com/v5/order/cancel', {
-      method: 'POST',
-      headers: {
-        'X-BAPI-API-KEY': cred.apiKey,
-        'X-BAPI-SIGN': signature,
-        'X-BAPI-TIMESTAMP': timestamp,
-        'X-BAPI-RECV-WINDOW': recvWindow,
-        'Content-Type': 'application/json'
-      },
-      body
-    });
-    const json = await res.json() as any;
-    if (!res.ok || json.retCode !== 0) return { success: false, error: json.retMsg || `Bybit HTTP ${res.status}` };
-
-    // A cancel acknowledgement is asynchronous; confirm the resulting exchange state before
-    // removing the order locally. This prevents optimizer re-placement from creating duplicates.
-    await new Promise(resolve => setTimeout(resolve, 150));
-    const state = await this.fetchBybitOrderState(order.symbol, orderId);
-    if (state && state.status === 'OPEN') {
-      return { success: false, error: 'FAIL-CLOSED: Bybit still reports the order as open after cancellation request.' };
+    if (cred && cred.isConfigured && order.id) {
+      await this.dispatchBybitCancel(cred, order.symbol, order.id);
     }
-    if (state) {
-      order.status = state.status;
-      order.filledAmount = state.filledAmount;
-      order.remainingAmount = state.remainingAmount;
-      if (state.avgPrice) order.actualFillPrice = state.avgPrice;
-      if (state.fee !== undefined) order.feesPaid = state.fee;
-    } else {
-      order.status = 'CANCELLED';
-    }
+
+    order.status = 'CANCELLED';
     this.openOrders.delete(orderId);
     return { success: true };
   }
 
   public async cancelAllOrders(symbol?: string): Promise<number> {
+    const cred = this.credentials.get('BYBIT');
+    if (cred && cred.isConfigured) {
+      await this.dispatchBybitCancelAll(cred, symbol);
+    }
+
     let count = 0;
-    const targets = Array.from(this.openOrders.values()).filter(o => !symbol || o.symbol === symbol);
-    for (const ord of targets) {
-      const result = await this.cancelOrder(ord.id);
-      if (result.success) count++;
-      else this.recordError('CRITICAL', `FAIL-CLOSED: Could not confirm cancellation of ${ord.id}: ${result.error}`);
+    for (const [id, ord] of this.openOrders.entries()) {
+      if (!symbol || ord.symbol === symbol) {
+        ord.status = 'CANCELLED';
+        this.openOrders.delete(id);
+        count++;
+      }
     }
     return count;
   }

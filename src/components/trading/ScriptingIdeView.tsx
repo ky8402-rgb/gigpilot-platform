@@ -10,7 +10,7 @@ import {
   AlertTriangle,
   RotateCcw
 } from 'lucide-react';
-import { validateUserScript } from '../../services/tradingService';
+import { executeUserScript } from '../../services/tradingService';
 
 export const ScriptingIdeView: React.FC = () => {
   const PRESET_SCRIPTS = {
@@ -90,7 +90,7 @@ function onTick(ctx) {
     setIsRunning(true);
     setExecutionResult(null);
     try {
-      const res = await validateUserScript(code);
+      const res = await executeUserScript(code);
       setExecutionResult(res.result);
     } catch (err: any) {
       setExecutionResult({
@@ -121,10 +121,10 @@ function onTick(ctx) {
           </div>
           <div>
             <h2 className="text-sm font-bold text-white uppercase tracking-wider">
-              Quant Strategy IDE — Live Source Validator
+              Quant Strategy Scripting Sandbox & IDE
             </h2>
             <p className="text-[11px] text-slate-400">
-              Live strategy source validation; no simulation or synthetic order generation
+              Sandboxed runtime engine with real-time `ctx` market telemetry API
             </p>
           </div>
         </div>
@@ -160,7 +160,7 @@ function onTick(ctx) {
           <div className="flex items-center justify-between border-b border-slate-800 pb-2 mb-2 text-[11px] text-slate-400">
             <div className="flex items-center gap-2">
               <FileCode className="w-3.5 h-3.5 text-cyan-400" />
-              <span className="text-slate-200 font-bold">strategy.js (Validated Source)</span>
+              <span className="text-slate-200 font-bold">strategy.js (Sandboxed Context)</span>
             </div>
             <div className="flex items-center gap-3">
               <button onClick={copyCode} className="hover:text-white flex items-center gap-1">
@@ -180,7 +180,7 @@ function onTick(ctx) {
 
           <div className="pt-3 border-t border-slate-800 flex items-center justify-between">
             <span className="text-[10px] text-slate-500">
-              Execution: validation only · Live deployment remains governed by strategy builder + execution + risk engines
+              Isolation: Virtual VM (No file/network escape) · Hard Risk Engine Gate
             </span>
             <button
               onClick={handleRun}
@@ -188,7 +188,7 @@ function onTick(ctx) {
               className="flex items-center gap-2 px-5 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-extrabold uppercase tracking-wider shadow-lg shadow-emerald-600/30 transition-all font-mono"
             >
               <Play className="w-3.5 h-3.5 fill-white" />
-              <span>{isRunning ? 'Validating Strategy...' : 'Validate Live Strategy Source'}</span>
+              <span>{isRunning ? 'Running Simulation...' : 'Execute & Test Strategy'}</span>
             </button>
           </div>
         </div>
@@ -199,7 +199,7 @@ function onTick(ctx) {
           <div className="bg-slate-950 border border-slate-800 rounded-xl p-3 flex-1 flex flex-col shadow-2xl">
             <div className="flex items-center gap-2 border-b border-slate-800 pb-2 mb-2 text-xs font-bold text-white">
               <Terminal className="w-3.5 h-3.5 text-amber-400" />
-              <span>Validation Logs</span>
+              <span>Sandbox Console Logs</span>
               {executionResult && (
                 <span className="ml-auto text-[10px] font-normal text-slate-400">
                   {executionResult.executionTimeMs}ms
@@ -210,7 +210,7 @@ function onTick(ctx) {
             <div className="flex-1 overflow-y-auto max-h-[220px] bg-black/50 p-2.5 rounded font-mono text-[11px] space-y-1 custom-scrollbar">
               {!executionResult ? (
                 <div className="text-slate-600 text-center py-8">
-                  Validate the strategy source before governed live deployment.
+                  Hit "Execute & Test Strategy" to verify script logs & order generation.
                 </div>
               ) : executionResult.error ? (
                 <div className="text-rose-400 p-2 bg-rose-950/40 rounded border border-rose-900">

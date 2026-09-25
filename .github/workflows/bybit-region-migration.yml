@@ -26,7 +26,7 @@ jobs:
       EC2_USER: ${{ secrets.EC2_USER || 'ubuntu' }}
       AWS_ACCESS_KEY_ID: ${{ secrets.ID || secrets.AWS_ACCESS_KEY_ID }}
       AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS || secrets.AWS_SECRET_ACCESS_KEY }}
-      EC2_SSH_KEY: ${{ secrets.EC2_SSH_KEY }}
+      EC2_SSH_KEY: ${{ secrets.EC2_SSH_KEY || secrets.GIGPILOT_MUMBAI_EC2 }}
 
     steps:
       - uses: actions/checkout@v4

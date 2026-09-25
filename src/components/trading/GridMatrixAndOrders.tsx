@@ -164,6 +164,23 @@ export const GridMatrixAndOrders: React.FC<GridMatrixAndOrdersProps> = ({
         {/* 1. GRID MATRIX VIEW */}
         {activeTab === 'GRID' && (
           <div>
+            {grid?.inventoryAwareness && (
+              <div className="p-2 mb-2 bg-slate-950/70 border-b border-slate-800 flex flex-wrap items-center justify-between text-[11px] font-mono gap-2">
+                <div className="flex items-center gap-2">
+                  <span className="font-bold text-slate-300">Inventory Skew:</span>
+                  <span className={`px-1.5 py-0.2 rounded font-bold ${
+                    grid.inventoryAwareness.inventorySkew >= 0.25 ? 'bg-amber-950 text-amber-300 border border-amber-600/60' : 'bg-slate-800 text-slate-300'
+                  }`}>
+                    {grid.inventoryAwareness.inventorySkew >= 0 ? `+${grid.inventoryAwareness.inventorySkew}` : grid.inventoryAwareness.inventorySkew} ({grid.inventoryAwareness.inventoryPosturing.replace('_', ' ')})
+                  </span>
+                </div>
+                <div className="flex items-center gap-3 text-slate-400">
+                  <span>BUY Budget: <strong className="text-emerald-400">{Math.round(grid.inventoryAwareness.asymmetricBudgeting.buyAllocationPct * 100)}%</strong></span>
+                  <span>SELL Budget: <strong className="text-rose-400">{Math.round(grid.inventoryAwareness.asymmetricBudgeting.sellAllocationPct * 100)}%</strong></span>
+                  <span>Liq Buffer: <strong className="text-cyan-400">{grid.inventoryAwareness.distanceFromLiquidationPct}%</strong></span>
+                </div>
+              </div>
+            )}
             {!grid || grid.activeLevels.length === 0 ? (
               <div className="p-8 text-center text-slate-500 font-mono text-xs">
                 No active grid configuration found. Set up boundaries in the Adaptive Grid tab.
@@ -177,6 +194,8 @@ export const GridMatrixAndOrders: React.FC<GridMatrixAndOrdersProps> = ({
                     <th className="py-2 px-2">Grid Price</th>
                     <th className="py-2 px-2">Distance</th>
                     <th className="py-2 px-2">Size</th>
+                    <th className="py-2 px-2">Mult</th>
+                    <th className="py-2 px-2">Req Edge</th>
                     <th className="py-2 px-2">USD Value</th>
                     <th className="py-2 px-2">Status</th>
                   </tr>
@@ -201,6 +220,8 @@ export const GridMatrixAndOrders: React.FC<GridMatrixAndOrdersProps> = ({
                           {distPct >= 0 ? '+' : ''}{distPct.toFixed(2)}%
                         </td>
                         <td className="py-2 px-2 text-slate-300">{lvl.orderSize}</td>
+                        <td className="py-2 px-2 text-slate-400">{lvl.orderSizeMultiplier ? `${lvl.orderSizeMultiplier}x` : '1.0x'}</td>
+                        <td className="py-2 px-2 font-bold text-yellow-400">{lvl.requiredEdgeHurdleBps ? `${lvl.requiredEdgeHurdleBps} bps` : '4.0 bps'}</td>
                         <td className="py-2 px-2 text-slate-300">${lvl.valueUsd.toFixed(1)}</td>
                         <td className="py-2 px-2">
                           <span className="text-[10px] text-emerald-400 flex items-center gap-1">

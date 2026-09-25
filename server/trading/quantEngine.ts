@@ -1,4 +1,6 @@
-import { Candle, EngineErrorRecord, EngineHealth, EngineModule, MarketRegime, OrderBook, TechnicalIndicators } from './types.js';
+import { Candle, EngineErrorRecord, EngineHealth, EngineModule, ExpectedNetEdgeBreakdown, MarketRegime, OrderBook, TechnicalIndicators } from './types.js';
+import { calculateADX } from './indicators.js';
+import { regimeTransitionDetector } from './regimeTransitionDetector.js';
 
 export class QuantEngine implements EngineModule {
   public readonly id = 'QUANT_ENGINE';
@@ -138,6 +140,9 @@ export class QuantEngine implements EngineModule {
       const variance = returns.reduce((acc, r) => acc + Math.pow(r - meanReturn, 2), 0) / (returns.length || 1);
       const volatility24h = Number((Math.sqrt(variance) * 100).toFixed(2));
 
+      // 9. ADX (Directional Movement Index)
+      const adxResult = calculateADX(candles, 14);
+
       const indicators: TechnicalIndicators = {
         rsi14,
         macd,
@@ -149,11 +154,15 @@ export class QuantEngine implements EngineModule {
         atr14,
         vwap,
         spreadBps,
-        volatility24h
+        volatility24h,
+        adx: adxResult.adx,
+        adxSlope: adxResult.adxSlope,
+        plusDI: adxResult.plusDI,
+        minusDI: adxResult.minusDI
       };
 
-      // Classify Market Regime
-      const regime = this.classifyRegime(indicators, orderBookImbalance, currentPrice);
+      // Classify Market Regime & Transitions explicitly
+      const regime = this.classifyRegime(symbol, candles, indicators, orderBookImbalance, currentPrice, orderBook);
 
       this.latencyMs = Date.now() - start;
       this.lastHeartbeat = new Date().toISOString();
@@ -173,7 +182,14 @@ export class QuantEngine implements EngineModule {
     }
   }
 
-  private classifyRegime(ind: TechnicalIndicators, obImbalance: number, currentPrice: number): MarketRegime {
+  private classifyRegime(
+    symbol: string,
+    candles: Candle[],
+    ind: TechnicalIndicators,
+    obImbalance: number,
+    currentPrice: number,
+    orderBook?: OrderBook
+  ): MarketRegime {
     const isTrendBull = currentPrice > ind.ema21 && ind.macd.histogram > 0 && ind.rsi14 > 55;
     const isTrendBear = currentPrice < ind.ema21 && ind.macd.histogram < 0 && ind.rsi14 < 45;
     const isHighVol = ind.bollingerBands.bandwidth > 3.0 || ind.volatility24h > 2.0;
@@ -209,19 +225,188 @@ export class QuantEngine implements EngineModule {
       suggestedAction = 'Range-bound consolidation. Ideal conditions for standard mean-reverting geometric grid.';
     }
 
+    // Explicit Regime Transition Detection
+    const transition = regimeTransitionDetector.detectTransition(
+      symbol,
+      currentPrice,
+      candles,
+      regimeType,
+      ind,
+      orderBook
+    );
+
+    // If breakout is confirmed, update regimeType to the target regime
+    if (transition.phase === 'BREAKOUT_CONFIRMED' && transition.tentativeTargetRegime) {
+      regimeType = transition.tentativeTargetRegime;
+    }
+
+    if (transition.isTransitioning) {
+      suggestedAction = `[${transition.phase}] ${transition.actionGuidance}`;
+      recommendedSpacing = Number((recommendedSpacing * (transition.phase === 'BREAKOUT_TESTING' ? 1.8 : 1.4)).toFixed(2));
+    }
+
     return {
       regime: regimeType,
       confidence,
       atr: ind.atr14,
       rsi: ind.rsi14,
-      adx: 18.5,
+      adx: ind.adx || 18.5,
+      adxSlope: ind.adxSlope || 0,
       bbBandwidth: ind.bollingerBands.bandwidth,
       orderBookImbalance: obImbalance,
       trendDirection,
       recommendedGridSpacing: recommendedSpacing,
       suggestedAction,
-      detectedAt: new Date().toISOString()
+      detectedAt: new Date().toISOString(),
+      transition
     };
+  }
+
+  /**
+   * Quantitative Microstructure Expected Net Edge Decomposition
+   *
+   * Classical Quantitative Equation:
+   *   Expected Gross Edge
+   * − maker/taker fees
+   * − expected spread cost
+   * − expected slippage
+   * − adverse-selection cost
+   * − funding/other carrying cost
+   * − execution uncertainty
+   * = Expected Net Edge
+   */
+  public computeExpectedNetEdge(params: {
+    symbol: string;
+    side?: 'BUY' | 'SELL';
+    price?: number;
+    amount?: number;
+    orderType?: 'LIMIT' | 'MARKET' | 'GRID_LIMIT';
+    orderBook?: OrderBook;
+    candles?: Candle[];
+    gridSpacingPct?: number;
+    regime?: MarketRegime;
+    makerFeeBps?: number;
+    takerFeeBps?: number;
+    minHurdleBps?: number;
+  }): ExpectedNetEdgeBreakdown {
+    const {
+      price = 65000,
+      amount = 0.01,
+      orderType = 'GRID_LIMIT',
+      orderBook,
+      candles = [],
+      gridSpacingPct = 0.45,
+      regime,
+      makerFeeBps = 10.0, // Bybit spot VIP0 standard (0.10% = 10 bps)
+      takerFeeBps = 10.0,
+      minHurdleBps = 4.0
+    } = params;
+
+    const closes = candles.map(c => c.close);
+    const highs = candles.map(c => c.high);
+    const lows = candles.map(c => c.low);
+    const currentPrice = closes[closes.length - 1] || price || 65000;
+    const atr = this.calculateATR(highs, lows, closes, 14) || (currentPrice * 0.008);
+    const atrBps = Number(((atr / currentPrice) * 10000).toFixed(2));
+
+    // 1. Expected Gross Edge (bps)
+    // For Grid/Limit: capturing half the active grid oscillation distance + mean-reversion alpha
+    let expectedGrossEdgeBps: number;
+    if (gridSpacingPct && gridSpacingPct > 0) {
+      expectedGrossEdgeBps = Number(((gridSpacingPct * 100) * 0.55).toFixed(2));
+    } else {
+      expectedGrossEdgeBps = Number(Math.max(18.0, atrBps * 0.32).toFixed(2));
+    }
+
+    // 2. Maker / Taker Fees (bps)
+    const isMaker = orderType === 'LIMIT' || orderType === 'GRID_LIMIT';
+    const makerTakerFeesBps = isMaker ? makerFeeBps : takerFeeBps;
+
+    // 3. Expected Spread Cost (bps)
+    let spreadBps = 2.4;
+    if (orderBook && orderBook.bids?.length > 0 && orderBook.asks?.length > 0) {
+      const bestBid = orderBook.bids[0].price;
+      const bestAsk = orderBook.asks[0].price;
+      const mid = (bestBid + bestAsk) / 2;
+      if (mid > 0 && bestAsk > bestBid) {
+        spreadBps = Number((((bestAsk - bestBid) / mid) * 10000).toFixed(2));
+      }
+    }
+    // Maker passive liquidity earns spread or pays 0 crossing cost;
+    // Taker pays half-spread. Rebalancing requires crossing threshold:
+    const expectedSpreadCostBps = isMaker ? Number((spreadBps * 0.15).toFixed(2)) : Number((spreadBps * 0.50).toFixed(2));
+
+    // 4. Expected Slippage (bps)
+    const orderCostUsd = currentPrice * amount;
+    let topLiquidityUsd = 15000;
+    if (orderBook && orderBook.asks?.length > 0 && orderBook.bids?.length > 0) {
+      const topLevels = (params.side === 'BUY' ? orderBook.asks : orderBook.bids).slice(0, 3);
+      topLiquidityUsd = topLevels.reduce((acc, lvl) => acc + (lvl.total || (lvl.price * lvl.amount)), 0) || 15000;
+    }
+    const liquidityRatio = Math.min(2.0, orderCostUsd / Math.max(1000, topLiquidityUsd));
+    const expectedSlippageBps = isMaker
+      ? Number(Math.max(0.3, liquidityRatio * 0.8).toFixed(2))
+      : Number(Math.max(1.5, liquidityRatio * spreadBps * 0.7).toFixed(2));
+
+    // 5. Adverse-Selection Cost (bps)
+    // Microstructure toxicity: likelihood that the order is filled right before an adverse price move.
+    // Scales with order book imbalance and normalized volatility.
+    const imbalance = regime?.orderBookImbalance ?? (orderBook ? this.calculateOrderBookImbalance(orderBook) : 0);
+    const directionalToxicity = Math.abs(imbalance) * 4.5;
+    const volatilityToxicity = Math.min(6.0, atrBps * 0.04);
+    const adverseSelectionCostBps = Number((directionalToxicity + volatilityToxicity).toFixed(2));
+
+    // 6. Funding / Other Carrying Cost (bps)
+    // Inventory risk: capital tied up in spot grid while waiting for fill
+    const isVolatile = regime?.regime === 'RANGE_BOUND_HIGH_VOL' || regime?.regime === 'BREAKOUT_VOLATILITY';
+    const fundingCarryingCostBps = Number((1.2 + (isVolatile ? 0.8 : 0)).toFixed(2));
+
+    // 7. Execution Uncertainty (bps)
+    // Non-execution risk (fill probability decay) and network latency jitter
+    const latencyPenalty = Math.min(2.0, (this.latencyMs / 100) * 0.5);
+    const executionUncertaintyBps = Number((1.8 + latencyPenalty).toFixed(2));
+
+    // Expected Net Edge = Gross - (Fees + Spread + Slippage + AdverseSelection + CarryingCost + ExecutionUncertainty)
+    const totalDeductionsBps = Number(
+      (
+        makerTakerFeesBps +
+        expectedSpreadCostBps +
+        expectedSlippageBps +
+        adverseSelectionCostBps +
+        fundingCarryingCostBps +
+        executionUncertaintyBps
+      ).toFixed(2)
+    );
+
+    const expectedNetEdgeBps = Number((expectedGrossEdgeBps - totalDeductionsBps).toFixed(2));
+    // Strictly greater than minimum_edge_threshold: Expected Net Edge > minimum_edge_threshold
+    const isTradeable = expectedNetEdgeBps > minHurdleBps;
+
+    return {
+      expectedGrossEdgeBps,
+      makerTakerFeesBps,
+      expectedSpreadCostBps,
+      expectedSlippageBps,
+      adverseSelectionCostBps,
+      fundingCarryingCostBps,
+      executionUncertaintyBps,
+      expectedNetEdgeBps,
+      isTradeable,
+      minHurdleRateBps: minHurdleBps,
+      edgeFormula: `${expectedGrossEdgeBps} − ${makerTakerFeesBps} (fees) − ${expectedSpreadCostBps} (spread) − ${expectedSlippageBps} (slip) − ${adverseSelectionCostBps} (adv) − ${fundingCarryingCostBps} (carry) − ${executionUncertaintyBps} (uncert) = ${expectedNetEdgeBps} bps`,
+      timestamp: new Date().toISOString()
+    };
+  }
+
+  public calculateOrderBookImbalance(orderBook: OrderBook): number {
+    if (!orderBook || !orderBook.bids || !orderBook.asks || orderBook.bids.length === 0 || orderBook.asks.length === 0) {
+      return 0;
+    }
+    const topBidsVolume = orderBook.bids.slice(0, 5).reduce((acc, b) => acc + b.amount, 0);
+    const topAsksVolume = orderBook.asks.slice(0, 5).reduce((acc, a) => acc + a.amount, 0);
+    const totalVol = topBidsVolume + topAsksVolume;
+    if (totalVol <= 0) return 0;
+    return Number(((topBidsVolume - topAsksVolume) / totalVol).toFixed(4));
   }
 
   private calculateRSI(closes: number[], period = 14): number {

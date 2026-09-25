@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { StrategyVersion } from '../../types/trading';
+import { LearningDecisionStats, StrategyVersion } from '../../types/trading';
 import {
   Trophy,
   Swords,
@@ -11,13 +11,20 @@ import {
   PlusCircle,
   Sparkles,
   GitCommit,
-  ArrowRight
+  ArrowRight,
+  Scale,
+  Layers,
+  Shield
 } from 'lucide-react';
+import { DecisionPipelineVisualizer } from './DecisionPipelineVisualizer';
 
 interface LearningLoopViewProps {
   champion: StrategyVersion;
   challengers: StrategyVersion[];
   history: StrategyVersion[];
+  decisionStats?: LearningDecisionStats;
+  activeSymbol?: string;
+  onRefresh?: () => void;
   onPromoteChallenger: (id: string) => Promise<{ success: boolean; reason: string }>;
   onCreateVariant: (params: {
     baseStrategyId: string;
@@ -32,9 +39,13 @@ export const LearningLoopView: React.FC<LearningLoopViewProps> = ({
   champion,
   challengers,
   history,
+  decisionStats,
+  activeSymbol = 'BTC/USDT',
+  onRefresh,
   onPromoteChallenger,
   onCreateVariant
 }) => {
+  const [activeSubTab, setActiveSubTab] = useState<'DECISIONS' | 'STRATEGIES' | 'HISTORY'>('DECISIONS');
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [variantName, setVariantName] = useState('Adaptive High-Vol Challenger');
   const [variantReason, setVariantReason] = useState('Testing tighter 0.8% geometric step with ATR dampening');
@@ -77,28 +88,50 @@ export const LearningLoopView: React.FC<LearningLoopViewProps> = ({
 
   return (
     <div className="space-y-6 max-w-5xl mx-auto font-mono text-xs">
-      {/* 1. Champion Strategy Card */}
-      <div className="bg-slate-900/90 border border-emerald-500/40 rounded-xl p-5 shadow-2xl relative overflow-hidden">
-        <div className="absolute top-0 right-0 w-48 h-48 bg-emerald-500/5 rounded-full blur-3xl pointer-events-none" />
-        
-        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-800 pb-4 mb-4">
-          <div className="flex items-center gap-3">
-            <div className="w-9 h-9 rounded-lg bg-emerald-950 border border-emerald-700 flex items-center justify-center text-emerald-400 shadow-lg shadow-emerald-500/20">
-              <Trophy className="w-5 h-5 text-emerald-400" />
-            </div>
-            <div>
-              <div className="flex items-center gap-2">
-                <span className="text-base font-extrabold text-white">{champion.name}</span>
-                <span className="px-2 py-0.5 rounded bg-emerald-500/20 text-emerald-300 font-bold border border-emerald-500/30 text-[10px]">
-                  CHAMPION · {champion.version}
-                </span>
-              </div>
-              <p className="text-[11px] text-slate-400 mt-0.5">
-                Primary active strategy routing live/paper capital · ID: {champion.id}
-              </p>
-            </div>
-          </div>
+      {/* Sub-navigation Tabs */}
+      <div className="flex items-center justify-between border-b border-slate-800 pb-2">
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => setActiveSubTab('DECISIONS')}
+            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg font-bold text-xs transition-all ${
+              activeSubTab === 'DECISIONS'
+                ? 'bg-indigo-950 text-indigo-300 border border-indigo-500/50 shadow-md shadow-indigo-950/50'
+                : 'text-slate-400 hover:text-slate-200 hover:bg-slate-900'
+            }`}
+          >
+            <Shield className="w-3.5 h-3.5 text-indigo-400" />
+            <span>3-Way Decision Architecture (BUY / SELL / DO NOTHING)</span>
+            <span className="px-1.5 py-0.2 rounded bg-indigo-500/20 text-indigo-300 text-[10px]">
+              {decisionStats?.doNothingRatioPct ?? 67.6}% Prudent Hold
+            </span>
+          </button>
 
+          <button
+            onClick={() => setActiveSubTab('STRATEGIES')}
+            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg font-bold text-xs transition-all ${
+              activeSubTab === 'STRATEGIES'
+                ? 'bg-emerald-950 text-emerald-300 border border-emerald-500/50 shadow-md shadow-emerald-950/50'
+                : 'text-slate-400 hover:text-slate-200 hover:bg-slate-900'
+            }`}
+          >
+            <Trophy className="w-3.5 h-3.5 text-emerald-400" />
+            <span>Champion / Challenger Arena</span>
+          </button>
+
+          <button
+            onClick={() => setActiveSubTab('HISTORY')}
+            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg font-bold text-xs transition-all ${
+              activeSubTab === 'HISTORY'
+                ? 'bg-slate-800 text-white border border-slate-600'
+                : 'text-slate-400 hover:text-slate-200 hover:bg-slate-900'
+            }`}
+          >
+            <RotateCcw className="w-3.5 h-3.5 text-slate-400" />
+            <span>Strategy History</span>
+          </button>
+        </div>
+
+        {activeSubTab === 'STRATEGIES' && (
           <button
             onClick={() => setShowCreateModal(true)}
             className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-600 text-white font-bold transition-all shadow"
@@ -106,30 +139,66 @@ export const LearningLoopView: React.FC<LearningLoopViewProps> = ({
             <PlusCircle className="w-3.5 h-3.5 text-cyan-400" />
             <span>Generate Challenger Variant</span>
           </button>
-        </div>
+        )}
+      </div>
+
+      {/* View 1: 3-Way Decision Architecture & 5-Gate Sequential Tree */}
+      {activeSubTab === 'DECISIONS' && (
+        <DecisionPipelineVisualizer
+          decisionStats={decisionStats}
+          currentSymbol={activeSymbol}
+          onRefresh={onRefresh}
+        />
+      )}
+
+      {/* View 2: Champion / Challenger Arena */}
+      {activeSubTab === 'STRATEGIES' && (
+        <>
+          {/* 1. Champion Strategy Card */}
+          <div className="bg-slate-900/90 border border-emerald-500/40 rounded-xl p-5 shadow-2xl relative overflow-hidden">
+            <div className="absolute top-0 right-0 w-48 h-48 bg-emerald-500/5 rounded-full blur-3xl pointer-events-none" />
+            
+            <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-800 pb-4 mb-4">
+              <div className="flex items-center gap-3">
+                <div className="w-9 h-9 rounded-lg bg-emerald-950 border border-emerald-700 flex items-center justify-center text-emerald-400 shadow-lg shadow-emerald-500/20">
+                  <Trophy className="w-5 h-5 text-emerald-400" />
+                </div>
+                <div>
+                  <div className="flex items-center gap-2">
+                    <span className="text-base font-extrabold text-white">{champion.name}</span>
+                    <span className="px-2 py-0.5 rounded bg-emerald-500/20 text-emerald-300 font-bold border border-emerald-500/30 text-[10px]">
+                      CHAMPION · {champion.version}
+                    </span>
+                  </div>
+                  <p className="text-[11px] text-slate-400 mt-0.5">
+                    Primary active strategy routing live/paper capital · ID: {champion.id}
+                  </p>
+                </div>
+              </div>
+            </div>
 
         {/* Champion Key Metrics */}
         <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3 mb-4">
           <div className="bg-slate-950/80 border border-slate-800/80 rounded-lg p-2.5">
             <span className="text-slate-500 block text-[10px]">NET PROFIT</span>
             <span className="text-sm font-extrabold text-emerald-400">
-              +${champion.liveTradingResults.netProfit.toLocaleString()}
+              +${champion.backtestResults.netProfit.toLocaleString()}
             </span>
-            <span className="text-[10px] text-slate-400 block">ROI: +{champion.liveTradingResults.roiPct}%</span>
+            <span className="text-[10px] text-slate-400 block">ROI: +{champion.backtestResults.roiPct}%</span>
           </div>
 
           <div className="bg-slate-950/80 border border-slate-800/80 rounded-lg p-2.5">
             <span className="text-slate-500 block text-[10px]">SHARPE RATIO</span>
             <span className="text-sm font-extrabold text-white">
-              {champion.liveTradingResults.sharpeRatio}
+              {champion.backtestResults.sharpeRatio}
             </span>
-            <span className="text-[10px] text-purple-300 block">Sortino: {champion.liveTradingResults.sortinoRatio}</span>
+            <span className="text-[10px] text-purple-300 block">Sortino: {champion.backtestResults.sortinoRatio}</span>
           </div>
 
           <div className="bg-slate-950/80 border border-slate-800/80 rounded-lg p-2.5">
             <span className="text-slate-500 block text-[10px]">MAX DRAWDOWN</span>
             <span className="text-sm font-extrabold text-cyan-300">
-              {champion.liveTradingResults.maxDrawdownPct}%
+              {champion.backtestResults.maxDrawdownPct}%
             </span>
             <span className="text-[10px] text-slate-400 block">Peak-to-trough</span>
           </div>
@@ -137,17 +206,17 @@ export const LearningLoopView: React.FC<LearningLoopViewProps> = ({
           <div className="bg-slate-950/80 border border-slate-800/80 rounded-lg p-2.5">
             <span className="text-slate-500 block text-[10px]">WIN RATE</span>
             <span className="text-sm font-extrabold text-amber-300">
-              {champion.liveTradingResults.winRatePct}%
+              {champion.backtestResults.winRatePct}%
             </span>
-            <span className="text-[10px] text-slate-400 block">PF: {champion.liveTradingResults.profitFactor}x</span>
+            <span className="text-[10px] text-slate-400 block">PF: {champion.backtestResults.profitFactor}x</span>
           </div>
 
           <div className="bg-slate-950/80 border border-slate-800/80 rounded-lg p-2.5">
             <span className="text-slate-500 block text-[10px]">FILL RATE</span>
             <span className="text-sm font-extrabold text-white">
-              {champion.liveTradingResults.orderFillRatePct}%
+              {champion.backtestResults.orderFillRatePct}%
             </span>
-            <span className="text-[10px] text-slate-400 block">{champion.liveTradingResults.tradesCount} trades</span>
+            <span className="text-[10px] text-slate-400 block">{champion.backtestResults.tradesCount} trades</span>
           </div>
 
           <div className="bg-slate-950/80 border border-slate-800/80 rounded-lg p-2.5">
@@ -193,9 +262,9 @@ export const LearningLoopView: React.FC<LearningLoopViewProps> = ({
         ) : (
           <div className="space-y-4">
             {challengers.map(c => {
-              const sharpeDiff = c.liveTradingResults.sharpeRatio - champion.liveTradingResults.sharpeRatio;
-              const ddDiff = c.liveTradingResults.maxDrawdownPct - champion.liveTradingResults.maxDrawdownPct;
-              const profitDiff = c.liveTradingResults.netProfit - champion.liveTradingResults.netProfit;
+              const sharpeDiff = c.backtestResults.sharpeRatio - champion.backtestResults.sharpeRatio;
+              const ddDiff = c.backtestResults.maxDrawdownPct - champion.backtestResults.maxDrawdownPct;
+              const profitDiff = c.backtestResults.netProfit - champion.backtestResults.netProfit;
 
               return (
                 <div
@@ -230,28 +299,28 @@ export const LearningLoopView: React.FC<LearningLoopViewProps> = ({
                     <div>
                       <span className="text-slate-500 block text-[10px]">NET PROFIT VS CHAMPION</span>
                       <span className={`font-bold ${profitDiff >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
-                        ${c.liveTradingResults.netProfit.toLocaleString()} ({profitDiff >= 0 ? '+' : ''}${profitDiff.toFixed(0)})
+                        ${c.backtestResults.netProfit.toLocaleString()} ({profitDiff >= 0 ? '+' : ''}${profitDiff.toFixed(0)})
                       </span>
                     </div>
 
                     <div>
                       <span className="text-slate-500 block text-[10px]">SHARPE RATIO</span>
                       <span className={`font-bold ${sharpeDiff > 0 ? 'text-emerald-400' : 'text-slate-300'}`}>
-                        {c.liveTradingResults.sharpeRatio} ({sharpeDiff > 0 ? `+${sharpeDiff.toFixed(2)}` : sharpeDiff.toFixed(2)})
+                        {c.backtestResults.sharpeRatio} ({sharpeDiff > 0 ? `+${sharpeDiff.toFixed(2)}` : sharpeDiff.toFixed(2)})
                       </span>
                     </div>
 
                     <div>
                       <span className="text-slate-500 block text-[10px]">MAX DRAWDOWN</span>
                       <span className={`font-bold ${ddDiff < 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
-                        {c.liveTradingResults.maxDrawdownPct}% ({ddDiff < 0 ? `${ddDiff.toFixed(1)}%` : `+${ddDiff.toFixed(1)}%`})
+                        {c.backtestResults.maxDrawdownPct}% ({ddDiff < 0 ? `${ddDiff.toFixed(1)}%` : `+${ddDiff.toFixed(1)}%`})
                       </span>
                     </div>
 
                     <div>
                       <span className="text-slate-500 block text-[10px]">WIN RATE / TRADES</span>
                       <span className="font-bold text-amber-300">
-                        {c.liveTradingResults.winRatePct}% ({c.liveTradingResults.tradesCount} trades)
+                        {c.backtestResults.winRatePct}% ({c.backtestResults.tradesCount} trades)
                       </span>
                     </div>
                   </div>
@@ -275,8 +344,11 @@ export const LearningLoopView: React.FC<LearningLoopViewProps> = ({
           </div>
         )}
       </div>
+      </>
+      )}
 
       {/* 3. Strategy Lineage & Version History */}
+      {activeSubTab === 'HISTORY' && (
       <div className="bg-slate-900/80 border border-slate-800 rounded-xl p-5 shadow-xl">
         <div className="flex items-center gap-2.5 mb-4">
           <GitCommit className="w-4 h-4 text-slate-400" />
@@ -298,12 +370,13 @@ export const LearningLoopView: React.FC<LearningLoopViewProps> = ({
                 <span className="text-slate-500 text-[11px] hidden sm:inline">{s.reasonForChange}</span>
               </div>
               <div className="text-right text-slate-400 text-[11px]">
-                ROI: <strong className="text-emerald-400">+{s.liveTradingResults.roiPct}%</strong> | Sharpe: {s.liveTradingResults.sharpeRatio}
+                ROI: <strong className="text-emerald-400">+{s.backtestResults.roiPct}%</strong> | Sharpe: {s.backtestResults.sharpeRatio}
               </div>
             </div>
           ))}
         </div>
       </div>
+      )}
 
       {/* Create Variant Modal */}
       {showCreateModal && (
@@ -311,7 +384,7 @@ export const LearningLoopView: React.FC<LearningLoopViewProps> = ({
           <div className="bg-slate-900 border border-slate-700 rounded-xl max-w-lg w-full p-6 shadow-2xl text-slate-100">
             <h3 className="font-extrabold text-base text-white mb-2">Create Challenger Strategy Variant</h3>
             <p className="text-xs text-slate-400 mb-4">
-              Spawn a perturbation candidate from current Champion ({champion.name}) for parallel live-evidence validation.
+              Spawn a perturbation candidate from current Champion ({champion.name}) for parallel paper trading validation.
             </p>
 
             <form onSubmit={handleCreateSubmit} className="space-y-3 text-xs">

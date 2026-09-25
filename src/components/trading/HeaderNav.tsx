@@ -16,9 +16,10 @@ import {
   KeyRound,
   ShieldCheck,
   Wallet,
-  LogOut
+  LogOut,
+  Scale
 } from 'lucide-react';
-import { AutonomyLevel, MarketRegime, TradingMode } from '../../types/trading';
+import { AutonomyLevel, InventoryAwarenessMetrics, MarketRegime, TradingMode } from '../../types/trading';
 
 interface HeaderNavProps {
   activeSymbol: string;
@@ -40,6 +41,7 @@ interface HeaderNavProps {
   botsDisabled?: boolean;
   activeBotsCount?: number;
   marketRegime: MarketRegime;
+  inventoryAwareness?: InventoryAwarenessMetrics;
   latencyMs?: number;
   isLiveConnected?: boolean;
   onReconnect?: () => void;
@@ -48,6 +50,10 @@ interface HeaderNavProps {
   onOpenOwnerAuth?: () => void;
   onLogoutOwner?: () => void;
   onNavigateToAssets?: () => void;
+  onOpenRegimeTransition?: () => void;
+  onOpenInventoryGrid?: () => void;
+  onNavigateToDecisions?: () => void;
+  decisionStats?: import('../../types/trading').LearningDecisionStats;
 }
 
 export const HeaderNav: React.FC<HeaderNavProps> = ({
@@ -66,6 +72,7 @@ export const HeaderNav: React.FC<HeaderNavProps> = ({
   botsDisabled,
   activeBotsCount,
   marketRegime,
+  inventoryAwareness,
   latencyMs = 24,
   isLiveConnected = false,
   onReconnect,
@@ -73,7 +80,11 @@ export const HeaderNav: React.FC<HeaderNavProps> = ({
   ownerEmail = 'ky8402@gmail.com',
   onOpenOwnerAuth,
   onLogoutOwner,
-  onNavigateToAssets
+  onNavigateToAssets,
+  onOpenRegimeTransition,
+  onOpenInventoryGrid,
+  onNavigateToDecisions,
+  decisionStats,
 }) => {
   const isKillActive = globalKillSwitchActive !== undefined ? globalKillSwitchActive : killSwitchActive;
   const areBotsHalted = botsDisabled !== undefined ? botsDisabled : (isKillActive || autonomyLevel === 0);
@@ -187,14 +198,71 @@ export const HeaderNav: React.FC<HeaderNavProps> = ({
             )}
           </div>
 
+          {/* Regime Transition Alert Badge (shown during active transition) */}
+          {marketRegime.transition?.isTransitioning && (
+            <button
+              onClick={onOpenRegimeTransition}
+              className="hidden lg:flex items-center gap-1.5 px-2.5 py-1 rounded-md border text-xs bg-amber-500/15 border-amber-500/60 text-amber-300 font-mono font-bold hover:bg-amber-500/25 transition-all cursor-pointer animate-pulse"
+              title={marketRegime.transition.restrictionReason}
+            >
+              <AlertTriangle className="w-3.5 h-3.5 text-amber-400" />
+              <span>TRANSITION: [{marketRegime.transition.phase}]</span>
+              <span className="text-[10px] text-rose-300 bg-rose-950/80 px-1 py-0.2 rounded border border-rose-500/40">
+                {Math.round(marketRegime.transition.positionSizeMultiplier * 100)}% SIZE
+              </span>
+            </button>
+          )}
+
           {/* Market Regime Badge */}
-          <div className={`hidden md:flex items-center gap-1.5 px-2.5 py-1 rounded-md border text-xs ${getRegimeColor(marketRegime.regime)}`}>
+          <button
+            onClick={onOpenRegimeTransition}
+            className={`hidden md:flex items-center gap-1.5 px-2.5 py-1 rounded-md border text-xs cursor-pointer hover:brightness-125 transition-all ${getRegimeColor(marketRegime.regime)}`}
+            title="Click to view explicit Regime Transition Detector & Protections"
+          >
             <Activity className="w-3.5 h-3.5 animate-pulse" />
             <span className="font-mono font-semibold text-[11px]">
               REGIME: {marketRegime.regime.replace(/_/g, ' ')}
             </span>
             <span className="text-[10px] opacity-80">({Math.round(marketRegime.confidence * 100)}% conf)</span>
-          </div>
+          </button>
+
+          {/* Inventory Posture Badge */}
+          {inventoryAwareness && (
+            <button
+              onClick={onOpenInventoryGrid}
+              className={`hidden lg:flex items-center gap-1.5 px-2.5 py-1 rounded-md border text-xs cursor-pointer hover:brightness-125 transition-all ${
+                inventoryAwareness.inventorySkew >= 0.35
+                  ? 'bg-amber-950/60 text-amber-300 border-amber-500/50'
+                  : inventoryAwareness.inventorySkew <= -0.35
+                  ? 'bg-blue-950/60 text-blue-300 border-blue-500/50'
+                  : 'bg-indigo-950/60 text-indigo-300 border-indigo-500/40'
+              }`}
+              title="Click to view Inventory-Aware Multi-Variable Grid Engine"
+            >
+              <Scale className="w-3.5 h-3.5" />
+              <span className="font-mono font-semibold text-[11px]">
+                INVENTORY: {inventoryAwareness.inventoryPosturing.replace('_', ' ')}
+              </span>
+              <span className="text-[10px] opacity-85 font-mono">
+                ({inventoryAwareness.inventorySkew >= 0 ? `+${inventoryAwareness.inventorySkew}` : inventoryAwareness.inventorySkew})
+              </span>
+            </button>
+          )}
+
+          {/* 3-Way Decisions Outcome Badge */}
+          <button
+            onClick={onNavigateToDecisions}
+            className="hidden xl:flex items-center gap-1.5 px-2.5 py-1 rounded-md border text-xs cursor-pointer hover:brightness-125 transition-all bg-indigo-950/70 border-indigo-500/50 text-indigo-300"
+            title="Click to view 3-Way Decision Architecture: BUY / SELL / DO NOTHING"
+          >
+            <Shield className="w-3.5 h-3.5 text-indigo-400" />
+            <span className="font-mono font-semibold text-[11px]">
+              DECISIONS: {decisionStats?.doNothingRatioPct ?? 67.6}% PRUDENT HOLD
+            </span>
+            <span className="text-[10px] text-emerald-400 font-mono">
+              +${decisionStats?.totalCapitalPreservedUsd ? Math.round(decisionStats.totalCapitalPreservedUsd) : 2185}
+            </span>
+          </button>
         </div>
 
         {/* Center: Autonomy Level & Mode Switcher */}

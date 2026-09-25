@@ -3,6 +3,7 @@ import jwt from 'jsonwebtoken';
 import QRCode from 'qrcode';
 import fs from 'fs';
 import path from 'path';
+import type { Request, Response, NextFunction } from 'express';
 
 // RFC 4648 Base32 alphabet for TOTP secrets
 const RFC4648_BASE32 = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ234567';
@@ -86,8 +87,7 @@ function hashPassword(password: string, salt: string): string {
   return crypto.pbkdf2Sync(password, salt, 100000, 64, 'sha512').toString('hex');
 }
 
-const PERSISTENT_CONFIG_DIR = process.env.GIGPILOT_PERSISTENT_DATA_DIR || path.join(process.cwd(), '.gigpilot-data');
-const PERSISTENT_CONFIG_PATH = path.join(PERSISTENT_CONFIG_DIR, 'owner-auth-config.json');
+const PERSISTENT_CONFIG_PATH = path.join(process.cwd(), '.owner-auth-config.json');
 
 interface OwnerConfig {
   ownerEmail: string;
@@ -96,6 +96,7 @@ interface OwnerConfig {
   totpSecret: string;
   totpEnabled: boolean;
   emergencyPin: string;
+  jwtSecret?: string;
   createdAt: string;
 }
 
@@ -105,54 +106,62 @@ class OwnerAuthManager {
   private jwtSecret: string;
 
   constructor() {
-    this.jwtSecret = process.env.JWT_SECRET || process.env.OWNER_SESSION_SECRET || 'quant-owner-session-secret-key-369';
     this.config = this.loadConfig();
+    this.jwtSecret = process.env.JWT_SECRET || process.env.OWNER_SESSION_SECRET || this.config.jwtSecret || crypto.randomBytes(32).toString('hex');
+    if (!this.config.jwtSecret) {
+      this.config.jwtSecret = this.jwtSecret;
+      this.saveConfig();
+    }
   }
 
   private loadConfig(): OwnerConfig {
     const defaultEmail = process.env.OWNER_EMAIL || 'ky8402@gmail.com';
     const envPin = (process.env.OWNER_AUTH_PIN || '').trim();
-    const emergencyPin = (envPin.length >= 4 && envPin.length <= 10) ? envPin : base32Encode(crypto.randomBytes(6)).slice(0, 10);
+    // Cryptographically secure emergency PIN generation (never default to hardcoded public PIN)
+    const secureGeneratedPin = crypto.randomBytes(4).toString('hex');
 
     if (fs.existsSync(PERSISTENT_CONFIG_PATH)) {
       try {
         const raw = fs.readFileSync(PERSISTENT_CONFIG_PATH, 'utf-8');
-        return JSON.parse(raw);
+        const parsed = JSON.parse(raw);
+        // Scrub any legacy insecure 778899 default PIN
+        if (!parsed.emergencyPin || parsed.emergencyPin === '778899') {
+          parsed.emergencyPin = envPin || secureGeneratedPin;
+          fs.writeFileSync(PERSISTENT_CONFIG_PATH, JSON.stringify(parsed, null, 2), { mode: 0o600 });
+        }
+        return parsed;
       } catch (err) {
         console.error('Failed to load owner config, creating fresh:', err);
       }
     }
 
-    // First-run owner configuration; persist immediately so restarts do not regenerate setup.
     const salt = crypto.randomBytes(16).toString('hex');
     const defaultSecret = base32Encode(crypto.randomBytes(20));
+    const emergencyPin = (envPin.length >= 6) ? envPin : secureGeneratedPin;
 
-    const initialConfig: OwnerConfig = {
+    const newConfig: OwnerConfig = {
       ownerEmail: defaultEmail,
       passwordSalt: salt,
-      passwordHash: '', // Unset by default: requires initial setup
+      passwordHash: '',
       totpSecret: defaultSecret,
       totpEnabled: false,
       emergencyPin,
+      jwtSecret: crypto.randomBytes(32).toString('hex'),
       createdAt: new Date().toISOString()
     };
-    this.persistConfig(initialConfig);
-    return initialConfig;
-  }
 
-  private persistConfig(config: OwnerConfig): void {
     try {
-      fs.mkdirSync(PERSISTENT_CONFIG_DIR, { recursive: true });
-      fs.writeFileSync(PERSISTENT_CONFIG_PATH, JSON.stringify(config, null, 2), 'utf-8');
-    } catch (err) {
-      console.error('Failed to create persistent owner auth storage:', err);
+      fs.writeFileSync(PERSISTENT_CONFIG_PATH, JSON.stringify(newConfig, null, 2), { mode: 0o600 });
+    } catch {
+      // Ignored if read-only filesystem
     }
+
+    return newConfig;
   }
 
   private saveConfig(): void {
     try {
-      fs.mkdirSync(PERSISTENT_CONFIG_DIR, { recursive: true });
-      fs.writeFileSync(PERSISTENT_CONFIG_PATH, JSON.stringify(this.config, null, 2), 'utf-8');
+      fs.writeFileSync(PERSISTENT_CONFIG_PATH, JSON.stringify(this.config, null, 2), { mode: 0o600 });
     } catch (err) {
       console.error('Failed to persist owner auth config:', err);
     }
@@ -241,15 +250,14 @@ class OwnerAuthManager {
       return { success: false, error: 'Access denied: personal single-owner account.' };
     }
 
-    // Emergency PIN override (universal recovery PIN 778899 or configured PIN)
-    const isEmergency = Boolean(
-      emergencyPin && (
-        emergencyPin.trim() === this.config.emergencyPin.trim()
-      )
-    );
-    if (isEmergency) {
-      const token = this.generateToken(this.config.ownerEmail);
-      return { success: true, token };
+    // Emergency PIN override: strictly require matching configured PIN using constant-time comparison
+    if (emergencyPin && this.config.emergencyPin) {
+      const inputPin = Buffer.from(emergencyPin.trim());
+      const expectedPin = Buffer.from(this.config.emergencyPin.trim());
+      if (inputPin.length === expectedPin.length && crypto.timingSafeEqual(inputPin, expectedPin)) {
+        const token = this.generateToken(this.config.ownerEmail);
+        return { success: true, token };
+      }
     }
 
     // If not configured yet, notify setup required
@@ -304,3 +312,32 @@ class OwnerAuthManager {
 }
 
 export const ownerAuth = new OwnerAuthManager();
+
+export function extractToken(req: Request): string | null {
+  const authHeader = req.headers.authorization;
+  if (authHeader && authHeader.startsWith('Bearer ')) {
+    return authHeader.substring(7).trim();
+  }
+  return (req.query.token as string) || (req.headers['x-owner-token'] as string) || null;
+}
+
+export function isOwner(req: Request): boolean {
+  const token = extractToken(req);
+  return token ? ownerAuth.verifyToken(token) : false;
+}
+
+export function requireOwnerAuth(req: Request, res: Response, next: NextFunction): void {
+  if (req.method === 'OPTIONS') {
+    next();
+    return;
+  }
+  const authenticated = isOwner(req);
+  if (!authenticated) {
+    res.status(401).json({
+      success: false,
+      error: 'Unauthorized: Valid single-owner authentication token required for this operational trading endpoint.'
+    });
+    return;
+  }
+  next();
+}

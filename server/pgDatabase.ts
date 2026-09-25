@@ -70,7 +70,7 @@ export interface MLTrainingData {
   features: Record<string, number>;
   label: string;
   timestamp: string;
-  source: 'health_check' | 'manual';
+  source: 'health_check' | 'manual' | 'synthetic_bootstrap';
 }
 
 export interface MLFeedback {

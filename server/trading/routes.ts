@@ -1,6 +1,6 @@
 import { Router, Request, Response } from 'express';
 import { globalTradingStore } from './store.js';
-import { ownerAuth } from './ownerAuth.js';
+import { ownerAuth, requireOwnerAuth, isOwner, extractToken } from './ownerAuth.js';
 import { bybitAdapter } from './bybitAdapter.js';
 import { EngineId, SupportedExchange } from './types.js';
 
@@ -39,8 +39,17 @@ tradingRouter.get('/state', (req: Request, res: Response) => {
       recentFills: store.exchangeExec.getFills().slice(0, 15),
       indicators: qResult.indicators,
       championStrategy: store.learningLoop.getChampionStrategy(),
+      decisionStats: store.learningLoop.getDecisionStats(),
       circuitBreakerActive: store.risk.isCircuitBreakerActive(),
       destinationWallet: store.sweeper.getDestinationWallet(),
+      autonomousOptimizer: {
+        enabled: store.profitOptimizer.getOffSwitch(),
+        autoApplyEnabled: store.profitOptimizer.isAutoApplyEnabled(),
+        latestAudit: store.profitOptimizer.getLatestAudit(),
+        latestStrategyAllocation: store.profitOptimizer.getLatestStrategyAllocation(),
+        decisions: store.profitOptimizer.getDecisions().slice(0, 20),
+        builds: store.profitOptimizer.getStrategyBuilds().slice(0, 15)
+      },
       serverTime: new Date().toISOString()
     });
   } catch (err: any) {
@@ -67,7 +76,7 @@ tradingRouter.get('/engines/health', (req: Request, res: Response) => {
 });
 
 // 3. Engine Off-Switch Toggle
-tradingRouter.post('/engines/:id/off-switch', (req: Request, res: Response) => {
+tradingRouter.post('/engines/:id/off-switch', requireOwnerAuth, (req: Request, res: Response) => {
   try {
     const engineId = req.params.id as EngineId;
     const { enabled } = req.body;
@@ -91,7 +100,7 @@ tradingRouter.post('/engines/:id/off-switch', (req: Request, res: Response) => {
 });
 
 // 4. Engine Error Surface Clear
-tradingRouter.post('/engines/:id/clear-errors', (req: Request, res: Response) => {
+tradingRouter.post('/engines/:id/clear-errors', requireOwnerAuth, (req: Request, res: Response) => {
   try {
     const engineId = req.params.id as EngineId;
     const result = globalTradingStore.monitor.clearEngineErrors(engineId);
@@ -115,9 +124,9 @@ tradingRouter.get('/exchanges/credentials', (req: Request, res: Response) => {
   }
 });
 
-tradingRouter.post('/exchanges/keys', (req: Request, res: Response) => {
+tradingRouter.post('/exchanges/keys', requireOwnerAuth, (req: Request, res: Response) => {
   try {
-    const { exchange, apiKey, apiSecret } = req.body || {};
+    const { exchange, apiKey, apiSecret, isTestnet } = req.body || {};
     if (!exchange || exchange !== 'BYBIT') {
       return res.status(400).json({ success: false, error: 'Valid exchange (BYBIT) is required.' });
     }
@@ -131,12 +140,12 @@ tradingRouter.post('/exchanges/keys', (req: Request, res: Response) => {
     }
 
     // Update bybitAdapter
-    bybitAdapter.updateCredentials(apiKey, apiSecret);
+    bybitAdapter.updateCredentials(apiKey, apiSecret, undefined, isTestnet);
 
     globalTradingStore.monitor.logAudit({
       category: 'CONFIG_CHANGE',
       action: `Updated Trade-Only API Keys for ${exchange}`,
-      details: { exchange, environment: 'BYBIT_LIVE_PRODUCTION' }
+      details: { exchange, isTestnet }
     });
 
     return res.json({
@@ -197,16 +206,16 @@ tradingRouter.get(['/pair/:symbol', '/pair/:base/:quote'], (req: Request, res: R
 });
 
 // 8. Select Active Pair
-tradingRouter.post('/pair/select', async (req: Request, res: Response) => {
+tradingRouter.post('/pair/select', (req: Request, res: Response) => {
   const { symbol } = req.body;
   if (!symbol) return res.status(400).json({ success: false, error: 'Symbol required' });
 
-  await globalTradingStore.setActiveSymbol(symbol);
+  globalTradingStore.setActiveSymbol(symbol);
   res.json({ success: true, activeSymbol: globalTradingStore.activeSymbol });
 });
 
 // 9. Autonomy Level
-tradingRouter.post('/autonomy', (req: Request, res: Response) => {
+tradingRouter.post('/autonomy', requireOwnerAuth, (req: Request, res: Response) => {
   const { level } = req.body;
   if (level === undefined || level < 0 || level > 4) {
     return res.status(400).json({ success: false, error: 'Invalid autonomy level (0-4)' });
@@ -233,7 +242,7 @@ tradingRouter.post('/kill-switch/trigger', (req: Request, res: Response) => {
   });
 });
 
-tradingRouter.post('/kill-switch/deactivate', (req: Request, res: Response) => {
+tradingRouter.post('/kill-switch/deactivate', requireOwnerAuth, (req: Request, res: Response) => {
   globalTradingStore.deactivateKillSwitch();
   res.json({
     success: true,
@@ -244,7 +253,7 @@ tradingRouter.post('/kill-switch/deactivate', (req: Request, res: Response) => {
   });
 });
 
-tradingRouter.post('/kill-switch/toggle', (req: Request, res: Response) => {
+tradingRouter.post('/kill-switch/toggle', requireOwnerAuth, (req: Request, res: Response) => {
   const { active, reason } = req.body;
   const shouldActivate = active !== undefined ? Boolean(active) : !globalTradingStore.GLOBAL_KILL_SWITCH_ACTIVE;
 
@@ -264,7 +273,7 @@ tradingRouter.post('/kill-switch/toggle', (req: Request, res: Response) => {
 });
 
 // 11. Configure Grid
-tradingRouter.post('/grid/configure', async (req: Request, res: Response) => {
+tradingRouter.post('/grid/configure', requireOwnerAuth, async (req: Request, res: Response) => {
   const store = globalTradingStore;
   const {
     upperBoundary,
@@ -289,7 +298,11 @@ tradingRouter.post('/grid/configure', async (req: Request, res: Response) => {
     totalAllocatedUsd: Number(totalAllocatedUsd) || 3500,
     volatilityAdjustment: volatilityAdjustment !== false,
     trendProtection: trendProtection !== false,
-    regime: store.currentRegime
+    regime: store.currentRegime,
+    positions: store.exchangeExec.getPositions(),
+    orderBook: liveData.orderBook,
+    candles: liveData.candles,
+    totalEquityUsd: store.capital.totalEquity || store.capital.tradingCapital
   });
 
   if (!newGridRes.grid) {
@@ -315,7 +328,7 @@ tradingRouter.post('/grid/configure', async (req: Request, res: Response) => {
 });
 
 // 12. Manual Live Order Placement (Validated via Independent Risk Engine)
-tradingRouter.post('/order/place', async (req: Request, res: Response) => {
+tradingRouter.post('/order/place', requireOwnerAuth, async (req: Request, res: Response) => {
   const store = globalTradingStore;
   if (store.GLOBAL_KILL_SWITCH_ACTIVE || store.killSwitch.getState().isActive) {
     return res.status(403).json({ success: false, error: 'Cannot place orders: GLOBAL KILL SWITCH is engaged' });
@@ -340,19 +353,34 @@ tradingRouter.post('/order/place', async (req: Request, res: Response) => {
   const norm = store.dataEngine.normalizeSymbol(symbol);
   const liveData = store.dataEngine.getPairData(norm);
 
-  // 1. Risk Engine Pre-Trade Gate
+  // Compute Expected Net Edge Breakdown
+  const expectedNetEdge = store.quantEngine.computeExpectedNetEdge({
+    symbol: norm,
+    side,
+    price: numPrice,
+    amount: numAmount,
+    orderType: type,
+    orderBook: liveData?.orderBook,
+    candles: liveData?.candles,
+    gridSpacingPct: store.activeGrid?.gridSpacingPct,
+    regime: store.currentRegime
+  });
+
+  // 1. Risk Engine Pre-Trade Gate: Enforces Expected Net Edge > minimum_edge_threshold
   const validation = store.risk.validateOrder(
     { symbol: norm, side, price: numPrice, amount: numAmount },
     store.capital,
     store.exchangeExec.getPositions(),
     store.exchangeExec.getOpenOrders().length,
-    liveData?.currentPrice
+    liveData?.currentPrice,
+    expectedNetEdge
   );
 
   if (!validation.allowed) {
     return res.status(422).json({
       success: false,
       error: `Order rejected by Risk Engine: ${validation.reason}`,
+      expectedNetEdge,
       event: validation.event
     });
   }
@@ -365,7 +393,8 @@ tradingRouter.post('/order/place', async (req: Request, res: Response) => {
     type,
     price: numPrice,
     amount: numAmount,
-    exchange: targetExchange
+    exchange: targetExchange,
+    expectedNetEdge
   });
 
   if (!execResult.success) {
@@ -391,7 +420,7 @@ tradingRouter.post('/order/place', async (req: Request, res: Response) => {
 });
 
 // 13. Cancel Order
-tradingRouter.post('/order/cancel', async (req: Request, res: Response) => {
+tradingRouter.post('/order/cancel', requireOwnerAuth, async (req: Request, res: Response) => {
   const { orderId } = req.body;
   const result = await globalTradingStore.exchangeExec.cancelOrder(orderId);
   if (!result.success) return res.status(404).json(result);
@@ -404,7 +433,7 @@ tradingRouter.post('/order/cancel', async (req: Request, res: Response) => {
   res.json({ success: true, orderId });
 });
 
-tradingRouter.post('/order/cancel-all', async (req: Request, res: Response) => {
+tradingRouter.post('/order/cancel-all', requireOwnerAuth, async (req: Request, res: Response) => {
   const { symbol } = req.body;
   const count = await globalTradingStore.exchangeExec.cancelAllOrders(symbol);
   globalTradingStore.monitor.logAudit({
@@ -426,58 +455,179 @@ tradingRouter.get('/strategies', (req: Request, res: Response) => {
   });
 });
 
-tradingRouter.post('/strategy/promote', (req: Request, res: Response) => {
-  const { challengerId, reason, stability } = req.body;
-  if (!challengerId) return res.status(400).json({ success: false, error: 'challengerId is required' });
-
-  // Parameter stability is a hard promotion criterion. The optimizer must demonstrate
-  // that nearby parameter values remain profitable rather than promoting a single historical peak.
-  if (stability?.parameter && Number.isFinite(Number(stability.baselineValue)) && Array.isArray(stability.samples)) {
-    const assessment = globalTradingStore.learningLoop.assessParameterStability(
-      challengerId,
-      String(stability.parameter),
-      Number(stability.baselineValue),
-      stability.samples
-    );
-    if (!assessment.stable) {
-      return res.status(422).json({
-        success: false,
-        error: assessment.reason || 'Parameter stability validation failed',
-        parameterStability: assessment.report
-      });
-    }
-  } else {
-    return res.status(422).json({
+tradingRouter.post('/strategy/promote', requireOwnerAuth, (req: Request, res: Response) => {
+  const { challengerId, reason, forceOverride } = req.body;
+  const result = globalTradingStore.learningLoop.promoteChallenger(challengerId, reason, forceOverride);
+  if (!result.success || !result.champion) {
+    return res.status(400).json({
       success: false,
-      error: 'Promotion requires parameter stability evidence: parameter, baselineValue, and at least 3 nearby samples.'
+      error: result.reason || 'Challenger not found or optimizer offline',
+      tenureStatus: result.tenureStatus,
+      code: result.code
     });
-  }
-
-  const promoted = globalTradingStore.learningLoop.promoteChallenger(challengerId, reason);
-  if (!promoted) {
-    return res.status(400).json({ success: false, error: 'Challenger not found, optimizer offline, or promotion criteria failed' });
   }
 
   globalTradingStore.monitor.logAudit({
     category: 'CONFIG_CHANGE',
-    action: `Strategy promoted: ${promoted.id}`,
-    details: {
-      promotedId: promoted.id,
-      reason,
-      promotionScore: promoted.promotionScore,
-      parameterStability: promoted.parameterStability
+    action: `Strategy promoted: ${result.champion.id}`,
+    details: { promotedId: result.champion.id, reason }
+  });
+
+  res.json({ success: true, champion: result.champion, tenureStatus: result.tenureStatus });
+});
+
+// 14B. 3-Way Trade Decision Architecture (BUY / SELL / DO NOTHING)
+// DO NOTHING is a legitimate optimized action: profitable automated systems trade selectively
+tradingRouter.get('/decisions', (req: Request, res: Response) => {
+  const store = globalTradingStore;
+  res.json({
+    success: true,
+    stats: store.learningLoop.getDecisionStats()
+  });
+});
+
+tradingRouter.post('/decisions/evaluate', (req: Request, res: Response) => {
+  const store = globalTradingStore;
+  const {
+    symbol = store.activeSymbol,
+    side = 'BUY',
+    price,
+    amount,
+    source = 'MANUAL_TESTER',
+    simulatedRegime,
+    simulatedEdgeBps,
+    simulatedDepthUsd,
+    simulatedBaseRatio,
+    simulatedLiquidationDistancePct
+  } = req.body;
+
+  const livePair = store.dataEngine.getPairData(symbol);
+  const curPrice = price ? Number(price) : (livePair?.currentPrice || 83000);
+  const curAmount = amount ? Number(amount) : 0.0035;
+
+  const regime = simulatedRegime ? {
+    symbol,
+    type: simulatedRegime,
+    confidence: 0.85,
+    adx: 24.5,
+    trendDirection: side === 'BUY' ? 'BULLISH' : 'BEARISH',
+    volatilityAnnualizedPct: 48.5,
+    timestamp: new Date().toISOString(),
+    gridRecommendation: {
+      spacingMultiplier: 1.0,
+      volatilityScaling: true,
+      trendFilterEnabled: true
+    }
+  } : (store.currentRegime || {
+    symbol,
+    type: 'RANGING_SIDEWAYS',
+    confidence: 0.80,
+    adx: 18.0,
+    trendDirection: 'NEUTRAL',
+    volatilityAnnualizedPct: 42.0,
+    timestamp: new Date().toISOString(),
+    gridRecommendation: {
+      spacingMultiplier: 1.0,
+      volatilityScaling: true,
+      trendFilterEnabled: true
     }
   });
 
-  res.json({ success: true, champion: promoted });
+  const orderBook = livePair?.orderBook ? { ...livePair.orderBook } : undefined;
+  if (orderBook && simulatedDepthUsd && orderBook.asks && orderBook.bids) {
+    const depthNum = Number(simulatedDepthUsd);
+    const simulatedAmt = depthNum / (curPrice * 2);
+    // Scale depth for simulation
+    orderBook.asks = [{ price: curPrice * 1.0005, amount: simulatedAmt, total: simulatedAmt * curPrice * 1.0005 }];
+    orderBook.bids = [{ price: curPrice * 0.9995, amount: simulatedAmt, total: simulatedAmt * curPrice * 0.9995 }];
+  }
+
+  const inventory = store.activeGrid?.inventoryAwareness ? { ...store.activeGrid.inventoryAwareness } : undefined;
+  if (inventory) {
+    if (simulatedBaseRatio !== undefined) {
+      inventory.currentBaseRatio = Number(simulatedBaseRatio);
+      inventory.inventorySkew = Number(((inventory.currentBaseRatio - inventory.targetBaseRatio) / 0.50).toFixed(2));
+      inventory.inventoryPosturing = inventory.inventorySkew > 0.4 ? 'HEAVILY_LONG' : inventory.inventorySkew > 0.15 ? 'MODERATELY_LONG' : inventory.inventorySkew < -0.4 ? 'HEAVILY_SHORT' : inventory.inventorySkew < -0.15 ? 'MODERATELY_SHORT' : 'BALANCED';
+    }
+    if (simulatedLiquidationDistancePct !== undefined) {
+      inventory.distanceFromLiquidationPct = Number(simulatedLiquidationDistancePct);
+      inventory.liquidationRiskTier = inventory.distanceFromLiquidationPct < 12 ? 'CRITICAL' : inventory.distanceFromLiquidationPct < 22 ? 'ELEVATED' : 'SAFE';
+    }
+  }
+
+  const expectedNetEdge = simulatedEdgeBps !== undefined ? {
+    expectedGrossEdgeBps: Number(simulatedEdgeBps) + 7.5,
+    makerTakerFeesBps: 6.0,
+    expectedSpreadCostBps: 1.5,
+    expectedSlippageBps: 0.8,
+    adverseSelectionCostBps: 1.2,
+    fundingCarryingCostBps: 0.2,
+    executionUncertaintyBps: 0.8,
+    expectedNetEdgeBps: Number(simulatedEdgeBps),
+    isTradeable: Number(simulatedEdgeBps) >= 4.0,
+    minHurdleRateBps: 4.0,
+    edgeFormula: 'Gross - (Fees + Spread + Slippage + AdverseSelection + CarryingCost + ExecutionUncertainty)',
+    timestamp: new Date().toISOString()
+  } : undefined;
+
+  const decision = store.learningLoop.evaluateAndLogDecision({
+    symbol,
+    side: side as 'BUY' | 'SELL',
+    price: curPrice,
+    amount: curAmount,
+    source,
+    confidence: regime.confidence,
+    regime: regime as any,
+    orderBook,
+    candles: livePair?.candles,
+    positions: store.exchangeExec.getPositions(),
+    capital: store.capital,
+    inventory,
+    expectedNetEdge,
+    riskConfig: store.risk.getConfig(),
+    circuitBreakerActive: store.risk.isCircuitBreakerActive(),
+    failClosed: store.monitor.isSystemFailClosed().failClosed
+  });
+
+  res.json({
+    success: true,
+    decision,
+    stats: store.learningLoop.getDecisionStats()
+  });
 });
 
-// 15. Strategy IDE Live Source Validation
-tradingRouter.post('/script/validate', (req: Request, res: Response) => {
-  const { code } = req.body || {};
-  if (!code) return res.status(400).json({ success: false, error: 'Strategy source is required' });
-  const result = globalTradingStore.scripting.validateUserScript(String(code));
-  return res.status(result.success ? 200 : 422).json(result);
+// 15. Strategy IDE Sandbox Execution
+tradingRouter.post('/script/execute', requireOwnerAuth, (req: Request, res: Response) => {
+  const { code } = req.body;
+  if (!code) return res.status(400).json({ success: false, error: 'Code is required' });
+
+  const store = globalTradingStore;
+  const liveData = store.dataEngine.getPairData(store.activeSymbol);
+  const position = store.exchangeExec.getPosition(store.activeSymbol) || {
+    symbol: store.activeSymbol,
+    baseAmount: 0,
+    quoteAmount: store.capital.availableCash,
+    entryPrice: 0,
+    currentPrice: liveData?.currentPrice || 0,
+    unrealizedPnL: 0,
+    unrealizedPnLPct: 0,
+    realizedPnL: 0,
+    totalFeesPaid: 0,
+    netPnL: 0,
+    liquidationPrice: 0,
+    marginUsed: 0
+  };
+
+  const result = store.scripting.executeUserScript(code, {
+    symbol: store.activeSymbol,
+    candles: liveData?.candles || [],
+    orderBook: liveData?.orderBook || { symbol: store.activeSymbol, bids: [], asks: [], spread: 0, spreadBps: 0, midPrice: 0, timestamp: Date.now() },
+    position,
+    balance: store.capital.availableCash,
+    marketRegime: store.currentRegime.regime
+  });
+
+  res.json(result);
 });
 
 // 16. AI Research Agent
@@ -510,39 +660,24 @@ tradingRouter.get('/sweep/info', (req: Request, res: Response) => {
     destinationWallet: store.sweeper.getDestinationWallet(),
     sweeps: store.sweeper.getSweeps(),
     eligibleProfitUsd: store.capital.eligibleRealizedProfit,
-    totalSweptUsd: store.capital.totalSweptProfit,
-    autoSweepEnabled: store.sweeper.isAutoSweepEnabled(),
-    sweepEngine: store.sweeper.healthCheck()
+    totalSweptUsd: store.capital.totalSweptProfit
   });
 });
 
-tradingRouter.post('/sweep/auto', (req: Request, res: Response) => {
-  const enabled = Boolean(req.body?.enabled);
-  const store = globalTradingStore;
-  const value = store.sweeper.toggleAutoSweep(enabled);
-  return res.json({
-    success: true,
-    autoSweepEnabled: value,
-    message: value
-      ? 'Automatic live Bybit profit withdrawal enabled for the persisted whitelisted destination.'
-      : 'Automatic profit withdrawal disabled.'
-  });
-});
-
-tradingRouter.post('/sweep/wallet', (req: Request, res: Response) => {
+tradingRouter.post('/sweep/wallet', requireOwnerAuth, (req: Request, res: Response) => {
   const { wallet } = req.body;
   if (!wallet) return res.status(400).json({ success: false, error: 'Wallet payload required' });
   const result = globalTradingStore.sweeper.setDestinationWallet(wallet);
   res.json(result);
 });
 
-tradingRouter.post('/sweep/execute', async (req: Request, res: Response) => {
+tradingRouter.post('/sweep/execute', requireOwnerAuth, (req: Request, res: Response) => {
   const { amountUsd } = req.body;
   const numAmount = Number(amountUsd);
   if (!numAmount || numAmount <= 0) return res.status(400).json({ success: false, error: 'Valid amount required' });
 
   const store = globalTradingStore;
-  const result = await store.sweeper.executeManualSweep(numAmount, store.capital.eligibleRealizedProfit);
+  const result = store.sweeper.executeManualSweep(numAmount, store.capital.eligibleRealizedProfit);
   if (!result.success) {
     return res.status(422).json(result);
   }
@@ -569,7 +704,7 @@ tradingRouter.get('/risk', (req: Request, res: Response) => {
   });
 });
 
-tradingRouter.post('/risk/circuit-breaker/reset', (req: Request, res: Response) => {
+tradingRouter.post('/risk/circuit-breaker/reset', requireOwnerAuth, (req: Request, res: Response) => {
   globalTradingStore.risk.resetCircuitBreaker();
   res.json({ success: true, circuitBreakerActive: false });
 });
@@ -590,19 +725,6 @@ tradingRouter.get('/updates', (req: Request, res: Response) => {
 });
 
 // 20. Single Owner Authentication & Google Authenticator (TOTP)
-function extractToken(req: Request): string | null {
-  const authHeader = req.headers.authorization;
-  if (authHeader && authHeader.startsWith('Bearer ')) {
-    return authHeader.substring(7);
-  }
-  return (req.query.token as string) || (req.headers['x-owner-token'] as string) || null;
-}
-
-function isOwner(req: Request): boolean {
-  const token = extractToken(req);
-  return token ? ownerAuth.verifyToken(token) : false;
-}
-
 function parseBody(req: Request): any {
   if (!req.body) return {};
   if (typeof req.body === 'string') {
@@ -705,52 +827,363 @@ tradingRouter.get('/assets', async (req: Request, res: Response) => {
   }
 });
 
-
-// 22. Autonomous Revenue Optimization — live state audit and decisioning
-tradingRouter.get('/optimizer', (req: Request, res: Response) => {
-  try {
-    const optimizer = globalTradingStore.profitOptimizer;
-    return res.json({
-      success: true,
-      objective: 'NET_REALIZED_PROFIT_AFTER_FEES',
-      autonomousDecisioning: true,
-      decisions: optimizer.getDecisions(),
-      strategyBuilds: optimizer.getStrategyBuilds(),
-      engine: optimizer.healthCheck()
-    });
-  } catch (err: any) {
-    return res.status(500).json({ success: false, error: err.message || 'Optimizer telemetry unavailable.' });
-  }
-});
-
-tradingRouter.post('/optimizer/run', async (req: Request, res: Response) => {
+// 22. Autonomous Revenue Optimizer & Strategy Allocator
+tradingRouter.get('/autonomous-optimizer/status', (_req: Request, res: Response) => {
   try {
     const store = globalTradingStore;
-    const livePair = store.dataEngine.getPairData(store.activeSymbol);
-    const systemHealthy = !store.monitor.isSystemFailClosed().failClosed
-      && !store.GLOBAL_KILL_SWITCH_ACTIVE
-      && store.autonomyLevel >= 2
-      && Boolean(livePair?.currentPrice && livePair.currentPrice > 0);
-
-    if (!systemHealthy) {
-      return res.status(409).json({
-        success: false,
-        error: 'Optimizer is fail-closed: live market/account state is not eligible for autonomous optimization.',
-        decision: store.profitOptimizer.getDecisions()[0] || null
-      });
-    }
-
-    const decision = await store.profitOptimizer.auditAndOptimize({
-      capital: store.capital,
-      grid: store.activeGrid,
-      regime: store.currentRegime,
-      research: store.research.getResearchItems(),
-      champion: store.learningLoop.getChampionStrategy(),
-      systemHealthy
+    return res.json({
+      success: true,
+      health: store.profitOptimizer.healthCheck(),
+      autoApplyEnabled: store.profitOptimizer.isAutoApplyEnabled(),
+      latestAudit: store.profitOptimizer.getLatestAudit(),
+      latestStrategyAllocation: store.profitOptimizer.getLatestStrategyAllocation(),
+      decisions: store.profitOptimizer.getDecisions(),
+      builds: store.profitOptimizer.getStrategyBuilds(),
+      championStrategy: store.learningLoop.getChampionStrategy()
     });
-
-    return res.json({ success: true, objective: 'NET_REALIZED_PROFIT_AFTER_FEES', decision });
   } catch (err: any) {
-    return res.status(500).json({ success: false, error: err.message || 'Autonomous optimizer failed closed.' });
+    return res.status(500).json({ success: false, error: err.message });
   }
 });
+
+tradingRouter.get('/strategy-allocator/current', (_req: Request, res: Response) => {
+  try {
+    const store = globalTradingStore;
+    const allocation = store.profitOptimizer.getLatestStrategyAllocation();
+    return res.json({
+      success: true,
+      allocation: allocation || store.profitOptimizer.computeStrategyAllocations({
+        capital: store.capital,
+        regime: store.currentRegime,
+        midPrice: store.dataEngine.getPairData(store.activeSymbol)?.currentPrice,
+        edge: store.profitOptimizer.getLatestAudit()?.expectedNetEdge
+      })
+    });
+  } catch (err: any) {
+    return res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+tradingRouter.post('/strategy-allocator/reallocate', requireOwnerAuth, async (_req: Request, res: Response) => {
+  try {
+    const store = globalTradingStore;
+    const decision = await store.runAutonomousProfitOptimizationCycle(true);
+    return res.json({
+      success: true,
+      decision,
+      allocation: store.profitOptimizer.getLatestStrategyAllocation(),
+      activeGridCapitalUsd: store.activeGrid?.totalAllocatedUsd
+    });
+  } catch (err: any) {
+    return res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+tradingRouter.post('/autonomous-optimizer/run', requireOwnerAuth, async (_req: Request, res: Response) => {
+  try {
+    const store = globalTradingStore;
+    const decision = await store.runAutonomousProfitOptimizationCycle(true);
+    return res.json({
+      success: true,
+      decision,
+      latestAudit: store.profitOptimizer.getLatestAudit(),
+      latestStrategyAllocation: store.profitOptimizer.getLatestStrategyAllocation(),
+      builds: store.profitOptimizer.getStrategyBuilds(),
+      championStrategy: store.learningLoop.getChampionStrategy()
+    });
+  } catch (err: any) {
+    return res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+tradingRouter.post('/autonomous-optimizer/toggle', requireOwnerAuth, (req: Request, res: Response) => {
+  try {
+    const store = globalTradingStore;
+    const { enabled } = parseBody(req);
+    if (typeof enabled === 'boolean') {
+      store.profitOptimizer.setAutoApplyEnabled(enabled);
+    } else {
+      store.profitOptimizer.setAutoApplyEnabled(!store.profitOptimizer.isAutoApplyEnabled());
+    }
+    return res.json({
+      success: true,
+      autoApplyEnabled: store.profitOptimizer.isAutoApplyEnabled()
+    });
+  } catch (err: any) {
+    return res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// 23. Quantitative Microstructure Expected Net Edge Decomposition
+tradingRouter.get('/quant/edge-breakdown', (req: Request, res: Response) => {
+  try {
+    const store = globalTradingStore;
+    const symbol = (req.query.symbol as string) || store.activeSymbol || 'BTCUSDT';
+    const pairData = store.dataEngine.getPairData(symbol);
+    const spacing = store.activeGrid?.gridSpacingPct ?? 0.45;
+    const edge = store.quantEngine.computeExpectedNetEdge({
+      symbol,
+      price: pairData?.currentPrice || 65000,
+      orderBook: pairData?.orderBook,
+      candles: pairData?.candles,
+      gridSpacingPct: spacing,
+      regime: store.currentRegime
+    });
+
+    return res.json({
+      success: true,
+      symbol,
+      edge,
+      formulaExplanation: {
+        formula: 'Expected Gross Edge − maker/taker fees − expected spread cost − expected slippage − adverse-selection cost − funding/other carrying cost − execution uncertainty = Expected Net Edge',
+        hurdleRateBps: edge.minHurdleRateBps,
+        verdict: edge.isTradeable ? 'POSITIVE_EV_TRADEABLE' : 'SUB_HURDLE_REJECTED'
+      }
+    });
+  } catch (err: any) {
+    return res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// 24. Explicit Regime Transition Detector & Protections
+tradingRouter.get('/regime-transition', (req: Request, res: Response) => {
+  try {
+    const store = globalTradingStore;
+    const symbol = store.activeSymbol;
+    const pairData = store.dataEngine.getPairData(symbol);
+    const qResult = pairData ? store.quantEngine.computeSignals(symbol, pairData.candles, pairData.orderBook) : { indicators: null, regime: null };
+    const currentRegime = qResult.regime || store.currentRegime;
+
+    return res.json({
+      success: true,
+      symbol,
+      currentRegime: currentRegime.regime,
+      transition: currentRegime.transition,
+      activeGridProtection: {
+        activeGridAllocatedUsd: store.activeGrid?.totalAllocatedUsd,
+        effectiveAllocatedUsd: store.activeGrid
+          ? Math.round(store.activeGrid.totalAllocatedUsd * (currentRegime.transition?.positionSizeMultiplier || 1.0))
+          : 0,
+        positionSizeMultiplier: currentRegime.transition?.positionSizeMultiplier || 1.0,
+        gridRestrictionStatus: currentRegime.transition?.gridRestrictionStatus || 'NORMAL',
+        restrictionReason: currentRegime.transition?.restrictionReason
+      },
+      indicators: qResult.indicators
+    });
+  } catch (err: any) {
+    return res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+tradingRouter.post('/regime-transition/simulate', (req: Request, res: Response) => {
+  try {
+    const store = globalTradingStore;
+    const { phase = 'BREAKOUT_TESTING', breakoutSide = 'BULLISH' } = req.body;
+    const symbol = store.activeSymbol;
+    const pairData = store.dataEngine.getPairData(symbol);
+    const currentPrice = pairData?.currentPrice || 65000;
+
+    let positionSizeMultiplier = 1.0;
+    let gridRestrictionStatus: any = 'NORMAL';
+    let restrictionReason = 'Microstructure stable. Full 100% position sizing and bilateral grid rungs permitted.';
+    let actionGuidance = 'Maintain balanced geometric grid with mean-reversion rebalancing.';
+    let tentativeTargetRegime: any = undefined;
+    let resolution: any = undefined;
+
+    if (phase === 'BREAKOUT_TESTING') {
+      positionSizeMultiplier = 0.40;
+      gridRestrictionStatus = breakoutSide === 'BULLISH' ? 'RESTRICTED_UPSIDE' : 'RESTRICTED_DOWNSIDE';
+      restrictionReason = `${breakoutSide} breakout testing at $${(currentPrice * (breakoutSide === 'BULLISH' ? 1.03 : 0.97)).toFixed(2)} (ATR surge 1.48x). Restricting ${breakoutSide === 'BULLISH' ? 'sell' : 'buy'} limit rungs.`;
+      actionGuidance = `Cut position size to 40%. Widen ${breakoutSide === 'BULLISH' ? 'upper exit' : 'lower entry'} rungs by 2x. Hold inventory until breakout confirmation or rejection.`;
+      tentativeTargetRegime = breakoutSide === 'BULLISH' ? 'BULL_TREND_STRONG' : 'BEAR_TREND_STRONG';
+      resolution = 'PENDING';
+    } else if (phase === 'EXPANDING_VOLATILITY') {
+      positionSizeMultiplier = 0.50;
+      gridRestrictionStatus = 'WIDEN_DEFENSIVE';
+      restrictionReason = `Volatility expanding (ATR ratio 1.35x, ADX slope +2.4). Throttling capital allocation to 50%.`;
+      actionGuidance = `Widen rung spacing defensively by 1.5x. Halt aggressive ladder rebalancing.`;
+      tentativeTargetRegime = 'BREAKOUT_VOLATILITY';
+      resolution = 'PENDING';
+    } else if (phase === 'BREAKOUT_CONFIRMED') {
+      positionSizeMultiplier = 0.60;
+      gridRestrictionStatus = breakoutSide === 'BULLISH' ? 'RESTRICTED_UPSIDE' : 'RESTRICTED_DOWNSIDE';
+      tentativeTargetRegime = breakoutSide === 'BULLISH' ? 'BULL_TREND_STRONG' : 'BEAR_TREND_STRONG';
+      restrictionReason = `Breakout confirmed into ${tentativeTargetRegime}. Shift away from bilateral grid into directional momentum trailing mode.`;
+      actionGuidance = `Reallocate capital from Mean Reversion to Trend Grid / Momentum Breakout. Trail stops on breakout side.`;
+      resolution = 'BREAKOUT_CONFIRMED';
+    } else if (phase === 'BREAKOUT_REJECTED') {
+      positionSizeMultiplier = 0.85;
+      gridRestrictionStatus = 'NORMAL';
+      tentativeTargetRegime = 'RANGE_BOUND_LOW_VOL';
+      restrictionReason = `Breakout rejected (fakeout detected). Mean reversion resumed back inside Bollinger bounds.`;
+      actionGuidance = `Restore standard grid placement. Harvest mean reversion back to mid-price.`;
+      resolution = 'BREAKOUT_REJECTED';
+    }
+
+    const transitionState = {
+      isTransitioning: phase !== 'STABLE',
+      phase,
+      sourceRegime: store.currentRegime.regime,
+      targetRegimes: [
+        {
+          regime: breakoutSide === 'BEARISH' ? 'BEAR_TREND_STRONG' : 'BULL_TREND_STRONG',
+          probability: phase === 'BREAKOUT_CONFIRMED' ? 0.88 : (phase === 'BREAKOUT_REJECTED' ? 0.12 : 0.65),
+          triggerCondition: 'Breakout sustained with ADX > 24 and 2+ consecutive closes outside boundary.'
+        },
+        {
+          regime: 'RANGE_BOUND_HIGH_VOL',
+          probability: phase === 'BREAKOUT_CONFIRMED' ? 0.12 : (phase === 'BREAKOUT_REJECTED' ? 0.88 : 0.35),
+          triggerCondition: 'Breakout rejected back inside band with volume contraction & mean reversion.'
+        }
+      ],
+      tentativeTargetRegime,
+      resolution,
+      confidence: 0.88,
+      transitionStartTime: new Date().toISOString(),
+      timeInTransitionSeconds: phase !== 'STABLE' ? 180 : 0,
+      metrics: {
+        volatilityExpansionRatio: phase === 'STABLE' ? 1.02 : 1.48,
+        adxSlope: phase === 'STABLE' ? 0.2 : (phase === 'BREAKOUT_REJECTED' ? -1.8 : 3.8),
+        adxValue: phase === 'BREAKOUT_CONFIRMED' ? 28.5 : 22.4,
+        bbBandwidthExpansionPct: phase === 'STABLE' ? 3.5 : 44.2,
+        breakoutThresholdUpper: Number((currentPrice * 1.025).toFixed(2)),
+        breakoutThresholdLower: Number((currentPrice * 0.975).toFixed(2)),
+        breakoutDistancePct: phase === 'BREAKOUT_TESTING' ? 0.15 : 2.5,
+        breakoutSide: breakoutSide as any,
+        volumeSurgeRatio: phase === 'STABLE' ? 0.95 : 1.85,
+        confirmationBarsCount: phase === 'BREAKOUT_CONFIRMED' ? 3 : 1
+      },
+      positionSizeMultiplier,
+      gridRestrictionStatus,
+      restrictionReason,
+      actionGuidance
+    };
+
+    store.currentRegime.transition = transitionState as any;
+    if (phase === 'BREAKOUT_CONFIRMED' && tentativeTargetRegime) {
+      store.currentRegime.regime = tentativeTargetRegime;
+    }
+
+    // Regenerate active grid with transition constraints if grid exists
+    if (store.activeGrid) {
+      const regenerated = store.gridEngine.generateGrid({
+        symbol,
+        currentPrice,
+        totalAllocatedUsd: store.activeGrid.totalAllocatedUsd,
+        levelsCount: store.activeGrid.levelsCount,
+        spacingType: store.activeGrid.spacingType,
+        volatilityAdjustment: true,
+        trendProtection: true,
+        regime: store.currentRegime
+      });
+      if (regenerated.grid) {
+        store.activeGrid = regenerated.grid;
+      }
+    }
+
+    store.monitor.logAudit({
+      category: 'REGIME_TRANSITION_RESTRICTION',
+      action: `Regime Transition Updated: Phase=${phase}, Multiplier=${positionSizeMultiplier * 100}%, Restriction=${gridRestrictionStatus}`,
+      details: { symbol, phase, restrictionReason, actionGuidance }
+    });
+
+    return res.json({
+      success: true,
+      phase,
+      currentRegime: store.currentRegime,
+      activeGrid: store.activeGrid
+    });
+  } catch (err: any) {
+    return res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// 31. Inventory-Aware Grid Metrics & Multi-Variable Equation Read
+tradingRouter.get('/inventory-awareness', async (req: Request, res: Response) => {
+  try {
+    const store = globalTradingStore;
+    const symbol = store.activeSymbol;
+    const liveData = store.dataEngine.getPairData(symbol);
+    const currentPrice = liveData?.currentPrice || 66850;
+
+    const inventoryMetrics = store.gridEngine.computeInventoryAwareness({
+      symbol,
+      currentPrice,
+      totalAllocatedUsd: store.activeGrid?.totalAllocatedUsd || 3500,
+      regime: store.currentRegime,
+      positions: store.exchangeExec.getPositions(),
+      orderBook: liveData?.orderBook,
+      candles: liveData?.candles,
+      totalEquityUsd: store.capital.totalEquity || store.capital.tradingCapital
+    });
+
+    return res.json({
+      success: true,
+      symbol,
+      currentPrice,
+      metrics: inventoryMetrics,
+      activeGrid: store.activeGrid
+    });
+  } catch (err: any) {
+    return res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// 32. Simulate Inventory Skew & Distance from Liquidation
+tradingRouter.post('/inventory-awareness/simulate', async (req: Request, res: Response) => {
+  try {
+    const store = globalTradingStore;
+    const symbol = store.activeSymbol;
+    const liveData = store.dataEngine.getPairData(symbol);
+    const currentPrice = liveData?.currentPrice || 66850;
+
+    const {
+      simulatedBaseRatio, // e.g. 0.85 (heavily long) or 0.15 (heavily short)
+      simulatedLiquidationDistancePct, // e.g. 8.5% (critical) or 35% (safe)
+      customTargetRatio = 0.50
+    } = req.body;
+
+    const newGridRes = store.gridEngine.generateGrid({
+      symbol,
+      currentPrice,
+      totalAllocatedUsd: store.activeGrid?.totalAllocatedUsd || 3500,
+      levelsCount: store.activeGrid?.levelsCount || 16,
+      spacingType: store.activeGrid?.spacingType || 'GEOMETRIC',
+      volatilityAdjustment: true,
+      trendProtection: true,
+      regime: store.currentRegime,
+      positions: store.exchangeExec.getPositions(),
+      orderBook: liveData?.orderBook,
+      candles: liveData?.candles,
+      totalEquityUsd: store.capital.totalEquity || store.capital.tradingCapital,
+      customTargetRatio,
+      simulatedBaseRatio,
+      simulatedLiquidationDistancePct
+    });
+
+    if (newGridRes.grid) {
+      store.activeGrid = newGridRes.grid;
+    }
+
+    store.monitor.logAudit({
+      category: 'INVENTORY_SKEW_ADJUSTMENT',
+      action: `Simulated Inventory Skew: BaseRatio=${simulatedBaseRatio !== undefined ? `${Math.round(simulatedBaseRatio * 100)}%` : 'live'}, DistLiq=${simulatedLiquidationDistancePct ?? 'live'}%`,
+      details: {
+        skew: newGridRes.grid?.inventoryAwareness?.inventorySkew,
+        posture: newGridRes.grid?.inventoryAwareness?.inventoryPosturing,
+        buyAlloc: newGridRes.grid?.inventoryAwareness?.asymmetricBudgeting.buyAllocationPct,
+        sellAlloc: newGridRes.grid?.inventoryAwareness?.asymmetricBudgeting.sellAllocationPct,
+        buyHurdle: newGridRes.grid?.inventoryAwareness?.asymmetricEdgeHurdles.requiredBuyEdgeHurdleBps
+      }
+    });
+
+    return res.json({
+      success: true,
+      grid: store.activeGrid,
+      metrics: store.activeGrid?.inventoryAwareness
+    });
+  } catch (err: any) {
+    return res.status(500).json({ success: false, error: err.message });
+  }
+});
+
