@@ -521,13 +521,13 @@ tradingRouter.post('/sweep/wallet', (req: Request, res: Response) => {
   res.json(result);
 });
 
-tradingRouter.post('/sweep/execute', (req: Request, res: Response) => {
+tradingRouter.post('/sweep/execute', async (req: Request, res: Response) => {
   const { amountUsd } = req.body;
   const numAmount = Number(amountUsd);
   if (!numAmount || numAmount <= 0) return res.status(400).json({ success: false, error: 'Valid amount required' });
 
   const store = globalTradingStore;
-  const result = store.sweeper.executeManualSweep(numAmount, store.capital.eligibleRealizedProfit);
+  const result = await store.sweeper.executeManualSweep(numAmount, store.capital.eligibleRealizedProfit);
   if (!result.success) {
     return res.status(422).json(result);
   }
