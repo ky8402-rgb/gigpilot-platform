@@ -103,7 +103,10 @@ export class ProfitAccountingEngine implements EngineModule {
     }
 
     this.processedFillIds.add(fill.id);
-    if (this.processedFillIds.size > 10000) this.processedFillIds.delete(this.processedFillIds.values().next().value);
+    if (this.processedFillIds.size > 10000) {
+      const oldest = this.processedFillIds.values().next().value as string | undefined;
+      if (oldest) this.processedFillIds.delete(oldest);
+    }
 
     const symbol = fill.symbol;
     const lots = this.fifoLots.get(symbol) || [];
