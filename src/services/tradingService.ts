@@ -438,34 +438,31 @@ export async function analyzeResearchIntelligence(title: string, content: string
   });
 }
 
-export async function fetchProfitSweepInfo(): Promise<{
-  destinationWallet: DestinationWallet;
-  minSweepThresholdUsd: number;
-  profitReserveBufferUsd: number;
-  eligibility: {
-    eligibleAmount: number;
-    canSweep: boolean;
-    reserveRetained: number;
-    reason?: string;
-  };
-  history: ProfitSweep[];
-}> {
-  return await fetchWithFailover('/profit-sweep');
+export async function fetchProfitSweepInfo(): Promise<any> {
+  return await fetchWithFailover('/sweep/info');
 }
 
-export async function updateDestinationWallet(wallet: { address: string; chain: string; label?: string }) {
-  return await fetchWithFailover<{ success: boolean; wallet: DestinationWallet }>('/profit-sweep/wallet', {
+export async function updateDestinationWallet(wallet: { address: string; chain: string; label?: string; asset?: string }) {
+  return await fetchWithFailover<{ success: boolean; error?: string; wallet?: DestinationWallet }>('/sweep/wallet', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(wallet)
   });
 }
 
-export async function executeProfitSweep(amount: number) {
-  return await fetchWithFailover<{ success: boolean; sweep?: ProfitSweep; updatedCapital?: CapitalAccounting; error?: string }>('/profit-sweep/execute', {
+export async function executeProfitSweep(amountUsd: number) {
+  return await fetchWithFailover<{ success: boolean; sweep?: ProfitSweep; error?: string }>('/sweep/execute', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ amount })
+    body: JSON.stringify({ amountUsd })
+  });
+}
+
+export async function toggleAutomaticProfitSweep(enabled: boolean) {
+  return await fetchWithFailover<{ success: boolean; autoSweepEnabled: boolean; error?: string }>('/sweep/auto', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ enabled })
   });
 }
 
