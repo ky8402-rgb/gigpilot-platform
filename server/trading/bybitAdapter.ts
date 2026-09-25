@@ -42,7 +42,6 @@ export interface BybitAccountState {
   accountType: string;
   apiKeyConfigured: boolean;
   keyMask: string;
-  isTestnet?: boolean;
 }
 
 const BYBIT_CONFIG_FILE = path.join(process.cwd(), '.bybit-quant-keys.json');
@@ -105,7 +104,7 @@ export class BybitAdapter {
     return Date.now() + this.timeOffset;
   }
 
-  public updateCredentials(apiKey: string, apiSecret: string, baseUrl?: string, isTestnet?: boolean): void {
+  public updateCredentials(apiKey: string, apiSecret: string): void {
     this.apiKey = apiKey.trim();
     this.apiSecret = apiSecret.trim();
     this.baseUrl = 'https://api.bybit.com';
