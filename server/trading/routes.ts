@@ -117,7 +117,7 @@ tradingRouter.get('/exchanges/credentials', (req: Request, res: Response) => {
 
 tradingRouter.post('/exchanges/keys', (req: Request, res: Response) => {
   try {
-    const { exchange, apiKey, apiSecret, isTestnet } = req.body || {};
+    const { exchange, apiKey, apiSecret } = req.body || {};
     if (!exchange || exchange !== 'BYBIT') {
       return res.status(400).json({ success: false, error: 'Valid exchange (BYBIT) is required.' });
     }
@@ -131,12 +131,12 @@ tradingRouter.post('/exchanges/keys', (req: Request, res: Response) => {
     }
 
     // Update bybitAdapter
-    bybitAdapter.updateCredentials(apiKey, apiSecret, undefined, isTestnet);
+    bybitAdapter.updateCredentials(apiKey, apiSecret);
 
     globalTradingStore.monitor.logAudit({
       category: 'CONFIG_CHANGE',
       action: `Updated Trade-Only API Keys for ${exchange}`,
-      details: { exchange, isTestnet }
+      details: { exchange, environment: 'BYBIT_LIVE_PRODUCTION' }
     });
 
     return res.json({
