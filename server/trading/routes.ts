@@ -201,7 +201,7 @@ tradingRouter.post('/pair/select', (req: Request, res: Response) => {
   const { symbol } = req.body;
   if (!symbol) return res.status(400).json({ success: false, error: 'Symbol required' });
 
-  globalTradingStore.setActiveSymbol(symbol);
+  await globalTradingStore.setActiveSymbol(symbol);
   res.json({ success: true, activeSymbol: globalTradingStore.activeSymbol });
 });
 
