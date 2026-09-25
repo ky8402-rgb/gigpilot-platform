@@ -337,7 +337,8 @@ export class QuantEngine implements EngineModule {
     const expectedSpreadCostBps = isMaker ? Number((spreadBps * 0.15).toFixed(2)) : Number((spreadBps * 0.50).toFixed(2));
 
     // 4. Expected Slippage (bps)
-    const orderCostUsd = currentPrice * amount;
+    const orderAmount = amount || 0;
+    const orderCostUsd = currentPrice * orderAmount;
     let topLiquidityUsd = 0;
     if (orderBook && orderBook.asks?.length > 0 && orderBook.bids?.length > 0) {
       const topLevels = (params.side === 'BUY' ? orderBook.asks : orderBook.bids).slice(0, 3);
