@@ -311,7 +311,7 @@ export const LearningLoopView: React.FC<LearningLoopViewProps> = ({
           <div className="bg-slate-900 border border-slate-700 rounded-xl max-w-lg w-full p-6 shadow-2xl text-slate-100">
             <h3 className="font-extrabold text-base text-white mb-2">Create Challenger Strategy Variant</h3>
             <p className="text-xs text-slate-400 mb-4">
-              Spawn a perturbation candidate from current Champion ({champion.name}) for parallel paper trading validation.
+              Spawn a perturbation candidate from current Champion ({champion.name}) for parallel live-evidence validation.
             </p>
 
             <form onSubmit={handleCreateSubmit} className="space-y-3 text-xs">
