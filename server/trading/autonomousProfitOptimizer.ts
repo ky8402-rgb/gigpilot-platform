@@ -14,6 +14,8 @@ export interface AutonomousOptimizationDecision {
   previousGridSpacingPct?: number;
   newGridSpacingPct?: number;
   strategyBuildId?: string;
+  mutationEligible?: boolean;
+  mutationBlockedReason?: string;
 }
 
 export class AutonomousProfitOptimizer implements EngineModule {
@@ -161,17 +163,28 @@ ${JSON.stringify({ id: input.champion.id, version: input.champion.version, param
       const bounded = Math.max(previous * 0.85, Math.min(previous * 1.15, proposed));
       const next = Number(bounded.toFixed(4));
       const direction = next < previous ? 'TIGHTEN_GRID' : next > previous ? 'WIDEN_GRID' : 'BUILD_STRATEGY';
-      const apply = confidence >= 0.85 && build.confidence >= 0.85 && next > 0;
+
+      // A proposal is not an applied mutation. Live exchange state must be changed only by
+      // the store's atomic execution path after reconciliation + risk validation + verified
+      // cancellation. This optimizer never reports an unexecuted financial mutation as applied.
+      const stable = Boolean(input.champion.parameterStability?.stable);
+      const stableScore = Number(input.champion.promotionScore || 0);
+      const mutationEligible = confidence >= 0.85 && build.confidence >= 0.85 && next > 0 && stable && stableScore >= 60;
+      const mutationBlockedReason = mutationEligible
+        ? undefined
+        : 'Live mutation requires stable parameter evidence, promotion score >= 60, and high-confidence optimizer/builder output.';
 
       const result = this.saveDecision(
-        apply ? (direction as AutonomousOptimizationDecision['decision']) : 'PAUSE_OPTIMIZATION',
+        mutationEligible ? (direction as AutonomousOptimizationDecision['decision']) : 'PAUSE_OPTIMIZATION',
         Math.min(confidence, build.confidence),
         String(parsed.reason || build.rationale),
         build.expectedEffect,
-        apply,
+        false,
         previous,
         next,
-        build.id
+        build.id,
+        mutationEligible,
+        mutationBlockedReason
       );
       this.latencyMs = Date.now() - start;
       this.lastHeartbeat = new Date().toISOString();
@@ -192,14 +205,16 @@ ${JSON.stringify({ id: input.champion.id, version: input.champion.version, param
     applied: boolean,
     previousGridSpacingPct?: number,
     newGridSpacingPct?: number,
-    strategyBuildId?: string
+    strategyBuildId?: string,
+    mutationEligible?: boolean,
+    mutationBlockedReason?: string
   ): AutonomousOptimizationDecision {
     const item: AutonomousOptimizationDecision = {
       id: `opt_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
       timestamp: new Date().toISOString(),
       objective: 'NET_REALIZED_PROFIT_AFTER_FEES',
       decision, confidence, reason, expectedEffect, applied,
-      previousGridSpacingPct, newGridSpacingPct, strategyBuildId
+      previousGridSpacingPct, newGridSpacingPct, strategyBuildId, mutationEligible, mutationBlockedReason
     };
     this.decisions.unshift(item);
     if (this.decisions.length > 100) this.decisions.pop();
