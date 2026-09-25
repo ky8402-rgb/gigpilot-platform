@@ -62,7 +62,7 @@ export class AutonomousProfitOptimizer implements EngineModule {
         sourceData: 'LIVE_PRODUCTION_ONLY',
         decisionsCount: this.decisions.length,
         strategyBuildsCount: this.strategyBuilder.getBuilds().length,
-        revenueEfficiencyScore: this.latestAuditReport?.revenueEfficiencyScore ?? 88,
+        revenueEfficiencyScore: this.latestAuditReport?.revenueEfficiencyScore ?? 0,
         activeRevenueLeaksCount: this.latestAuditReport?.leaks.length ?? 0
       }
     };
@@ -260,7 +260,7 @@ export class AutonomousProfitOptimizer implements EngineModule {
       ? Number(((totalFees / grossProfit) * 100).toFixed(2))
       : (totalFees > 0 ? 100 : 0);
 
-    const gridSpacing = input.grid?.gridSpacingPct ?? 0.72;
+    const gridSpacing = input.grid?.gridSpacingPct || 0;
     // Bybit spot fee is ~0.08% maker / 0.08% taker -> round trip ~0.16% (16 bps)
     const roundTripFeePct = 0.16;
     const effectiveNetMarginPct = Math.max(0, gridSpacing - roundTripFeePct);
@@ -326,7 +326,7 @@ export class AutonomousProfitOptimizer implements EngineModule {
         type: 'NEGATIVE_NET_EDGE_DRAG',
         severity: 'HIGH',
         description: `Microstructure Expectancy Deficit: Expected Net Edge is ${expectedNetEdgeBps.toFixed(2)} bps (must be strictly > 4.0 bps minimum_edge_threshold). Orders are locked by the fail-closed Risk Engine.`,
-        estimatedDailyDragUsd: Number((Math.max(2.5, input.capital.totalEquity * 0.005)).toFixed(2)),
+        estimatedDailyDragUsd: Number((Math.max(0, input.capital.totalEquity * 0.005)).toFixed(2)),
         recommendedRemediation: `Widen grid rung spacing from ${gridSpacing.toFixed(2)}% to at least ${((totalFrictionsBps + 6.0) / 55).toFixed(2)}% so that Expected Net Edge > minimum_edge_threshold.`
       });
     }
@@ -338,14 +338,14 @@ export class AutonomousProfitOptimizer implements EngineModule {
         type: 'FEE_DRAG',
         severity: 'HIGH',
         description: `Current grid spacing (${gridSpacing.toFixed(2)}%) allows exchange round-trip fees (0.16%) to absorb ${(roundTripFeePct / gridSpacing * 100).toFixed(1)}% of gross rung profit.`,
-        estimatedDailyDragUsd: Number((Math.max(1, input.capital.totalEquity * 0.0035)).toFixed(2)),
+        estimatedDailyDragUsd: Number((Math.max(0, input.capital.totalEquity * 0.0035)).toFixed(2)),
         recommendedRemediation: `Widen grid spacing to at least ${(roundTripFeePct * 3.5).toFixed(2)}% to preserve > 70% net revenue retention.`
       });
     }
 
     // Leak 2: Volatility Misalignment
-    const p = input.midPrice || 85000;
-    const normalizedAtrPct = input.regime.atr > 0 ? (input.regime.atr / p) * 100 : 0.65;
+    const p = input.midPrice && input.midPrice > 0 ? input.midPrice : 0;
+    const normalizedAtrPct = input.regime.atr > 0 && p > 0 ? (input.regime.atr / p) * 100 : 0;
     if (Math.abs(gridSpacing - normalizedAtrPct) > 0.35) {
       leaks.push({
         id: `leak_vol_mismatch_${Date.now()}`,
