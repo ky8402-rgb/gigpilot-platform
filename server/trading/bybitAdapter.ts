@@ -71,7 +71,8 @@ export class BybitAdapter {
     this.apiKey = savedKeys.apiKey || process.env.BYBIT_API_KEY || '';
     this.apiSecret = savedKeys.apiSecret || process.env.BYBIT_API_SECRET || '';
     if (savedKeys.baseUrl) {
-      this.baseUrl = savedKeys.baseUrl;
+      this.baseUrl = 'https://api.bybit.com';
+    }
 
     this.syncServerTime().catch(() => {});
   }
