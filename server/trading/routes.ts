@@ -752,8 +752,7 @@ tradingRouter.get('/assets', async (req: Request, res: Response) => {
       globalTradingStore.profitAccounting.syncFromRealAccount({
         totalEquityUsd: accountState.totalEquityUsd,
         availableCashUsd: accountState.availableCashUsd,
-        lockedInOrdersUsd: accountState.lockedInOrdersUsd,
-        recentTradesCount: accountState.recentTrades?.length || 0
+        lockedInOrdersUsd: accountState.lockedInOrdersUsd
       });
     }
 
