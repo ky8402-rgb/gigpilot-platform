@@ -12,6 +12,7 @@ export class ProfitAccountingEngine implements EngineModule {
 
   private capital: CapitalAccounting;
   private fifoLots: Map<string, Array<{ qty: number; unitCost: number }>> = new Map();
+  private processedFillIds = new Set<string>();
 
   constructor() {
     this.capital = {
@@ -139,7 +140,13 @@ export class ProfitAccountingEngine implements EngineModule {
   }
 
   public recordFill(fill: Fill) {
-    if (!this.enabled || !Number.isFinite(fill.price) || !Number.isFinite(fill.amount) || fill.amount <= 0) return;
+    if (!this.enabled || this.processedFillIds.has(fill.id) || !Number.isFinite(fill.price) || !Number.isFinite(fill.amount) || fill.amount <= 0) return;
+
+    this.processedFillIds.add(fill.id);
+    if (this.processedFillIds.size > 10000) {
+      const oldest = this.processedFillIds.values().next().value;
+      if (oldest) this.processedFillIds.delete(oldest);
+    }
 
     const symbol = fill.symbol;
     const lots = this.fifoLots.get(symbol) || [];
