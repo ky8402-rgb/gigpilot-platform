@@ -651,7 +651,6 @@ export interface ExchangeAccountState {
   accountType: string;
   apiKeyConfigured: boolean;
   keyMask: string;
-  isTestnet?: boolean;
 }
 
 export type BybitAccountState = ExchangeAccountState;
