@@ -193,6 +193,7 @@ export interface EngineModule {
 }
 
 export type MarketRegimeType = 
+  | 'UNKNOWN' 
   | 'RANGE_BOUND_LOW_VOL' 
   | 'RANGE_BOUND_HIGH_VOL' 
   | 'BULL_TREND_STRONG' 
