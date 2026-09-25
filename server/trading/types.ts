@@ -434,7 +434,7 @@ export interface SystemUpdate {
   sha256: string;
   automatedTestsPassed: boolean;
   securityTestsPassed: boolean;
-  backtestPassed: boolean;
+  validationPassed: boolean;
   canaryStatus: 'STAGING' | 'CANARY_10PCT' | 'FULL_DEPLOYMENT' | 'ROLLED_BACK';
   rollbackPoint: string;
   deployedAt?: string;
