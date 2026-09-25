@@ -365,19 +365,6 @@ export interface SystemUpdateRecord {
   rollbackPoint?: string;
 }
 
-export interface BacktestRun {
-  id: string;
-  strategyId: string;
-  symbol: string;
-  periodDays: number;
-  initialBalance: number;
-  finalBalance: number;
-  metrics: StrategyPerformanceMetrics;
-  walkForwardScore: number;
-  monteCarloConfidence: number;
-  createdAt: string;
-}
-
 export type ResearchCategory = 'FACT' | 'ANALYSIS' | 'UNVERIFIED_CLAIM' | 'SPECULATION';
 
 export interface ResearchItem {
