@@ -90,7 +90,7 @@ function onTick(ctx) {
     setIsRunning(true);
     setExecutionResult(null);
     try {
-      const res = await executeUserScript(code);
+      const res = await validateUserScript(code);
       setExecutionResult(res.result);
     } catch (err: any) {
       setExecutionResult({
