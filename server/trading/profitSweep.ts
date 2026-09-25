@@ -1,148 +1,161 @@
 import { DestinationWallet, EngineErrorRecord, EngineHealth, EngineModule, SweepRecord } from './types.js';
+import { bybitAdapter } from './bybitAdapter.js';
+import crypto from 'crypto';
 
 export class ProfitSweepEngine implements EngineModule {
   public readonly id = 'AUTO_PROFIT_SWEEP';
-  public readonly name = 'Auto Profit Sweep Subsystem (Cold Storage Dispatcher)';
-
-  private enabled: boolean = true; // Off-switch
+  public readonly name = 'Auto Profit Sweep Subsystem (Real Bybit Withdrawal Dispatcher)';
+  private enabled = true;
   private status: 'HEALTHY' | 'DEGRADED' | 'DOWN' | 'OFF' = 'HEALTHY';
-  private latencyMs: number = 0;
-  private lastHeartbeat: string = new Date().toISOString();
+  private latencyMs = 0;
+  private lastHeartbeat = new Date().toISOString();
   private errorSurface: EngineErrorRecord[] = [];
-
-  private sweepThresholdUsd: number = 500;
-  private minSweepBufferUsd: number = 200;
-  private autoSweepEnabled: boolean = false;
+  private sweepThresholdUsd = 500;
+  private minSweepBufferUsd = 200;
+  private autoSweepEnabled = false;
   private destinationWallet: DestinationWallet = {
-    address: '0x71C...4982',
-    network: 'ETHEREUM',
-    label: 'Primary Cold Vault (Hardware Ledg/Trez)',
-    isWhitelisted: true,
-    addedAt: '2026-01-01T00:00:00Z',
-    lastUsedAt: '2026-03-01T12:00:00Z'
+    address: '',
+    network: 'BSC',
+    label: '',
+    isWhitelisted: false,
+    addedAt: '',
+    lastUsedAt: ''
   };
   private sweeps: SweepRecord[] = [];
+  private requestGuards = new Map<string, number>();
 
   public healthCheck(): EngineHealth {
     return {
-      id: this.id,
-      name: this.name,
-      status: !this.enabled ? 'OFF' : this.status,
-      enabled: this.enabled,
-      latencyMs: this.latencyMs,
-      lastHeartbeat: this.lastHeartbeat,
-      errorCount: this.errorSurface.length,
-      lastError: this.errorSurface[0]?.message,
-      errorSurface: [...this.errorSurface.slice(0, 10)],
+      id: this.id, name: this.name, status: !this.enabled ? 'OFF' : this.status, enabled: this.enabled,
+      latencyMs: this.latencyMs, lastHeartbeat: this.lastHeartbeat, errorCount: this.errorSurface.length,
+      lastError: this.errorSurface[0]?.message, errorSurface: [...this.errorSurface.slice(0, 10)],
       details: {
-        autoSweepEnabled: this.autoSweepEnabled,
-        sweepThresholdUsd: this.sweepThresholdUsd,
+        autoSweepEnabled: this.autoSweepEnabled, sweepThresholdUsd: this.sweepThresholdUsd,
+        destinationWalletConfigured: Boolean(this.destinationWallet.address),
         destinationWalletWhitelisted: this.destinationWallet.isWhitelisted,
-        destinationNetwork: this.destinationWallet.network,
-        sweepsExecutedCount: this.sweeps.length,
-        securityRule: 'Requires cryptographic address whitelist verification before dispatch'
+        realExchangeDispatch: 'BYBIT_V5_ASSET_WITHDRAW_CREATE',
+        syntheticTransactions: false
       }
     };
   }
 
-  public getErrorSurface(): EngineErrorRecord[] {
-    return [...this.errorSurface];
-  }
-
-  public getOffSwitch(): boolean {
-    return this.enabled;
-  }
-
-  public setOffSwitch(enabled: boolean): void {
-    this.enabled = enabled;
-    if (!enabled) {
-      this.status = 'OFF';
-      this.recordError('WARN', 'Auto Profit Sweep switched OFF. Cold storage transfers locked.');
-    } else {
-      this.status = 'HEALTHY';
-      this.recordError('WARN', 'Auto Profit Sweep switched ON.');
-    }
-  }
-
-  public clearErrors(): void {
-    this.errorSurface = [];
-  }
-
-  private recordError(level: EngineErrorRecord['level'], message: string, details?: any) {
-    const rec: EngineErrorRecord = {
-      id: `err_sweep_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
-      timestamp: new Date().toISOString(),
-      level,
-      message,
-      details
-    };
-    this.errorSurface.unshift(rec);
+  public getErrorSurface(): EngineErrorRecord[] { return [...this.errorSurface]; }
+  public getOffSwitch(): boolean { return this.enabled; }
+  public setOffSwitch(enabled: boolean): void { this.enabled = enabled; this.status = enabled ? 'HEALTHY' : 'OFF'; }
+  public clearErrors(): void { this.errorSurface = []; }
+  private recordError(level: EngineErrorRecord['level'], message: string, details?: any): void {
+    this.errorSurface.unshift({ id: `err_sweep_${Date.now()}`, timestamp: new Date().toISOString(), level, message, details });
     if (this.errorSurface.length > 50) this.errorSurface.pop();
   }
-
-  public getDestinationWallet(): DestinationWallet {
-    return { ...this.destinationWallet };
-  }
-
-  public getSweeps(): SweepRecord[] {
-    return [...this.sweeps];
-  }
+  public getDestinationWallet(): DestinationWallet { return { ...this.destinationWallet }; }
+  public getSweeps(): SweepRecord[] { return [...this.sweeps]; }
 
   public setDestinationWallet(wallet: DestinationWallet): { success: boolean; error?: string } {
-    if (!wallet.address || wallet.address.length < 10) {
-      return { success: false, error: 'Invalid destination wallet address format' };
+    if (!wallet?.address || wallet.address.length < 10) return { success: false, error: 'Valid destination wallet address is required.' };
+    if (!wallet?.network) return { success: false, error: 'Destination chain/network is required.' };
+    this.destinationWallet = {
+      ...wallet,
+      isWhitelisted: wallet.isWhitelisted === true,
+      addedAt: wallet.addedAt || new Date().toISOString(),
+      lastUsedAt: wallet.lastUsedAt || ''
+    };
+    if (!this.destinationWallet.isWhitelisted) {
+      this.recordError('WARN', 'Destination wallet saved but not marked as whitelisted; withdrawals remain blocked.');
     }
-    this.destinationWallet = { ...wallet, isWhitelisted: true };
-    this.recordError('WARN', `Cold vault destination updated to ${wallet.address} (${wallet.network})`);
     return { success: true };
   }
 
   public toggleAutoSweep(enabled: boolean): boolean {
-    this.autoSweepEnabled = enabled;
+    if (enabled && (!this.destinationWallet.address || !this.destinationWallet.isWhitelisted)) {
+      this.recordError('WARN', 'Automatic sweep enable rejected until a whitelisted destination is configured.');
+      this.autoSweepEnabled = false;
+      return false;
+    }
+    this.autoSweepEnabled = Boolean(enabled);
     return this.autoSweepEnabled;
   }
 
-  public setSweepThreshold(usd: number): void {
-    this.sweepThresholdUsd = Math.max(50, usd);
+  public isAutoSweepEnabled(): boolean { return this.autoSweepEnabled; }
+  public setSweepThreshold(usd: number): void { this.sweepThresholdUsd = Math.max(50, usd); }
+  public getSweepThreshold(): number { return this.sweepThresholdUsd; }
+
+  private chainCode(network: string): string {
+    const n = network.toUpperCase().replace(/[^A-Z0-9]/g, '');
+    if (n === 'BSC' || n === 'BEP20') return 'BSC';
+    if (n === 'ETH' || n === 'ETHEREUM' || n === 'ERC20') return 'ETH';
+    if (n === 'ARBITRUM' || n === 'ARBI' || n === 'ARB') return 'ARBI';
+    if (n === 'SOL' || n === 'SOLANA') return 'SOL';
+    throw new Error(`Unsupported Bybit withdrawal chain: ${network}`);
   }
 
-  public executeManualSweep(amountUsd: number, eligibleUsd: number): { success: boolean; sweep?: SweepRecord; error?: string } {
-    if (!this.enabled) {
-      return { success: false, error: 'AUTO_PROFIT_SWEEP_OFF: Sweep subsystem is disabled by operator.' };
+  private guardKey(amountUsd: number): string {
+    return `${this.destinationWallet.address}:${this.destinationWallet.network}:${amountUsd.toFixed(2)}`;
+  }
+
+  public async executeManualSweep(amountUsd: number, eligibleUsd: number, operator: 'MANUAL_OWNER' | 'AUTONOMOUS_SWEEPER' = 'MANUAL_OWNER'): Promise<{ success: boolean; sweep?: SweepRecord; error?: string }> {
+    if (!this.enabled) return { success: false, error: 'AUTO_PROFIT_SWEEP_OFF.' };
+    if (!this.destinationWallet.address || !this.destinationWallet.isWhitelisted) return { success: false, error: 'Whitelisted destination wallet is required.' };
+    if (!Number.isFinite(amountUsd) || amountUsd <= 0 || amountUsd > eligibleUsd) return { success: false, error: 'Sweep amount exceeds verified eligible realized profit.' };
+    const key = this.guardKey(amountUsd);
+    const last = this.requestGuards.get(key) || 0;
+    if (Date.now() - last < 10000) return { success: false, error: 'Bybit chain/coin withdrawal rate guard: retry after 10 seconds.' };
+
+    const requestId = crypto.randomUUID();
+    this.requestGuards.set(key, Date.now());
+    const result = await bybitAdapter.createSpotWithdrawal({
+      coin: 'USDT',
+      amount: Number(amountUsd.toFixed(2)),
+      address: this.destinationWallet.address,
+      chain: this.chainCode(this.destinationWallet.network),
+      requestId,
+      accountType: 'FUND'
+    });
+    if (!result.success) {
+      this.recordError('ERROR', result.error || 'Bybit withdrawal rejected.');
+      return { success: false, error: result.error };
     }
 
-    if (!this.destinationWallet.isWhitelisted) {
-      const err = 'Destination wallet address is not whitelisted. Sweep rejected for security.';
-      this.recordError('ERROR', err);
-      return { success: false, error: err };
-    }
-
-    if (amountUsd > eligibleUsd) {
-      const err = `Requested sweep ($${amountUsd.toFixed(2)}) exceeds eligible realized profit ($${eligibleUsd.toFixed(2)}).`;
-      this.recordError('ERROR', err);
-      return { success: false, error: err };
-    }
-
-    const estGasFeeUsd = this.destinationWallet.network === 'ETHEREUM' ? 4.50 : 0.80;
-    const netReceivedUsd = amountUsd - estGasFeeUsd;
-
-    const record: SweepRecord = {
-      id: `sweep_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
-      timestamp: new Date().toISOString(),
-      amountUsd,
-      network: this.destinationWallet.network,
+    const now = new Date().toISOString();
+    const sweep: SweepRecord = {
+      id: result.withdrawId || requestId,
+      timestamp: now,
       destinationAddress: this.destinationWallet.address,
-      txHash: `0x${Array.from({ length: 64 }, () => Math.floor(Math.random() * 16).toString(16)).join('')}`,
-      status: 'CONFIRMED',
-      feePaidUsd: estGasFeeUsd,
-      netReceivedUsd
+      destinationWallet: this.destinationWallet.address,
+      chain: this.chainCode(this.destinationWallet.network),
+      network: this.destinationWallet.network,
+      grossSweepAmount: Number(amountUsd.toFixed(2)),
+      amountUsd: Number(amountUsd.toFixed(2)),
+      status: 'PENDING',
+      txHash: result.txId || '',
+      operator
     };
-
-    this.sweeps.unshift(record);
-    this.destinationWallet.lastUsedAt = record.timestamp;
-    this.lastHeartbeat = new Date().toISOString();
+    this.sweeps.unshift(sweep);
+    this.destinationWallet.lastUsedAt = now;
+    this.lastHeartbeat = now;
     this.status = 'HEALTHY';
+    return { success: true, sweep };
+  }
 
-    return { success: true, sweep: record };
+  public async reconcilePendingSweeps(): Promise<SweepRecord[]> {
+    const pending = this.sweeps.filter(s => s.status === 'PENDING' && s.id);
+    const confirmed: SweepRecord[] = [];
+    for (const sweep of pending) {
+      const rows = await bybitAdapter.queryWithdrawalRecords({ withdrawId: sweep.id, coin: 'USDT', limit: 20 });
+      const row = rows.find(r => r.withdrawId === sweep.id);
+      if (!row) continue;
+      const normalized = row.status.toUpperCase();
+      sweep.txHash = row.txId || sweep.txHash;
+      sweep.feePaidUsd = row.fee;
+      sweep.networkFeeUsd = row.fee;
+      if (['SUCCESS', 'COMPLETED', 'CONFIRMED'].includes(normalized)) {
+        sweep.status = 'CONFIRMED';
+        sweep.netTransferredUsd = Math.max(0, row.amount - row.fee);
+        sweep.netReceivedUsd = sweep.netTransferredUsd;
+        confirmed.push({ ...sweep });
+      } else if (['FAIL', 'FAILED', 'REJECTED', 'CANCELLED'].includes(normalized)) {
+        sweep.status = 'FAILED';
+      }
+    }
+    return confirmed;
   }
 }
