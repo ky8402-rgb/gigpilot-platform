@@ -9,6 +9,7 @@ import { tradingRouter } from "./server/trading/routes.js";
 import { githubRoutes } from "./server/githubRoutes.js";
 import { pushAndDeployAll } from "./server/githubService.js";
 import { globalTradingStore } from "./server/trading/store.js";
+import { ownerAuth } from "./server/trading/ownerAuth.js";
 
 const app = express();
 const PORT = 3000;
@@ -34,6 +35,31 @@ app.use((req, res, next) => {
 });
 
 // -------------------- CORE API ROUTES --------------------
+// -------------------- OWNER AUTHORIZATION BOUNDARY --------------------
+// All state-changing/trading/GitOps management APIs require the persistent owner token.
+// Public exceptions are limited to health, authentication bootstrap/login, and the signed GitHub webhook.
+function hasOwnerToken(req: express.Request): boolean {
+  const auth = req.headers.authorization;
+  const token = auth?.startsWith("Bearer ") ? auth.slice(7) : (req.headers["x-owner-token"] as string | undefined);
+  return Boolean(token && ownerAuth.verifyToken(token));
+}
+
+app.use("/api/trading", (req, res, next) => {
+  if (hasOwnerToken(req)) return next();
+  return res.status(401).json({ success: false, error: "Owner authentication required." });
+});
+
+app.use("/api/deploy", (req, res, next) => {
+  if (hasOwnerToken(req)) return next();
+  return res.status(401).json({ success: false, error: "Owner authentication required." });
+});
+
+app.use("/api/github", (req, res, next) => {
+  if (req.method === "POST" && req.path === "/webhook") return next();
+  if (hasOwnerToken(req)) return next();
+  return res.status(401).json({ success: false, error: "Owner authentication required." });
+});
+
 
 // 1. Healthcheck Endpoint (for AWS EC2, Amplify, Load Balancer, and Health Monitors)
 app.get("/api/health", (req, res) => {
