@@ -472,38 +472,12 @@ tradingRouter.post('/strategy/promote', (req: Request, res: Response) => {
   res.json({ success: true, champion: promoted });
 });
 
-// 15. Strategy IDE Sandbox Execution
-tradingRouter.post('/script/execute', (req: Request, res: Response) => {
-  const { code } = req.body;
-  if (!code) return res.status(400).json({ success: false, error: 'Code is required' });
-
-  const store = globalTradingStore;
-  const liveData = store.dataEngine.getPairData(store.activeSymbol);
-  const position = store.exchangeExec.getPosition(store.activeSymbol) || {
-    symbol: store.activeSymbol,
-    baseAmount: 0,
-    quoteAmount: store.capital.availableCash,
-    entryPrice: 0,
-    currentPrice: liveData?.currentPrice || 0,
-    unrealizedPnL: 0,
-    unrealizedPnLPct: 0,
-    realizedPnL: 0,
-    totalFeesPaid: 0,
-    netPnL: 0,
-    liquidationPrice: 0,
-    marginUsed: 0
-  };
-
-  const result = store.scripting.executeUserScript(code, {
-    symbol: store.activeSymbol,
-    candles: liveData?.candles || [],
-    orderBook: liveData?.orderBook || { symbol: store.activeSymbol, bids: [], asks: [], spread: 0, spreadBps: 0, midPrice: 0, timestamp: Date.now() },
-    position,
-    balance: store.capital.availableCash,
-    marketRegime: store.currentRegime.regime
-  });
-
-  res.json(result);
+// 15. Strategy IDE Live Source Validation
+tradingRouter.post('/script/validate', (req: Request, res: Response) => {
+  const { code } = req.body || {};
+  if (!code) return res.status(400).json({ success: false, error: 'Strategy source is required' });
+  const result = globalTradingStore.scripting.validateUserScript(String(code));
+  return res.status(result.success ? 200 : 422).json(result);
 });
 
 // 16. AI Research Agent
