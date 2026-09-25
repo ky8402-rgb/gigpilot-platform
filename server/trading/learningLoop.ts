@@ -38,22 +38,21 @@ export class LearningLoopEngine implements EngineModule {
         rebalanceIntervalSec: 120
       },
       backtestResults: {
-        netProfit: 1420.50,
-        grossProfit: 1610.80,
-        totalFees: 190.30,
-        roiPct: 14.2,
-        sharpeRatio: 2.45,
-        sortinoRatio: 3.12,
-        maxDrawdownPct: 4.8,
-        winRatePct: 78.4,
-        profitFactor: 2.18,
-        tradesCount: 184,
-        avgTradeProfitUsd: 7.72,
-        avgHoldingTimeMinutes: 48,
-        orderFillRatePct: 91.5,
-        capitalUtilizationPct: 65.0
-      },
-      liveTradingResults: {
+        netProfit: 0,
+        grossProfit: 0,
+        totalFees: 0,
+        roiPct: 0,
+        sharpeRatio: 0,
+        sortinoRatio: 0,
+        maxDrawdownPct: 0,
+        winRatePct: 0,
+        profitFactor: 0,
+        tradesCount: 0,
+        avgTradeProfitUsd: 0,
+        avgHoldingTimeMinutes: 0,
+        orderFillRatePct: 0,
+        capitalUtilizationPct: 0
+      },      liveTradingResults: {
         netProfit: 0.0,
         grossProfit: 0.0,
         totalFees: 0.0,
