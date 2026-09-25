@@ -245,9 +245,11 @@ export class TradingStore {
         this.profitAccounting.syncFromRealAccount({
           totalEquityUsd: acct.totalEquityUsd,
           availableCashUsd: acct.availableCashUsd,
-          lockedInOrdersUsd: acct.lockedInOrdersUsd,
-          recentTradesCount: acct.recentTrades?.length || 0
+          lockedInOrdersUsd: acct.lockedInOrdersUsd
         });
+        for (const fill of acct.recentTrades || []) {
+          this.profitAccounting.recordFill(fill);
+        }
       }
     } catch {
       // Handled gracefully
