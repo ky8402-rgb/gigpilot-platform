@@ -1,9 +1,9 @@
 import { Candle, EngineErrorRecord, EngineHealth, EngineModule, OrderBook, Position, ScriptExecutionResult } from './types.js';
 import { calculateRSI, calculateEMA, calculateSMA, calculateATR, calculateMACD, calculateVWAP } from './indicators.js';
 
-export class ScriptingSandboxEngine implements EngineModule {
+export class StrategyValidatorEngine implements EngineModule {
   public readonly id = 'STRATEGY_IDE';
-  public readonly name = 'Strategy IDE (Sandboxed Algorithm Runtime)';
+  public readonly name = 'Strategy IDE (Live Strategy Validator)';
 
   private enabled: boolean = true; // Off-switch
   private status: 'HEALTHY' | 'DEGRADED' | 'DOWN' | 'OFF' = 'HEALTHY';
@@ -23,7 +23,7 @@ export class ScriptingSandboxEngine implements EngineModule {
       lastError: this.errorSurface[0]?.message,
       errorSurface: [...this.errorSurface.slice(0, 10)],
       details: {
-        sandboxEnvironment: 'AST_FILTERED_PURE_JS',
+        validationEnvironment: 'AST_FILTERED_SOURCE_VALIDATION',
         bannedTokens: ['process', 'require', 'import', 'child_process', 'fs', 'eval', 'Function', 'fetch'],
         orderRouting: 'ALL_ORDERS_MUST_PASS_RISK_GATE'
       }
@@ -65,129 +65,52 @@ export class ScriptingSandboxEngine implements EngineModule {
     if (this.errorSurface.length > 50) this.errorSurface.pop();
   }
 
-  public executeUserScript(
-    code: string,
-    marketContext: {
-      symbol: string;
-      candles: Candle[];
-      orderBook: OrderBook;
-      position: Position;
-      balance: number;
-      marketRegime: string;
-    }
-  ): ScriptExecutionResult {
+  public validateUserScript(code: string): ScriptExecutionResult {
     const startTime = Date.now();
     const logs: string[] = [];
-    const ordersGenerated: Array<{
-      side: 'BUY' | 'SELL';
-      type: 'LIMIT' | 'MARKET' | 'GRID_LIMIT';
-      price: number;
-      amount: number;
-    }> = [];
-
     if (!this.enabled) {
-      const err = 'STRATEGY_IDE_OFF: Script execution disabled by operator.';
+      const err = 'STRATEGY_IDE_OFF: Strategy validation disabled by operator.';
       this.recordError('ERROR', err);
-      return {
-        success: false,
-        output: err,
-        ordersGenerated: [],
-        logs: [err],
-        executionTimeMs: 0,
-        error: err
-      };
+      return { success: false, output: err, ordersGenerated: [], logs: [err], executionTimeMs: 0, error: err };
     }
-
-    // Security check: ban dangerous keywords
+    if (!code || code.length > 50000) {
+      const err = 'Invalid strategy source: code is empty or exceeds the 50,000 character limit.';
+      return { success: false, output: err, ordersGenerated: [], logs: [err], executionTimeMs: Date.now() - startTime, error: err };
+    }
     const forbiddenPatterns = [
-      /\bprocess\b/,
-      /\brequire\b/,
-      /\bimport\b/,
-      /\bchild_process\b/,
-      /\bfs\b/,
-      /\beval\b/,
-      /\bFunction\b/,
-      /\bglobal\b/,
-      /\bwindow\b/,
-      /\bdocument\b/,
-      /\bfetch\b/,
-      /\bXMLHttpRequest\b/,
-      /\bWebSocket\b/
+      /\bprocess\b/, /\brequire\b/, /\bimport\b/, /\bchild_process\b/, /\bfs\b/,
+      /\beval\b/, /\bFunction\b/, /\bglobal\b/, /\bwindow\b/, /\bdocument\b/,
+      /\bfetch\b/, /\bXMLHttpRequest\b/, /\bWebSocket\b/
     ];
-
     for (const pattern of forbiddenPatterns) {
       if (pattern.test(code)) {
         const err = `Security Violation: Code contains restricted token: ${pattern}`;
         this.recordError('CRITICAL', err);
-        return {
-          success: false,
-          output: err,
-          ordersGenerated: [],
-          logs: [`Blocked dangerous call matching ${pattern}`],
-          executionTimeMs: Date.now() - startTime,
-          error: 'Security Sandbox Exception'
-        };
+        return { success: false, output: err, ordersGenerated: [], logs: [err], executionTimeMs: Date.now() - startTime, error: 'Security validation failed' };
       }
     }
-
-    const currentPrice = marketContext.candles[marketContext.candles.length - 1]?.close || 65000;
-    const closes = marketContext.candles.map(c => c.close);
-
-    // Build the high-fidelity `ctx` API
-    const ctx = {
-      price: () => currentPrice,
-      candles: () => marketContext.candles,
-      orderBook: () => marketContext.orderBook,
-      position: () => marketContext.position,
-      balance: () => marketContext.balance,
-      regime: () => marketContext.marketRegime,
-
-      rsi: (period = 14) => calculateRSI(closes, period),
-      ema: (period = 20) => calculateEMA(closes, period),
-      sma: (period = 20) => calculateSMA(closes, period),
-      atr: (period = 14) => calculateATR(marketContext.candles, period),
-      macd: () => calculateMACD(closes),
-      vwap: () => calculateVWAP(marketContext.candles),
-
-      buy: (price: number, amount: number, type: 'LIMIT' | 'MARKET' | 'GRID_LIMIT' = 'LIMIT') => {
-        ordersGenerated.push({ side: 'BUY', type, price, amount });
-        logs.push(`Script emitted BUY order: ${amount} @ $${price} (${type})`);
-      },
-      sell: (price: number, amount: number, type: 'LIMIT' | 'MARKET' | 'GRID_LIMIT' = 'LIMIT') => {
-        ordersGenerated.push({ side: 'SELL', type, price, amount });
-        logs.push(`Script emitted SELL order: ${amount} @ $${price} (${type})`);
-      },
-      log: (...args: any[]) => {
-        logs.push(args.map(a => (typeof a === 'object' ? JSON.stringify(a) : String(a))).join(' '));
-      }
+    if (!/\bonTick\s*\(/.test(code)) {
+      const err = 'Strategy validation failed: an onTick(ctx) entrypoint is required.';
+      return { success: false, output: err, ordersGenerated: [], logs: [err], executionTimeMs: Date.now() - startTime, error: err };
+    }
+    const forbiddenExecutionCalls = [/ctx\.buy\s*\(/, /ctx\.sell\s*\(/, /ctx\.place_grid\s*\(/];
+    if (forbiddenExecutionCalls.some(pattern => pattern.test(code))) {
+      const err = 'Strategy source contains direct order-emission calls. Live orders must be produced only by the governed autonomous strategy builder and execution engine.';
+      return { success: false, output: err, ordersGenerated: [], logs: [err], executionTimeMs: Date.now() - startTime, error: err };
+    }
+    this.latencyMs = Date.now() - startTime;
+    this.lastHeartbeat = new Date().toISOString();
+    this.status = 'HEALTHY';
+    logs.push('Strategy source validated successfully.');
+    logs.push('No code was executed and no synthetic orders were generated.');
+    logs.push('Live deployment remains governed by the strategy builder, exchange execution engine, and risk engine.');
+    return {
+      success: true,
+      output: `Validated successfully in ${this.latencyMs}ms.`,
+      ordersGenerated: [],
+      logs,
+      executionTimeMs: this.latencyMs
     };
-
-    try {
-      const runner = new Function('ctx', `"use strict";\n${code}\nif (typeof onTick === "function") { onTick(ctx); }`);
-      runner(ctx);
-
-      this.latencyMs = Date.now() - startTime;
-      this.lastHeartbeat = new Date().toISOString();
-      this.status = 'HEALTHY';
-
-      return {
-        success: true,
-        output: `Executed successfully in ${this.latencyMs}ms. Emitted ${ordersGenerated.length} order(s).`,
-        ordersGenerated,
-        logs,
-        executionTimeMs: this.latencyMs
-      };
-    } catch (err: any) {
-      this.status = 'DEGRADED';
-      this.recordError('ERROR', `Script execution runtime error: ${err.message}`);
-      return {
-        success: false,
-        output: `Runtime Error: ${err.message}`,
-        ordersGenerated: [],
-        logs: [...logs, `Error: ${err.message}`],
-        executionTimeMs: Date.now() - startTime,
-        error: err.message
-      };
-    }
   }
+
 }
