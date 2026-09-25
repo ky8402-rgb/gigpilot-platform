@@ -79,12 +79,6 @@ export class BybitAdapter {
     return 'https://api.bybit.com';
   }
 
-  public getIsTestnet(): boolean { return false; }
-
-  public setTestnet(_testnet: boolean): void {
-    this.baseUrl = 'https://api.bybit.com';
-    this.saveConfig();
-  }
 
   public async syncServerTime(): Promise<number> {
     try {
