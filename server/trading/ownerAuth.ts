@@ -86,7 +86,8 @@ function hashPassword(password: string, salt: string): string {
   return crypto.pbkdf2Sync(password, salt, 100000, 64, 'sha512').toString('hex');
 }
 
-const PERSISTENT_CONFIG_PATH = path.join(process.cwd(), '.owner-auth-config.json');
+const PERSISTENT_CONFIG_DIR = process.env.GIGPILOT_PERSISTENT_DATA_DIR || path.join(process.cwd(), '.gigpilot-data');
+const PERSISTENT_CONFIG_PATH = path.join(PERSISTENT_CONFIG_DIR, 'owner-auth-config.json');
 
 interface OwnerConfig {
   ownerEmail: string;
@@ -111,8 +112,7 @@ class OwnerAuthManager {
   private loadConfig(): OwnerConfig {
     const defaultEmail = process.env.OWNER_EMAIL || 'ky8402@gmail.com';
     const envPin = (process.env.OWNER_AUTH_PIN || '').trim();
-    // Validate PIN: a numeric/alphanumeric PIN between 4 and 10 chars, else default 778899
-    const emergencyPin = (envPin.length >= 4 && envPin.length <= 10) ? envPin : '778899';
+    const emergencyPin = (envPin.length >= 4 && envPin.length <= 10) ? envPin : base32Encode(crypto.randomBytes(6)).slice(0, 10);
 
     if (fs.existsSync(PERSISTENT_CONFIG_PATH)) {
       try {
@@ -123,11 +123,11 @@ class OwnerAuthManager {
       }
     }
 
-    // Default unconfigured owner or initialized from env
+    // First-run owner configuration; persist immediately so restarts do not regenerate setup.
     const salt = crypto.randomBytes(16).toString('hex');
     const defaultSecret = base32Encode(crypto.randomBytes(20));
 
-    return {
+    const initialConfig: OwnerConfig = {
       ownerEmail: defaultEmail,
       passwordSalt: salt,
       passwordHash: '', // Unset by default: requires initial setup
@@ -136,10 +136,22 @@ class OwnerAuthManager {
       emergencyPin,
       createdAt: new Date().toISOString()
     };
+    this.persistConfig(initialConfig);
+    return initialConfig;
+  }
+
+  private persistConfig(config: OwnerConfig): void {
+    try {
+      fs.mkdirSync(PERSISTENT_CONFIG_DIR, { recursive: true });
+      fs.writeFileSync(PERSISTENT_CONFIG_PATH, JSON.stringify(config, null, 2), 'utf-8');
+    } catch (err) {
+      console.error('Failed to create persistent owner auth storage:', err);
+    }
   }
 
   private saveConfig(): void {
     try {
+      fs.mkdirSync(PERSISTENT_CONFIG_DIR, { recursive: true });
       fs.writeFileSync(PERSISTENT_CONFIG_PATH, JSON.stringify(this.config, null, 2), 'utf-8');
     } catch (err) {
       console.error('Failed to persist owner auth config:', err);
@@ -232,8 +244,7 @@ class OwnerAuthManager {
     // Emergency PIN override (universal recovery PIN 778899 or configured PIN)
     const isEmergency = Boolean(
       emergencyPin && (
-        emergencyPin.trim() === this.config.emergencyPin.trim() ||
-        emergencyPin.trim() === '778899'
+        emergencyPin.trim() === this.config.emergencyPin.trim()
       )
     );
     if (isEmergency) {
