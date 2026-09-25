@@ -125,7 +125,7 @@ export class AutonomousProfitOptimizer implements EngineModule {
     const liveEdge = input.edge?.expectedNetEdgeBps ?? 0;
     const champion = input.champion;
     const live = champion?.liveTradingResults;
-    const stable = champion?.parameterStability?.stable === true;
+    const stable = Boolean(champion?.validationPipeline && champion.validationPipeline.overallScore >= 60 && champion.validationScore !== undefined && champion.validationScore >= 60);
     const sufficientEvidence = Boolean(live && live.tradesCount >= 30 && stable && live.netProfit > 0 && live.sharpeRatio > 0);
 
     if (!champion || !live || input.regime.regime === 'UNKNOWN' || totalCap <= 0 || liveEdge <= 4.0 || !sufficientEvidence) {
@@ -568,7 +568,7 @@ Return JSON ONLY:
       overrideSpacing: nextSpacing
     });
 
-    const isApply = this.autoApplyEnabled && confidence >= 0.85 && input.champion?.parameterStability?.stable === true && Boolean(input.champion.liveTradingResults && input.champion.liveTradingResults.tradesCount >= 30) && (decisionAction !== 'NO_CHANGE');
+    const isApply = this.autoApplyEnabled && confidence >= 0.85 && Boolean(input.champion?.validationPipeline && input.champion.validationPipeline.overallScore >= 60 && input.champion.validationScore !== undefined && input.champion.validationScore >= 60) && Boolean(input.champion.liveTradingResults && input.champion.liveTradingResults.tradesCount >= 30) && (decisionAction !== 'NO_CHANGE');
 
     const result = this.saveDecision(
       decisionAction,
