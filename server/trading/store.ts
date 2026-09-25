@@ -167,9 +167,14 @@ export class TradingStore {
         this.profitAccounting.syncFromRealAccount({
           totalEquityUsd: acct.totalEquityUsd,
           availableCashUsd: acct.availableCashUsd,
-          lockedInOrdersUsd: acct.lockedInOrdersUsd,
-          recentTradesCount: acct.recentTrades?.length || 0
+          lockedInOrdersUsd: acct.lockedInOrdersUsd
         });
+
+        // Reconcile actual Bybit executions into FIFO accounting. The accounting engine
+        // deduplicates execution IDs, so repeated polling is safe.
+        for (const fill of acct.recentTrades || []) {
+          this.profitAccounting.recordFill(fill);
+        }
       }
     } catch {
       // Handled gracefully
