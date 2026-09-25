@@ -43,7 +43,7 @@ export const CanaryAndAuditView: React.FC<CanaryAndAuditViewProps> = ({
       await triggerCanaryRollout(nextVer, 'Canary test: Dynamic micro-spread dampening with Kelly sizing');
       setStatusMessage({
         type: 'success',
-        text: `Canary release ${nextVer} initiated. Staging unit tests and backtests executing in background.`
+        text: `Canary release ${nextVer} initiated. Production validation and health checks executing in background.`
       });
       onRefreshState();
     } catch (err: any) {
