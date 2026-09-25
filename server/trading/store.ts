@@ -147,7 +147,7 @@ export class TradingStore {
     }
   }
 
-  private handleLiveTick(symbol: string, currentPrice: number, liveData: LivePairMarketData) {
+  private async handleLiveTick(symbol: string, currentPrice: number, liveData: LivePairMarketData) {
     // 1. Calculate real quant signals strictly from live candles and depth
     const quantResult = this.quantEngine.computeSignals(symbol, liveData.candles, liveData.orderBook);
     if (quantResult.regime) {
@@ -274,7 +274,7 @@ export class TradingStore {
     });
   }
 
-  public setActiveSymbol(symbol: string) {
+  public async setActiveSymbol(symbol: string) {
     const norm = this.dataEngine.normalizeSymbol(symbol);
     this.activeSymbol = norm;
 
