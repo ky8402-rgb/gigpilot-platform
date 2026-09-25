@@ -42,7 +42,6 @@ export interface BybitAccountState {
   accountType: string;
   apiKeyConfigured: boolean;
   keyMask: string;
-  isTestnet?: boolean;
 }
 
 const BYBIT_CONFIG_FILE = path.join(process.cwd(), '.bybit-quant-keys.json');
@@ -51,8 +50,6 @@ export class BybitAdapter {
   private apiKey: string = '';
   private apiSecret: string = '';
   private baseUrl: string = 'https://api.bybit.com';
-  private testnetBaseUrl: string = 'https://api-testnet.bybit.com';
-  private isTestnet: boolean = false;
   private serverIp: string = process.env.EC2_HOST && !process.env.EC2_HOST.startsWith('i-') && process.env.EC2_HOST !== '3.222.149.9' && process.env.EC2_HOST !== '65.0.73.85'
     ? process.env.EC2_HOST
     : '35.154.110.156';
@@ -73,28 +70,18 @@ export class BybitAdapter {
 
     this.apiKey = savedKeys.apiKey || process.env.BYBIT_API_KEY || '';
     this.apiSecret = savedKeys.apiSecret || process.env.BYBIT_API_SECRET || '';
-    this.isTestnet = Boolean(savedKeys.isTestnet ?? (process.env.BYBIT_TESTNET === 'true'));
     if (savedKeys.baseUrl) {
       this.baseUrl = savedKeys.baseUrl;
-    } else if (this.isTestnet) {
-      this.baseUrl = this.testnetBaseUrl;
-    }
 
     this.syncServerTime().catch(() => {});
   }
 
   public getActiveBaseUrl(): string {
-    return this.isTestnet ? this.testnetBaseUrl : this.baseUrl;
+    return this.baseUrl;
   }
 
   public getIsTestnet(): boolean {
-    return this.isTestnet;
-  }
-
-  public setTestnet(testnet: boolean): void {
-    this.isTestnet = testnet;
-    this.baseUrl = testnet ? this.testnetBaseUrl : 'https://api.bybit.com';
-    this.saveConfig();
+    return false;
   }
 
   public async syncServerTime(): Promise<number> {
@@ -115,16 +102,13 @@ export class BybitAdapter {
     return Date.now() + this.timeOffset;
   }
 
-  public updateCredentials(apiKey: string, apiSecret: string, baseUrl?: string, isTestnet?: boolean): void {
+  public updateCredentials(apiKey: string, apiSecret: string, baseUrl?: string): void {
     this.apiKey = apiKey.trim();
     this.apiSecret = apiSecret.trim();
-    if (typeof isTestnet === 'boolean') {
-      this.isTestnet = isTestnet;
-    }
     if (baseUrl) {
       this.baseUrl = baseUrl.trim();
     } else {
-      this.baseUrl = this.isTestnet ? this.testnetBaseUrl : 'https://api.bybit.com';
+      this.baseUrl = 'https://api.bybit.com';
     }
     this.saveConfig();
     this.lastAccountState = null;
@@ -141,7 +125,6 @@ export class BybitAdapter {
             apiKey: this.apiKey,
             apiSecret: this.apiSecret,
             baseUrl: this.baseUrl,
-            isTestnet: this.isTestnet,
             updatedAt: new Date().toISOString()
           },
           null,
@@ -426,8 +409,7 @@ export class BybitAdapter {
         canDeposit: false,
         accountType: 'SPOT / UTA',
         apiKeyConfigured: false,
-        keyMask: 'NOT_CONFIGURED',
-        isTestnet: this.isTestnet
+        keyMask: 'NOT_CONFIGURED'
       };
     }
 
@@ -479,8 +461,7 @@ export class BybitAdapter {
           canDeposit: false,
           accountType: queryType,
           apiKeyConfigured: true,
-          keyMask: this.getKeyMask(),
-          isTestnet: this.isTestnet
+          keyMask: this.getKeyMask()
         };
       }
 
@@ -556,7 +537,7 @@ export class BybitAdapter {
 
       const state: BybitAccountState = {
         status: 'CONNECTED',
-        message: `Connected to Bybit ${this.isTestnet ? 'Testnet' : 'Live Spot/UTA'}. Real-time balances synchronized.`,
+        message: `Connected to Bybit Live Spot/UTA. Real-time balances synchronized.`,
         serverIp: this.serverIp,
         timestamp: new Date().toISOString(),
         totalEquityUsd: Number(totalEquityUsd.toFixed(2)),
@@ -574,8 +555,7 @@ export class BybitAdapter {
         canDeposit: true,
         accountType: queryType,
         apiKeyConfigured: true,
-        keyMask: this.getKeyMask(),
-        isTestnet: this.isTestnet
+        keyMask: this.getKeyMask()
       };
 
       this.lastAccountState = state;
@@ -602,8 +582,7 @@ export class BybitAdapter {
         canDeposit: false,
         accountType: 'SPOT / UTA',
         apiKeyConfigured: true,
-        keyMask: this.getKeyMask(),
-        isTestnet: this.isTestnet
+        keyMask: this.getKeyMask()
       };
     }
   }
