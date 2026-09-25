@@ -906,7 +906,10 @@ tradingRouter.get('/inventory-awareness', async (req: Request, res: Response) =>
     const store = globalTradingStore;
     const symbol = store.activeSymbol;
     const liveData = store.dataEngine.getPairData(symbol);
-    const currentPrice = liveData?.currentPrice || 66850;
+    if (!liveData || liveData.currentPrice <= 0 || !liveData.orderBook?.bids?.length || !liveData.orderBook?.asks?.length) {
+      return res.status(503).json({ success: false, error: 'Live market data is unavailable; inventory metrics are fail-closed.' });
+    }
+    const currentPrice = liveData.currentPrice;
 
     const inventoryMetrics = store.gridEngine.computeInventoryAwareness({
       symbol,
