@@ -70,11 +70,6 @@ jobs:
     steps:
       - name: Checkout Source Code
         uses: actions/checkout@v6
-    name: 🚀 Deploy Frontend (AWS Amplify - gigpilot-platform)
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout Source Code
-        uses: actions/checkout@v6
 
       - name: Check AWS Secrets Availability
         id: check_amplify_aws
