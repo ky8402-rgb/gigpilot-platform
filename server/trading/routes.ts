@@ -197,7 +197,7 @@ tradingRouter.get(['/pair/:symbol', '/pair/:base/:quote'], (req: Request, res: R
 });
 
 // 8. Select Active Pair
-tradingRouter.post('/pair/select', (req: Request, res: Response) => {
+tradingRouter.post('/pair/select', async (req: Request, res: Response) => {
   const { symbol } = req.body;
   if (!symbol) return res.status(400).json({ success: false, error: 'Symbol required' });
 
