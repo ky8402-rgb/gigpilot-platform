@@ -29,7 +29,6 @@ interface InventoryAwareGridViewProps {
   marketRegime: MarketRegime;
   activeGrid: GridConfiguration | null;
   onRefresh?: () => void;
-  onApplySimulatedInventory?: (baseRatio: number, liquidationDistPct?: number) => Promise<void>;
 }
 
 export const InventoryAwareGridView: React.FC<InventoryAwareGridViewProps> = ({
@@ -37,13 +36,7 @@ export const InventoryAwareGridView: React.FC<InventoryAwareGridViewProps> = ({
   currentPrice,
   marketRegime,
   activeGrid,
-  onRefresh,
-  onApplySimulatedInventory
-}) => {
-  const [isSimulating, setIsSimulating] = useState(false);
-  const [simBaseRatio, setSimBaseRatio] = useState<number>(0.85); // Default preset: 85% long
-  const [simLiqDistance, setSimLiqDistance] = useState<number>(18.5);
-  const [statusMessage, setStatusMessage] = useState<string | null>(null);
+  onRefresh}) => {
 
   const metrics: InventoryAwarenessMetrics | undefined = activeGrid?.inventoryAwareness;
 
@@ -51,19 +44,19 @@ export const InventoryAwareGridView: React.FC<InventoryAwareGridViewProps> = ({
   const quoteAsset = activeSymbol.split('/')[1] || 'USDT';
 
   // Fallback defaults if metrics not yet computed
-  const currentBaseRatio = metrics ? metrics.currentBaseRatio : 0.65;
-  const inventorySkew = metrics ? metrics.inventorySkew : 0.30;
-  const inventoryPosturing = metrics ? metrics.inventoryPosturing : 'MODERATELY_LONG';
-  const buyAllocPct = metrics ? metrics.asymmetricBudgeting.buyAllocationPct : 0.35;
-  const sellAllocPct = metrics ? metrics.asymmetricBudgeting.sellAllocationPct : 0.65;
-  const buyMultiplier = metrics ? metrics.asymmetricOrderSizing.buyOrderSizeMultiplier : 0.55;
-  const sellMultiplier = metrics ? metrics.asymmetricOrderSizing.sellOrderSizeMultiplier : 1.45;
-  const buyHurdleBps = metrics ? metrics.asymmetricEdgeHurdles.requiredBuyEdgeHurdleBps : 8.2;
-  const sellHurdleBps = metrics ? metrics.asymmetricEdgeHurdles.requiredSellEdgeHurdleBps : 2.5;
+  const currentBaseRatio = metrics?.currentBaseRatio ?? 0;
+  const inventorySkew = metrics?.inventorySkew ?? 0;
+  const inventoryPosturing = metrics?.inventoryPosturing ?? 'UNKNOWN';
+  const buyAllocPct = metrics?.asymmetricBudgeting.buyAllocationPct ?? 0;
+  const sellAllocPct = metrics?.asymmetricBudgeting.sellAllocationPct ?? 0;
+  const buyMultiplier = metrics?.asymmetricOrderSizing.buyOrderSizeMultiplier ?? 0;
+  const sellMultiplier = metrics?.asymmetricOrderSizing.sellOrderSizeMultiplier ?? 0;
+  const buyHurdleBps = metrics?.asymmetricEdgeHurdles.requiredBuyEdgeHurdleBps ?? 0;
+  const sellHurdleBps = metrics?.asymmetricEdgeHurdles.requiredSellEdgeHurdleBps ?? 0;
   const resPrice = metrics?.asymmetricSpacing.reservationPrice || currentPrice;
   const resShiftBps = metrics?.asymmetricSpacing.reservationPriceShiftBps || 0;
-  const distLiqPct = metrics?.distanceFromLiquidationPct ?? 28.5;
-  const liqTier = metrics?.liquidationRiskTier || 'SAFE';
+  const distLiqPct = metrics?.distanceFromLiquidationPct ?? 0;
+  const liqTier = metrics?.liquidationRiskTier || 'UNKNOWN';
 
   const handleRunPreset = async (ratio: number, liqDist: number, label: string) => {
     setSimBaseRatio(ratio);
@@ -359,114 +352,6 @@ export const InventoryAwareGridView: React.FC<InventoryAwareGridViewProps> = ({
               ? 'Conceptual requirement enforced: increased required edge for additional BUYs; lowered hurdle for SELLs.'
               : 'Symmetric or inverse hurdle thresholds applied.'}
           </p>
-        </div>
-      </div>
-
-      {/* 3. Interactive Scenario Testing & Live Simulation Lab */}
-      <div className="bg-slate-900 border border-slate-800 rounded-xl p-5 shadow-sm">
-        <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 mb-4">
-          <div>
-            <h3 className="text-sm font-bold text-white flex items-center gap-2">
-              <Sliders className="w-4 h-4 text-indigo-400" />
-              Inventory Awareness Simulation & Validation Lab
-            </h3>
-            <p className="text-xs text-slate-400 mt-0.5">
-              Verify how the multi-variable model reconfigures grid spacing, order sizing, side bias, and hurdle rates under varying inventory postures.
-            </p>
-          </div>
-
-          {/* Quick Scenario Preset Buttons */}
-          <div className="flex flex-wrap items-center gap-2">
-            <button
-              onClick={() => handleRunPreset(0.85, 24.0, 'Heavily Long (85% Base Inventory)')}
-              disabled={isSimulating}
-              className="px-2.5 py-1.5 rounded-lg text-xs font-mono font-bold bg-amber-950/70 hover:bg-amber-900/80 text-amber-300 border border-amber-700/60 transition-colors flex items-center gap-1"
-            >
-              <TrendingUp className="w-3 h-3 text-amber-400" />
-              Heavily Long (85%)
-            </button>
-            <button
-              onClick={() => handleRunPreset(0.15, 35.0, 'Heavily Short (15% Base Inventory)')}
-              disabled={isSimulating}
-              className="px-2.5 py-1.5 rounded-lg text-xs font-mono font-bold bg-blue-950/70 hover:bg-blue-900/80 text-blue-300 border border-blue-700/60 transition-colors flex items-center gap-1"
-            >
-              <TrendingDown className="w-3 h-3 text-blue-400" />
-              Heavily Short (15%)
-            </button>
-            <button
-              onClick={() => handleRunPreset(0.88, 8.5, 'Critical Near Liquidation (< 12% Buffer)')}
-              disabled={isSimulating}
-              className="px-2.5 py-1.5 rounded-lg text-xs font-mono font-bold bg-rose-950/70 hover:bg-rose-900/80 text-rose-300 border border-rose-700/60 transition-colors flex items-center gap-1 animate-pulse"
-            >
-              <AlertTriangle className="w-3 h-3 text-rose-400" />
-              Near Liquidation (8.5%)
-            </button>
-            <button
-              onClick={() => handleRunPreset(0.50, 42.0, 'Neutral Balanced (50/50)')}
-              disabled={isSimulating}
-              className="px-2.5 py-1.5 rounded-lg text-xs font-mono font-bold bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 transition-colors"
-            >
-              Balanced (50/50)
-            </button>
-          </div>
-        </div>
-
-        {/* Custom Sliders for Fine-Grained Simulation */}
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6 p-4 bg-slate-950/60 border border-slate-800 rounded-lg">
-          <div>
-            <div className="flex justify-between text-xs font-mono mb-2">
-              <span className="text-slate-300 font-bold">Simulated Base Asset Ratio ({baseAsset}):</span>
-              <span className="text-indigo-400 font-bold">{Math.round(simBaseRatio * 100)}%</span>
-            </div>
-            <input
-              type="range"
-              min="0.05"
-              max="0.95"
-              step="0.05"
-              value={simBaseRatio}
-              onChange={(e) => setSimBaseRatio(parseFloat(e.target.value))}
-              className="w-full h-2 bg-slate-800 rounded-lg appearance-none cursor-pointer accent-indigo-500"
-            />
-            <div className="flex justify-between text-[10px] font-mono text-slate-500 mt-1">
-              <span>5% (Extremely Short)</span>
-              <span>50% (Target Neutral)</span>
-              <span>95% (Extremely Long)</span>
-            </div>
-          </div>
-
-          <div>
-            <div className="flex justify-between text-xs font-mono mb-2">
-              <span className="text-slate-300 font-bold">Distance to Liquidation (%):</span>
-              <span className={`font-bold ${simLiqDistance < 12 ? 'text-rose-400' : 'text-emerald-400'}`}>
-                {simLiqDistance}% {simLiqDistance < 12 ? '(CRITICAL)' : simLiqDistance < 25 ? '(ELEVATED)' : '(SAFE)'}
-              </span>
-            </div>
-            <input
-              type="range"
-              min="5"
-              max="50"
-              step="1"
-              value={simLiqDistance}
-              onChange={(e) => setSimLiqDistance(parseFloat(e.target.value))}
-              className="w-full h-2 bg-slate-800 rounded-lg appearance-none cursor-pointer accent-indigo-500"
-            />
-            <div className="flex justify-between text-[10px] font-mono text-slate-500 mt-1">
-              <span className="text-rose-400">5% (Critical Zone)</span>
-              <span className="text-amber-400">20% (Elevated)</span>
-              <span className="text-emerald-400">50% (Safe Buffer)</span>
-            </div>
-          </div>
-
-          <div className="md:col-span-2 flex justify-end">
-            <button
-              onClick={handleCustomApply}
-              disabled={isSimulating}
-              className="px-4 py-2 rounded-lg text-xs font-mono font-bold bg-indigo-600 hover:bg-indigo-500 text-white shadow-lg transition-colors flex items-center gap-2"
-            >
-              {isSimulating ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Sparkles className="w-4 h-4" />}
-              Apply Custom Parameters to Live Active Grid
-            </button>
-          </div>
         </div>
       </div>
 
