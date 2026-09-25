@@ -14,12 +14,11 @@ export class ProfitSweepEngine implements EngineModule {
   private minSweepBufferUsd: number = 200;
   private autoSweepEnabled: boolean = false;
   private destinationWallet: DestinationWallet = {
-    address: '0x71C...4982',
-    network: 'ETHEREUM',
-    label: 'Primary Cold Vault (Hardware Ledg/Trez)',
-    isWhitelisted: true,
-    addedAt: '2026-01-01T00:00:00Z',
-    lastUsedAt: '2026-03-01T12:00:00Z'
+    address: '',
+    network: '',
+    label: '',
+    isWhitelisted: false,
+    addedAt: ''
   };
   private sweeps: SweepRecord[] = [];
 
@@ -111,38 +110,23 @@ export class ProfitSweepEngine implements EngineModule {
       return { success: false, error: 'AUTO_PROFIT_SWEEP_OFF: Sweep subsystem is disabled by operator.' };
     }
 
-    if (!this.destinationWallet.isWhitelisted) {
-      const err = 'Destination wallet address is not whitelisted. Sweep rejected for security.';
+    if (!Number.isFinite(amountUsd) || amountUsd <= 0) {
+      return { success: false, error: 'Invalid sweep amount.' };
+    }
+
+    if (!Number.isFinite(eligibleUsd) || eligibleUsd <= 0 || amountUsd > eligibleUsd) {
+      const err = `Requested sweep ($${amountUsd.toFixed(2)}) exceeds eligible realized profit ($${Math.max(0, eligibleUsd).toFixed(2)}).`;
       this.recordError('ERROR', err);
       return { success: false, error: err };
     }
 
-    if (amountUsd > eligibleUsd) {
-      const err = `Requested sweep ($${amountUsd.toFixed(2)}) exceeds eligible realized profit ($${eligibleUsd.toFixed(2)}).`;
-      this.recordError('ERROR', err);
-      return { success: false, error: err };
+    if (!this.destinationWallet.address || !this.destinationWallet.isWhitelisted) {
+      return { success: false, error: 'Destination wallet is not configured and cryptographically verified.' };
     }
 
-    const estGasFeeUsd = this.destinationWallet.network === 'ETHEREUM' ? 4.50 : 0.80;
-    const netReceivedUsd = amountUsd - estGasFeeUsd;
-
-    const record: SweepRecord = {
-      id: `sweep_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
-      timestamp: new Date().toISOString(),
-      amountUsd,
-      network: this.destinationWallet.network,
-      destinationAddress: this.destinationWallet.address,
-      txHash: `0x${Array.from({ length: 64 }, () => Math.floor(Math.random() * 16).toString(16)).join('')}`,
-      status: 'CONFIRMED',
-      feePaidUsd: estGasFeeUsd,
-      netReceivedUsd
+    return {
+      success: false,
+      error: 'LIVE_WITHDRAWAL_NOT_CONFIGURED: No real Bybit withdrawal operation is wired to this subsystem. No funds were moved and no transaction was recorded.'
     };
-
-    this.sweeps.unshift(record);
-    this.destinationWallet.lastUsedAt = record.timestamp;
-    this.lastHeartbeat = new Date().toISOString();
-    this.status = 'HEALTHY';
-
-    return { success: true, sweep: record };
   }
 }
