@@ -749,17 +749,6 @@ export const TradingDashboard: React.FC<TradingDashboardProps> = ({ onLogout }) 
             marketRegime={state.currentRegime}
             activeGrid={state.activeGrid}
             onRefresh={loadFullState}
-            onApplySimulatedInventory={async (baseRatio, liqDist) => {
-              await fetch('/api/trading/inventory-awareness/simulate', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                  simulatedBaseRatio: baseRatio,
-                  simulatedLiquidationDistancePct: liqDist
-                })
-              });
-              loadFullState();
-            }}
           />
         )}
 
@@ -777,7 +766,7 @@ export const TradingDashboard: React.FC<TradingDashboardProps> = ({ onLogout }) 
 
         {activeTab === 'ADAPTIVE_GRID' && (
           <AdaptiveGridConfigurator
-            currentPrice={pairDetails?.currentPrice || 66850}
+            currentPrice={pairDetails?.currentPrice || 0}
             activeGrid={state.activeGrid}
             regime={state.currentRegime}
             onApplyConfig={async (cfg) => {
