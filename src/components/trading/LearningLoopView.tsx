@@ -113,23 +113,23 @@ export const LearningLoopView: React.FC<LearningLoopViewProps> = ({
           <div className="bg-slate-950/80 border border-slate-800/80 rounded-lg p-2.5">
             <span className="text-slate-500 block text-[10px]">NET PROFIT</span>
             <span className="text-sm font-extrabold text-emerald-400">
-              +${champion.backtestResults.netProfit.toLocaleString()}
+              +${champion.liveTradingResults.netProfit.toLocaleString()}
             </span>
-            <span className="text-[10px] text-slate-400 block">ROI: +{champion.backtestResults.roiPct}%</span>
+            <span className="text-[10px] text-slate-400 block">ROI: +{champion.liveTradingResults.roiPct}%</span>
           </div>
 
           <div className="bg-slate-950/80 border border-slate-800/80 rounded-lg p-2.5">
             <span className="text-slate-500 block text-[10px]">SHARPE RATIO</span>
             <span className="text-sm font-extrabold text-white">
-              {champion.backtestResults.sharpeRatio}
+              {champion.liveTradingResults.sharpeRatio}
             </span>
-            <span className="text-[10px] text-purple-300 block">Sortino: {champion.backtestResults.sortinoRatio}</span>
+            <span className="text-[10px] text-purple-300 block">Sortino: {champion.liveTradingResults.sortinoRatio}</span>
           </div>
 
           <div className="bg-slate-950/80 border border-slate-800/80 rounded-lg p-2.5">
             <span className="text-slate-500 block text-[10px]">MAX DRAWDOWN</span>
             <span className="text-sm font-extrabold text-cyan-300">
-              {champion.backtestResults.maxDrawdownPct}%
+              {champion.liveTradingResults.maxDrawdownPct}%
             </span>
             <span className="text-[10px] text-slate-400 block">Peak-to-trough</span>
           </div>
@@ -137,17 +137,17 @@ export const LearningLoopView: React.FC<LearningLoopViewProps> = ({
           <div className="bg-slate-950/80 border border-slate-800/80 rounded-lg p-2.5">
             <span className="text-slate-500 block text-[10px]">WIN RATE</span>
             <span className="text-sm font-extrabold text-amber-300">
-              {champion.backtestResults.winRatePct}%
+              {champion.liveTradingResults.winRatePct}%
             </span>
-            <span className="text-[10px] text-slate-400 block">PF: {champion.backtestResults.profitFactor}x</span>
+            <span className="text-[10px] text-slate-400 block">PF: {champion.liveTradingResults.profitFactor}x</span>
           </div>
 
           <div className="bg-slate-950/80 border border-slate-800/80 rounded-lg p-2.5">
             <span className="text-slate-500 block text-[10px]">FILL RATE</span>
             <span className="text-sm font-extrabold text-white">
-              {champion.backtestResults.orderFillRatePct}%
+              {champion.liveTradingResults.orderFillRatePct}%
             </span>
-            <span className="text-[10px] text-slate-400 block">{champion.backtestResults.tradesCount} trades</span>
+            <span className="text-[10px] text-slate-400 block">{champion.liveTradingResults.tradesCount} trades</span>
           </div>
 
           <div className="bg-slate-950/80 border border-slate-800/80 rounded-lg p-2.5">
@@ -193,9 +193,9 @@ export const LearningLoopView: React.FC<LearningLoopViewProps> = ({
         ) : (
           <div className="space-y-4">
             {challengers.map(c => {
-              const sharpeDiff = c.backtestResults.sharpeRatio - champion.backtestResults.sharpeRatio;
-              const ddDiff = c.backtestResults.maxDrawdownPct - champion.backtestResults.maxDrawdownPct;
-              const profitDiff = c.backtestResults.netProfit - champion.backtestResults.netProfit;
+              const sharpeDiff = c.liveTradingResults.sharpeRatio - champion.liveTradingResults.sharpeRatio;
+              const ddDiff = c.liveTradingResults.maxDrawdownPct - champion.liveTradingResults.maxDrawdownPct;
+              const profitDiff = c.liveTradingResults.netProfit - champion.liveTradingResults.netProfit;
 
               return (
                 <div
@@ -230,28 +230,28 @@ export const LearningLoopView: React.FC<LearningLoopViewProps> = ({
                     <div>
                       <span className="text-slate-500 block text-[10px]">NET PROFIT VS CHAMPION</span>
                       <span className={`font-bold ${profitDiff >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
-                        ${c.backtestResults.netProfit.toLocaleString()} ({profitDiff >= 0 ? '+' : ''}${profitDiff.toFixed(0)})
+                        ${c.liveTradingResults.netProfit.toLocaleString()} ({profitDiff >= 0 ? '+' : ''}${profitDiff.toFixed(0)})
                       </span>
                     </div>
 
                     <div>
                       <span className="text-slate-500 block text-[10px]">SHARPE RATIO</span>
                       <span className={`font-bold ${sharpeDiff > 0 ? 'text-emerald-400' : 'text-slate-300'}`}>
-                        {c.backtestResults.sharpeRatio} ({sharpeDiff > 0 ? `+${sharpeDiff.toFixed(2)}` : sharpeDiff.toFixed(2)})
+                        {c.liveTradingResults.sharpeRatio} ({sharpeDiff > 0 ? `+${sharpeDiff.toFixed(2)}` : sharpeDiff.toFixed(2)})
                       </span>
                     </div>
 
                     <div>
                       <span className="text-slate-500 block text-[10px]">MAX DRAWDOWN</span>
                       <span className={`font-bold ${ddDiff < 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
-                        {c.backtestResults.maxDrawdownPct}% ({ddDiff < 0 ? `${ddDiff.toFixed(1)}%` : `+${ddDiff.toFixed(1)}%`})
+                        {c.liveTradingResults.maxDrawdownPct}% ({ddDiff < 0 ? `${ddDiff.toFixed(1)}%` : `+${ddDiff.toFixed(1)}%`})
                       </span>
                     </div>
 
                     <div>
                       <span className="text-slate-500 block text-[10px]">WIN RATE / TRADES</span>
                       <span className="font-bold text-amber-300">
-                        {c.backtestResults.winRatePct}% ({c.backtestResults.tradesCount} trades)
+                        {c.liveTradingResults.winRatePct}% ({c.liveTradingResults.tradesCount} trades)
                       </span>
                     </div>
                   </div>
@@ -298,7 +298,7 @@ export const LearningLoopView: React.FC<LearningLoopViewProps> = ({
                 <span className="text-slate-500 text-[11px] hidden sm:inline">{s.reasonForChange}</span>
               </div>
               <div className="text-right text-slate-400 text-[11px]">
-                ROI: <strong className="text-emerald-400">+{s.backtestResults.roiPct}%</strong> | Sharpe: {s.backtestResults.sharpeRatio}
+                ROI: <strong className="text-emerald-400">+{s.liveTradingResults.roiPct}%</strong> | Sharpe: {s.liveTradingResults.sharpeRatio}
               </div>
             </div>
           ))}
