@@ -810,6 +810,85 @@ export class BybitAdapter {
       return { success: false, error: e.message };
     }
   }
+  public async createSpotWithdrawal(params: {
+    coin: string;
+    amount: number;
+    address: string;
+    chain: string;
+    requestId: string;
+    accountType?: 'FUND' | 'UTA' | 'EARN';
+  }): Promise<{ success: boolean; withdrawId?: string; txId?: string; error?: string }> {
+    if (!this.hasCredentials()) return { success: false, error: 'Bybit credentials are not configured.' };
+    if (this.isTestnet) return { success: false, error: 'Live withdrawals are disabled while Bybit testnet mode is configured.' };
+    if (!Number.isFinite(params.amount) || params.amount <= 0) return { success: false, error: 'Withdrawal amount must be positive.' };
+    if (!params.address || !params.chain || !params.coin || !params.requestId) return { success: false, error: 'Withdrawal coin, chain, address and requestId are required.' };
+
+    const body = {
+      coin: params.coin.toUpperCase(),
+      chain: params.chain.toUpperCase(),
+      address: params.address,
+      amount: String(params.amount),
+      timestamp: this.getSyncedTimestamp(),
+      accountType: params.accountType || 'FUND',
+      requestId: params.requestId
+    };
+    try {
+      const signed = this.signPost(body);
+      const res = await fetch(`${this.getActiveBaseUrl()}/v5/asset/withdraw/create`, {
+        method: 'POST',
+        headers: signed.headers,
+        body: signed.bodyStr
+      });
+      const json = await res.json() as any;
+      if (!res.ok || json?.retCode !== 0) {
+        return { success: false, error: formatBybitError(json, res.status) };
+      }
+      return {
+        success: true,
+        withdrawId: json?.result?.id || json?.result?.withdrawId,
+        txId: json?.result?.txID
+      };
+    } catch (err: any) {
+      return { success: false, error: err.message || 'Bybit withdrawal request failed.' };
+    }
+  }
+
+  public async queryWithdrawalRecords(params: { withdrawId?: string; coin?: string; limit?: number }): Promise<Array<{
+    withdrawId: string;
+    txId: string;
+    status: string;
+    amount: number;
+    fee: number;
+    address: string;
+    coin: string;
+    chain: string;
+  }>> {
+    if (!this.hasCredentials()) return [];
+    const query: Record<string, any> = { accountType: 'FUND', limit: params.limit || 50 };
+    if (params.withdrawId) query.withdrawId = params.withdrawId;
+    if (params.coin) query.coin = params.coin.toUpperCase();
+    try {
+      const signed = this.signGet(query);
+      const res = await fetch(`${this.getActiveBaseUrl()}/v5/asset/withdraw/query-record?${signed.queryString}`, {
+        headers: signed.headers
+      });
+      const json = await res.json() as any;
+      if (!res.ok || json?.retCode !== 0) return [];
+      return (json?.result?.rows || []).map((row: any) => ({
+        withdrawId: String(row.withdrawId || row.id || ''),
+        txId: String(row.txID || ''),
+        status: String(row.status || ''),
+        amount: Number(row.amount || 0),
+        fee: Number(row.withdrawFee || row.fee || 0),
+        address: String(row.address || ''),
+        coin: String(row.coin || ''),
+        chain: String(row.chain || '')
+      }));
+    } catch {
+      return [];
+    }
+  }
+
 }
 
 export const bybitAdapter = new BybitAdapter();
