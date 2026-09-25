@@ -147,7 +147,7 @@ export class TradingStore {
     }
   }
 
-  private async handleLiveTick(symbol: string, currentPrice: number, liveData: LivePairMarketData) {
+  private handleLiveTick(symbol: string, currentPrice: number, liveData: LivePairMarketData) {
     // 1. Calculate real quant signals strictly from live candles and depth
     const quantResult = this.quantEngine.computeSignals(symbol, liveData.candles, liveData.orderBook);
     if (quantResult.regime) {
@@ -198,7 +198,7 @@ export class TradingStore {
 
         if (newGridRes.grid) {
           this.activeGrid = newGridRes.grid;
-          await this.placeGridOrdersInExchange(this.activeGrid, currentPrice);
+          this.placeGridOrdersInExchange(this.activeGrid, currentPrice);
 
           this.monitor.logAudit({
             category: 'AUTONOMOUS_REBALANCE',
@@ -246,7 +246,7 @@ export class TradingStore {
       );
 
       if (validation.allowed) {
-        await this.exchangeExec.executeOrder({
+        this.exchangeExec.executeOrder({
           symbol: grid.symbol,
           side: lvl.side,
           type: 'GRID_LIMIT',
@@ -302,7 +302,7 @@ export class TradingStore {
           if (cancelledCount === existingOrders.length) {
             const reconciliation = await this.exchangeExec.reconcileLiveOrders(norm);
             if (!reconciliation.failClosed && this.exchangeExec.getOpenOrders(norm).length === 0) {
-              await this.placeGridOrdersInExchange(this.activeGrid, liveData.currentPrice);
+              this.placeGridOrdersInExchange(this.activeGrid, liveData.currentPrice);
             }
           }
         }
@@ -353,7 +353,7 @@ export class TradingStore {
       if (gRes.grid) {
         this.activeGrid = gRes.grid;
         if (this.autonomyLevel >= 2) {
-          await this.placeGridOrdersInExchange(this.activeGrid, liveData.currentPrice);
+          this.placeGridOrdersInExchange(this.activeGrid, liveData.currentPrice);
         }
       }
     }
