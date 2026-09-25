@@ -38,6 +38,7 @@ export class TradingStore {
   public scripting: StrategyValidatorEngine;
   public monitor: SystemMonitorSecurity;
   public killSwitch: EmergencyKillSwitch;
+  private accountedSweepIds = new Set<string>();
 
   // Runtime State
   public activeSymbol: string = 'BTC/USDT';
@@ -123,17 +124,36 @@ export class TradingStore {
       this.sweeper.reconcilePendingSweeps().catch(() => {});
       this.sweeper.executeAutomaticSweep(this.capital.eligibleRealizedProfit).then((result) => {
         if (result.success && result.sweep) {
-          this.profitAccounting.recordSweepExecuted(result.sweep.amountUsd || 0);
+          const withdrawalId = String((result.sweep as any).withdrawalId || result.sweep.id);
           this.monitor.logAudit({
             category: 'PROFIT_SWEEP',
             action: 'AUTONOMOUS_REAL_BYBIT_WITHDRAWAL_SUBMITTED',
             details: {
-              withdrawalId: (result.sweep as any).withdrawalId,
+              withdrawalId,
               destinationAddress: result.sweep.destinationAddress,
               amountUsd: result.sweep.amountUsd,
               status: result.sweep.status
             }
           });
+        }
+
+        // Capital is reduced only after Bybit confirms the withdrawal. A submitted/pending
+        // withdrawal is never treated as completed accounting.
+        for (const sweep of this.sweeper.getSweeps() as any[]) {
+          const id = String(sweep.withdrawalId || sweep.id || '');
+          if (id && sweep.status === 'CONFIRMED' && !this.accountedSweepIds.has(id)) {
+            this.profitAccounting.recordSweepExecuted(Number(sweep.amountUsd || 0));
+            this.accountedSweepIds.add(id);
+            this.monitor.logAudit({
+              category: 'PROFIT_SWEEP',
+              action: 'REAL_BYBIT_WITHDRAWAL_CONFIRMED_AND_ACCOUNTED',
+              details: {
+                withdrawalId: id,
+                amountUsd: sweep.amountUsd,
+                txHash: sweep.txHash || null
+              }
+            });
+          }
         }
       }).catch((error) => {
         this.monitor.logAudit({
