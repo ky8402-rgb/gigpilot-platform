@@ -11,6 +11,7 @@ export class ProfitAccountingEngine implements EngineModule {
   private errorSurface: EngineErrorRecord[] = [];
 
   private capital: CapitalAccounting;
+  private fifoLots: Map<string, Array<{ qty: number; unitCost: number }>> = new Map();
 
   constructor() {
     this.capital = {
@@ -138,35 +139,68 @@ export class ProfitAccountingEngine implements EngineModule {
   }
 
   public recordFill(fill: Fill) {
-    if (!this.enabled) return;
+    if (!this.enabled || !Number.isFinite(fill.price) || !Number.isFinite(fill.amount) || fill.amount <= 0) return;
+
+    const symbol = fill.symbol;
+    const lots = this.fifoLots.get(symbol) || [];
+    let realized = 0;
+
+    if (fill.side === 'BUY') {
+      const totalCost = fill.price * fill.amount + Math.max(0, fill.feeUsd);
+      lots.push({
+        qty: fill.amount,
+        unitCost: totalCost / fill.amount
+      });
+    } else {
+      let remaining = fill.amount;
+      const proceedsPerUnit = fill.price;
+      while (remaining > 1e-12 && lots.length > 0) {
+        const lot = lots[0];
+        const matched = Math.min(remaining, lot.qty);
+        realized += (proceedsPerUnit * matched) - (lot.unitCost * matched);
+        lot.qty -= matched;
+        remaining -= matched;
+        if (lot.qty <= 1e-12) lots.shift();
+      }
+
+      // A sell without a corresponding locally known lot is deliberately not treated
+      // as profit. This prevents invented P&L after restarts or incomplete history.
+      if (remaining > 1e-12) {
+        this.recordError('WARN', 'FIFO accounting could not match the complete live sell fill; unmatched quantity was excluded from realized P&L.', {
+          symbol, orderId: fill.orderId, unmatchedQty: remaining
+        });
+      }
+
+      realized -= Math.max(0, fill.feeUsd);
+    }
+
+    this.fifoLots.set(symbol, lots);
 
     this.capital.totalTrades += 1;
-    this.capital.totalTradingFees += fill.feeUsd;
+    this.capital.totalTradingFees += Math.max(0, fill.feeUsd);
+    this.capital.totalSlippageCost += Math.max(0, fill.slippageBps) * Math.max(0, fill.price * fill.amount) / 10000;
 
-    if (fill.realizedPnL !== 0) {
-      this.capital.grossProfit += fill.realizedPnL;
-      this.capital.netRealizedProfit += (fill.realizedPnL - fill.feeUsd);
+    if (realized !== 0) {
+      this.capital.grossProfit += realized;
+      this.capital.netRealizedProfit += realized;
 
-      if (fill.realizedPnL > 0) {
+      if (realized > 0) {
         this.capital.winningTrades += 1;
-        // 70% of net profits routed to eligible profit reserve for cold sweep
-        const sweepablePortion = (fill.realizedPnL - fill.feeUsd) * 0.70;
+        const sweepablePortion = realized * 0.70;
         if (sweepablePortion > 0) {
           this.capital.eligibleRealizedProfit += sweepablePortion;
-          this.capital.withdrawableProfit += sweepablePortion;
+          this.capital.withdrawableProfit = this.capital.eligibleRealizedProfit;
         }
       } else {
         this.capital.losingTrades += 1;
-        // Deduct loss from eligible profits if any exists
-        this.capital.eligibleRealizedProfit = Math.max(0, this.capital.eligibleRealizedProfit + (fill.realizedPnL - fill.feeUsd));
+        this.capital.eligibleRealizedProfit = Math.max(0, this.capital.eligibleRealizedProfit + realized);
         this.capital.withdrawableProfit = this.capital.eligibleRealizedProfit;
       }
 
-      // Recompute win rate & profit factor
-      this.capital.winRatePct = Number(((this.capital.winningTrades / (this.capital.totalTrades || 1)) * 100).toFixed(2));
-      const totalGains = Math.max(1, this.capital.grossProfit);
-      const totalLosses = Math.max(1, Math.abs(this.capital.netRealizedProfit < 0 ? this.capital.netRealizedProfit : 1));
-      this.capital.profitFactor = Number((totalGains / totalLosses).toFixed(2));
+      this.capital.winRatePct = Number(((this.capital.winningTrades / (this.capital.winningTrades + this.capital.losingTrades || 1)) * 100).toFixed(2));
+      const gains = Math.max(0, this.capital.grossProfit);
+      const losses = Math.max(0, -this.capital.netRealizedProfit);
+      this.capital.profitFactor = losses > 0 ? Number((gains / losses).toFixed(2)) : gains > 0 ? Infinity : 0;
     }
   }
 
