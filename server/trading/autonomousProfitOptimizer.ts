@@ -119,6 +119,7 @@ export class AutonomousProfitOptimizer implements EngineModule {
     midPrice?: number;
     edge?: ExpectedNetEdgeBreakdown | null;
     champion?: StrategyVersion;
+    gridCapitalUsd?: number;
   }): StrategyAllocationDecision {
     const totalCap = Math.max(0, input.capital.tradingCapital || input.capital.totalEquity || 0);
     const liveEdge = input.edge?.expectedNetEdgeBps ?? 0;
