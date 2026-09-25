@@ -407,7 +407,7 @@ export async function createStrategyVariant(params: {
   });
 }
 
-export async function executeUserScript(code: string) {
+export async function validateUserScript(code: string) {
   return await fetchWithFailover<{
     success: boolean;
     result: {
@@ -417,7 +417,7 @@ export async function executeUserScript(code: string) {
       executionTimeMs: number;
       error?: string;
     };
-  }>('/script/execute', {
+  }>('/script/validate', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ code })
