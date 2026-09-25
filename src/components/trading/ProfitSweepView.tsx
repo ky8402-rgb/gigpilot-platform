@@ -17,6 +17,7 @@ import {
 } from 'lucide-react';
 import {
   executeProfitSweep,
+  toggleAutomaticProfitSweep,
   updateDestinationWallet
 } from '../../services/tradingService';
 
@@ -49,6 +50,8 @@ export const ProfitSweepView: React.FC<ProfitSweepViewProps> = ({
       : '500.00'
   );
   const [isUpdatingWallet, setIsUpdatingWallet] = useState(false);
+  const [autoSweepEnabled, setAutoSweepEnabled] = useState(false);
+  const [isTogglingAutoSweep, setIsTogglingAutoSweep] = useState(false);
   const [isSweeping, setIsSweeping] = useState(false);
   const [walletNotice, setWalletNotice] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
   const [sweepSuccessMessage, setSweepSuccessMessage] = useState<string | null>(null);
@@ -62,6 +65,7 @@ export const ProfitSweepView: React.FC<ProfitSweepViewProps> = ({
       await updateDestinationWallet({
         address: walletAddress,
         chain: walletChain,
+        asset: 'USDT',
         label: walletLabel
       });
       setWalletNotice({ type: 'success', text: 'Whitelisted payout destination wallet updated successfully!' });
@@ -213,6 +217,37 @@ export const ProfitSweepView: React.FC<ProfitSweepViewProps> = ({
             </div>
           )}
         </div>
+          <div className="mt-4 flex flex-wrap items-center justify-between gap-3 rounded-lg border border-amber-900/60 bg-amber-950/20 p-3">
+            <div>
+              <div className="text-[11px] font-bold text-amber-300 uppercase tracking-wider">Automatic USDT Profit Withdrawal</div>
+              <div className="text-[10px] text-slate-400">
+                When enabled, GigPilot submits real Bybit withdrawals once the live eligible-profit threshold is reached.
+                Bybit address-book verification is checked again at dispatch.
+              </div>
+            </div>
+            <button
+              type="button"
+              disabled={isTogglingAutoSweep || !destinationWallet?.address || !destinationWallet?.chain}
+              onClick={async () => {
+                setIsTogglingAutoSweep(true);
+                try {
+                  const next = !autoSweepEnabled;
+                  const res = await toggleAutomaticProfitSweep(next);
+                  setAutoSweepEnabled(Boolean(res.autoSweepEnabled));
+                  onRefreshState();
+                } catch (err: any) {
+                  setSweepErrorMessage(err.message || 'Unable to change automatic sweep state.');
+                } finally {
+                  setIsTogglingAutoSweep(false);
+                }
+              }}
+              className={`px-4 py-2 rounded-lg border font-bold text-[11px] uppercase tracking-wider transition-colors ${autoSweepEnabled
+                ? 'bg-emerald-900/50 border-emerald-700 text-emerald-300'
+                : 'bg-slate-800 border-slate-600 text-slate-300'} disabled:opacity-50`}
+            >
+              {isTogglingAutoSweep ? 'Updating...' : autoSweepEnabled ? 'Automatic Sweep ON' : 'Automatic Sweep OFF'}
+            </button>
+          </div>
       </div>
 
       {/* 2. Destination Wallet Whitelist Config */}
@@ -243,11 +278,10 @@ export const ProfitSweepView: React.FC<ProfitSweepViewProps> = ({
                 onChange={e => setWalletChain(e.target.value)}
                 className="w-full bg-slate-950 border border-slate-700 rounded px-3 py-2 text-white font-bold"
               >
-                <option value="BSC">BSC (BNB Smart Chain - BEP-20 USDT)</option>
-                <option value="Ethereum (ERC-20 USDT/USDC)">Ethereum (ERC-20 USDT/USDC)</option>
-                <option value="Arbitrum One (Low Fee)">Arbitrum One (Low Fee)</option>
-                <option value="Solana (SPL USDC)">Solana (SPL USDC)</option>
-                <option value="Bitcoin Native (bc1...)">Bitcoin Native (bc1...)</option>
+                <option value="BSC">BSC — BEP-20 USDT</option>
+                <option value="ETH">ETH — ERC-20 USDT</option>
+                <option value="ARBITRUM">Arbitrum — USDT</option>
+                <option value="SOL">Solana — USDT</option>
               </select>
             </div>
           </div>
