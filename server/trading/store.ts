@@ -16,6 +16,7 @@ import { RiskEngine } from './riskEngine.js';
 import { ProfitAccountingEngine } from './profitAccounting.js';
 import { ProfitSweepEngine } from './profitSweep.js';
 import { AutonomousResearchAgent } from './researchAgent.js';
+import { AutonomousProfitOptimizer } from './autonomousProfitOptimizer.js';
 import { LearningLoopEngine } from './learningLoop.js';
 import { ScriptingSandboxEngine } from './scriptingEngine.js';
 import { SystemMonitorSecurity } from './systemMonitor.js';
@@ -32,6 +33,7 @@ export class TradingStore {
   public profitAccounting: ProfitAccountingEngine;
   public sweeper: ProfitSweepEngine;
   public research: AutonomousResearchAgent;
+  public profitOptimizer: AutonomousProfitOptimizer;
   public learningLoop: LearningLoopEngine;
   public scripting: ScriptingSandboxEngine;
   public monitor: SystemMonitorSecurity;
@@ -58,6 +60,7 @@ export class TradingStore {
     this.profitAccounting = new ProfitAccountingEngine();
     this.sweeper = new ProfitSweepEngine();
     this.research = new AutonomousResearchAgent();
+    this.profitOptimizer = new AutonomousProfitOptimizer();
     this.learningLoop = new LearningLoopEngine();
     this.scripting = new ScriptingSandboxEngine();
     this.monitor = new SystemMonitorSecurity();
@@ -68,6 +71,7 @@ export class TradingStore {
     this.monitor.registerEngine(this.quantEngine);
     this.monitor.registerEngine(this.gridEngine);
     this.monitor.registerEngine(this.research);
+    this.monitor.registerEngine(this.profitOptimizer);
     this.monitor.registerEngine(this.learningLoop);
     this.monitor.registerEngine(this.scripting);
     this.monitor.registerEngine(this.exchangeExec);
@@ -118,7 +122,7 @@ export class TradingStore {
         mode: 'LIVE',
         failClosedPolicy: true,
         killSwitchActive: true,
-        modulesCount: 10
+        modulesCount: 11
       }
     });
   }
