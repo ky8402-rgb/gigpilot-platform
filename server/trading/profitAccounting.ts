@@ -103,6 +103,17 @@ export class ProfitAccountingEngine implements EngineModule {
     if (this.errorSurface.length > 50) this.errorSurface.pop();
   }
 
+  private recalculateSweepEligibility(): void {
+    // Only realized net profit above the protected initial capital and reserve buffer
+    // is withdrawable. This is the authoritative sweep boundary.
+    const eligible = Math.max(
+      0,
+      this.capital.netRealizedProfit - Math.max(0, this.capital.profitReserve)
+    );
+    this.capital.eligibleRealizedProfit = Number(eligible.toFixed(8));
+    this.capital.withdrawableProfit = this.capital.eligibleRealizedProfit;
+  }
+
   public getCapital(): CapitalAccounting {
     return { ...this.capital };
   }
@@ -126,9 +137,7 @@ export class ProfitAccountingEngine implements EngineModule {
         this.capital.initialCapital = balances.totalEquityUsd;
       }
 
-      if (balances.recentTradesCount) {
-        this.capital.totalTrades = balances.recentTradesCount;
-      }
+      this.recalculateSweepEligibility();
 
       this.latencyMs = Date.now() - start;
       this.lastHeartbeat = new Date().toISOString();
@@ -193,15 +202,10 @@ export class ProfitAccountingEngine implements EngineModule {
 
       if (realized > 0) {
         this.capital.winningTrades += 1;
-        const sweepablePortion = realized * 0.70;
-        if (sweepablePortion > 0) {
-          this.capital.eligibleRealizedProfit += sweepablePortion;
-          this.capital.withdrawableProfit = this.capital.eligibleRealizedProfit;
-        }
+        this.recalculateSweepEligibility();
       } else {
         this.capital.losingTrades += 1;
-        this.capital.eligibleRealizedProfit = Math.max(0, this.capital.eligibleRealizedProfit + realized);
-        this.capital.withdrawableProfit = this.capital.eligibleRealizedProfit;
+        this.recalculateSweepEligibility();
       }
 
       this.capital.winRatePct = Number(((this.capital.winningTrades / (this.capital.winningTrades + this.capital.losingTrades || 1)) * 100).toFixed(2));
