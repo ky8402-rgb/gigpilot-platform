@@ -88,18 +88,18 @@ export class TradingStore {
       false
     );
 
-    // 4. Default regime placeholder until first real tick
+    // 4. No fabricated startup market regime. The system stays UNKNOWN until live evidence arrives.
     this.currentRegime = {
-      regime: 'RANGE_BOUND_LOW_VOL',
-      confidence: 0.85,
-      atr: 420.0,
-      rsi: 51.2,
-      adx: 18.5,
-      bbBandwidth: 2.1,
-      orderBookImbalance: 0.05,
+      regime: 'UNKNOWN',
+      confidence: 0,
+      atr: 0,
+      rsi: 0,
+      adx: 0,
+      bbBandwidth: 0,
+      orderBookImbalance: 0,
       trendDirection: 'NEUTRAL',
-      recommendedGridSpacing: 0.45,
-      suggestedAction: 'System running in strict LIVE-ONLY fail-closed posture. Release Kill Switch to activate live grid.',
+      recommendedGridSpacing: 0,
+      suggestedAction: 'Waiting for fresh live market evidence; trading remains fail-closed.',
       detectedAt: new Date().toISOString()
     };
 
