@@ -37,54 +37,9 @@ export class AutonomousProfitOptimizer implements EngineModule {
   private readonly strategyBuilder = new AutonomousStrategyBuilder();
 
   constructor() {
-    // Generate initial baseline audit report
-    this.latestAuditReport = this.generateBaselineAudit();
-    // Initialize baseline strategy allocation
-    this.latestStrategyAllocation = this.computeStrategyAllocations({
-      capital: {
-        initialCapital: 10000,
-        totalEquity: 12480.50,
-        tradingCapital: 10000,
-        availableCash: 7240.20,
-        lockedInOrders: 2759.80,
-        profitReserve: 300,
-        eligibleRealizedProfit: 2180.50,
-        withdrawableProfit: 1880.50,
-        totalSweptProfit: 1500,
-        netRealizedProfit: 2480.50,
-        unrealizedProfit: 320.10,
-        grossProfit: 2795.80,
-        totalTradingFees: 215.30,
-        totalSlippageCost: 35.20,
-        totalFundingCosts: 64.80,
-        totalWithdrawalCosts: 5.00,
-        roiPct: 24.8,
-        annualizedReturnPct: 58.4,
-        sharpeRatio: 2.45,
-        sortinoRatio: 3.10,
-        maxDrawdownPct: 4.8,
-        currentDrawdownPct: 0.8,
-        winRatePct: 84.2,
-        profitFactor: 2.38,
-        totalTrades: 38,
-        winningTrades: 32,
-        losingTrades: 6
-      },
-      regime: {
-        regime: 'RANGE_BOUND_LOW_VOL',
-        confidence: 0.88,
-        atr: 840.5,
-        rsi: 48.6,
-        adx: 18.2,
-        bbBandwidth: 3.4,
-        orderBookImbalance: 0.04,
-        trendDirection: 'NEUTRAL',
-        recommendedGridSpacing: 0.72,
-        suggestedAction: 'Harvest oscillatory mean-reversion swings with tight geometric rungs',
-        detectedAt: new Date().toISOString()
-      },
-      midPrice: 85850
-    });
+    // No fabricated startup performance, capital, regime, or allocation evidence.
+    this.latestAuditReport = null;
+    this.latestStrategyAllocation = null;
   }
 
   public healthCheck(): EngineHealth {
@@ -163,270 +118,109 @@ export class AutonomousProfitOptimizer implements EngineModule {
     regime: MarketRegime;
     midPrice?: number;
     edge?: ExpectedNetEdgeBreakdown | null;
+    champion?: StrategyVersion;
   }): StrategyAllocationDecision {
-    const totalCap = input.capital.tradingCapital || input.capital.totalEquity || 10000;
-    const activeRegime = input.regime.regime;
-    const minEdgeThreshold = 4.0;
-    const currentEdgeBps = input.edge?.expectedNetEdgeBps ?? 9.78;
+    const totalCap = Math.max(0, input.capital.tradingCapital || input.capital.totalEquity || 0);
+    const liveEdge = input.edge?.expectedNetEdgeBps ?? 0;
+    const champion = input.champion;
+    const live = champion?.liveTradingResults;
+    const stable = champion?.parameterStability?.stable === true;
+    const sufficientEvidence = Boolean(live && live.tradesCount >= 30 && stable && live.netProfit > 0 && live.sharpeRatio > 0);
 
-    const candidates: Array<{
-      strategyId: string;
-      strategyName: string;
-      strategyType: StrategyCategory;
-      description: string;
-      targetRegimes: MarketRegimeType[];
-      baseOosSharpe: number;
-      baseOosSortino: number;
-      baseOosRoi: number;
-      baseProfitFactor: number;
-      baseWinRate: number;
-      realizedVolPct: number;
-      correlation: number;
-      fillRatePct: number;
-      slippageBps: number;
-      edgeOffsetBps: number;
-      paramSpacing: number;
-    }> = [
-      {
-        strategyId: 'strat_trend_grid',
-        strategyName: 'Trend Grid Strategy',
-        strategyType: 'TREND_GRID',
-        description: 'Directional volatility-following grid with asymmetric rung spacing and trailing trend boundaries.',
-        targetRegimes: ['BULL_TREND_STRONG', 'BEAR_TREND_STRONG'],
-        baseOosSharpe: 2.24,
-        baseOosSortino: 2.85,
-        baseOosRoi: 18.6,
-        baseProfitFactor: 2.15,
-        baseWinRate: 72.4,
-        realizedVolPct: 22.5,
-        correlation: 0.42,
-        fillRatePct: 92.5,
-        slippageBps: 0.8,
-        edgeOffsetBps: -1.2,
-        paramSpacing: 1.15
-      },
-      {
-        strategyId: 'strat_mean_reversion',
-        strategyName: 'Mean Reversion Grid',
-        strategyType: 'MEAN_REVERSION',
-        description: 'Dense geometric oscillatory grid targeting high-frequency chop within Bollinger bands.',
-        targetRegimes: ['RANGE_BOUND_LOW_VOL', 'RANGE_BOUND_HIGH_VOL'],
-        baseOosSharpe: 2.72,
-        baseOosSortino: 3.45,
-        baseOosRoi: 22.4,
-        baseProfitFactor: 2.48,
-        baseWinRate: 81.2,
-        realizedVolPct: 13.8,
-        correlation: 0.12,
-        fillRatePct: 97.8,
-        slippageBps: 0.2,
-        edgeOffsetBps: 0.0,
-        paramSpacing: 0.55
-      },
-      {
-        strategyId: 'strat_momentum_breakout',
-        strategyName: 'Momentum Breakout Strategy',
-        strategyType: 'MOMENTUM_BREAKOUT',
-        description: 'Dynamic expansion breakout system capturing explosive volatility expansions with protective stop-loss triggers.',
-        targetRegimes: ['BREAKOUT_VOLATILITY', 'LIQUIDITY_SQUEEZE'],
-        baseOosSharpe: 1.95,
-        baseOosSortino: 2.35,
-        baseOosRoi: 15.8,
-        baseProfitFactor: 1.92,
-        baseWinRate: 64.5,
-        realizedVolPct: 31.2,
-        correlation: 0.58,
-        fillRatePct: 88.5,
-        slippageBps: 1.9,
-        edgeOffsetBps: -3.2,
-        paramSpacing: 1.65
-      },
-      {
-        strategyId: 'strat_adaptive_defensive',
-        strategyName: 'Adaptive Defensive Grid',
-        strategyType: 'ADAPTIVE_DEFENSIVE',
-        description: 'Capital-preservation grid with wide risk buffers, low inventory skew, and adverse-selection filters.',
-        targetRegimes: ['LIQUIDITY_SQUEEZE', 'RANGE_BOUND_HIGH_VOL'],
-        baseOosSharpe: 2.35,
-        baseOosSortino: 3.80,
-        baseOosRoi: 11.2,
-        baseProfitFactor: 2.60,
-        baseWinRate: 86.0,
-        realizedVolPct: 8.2,
-        correlation: -0.15,
-        fillRatePct: 99.1,
-        slippageBps: 0.1,
-        edgeOffsetBps: -1.8,
-        paramSpacing: 0.95
-      }
-    ];
-
-    const isTransitioning = Boolean(input.regime.transition?.isTransitioning);
-    const transitionPhase = input.regime.transition?.phase;
-
-    const evaluated = candidates.map(c => {
-      let match = 40;
-      if (isTransitioning) {
-        // Regime Transition in progress: Mean reversion is high risk; defense and momentum breakout favored
-        if (c.strategyType === 'MEAN_REVERSION') {
-          match = 20; // Drastically curtail mean reversion during volatility transitions
-        } else if (c.strategyType === 'ADAPTIVE_DEFENSIVE') {
-          match = 96; // Capital preservation first
-        } else if (c.strategyType === 'MOMENTUM_BREAKOUT') {
-          match = transitionPhase === 'BREAKOUT_CONFIRMED' ? 98 : 88;
-        } else if (c.strategyType === 'TREND_GRID') {
-          match = transitionPhase === 'BREAKOUT_CONFIRMED' ? 92 : 65;
-        }
-      } else if (c.targetRegimes.includes(activeRegime)) {
-        match = activeRegime === 'RANGE_BOUND_LOW_VOL' && c.strategyType === 'MEAN_REVERSION' ? 98 : 90;
-      } else if (activeRegime === 'RANGE_BOUND_LOW_VOL') {
-        match = c.strategyType === 'ADAPTIVE_DEFENSIVE' ? 75 : 30;
-      } else if (activeRegime === 'BULL_TREND_STRONG' || activeRegime === 'BEAR_TREND_STRONG') {
-        match = c.strategyType === 'MOMENTUM_BREAKOUT' ? 82 : (c.strategyType === 'MEAN_REVERSION' ? 24 : 60);
-      } else if (activeRegime === 'BREAKOUT_VOLATILITY') {
-        match = c.strategyType === 'TREND_GRID' ? 80 : (c.strategyType === 'MEAN_REVERSION' ? 18 : 65);
-      } else if (activeRegime === 'LIQUIDITY_SQUEEZE') {
-        match = c.strategyType === 'ADAPTIVE_DEFENSIVE' ? 95 : 45;
-      }
-
-      // Volatility penalty: higher when regime mismatch & high realized vol
-      const mismatchFactor = (100 - match) / 100;
-      const volFactor = c.realizedVolPct / 35;
-      const volatilityRiskPenalty = Number(Math.min(0.95, Math.max(0.05, (mismatchFactor * 0.7) + (volFactor * 0.3))).toFixed(2));
-
-      // Decorrelation bonus: reward strategies with low/negative correlation with portfolio
-      const decorrelationBonus = Number((1.0 + Math.max(0, 0.40 - c.correlation) * 0.5).toFixed(2));
-
-      // Execution quality: based on fill rate and slippage
-      const executionQualityScore = Math.round(
-        (c.fillRatePct * 0.7) + (Math.max(0, 100 - c.slippageBps * 20) * 0.3)
-      );
-
-      // Expected Net Edge for this strategy
-      const stratEdgeBps = Number((currentEdgeBps + c.edgeOffsetBps).toFixed(2));
-      const meetsMinimumEdgeThreshold = stratEdgeBps > minEdgeThreshold;
-
-      // 4 Pillars Scoring:
-      // 1. OOS Performance (0-35 pts)
-      const pOos = Math.min(35, (c.baseOosSharpe / 3.0) * 20 + (c.baseProfitFactor / 2.6) * 15);
-      // 2. Regime Alignment & Volatility (0-30 pts)
-      const pRegimeVol = (match / 100) * 20 + (1.0 - volatilityRiskPenalty) * 10;
-      // 3. Decorrelation (0-15 pts)
-      const pDecorrelation = (decorrelationBonus - 1.0) * 30 + (c.correlation < 0.2 ? 8 : 4);
-      // 4. Execution Quality (0-20 pts)
-      const pExec = (executionQualityScore / 100) * 20;
-
-      let rawScore = pOos + pRegimeVol + pDecorrelation + pExec;
-      if (!meetsMinimumEdgeThreshold) {
-        rawScore = rawScore * 0.2; // Severely penalized if failing Net Edge hurdle
-      }
-
-      const compositeScore = Math.max(5, Math.round(rawScore));
-
-      const rationale = meetsMinimumEdgeThreshold
-        ? (isTransitioning 
-            ? `[TRANSITION ${transitionPhase}] ${c.strategyType === 'MEAN_REVERSION' ? 'Curtailed to protect against breakout run' : 'Prioritized for capital protection/breakout'}. Match ${match}%, vol penalty ${(volatilityRiskPenalty * 100).toFixed(0)}%, net edge +${stratEdgeBps} bps.`
-            : `Sharpe ${c.baseOosSharpe} OOS, ${match}% match with ${activeRegime}, vol penalty ${(volatilityRiskPenalty * 100).toFixed(0)}%, net edge +${stratEdgeBps} bps.`)
-        : `Defunded: Expected Net Edge (+${stratEdgeBps} bps) fails minimum_edge_threshold (> 4.0 bps hurdle).`;
-
+    if (!champion || !live || input.regime.regime === 'UNKNOWN' || totalCap <= 0 || liveEdge <= 4.0 || !sufficientEvidence) {
       return {
-        candidate: c,
-        regimeMatchScore: match,
-        volatilityRiskPenalty,
-        decorrelationBonus,
-        executionQualityScore,
-        expectedNetEdgeBps: stratEdgeBps,
-        meetsMinimumEdgeThreshold,
-        compositeScore,
-        rationale
+        id: `alloc_${Date.now()}`,
+        timestamp: new Date().toISOString(),
+        primaryQuestion: 'Which strategy should receive capital right now?',
+        totalTradingCapitalUsd: totalCap,
+        activeRegime: input.regime.regime,
+        strategies: [],
+        topRecipientStrategyId: '',
+        topRecipientStrategyName: '',
+        riskAdjustedRationale: 'No capital allocation change: live strategy evidence, parameter stability, regime evidence, and positive net edge must all be present.',
+        diversificationScore: 0,
+        rebalanceRequired: false,
+        totalCapitalReallocatedUsd: 0,
+        applied: false
       };
-    });
+    }
 
-    // Exponentiate scores to calculate risk-adjusted allocation weights
-    const expAlpha = 1.7;
-    const scoreExps = evaluated.map(e => Math.pow(e.compositeScore, expAlpha));
-    const totalExp = scoreExps.reduce((a, b) => a + b, 0);
-
-    const strategies: StrategyAllocationCandidate[] = evaluated.map((e, idx) => {
-      const weightPct = Number(((scoreExps[idx] / totalExp) * 100).toFixed(1));
-      const allocatedUsd = Math.round((weightPct / 100) * totalCap);
-      const currentActiveUsd = Math.round(totalCap / evaluated.length);
-      const deltaUsd = allocatedUsd - currentActiveUsd;
-
-      let action: StrategyAllocationCandidate['action'] = 'MAINTAIN';
-      if (!e.meetsMinimumEdgeThreshold || weightPct < 8.0) {
-        action = 'DEFUND';
-      } else if (weightPct >= 35.0) {
-        action = 'INCREASE_ALLOCATION';
-      } else if (deltaUsd < -100) {
-        action = 'REDUCE_ALLOCATION';
-      }
-
+    const typeMap: Record<StrategyVersion['type'], StrategyCategory | null> = {
+      ADAPTIVE_GRID: 'ADAPTIVE_DEFENSIVE',
+      TREND_GRID: 'TREND_GRID',
+      VOLATILITY_BREAKOUT: 'MOMENTUM_BREAKOUT',
+      MEAN_REVERSION_GRID: 'MEAN_REVERSION',
+      CUSTOM_SCRIPT: null
+    };
+    const strategyType = typeMap[champion.type];
+    if (!strategyType) {
       return {
-        strategyId: e.candidate.strategyId,
-        strategyName: e.candidate.strategyName,
-        strategyType: e.candidate.strategyType,
-        description: e.candidate.description,
-        targetRegimes: e.candidate.targetRegimes,
-        regimeMatchScore: e.regimeMatchScore,
-        metrics: {
-          outOfSampleSharpe: e.candidate.baseOosSharpe,
-          outOfSampleSortino: e.candidate.baseOosSortino,
-          outOfSampleNetRoiPct: e.candidate.baseOosRoi,
-          profitFactor: e.candidate.baseProfitFactor,
-          winRatePct: e.candidate.baseWinRate,
-          realizedVolatilityPct: e.candidate.realizedVolPct,
-          volatilityRiskPenalty: e.volatilityRiskPenalty,
-          correlationWithPortfolio: e.candidate.correlation,
-          decorrelationBonus: e.decorrelationBonus,
-          executionQualityScore: e.executionQualityScore,
-          expectedNetEdgeBps: e.expectedNetEdgeBps,
-          meetsMinimumEdgeThreshold: e.meetsMinimumEdgeThreshold,
-          fillRatePct: e.candidate.fillRatePct,
-          avgSlippageBps: e.candidate.slippageBps
-        },
-        compositeScore: e.compositeScore,
-        targetWeightPct: weightPct,
-        allocatedCapitalUsd: allocatedUsd,
-        currentCapitalUsd: currentActiveUsd,
-        capitalDeltaUsd: deltaUsd,
-        action,
-        rationale: e.rationale
+        id: `alloc_${Date.now()}`,
+        timestamp: new Date().toISOString(),
+        primaryQuestion: 'Which strategy should receive capital right now?',
+        totalTradingCapitalUsd: totalCap,
+        activeRegime: input.regime.regime,
+        strategies: [],
+        topRecipientStrategyId: '',
+        topRecipientStrategyName: '',
+        riskAdjustedRationale: 'Custom source strategies are not eligible for autonomous capital routing without a dedicated live evidence adapter.',
+        diversificationScore: 0,
+        rebalanceRequired: false,
+        totalCapitalReallocatedUsd: 0,
+        applied: false
       };
-    });
+    }
 
-    strategies.sort((a, b) => b.targetWeightPct - a.targetWeightPct);
-    const top = strategies[0];
+    const currentSpacing = champion.parameters.gridSpacingPct || input.regime.recommendedGridSpacing;
+    const candidate: StrategyAllocationCandidate = {
+      strategyId: champion.id,
+      strategyName: champion.name,
+      strategyType,
+      description: 'Live-evidence champion strategy.',
+      targetRegimes: [input.regime.regime],
+      regimeMatchScore: 100,
+      metrics: {
+        outOfSampleSharpe: live.sharpeRatio,
+        outOfSampleSortino: live.sortinoRatio,
+        outOfSampleNetRoiPct: live.roiPct,
+        profitFactor: live.profitFactor,
+        winRatePct: live.winRatePct,
+        realizedVolatilityPct: 0,
+        volatilityRiskPenalty: 0,
+        correlationWithPortfolio: 0,
+        decorrelationBonus: 1,
+        executionQualityScore: live.orderFillRatePct,
+        expectedNetEdgeBps: liveEdge,
+        meetsMinimumEdgeThreshold: liveEdge > 4.0,
+        fillRatePct: live.orderFillRatePct,
+        avgSlippageBps: 0
+      },
+      compositeScore: 100,
+      targetWeightPct: 100,
+      allocatedCapitalUsd: totalCap,
+      currentCapitalUsd: input.gridCapitalUsd || 0,
+      capitalDeltaUsd: totalCap - (input.gridCapitalUsd || 0),
+      action: 'MAINTAIN',
+      rationale: `Live champion evidence supports allocation: ${live.tradesCount} live trades, stable parameters, positive net profit, and expected net edge ${liveEdge.toFixed(2)} bps.`
+    };
 
-    // Shannon entropy / diversification score
-    const entropy = strategies.reduce((acc, s) => {
-      const p = s.targetWeightPct / 100;
-      return p > 0 ? acc - (p * Math.log(p)) : acc;
-    }, 0);
-    const maxEntropy = Math.log(strategies.length);
-    const diversificationScore = Math.round((entropy / maxEntropy) * 100);
-
-    const riskAdjustedRationale = `Strategy Allocator routes ${top.targetWeightPct}% of trading capital ($${top.allocatedCapitalUsd} USDT) to ${top.strategyName}. Primary factors: Active regime '${activeRegime}' rewards ${top.strategyType} with high out-of-sample Sharpe (${top.metrics.outOfSampleSharpe}), low volatility penalty (${(top.metrics.volatilityRiskPenalty * 100).toFixed(0)}%), and verified Expected Net Edge (+${top.metrics.expectedNetEdgeBps} bps > 4.0 bps hurdle).`;
-
-    const decision: StrategyAllocationDecision = {
+    return {
       id: `alloc_${Date.now()}`,
       timestamp: new Date().toISOString(),
       primaryQuestion: 'Which strategy should receive capital right now?',
       totalTradingCapitalUsd: totalCap,
-      activeRegime,
-      strategies,
-      topRecipientStrategyId: top.strategyId,
-      topRecipientStrategyName: top.strategyName,
-      riskAdjustedRationale,
-      diversificationScore,
-      rebalanceRequired: true,
-      totalCapitalReallocatedUsd: Math.abs(top.capitalDeltaUsd),
-      applied: true
+      activeRegime: input.regime.regime,
+      strategies: [candidate],
+      topRecipientStrategyId: candidate.strategyId,
+      topRecipientStrategyName: candidate.strategyName,
+      riskAdjustedRationale: candidate.rationale,
+      diversificationScore: 100,
+      rebalanceRequired: Math.abs(candidate.capitalDeltaUsd) > Math.max(50, totalCap * 0.05),
+      totalCapitalReallocatedUsd: Math.abs(candidate.capitalDeltaUsd),
+      applied: false
     };
-
-    this.latestStrategyAllocation = decision;
-    return decision;
   }
+
 
   private recordError(level: EngineErrorRecord['level'], message: string, details?: any) {
     this.errorSurface.unshift({
@@ -620,7 +414,7 @@ export class AutonomousProfitOptimizer implements EngineModule {
     forceImmediate?: boolean;
   }): Promise<AutonomousOptimizationDecision> {
     const now = Date.now();
-    const midP = input.midPrice || (input.grid ? (input.grid.upperBoundary + input.grid.lowerBoundary) / 2 : 85000);
+    const midP = input.midPrice && input.midPrice > 0 ? input.midPrice : (input.grid && input.grid.upperBoundary > 0 && input.grid.lowerBoundary > 0 ? (input.grid.upperBoundary + input.grid.lowerBoundary) / 2 : 0);
 
     // Conduct real revenue audit
     const auditReport = this.conductRevenueAudit({
@@ -653,6 +447,14 @@ export class AutonomousProfitOptimizer implements EngineModule {
         'Standby for active grid.', false, undefined, undefined, undefined, auditReport
       );
     }
+    if (!auditReport.expectedNetEdge || !auditReport.expectedNetEdge.isTradeable || input.regime.regime === 'UNKNOWN') {
+      return this.saveDecision(
+        'PAUSE_OPTIMIZATION', 1,
+        'Live optimizer evidence is insufficient: expected net edge, live regime, and market evidence must be valid before autonomous mutation.',
+        'Zero live parameter mutation.', false, undefined, undefined, undefined, auditReport
+      );
+    }
+
 
     // Cooldown check (minimum 25 seconds between auto-cycles unless forced)
     if (!input.forceImmediate && (now - this.lastRunAt < 25000)) {
@@ -668,11 +470,16 @@ export class AutonomousProfitOptimizer implements EngineModule {
       capital: input.capital,
       regime: input.regime,
       midPrice: midP,
-      edge: auditReport.expectedNetEdge
+      edge: auditReport.expectedNetEdge,
+      champion: input.champion,
+      gridCapitalUsd: input.grid.totalAllocatedUsd
     });
     this.latestStrategyAllocation = strategyAllocation;
 
     const topCandidate = strategyAllocation.strategies[0];
+    if (!topCandidate) {
+      return this.saveDecision('PAUSE_OPTIMIZATION', 1, 'No live-evidence strategy is eligible for autonomous allocation.', 'Zero live parameter mutation.', false, undefined, undefined, undefined, auditReport, strategyAllocation);
+    }
     let decisionAction: AutonomousOptimizationDecision['decision'] = 'ALLOCATE_CAPITAL';
     let confidence = 0.92;
     let rationale = strategyAllocation.riskAdjustedRationale;
@@ -760,7 +567,7 @@ Return JSON ONLY:
       overrideSpacing: nextSpacing
     });
 
-    const isApply = this.autoApplyEnabled && confidence >= 0.80 && (decisionAction !== 'NO_CHANGE');
+    const isApply = this.autoApplyEnabled && confidence >= 0.85 && input.champion?.parameterStability?.stable === true && Boolean(input.champion.liveTradingResults && input.champion.liveTradingResults.tradesCount >= 30) && (decisionAction !== 'NO_CHANGE');
 
     const result = this.saveDecision(
       decisionAction,
