@@ -240,9 +240,7 @@ export interface StrategyVersion {
     takeProfitPct: number;
     rebalanceIntervalSec: number;
   };
-  backtestResults: StrategyPerformanceMetrics;
-  paperTradingResults?: StrategyPerformanceMetrics;
-  liveResults?: StrategyPerformanceMetrics;
+  liveTradingResults: StrategyPerformanceMetrics;
   validationScore: number;
   expectedEffect: string;
   actualEffect?: string;
@@ -300,7 +298,7 @@ export interface SystemUpdate {
   sha256: string;
   automatedTestsPassed: boolean;
   securityTestsPassed: boolean;
-  backtestPassed: boolean;
+  validationPassed: boolean;
   canaryStatus: 'STAGING' | 'CANARY_10PCT' | 'FULL_DEPLOYMENT' | 'ROLLED_BACK';
   rollbackPoint: string;
   deployedAt?: string;
@@ -388,7 +386,6 @@ export interface ExchangeAccountState {
   accountType: string;
   apiKeyConfigured: boolean;
   keyMask: string;
-  isTestnet?: boolean;
 }
 
 export type BybitAccountState = ExchangeAccountState;
