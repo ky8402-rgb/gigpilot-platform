@@ -407,17 +407,17 @@ export async function createStrategyVariant(params: {
   });
 }
 
-export async function executeUserScript(code: string) {
+export async function validateUserScript(code: string) {
   return await fetchWithFailover<{
     success: boolean;
     result: {
       success: boolean;
       logs: string[];
-      ordersGenerated: any[];
-      executionTimeMs: number;
+      validationTimeMs: number;
+      executable: false;
       error?: string;
     };
-  }>('/script/execute', {
+  }>('/script/validate', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ code })
@@ -700,12 +700,7 @@ export async function evaluateSignalDecision(payload: {
   price?: number;
   amount?: number;
   source?: string;
-  simulatedRegime?: string;
-  simulatedEdgeBps?: number;
-  simulatedDepthUsd?: number;
-  simulatedBaseRatio?: number;
-  simulatedLiquidationDistancePct?: number;
-}): Promise<{
+  }): Promise<{
   success: boolean;
   decision: import('../types/trading').TradeDecision;
   stats: import('../types/trading').LearningDecisionStats;
