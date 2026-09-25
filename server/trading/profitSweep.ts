@@ -127,6 +127,10 @@ export class ProfitSweepEngine implements EngineModule {
     return [...this.sweeps];
   }
 
+  public isAutoSweepEnabled(): boolean {
+    return this.autoSweepEnabled;
+  }
+
   public setDestinationWallet(wallet: DestinationWallet): { success: boolean; error?: string } {
     if (!wallet.address || wallet.address.length < 10) {
       return { success: false, error: 'Invalid destination wallet address format' };
