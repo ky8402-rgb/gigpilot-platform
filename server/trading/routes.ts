@@ -501,7 +501,7 @@ tradingRouter.post('/decisions/evaluate', requireOwnerAuth, (req: Request, res: 
   }
 
   const curPrice = price !== undefined ? Number(price) : livePair.currentPrice;
-  const liveGridLevel = store.activeGrid?.levels.find(level => level.side === side && level.orderSize > 0);
+  const liveGridLevel = store.activeGrid?.activeLevels.find(level => level.side === side && level.orderSize > 0);
   const curAmount = amount !== undefined ? Number(amount) : (liveGridLevel?.orderSize || 0);
   if (!Number.isFinite(curPrice) || curPrice <= 0 || !Number.isFinite(curAmount) || curAmount <= 0) {
     return res.status(400).json({ success: false, error: 'A positive live price and amount are required.' });
