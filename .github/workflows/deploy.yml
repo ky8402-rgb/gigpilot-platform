@@ -159,15 +159,13 @@ jobs:
       - name: Configure AWS Credentials (Optional for EC2 Connect)
         if: steps.check_ec2_aws.outputs.has_creds == 'true'
         uses: aws-actions/configure-aws-credentials@v4
-        continue-on-error: true
         with:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID || secrets.ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY || secrets.AWS }}
           aws-region: 'ap-south-1'
 
       - name: Deploy via SSH (Direct EC2 Execution)
-        continue-on-error: true
-        env:
+          env:
           SSH_KEY: ${{ secrets.EC2_SSH_KEY }}
           EC2_HOST: ${{ secrets.EC2_HOST || '' }}
           EC2_USER: ${{ secrets.EC2_USER || 'ubuntu' }}
@@ -230,8 +228,7 @@ jobs:
             echo "SSH direct connection could not be established. Falling back to signed push webhook."
           fi
 
-      - name: Trigger EC2 Push-to-Deploy Webhook (Parallel / Fallback)
-        continue-on-error: true
+      - name: Trigger EC2 Push-to-Deploy Webhook (Fallback)
         env:
           EC2_HOST: ${{ secrets.EC2_HOST || '' }}
           WEBHOOK_SECRET: ${{ secrets.GITHUB_WEBHOOK_SECRET || secrets.WEBHOOK_SECRET || '' }}
