@@ -127,6 +127,7 @@ tradingRouter.get('/exchanges/credentials', (req: Request, res: Response) => {
 tradingRouter.post('/exchanges/keys', requireOwnerAuth, (req: Request, res: Response) => {
   try {
     const { exchange, apiKey, apiSecret, isTestnet } = req.body || {};
+    if (isTestnet === true) return res.status(400).json({ success: false, error: 'Bybit testnet is disabled. GigPilot is live-production only.' });
     if (!exchange || exchange !== 'BYBIT') {
       return res.status(400).json({ success: false, error: 'Valid exchange (BYBIT) is required.' });
     }
@@ -140,12 +141,12 @@ tradingRouter.post('/exchanges/keys', requireOwnerAuth, (req: Request, res: Resp
     }
 
     // Update bybitAdapter
-    bybitAdapter.updateCredentials(apiKey, apiSecret, undefined, isTestnet);
+    bybitAdapter.updateCredentials(apiKey, apiSecret);
 
     globalTradingStore.monitor.logAudit({
       category: 'CONFIG_CHANGE',
       action: `Updated Trade-Only API Keys for ${exchange}`,
-      details: { exchange, isTestnet }
+      details: { exchange, environment: 'BYBIT_LIVE' }
     });
 
     return res.json({
