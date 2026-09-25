@@ -1,3 +1,7 @@
+import { Candle, MarketRegime, MarketRegimeType, OrderBook, TechnicalIndicators } from './types.js';
+import { computeAllIndicators, calculateOrderBookImbalance } from './indicators.js';
+import { regimeTransitionDetector } from './regimeTransitionDetector.js';
+
 export function detectMarketRegime(candles: Candle[], orderBook?: OrderBook): MarketRegime {
   if (candles.length < 20) {
     return {
