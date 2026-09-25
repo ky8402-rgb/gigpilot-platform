@@ -486,100 +486,53 @@ tradingRouter.get('/decisions', (req: Request, res: Response) => {
   });
 });
 
-tradingRouter.post('/decisions/evaluate', (req: Request, res: Response) => {
+tradingRouter.post('/decisions/evaluate', requireOwnerAuth, (req: Request, res: Response) => {
   const store = globalTradingStore;
-  const {
-    symbol = store.activeSymbol,
-    side = 'BUY',
-    price,
-    amount,
-    source = 'MANUAL_TESTER',
-    simulatedRegime,
-    simulatedEdgeBps,
-    simulatedDepthUsd,
-    simulatedBaseRatio,
-    simulatedLiquidationDistancePct
-  } = req.body;
+  const { symbol = store.activeSymbol, side, price, amount, source = 'LIVE_SIGNAL' } = req.body || {};
+
+  if (side !== 'BUY' && side !== 'SELL') {
+    return res.status(400).json({ success: false, error: 'side must be BUY or SELL' });
+  }
 
   const livePair = store.dataEngine.getPairData(symbol);
-  const curPrice = price ? Number(price) : (livePair?.currentPrice || 83000);
-  const curAmount = amount ? Number(amount) : 0.0035;
+  if (!livePair || livePair.currentPrice <= 0 || !livePair.orderBook || livePair.orderBook.bids.length === 0 || livePair.orderBook.asks.length === 0) {
+    return res.status(503).json({ success: false, error: 'Live market data is unavailable or stale; decision evaluation is fail-closed.' });
+  }
 
-  const regime = simulatedRegime ? {
+  const curPrice = price !== undefined ? Number(price) : livePair.currentPrice;
+  const curAmount = amount !== undefined ? Number(amount) : 0;
+  if (!Number.isFinite(curPrice) || curPrice <= 0 || !Number.isFinite(curAmount) || curAmount <= 0) {
+    return res.status(400).json({ success: false, error: 'A positive live price and amount are required.' });
+  }
+
+  const qResult = store.quantEngine.computeSignals(symbol, livePair.candles, livePair.orderBook);
+  if (!qResult.regime || qResult.regime.regime === 'UNKNOWN') {
+    return res.status(503).json({ success: false, error: 'Insufficient live market evidence for a trading decision.' });
+  }
+
+  const expectedNetEdge = store.quantEngine.computeExpectedNetEdge({
     symbol,
-    type: simulatedRegime,
-    confidence: 0.85,
-    adx: 24.5,
-    trendDirection: side === 'BUY' ? 'BULLISH' : 'BEARISH',
-    volatilityAnnualizedPct: 48.5,
-    timestamp: new Date().toISOString(),
-    gridRecommendation: {
-      spacingMultiplier: 1.0,
-      volatilityScaling: true,
-      trendFilterEnabled: true
-    }
-  } : (store.currentRegime || {
-    symbol,
-    type: 'RANGING_SIDEWAYS',
-    confidence: 0.80,
-    adx: 18.0,
-    trendDirection: 'NEUTRAL',
-    volatilityAnnualizedPct: 42.0,
-    timestamp: new Date().toISOString(),
-    gridRecommendation: {
-      spacingMultiplier: 1.0,
-      volatilityScaling: true,
-      trendFilterEnabled: true
-    }
+    side,
+    price: curPrice,
+    amount: curAmount,
+    orderType: 'LIMIT',
+    orderBook: livePair.orderBook,
+    candles: livePair.candles,
+    gridSpacingPct: store.activeGrid?.gridSpacingPct,
+    regime: qResult.regime
   });
 
-  const orderBook = livePair?.orderBook ? { ...livePair.orderBook } : undefined;
-  if (orderBook && simulatedDepthUsd && orderBook.asks && orderBook.bids) {
-    const depthNum = Number(simulatedDepthUsd);
-    const simulatedAmt = depthNum / (curPrice * 2);
-    // Scale depth for simulation
-    orderBook.asks = [{ price: curPrice * 1.0005, amount: simulatedAmt, total: simulatedAmt * curPrice * 1.0005 }];
-    orderBook.bids = [{ price: curPrice * 0.9995, amount: simulatedAmt, total: simulatedAmt * curPrice * 0.9995 }];
-  }
-
-  const inventory = store.activeGrid?.inventoryAwareness ? { ...store.activeGrid.inventoryAwareness } : undefined;
-  if (inventory) {
-    if (simulatedBaseRatio !== undefined) {
-      inventory.currentBaseRatio = Number(simulatedBaseRatio);
-      inventory.inventorySkew = Number(((inventory.currentBaseRatio - inventory.targetBaseRatio) / 0.50).toFixed(2));
-      inventory.inventoryPosturing = inventory.inventorySkew > 0.4 ? 'HEAVILY_LONG' : inventory.inventorySkew > 0.15 ? 'MODERATELY_LONG' : inventory.inventorySkew < -0.4 ? 'HEAVILY_SHORT' : inventory.inventorySkew < -0.15 ? 'MODERATELY_SHORT' : 'BALANCED';
-    }
-    if (simulatedLiquidationDistancePct !== undefined) {
-      inventory.distanceFromLiquidationPct = Number(simulatedLiquidationDistancePct);
-      inventory.liquidationRiskTier = inventory.distanceFromLiquidationPct < 12 ? 'CRITICAL' : inventory.distanceFromLiquidationPct < 22 ? 'ELEVATED' : 'SAFE';
-    }
-  }
-
-  const expectedNetEdge = simulatedEdgeBps !== undefined ? {
-    expectedGrossEdgeBps: Number(simulatedEdgeBps) + 7.5,
-    makerTakerFeesBps: 6.0,
-    expectedSpreadCostBps: 1.5,
-    expectedSlippageBps: 0.8,
-    adverseSelectionCostBps: 1.2,
-    fundingCarryingCostBps: 0.2,
-    executionUncertaintyBps: 0.8,
-    expectedNetEdgeBps: Number(simulatedEdgeBps),
-    isTradeable: Number(simulatedEdgeBps) >= 4.0,
-    minHurdleRateBps: 4.0,
-    edgeFormula: 'Gross - (Fees + Spread + Slippage + AdverseSelection + CarryingCost + ExecutionUncertainty)',
-    timestamp: new Date().toISOString()
-  } : undefined;
-
+  const inventory = store.activeGrid?.inventoryAwareness;
   const decision = store.learningLoop.evaluateAndLogDecision({
     symbol,
-    side: side as 'BUY' | 'SELL',
+    side,
     price: curPrice,
     amount: curAmount,
     source,
-    confidence: regime.confidence,
-    regime: regime as any,
-    orderBook,
-    candles: livePair?.candles,
+    confidence: qResult.regime.confidence,
+    regime: qResult.regime as any,
+    orderBook: livePair.orderBook,
+    candles: livePair.candles,
     positions: store.exchangeExec.getPositions(),
     capital: store.capital,
     inventory,
@@ -589,45 +542,17 @@ tradingRouter.post('/decisions/evaluate', (req: Request, res: Response) => {
     failClosed: store.monitor.isSystemFailClosed().failClosed
   });
 
-  res.json({
-    success: true,
-    decision,
-    stats: store.learningLoop.getDecisionStats()
-  });
+  return res.json({ success: true, decision, stats: store.learningLoop.getDecisionStats() });
 });
 
-// 15. Strategy IDE Sandbox Execution
-tradingRouter.post('/script/execute', requireOwnerAuth, (req: Request, res: Response) => {
-  const { code } = req.body;
-  if (!code) return res.status(400).json({ success: false, error: 'Code is required' });
-
-  const store = globalTradingStore;
-  const liveData = store.dataEngine.getPairData(store.activeSymbol);
-  const position = store.exchangeExec.getPosition(store.activeSymbol) || {
-    symbol: store.activeSymbol,
-    baseAmount: 0,
-    quoteAmount: store.capital.availableCash,
-    entryPrice: 0,
-    currentPrice: liveData?.currentPrice || 0,
-    unrealizedPnL: 0,
-    unrealizedPnLPct: 0,
-    realizedPnL: 0,
-    totalFeesPaid: 0,
-    netPnL: 0,
-    liquidationPrice: 0,
-    marginUsed: 0
-  };
-
-  const result = store.scripting.executeUserScript(code, {
-    symbol: store.activeSymbol,
-    candles: liveData?.candles || [],
-    orderBook: liveData?.orderBook || { symbol: store.activeSymbol, bids: [], asks: [], spread: 0, spreadBps: 0, midPrice: 0, timestamp: Date.now() },
-    position,
-    balance: store.capital.availableCash,
-    marketRegime: store.currentRegime.regime
-  });
-
-  res.json(result);
+// 15. Strategy IDE Live Source Validator
+tradingRouter.post('/script/validate', requireOwnerAuth, (req: Request, res: Response) => {
+  const { code } = req.body || {};
+  if (typeof code !== 'string' || code.trim().length === 0) {
+    return res.status(400).json({ success: false, error: 'Strategy source code is required.' });
+  }
+  const result = globalTradingStore.scripting.validateUserScript(code);
+  return res.status(result.success ? 200 : 422).json({ success: result.success, result });
 });
 
 // 16. AI Research Agent
@@ -975,129 +900,6 @@ tradingRouter.get('/regime-transition', (req: Request, res: Response) => {
   }
 });
 
-tradingRouter.post('/regime-transition/simulate', (req: Request, res: Response) => {
-  try {
-    const store = globalTradingStore;
-    const { phase = 'BREAKOUT_TESTING', breakoutSide = 'BULLISH' } = req.body;
-    const symbol = store.activeSymbol;
-    const pairData = store.dataEngine.getPairData(symbol);
-    const currentPrice = pairData?.currentPrice || 65000;
-
-    let positionSizeMultiplier = 1.0;
-    let gridRestrictionStatus: any = 'NORMAL';
-    let restrictionReason = 'Microstructure stable. Full 100% position sizing and bilateral grid rungs permitted.';
-    let actionGuidance = 'Maintain balanced geometric grid with mean-reversion rebalancing.';
-    let tentativeTargetRegime: any = undefined;
-    let resolution: any = undefined;
-
-    if (phase === 'BREAKOUT_TESTING') {
-      positionSizeMultiplier = 0.40;
-      gridRestrictionStatus = breakoutSide === 'BULLISH' ? 'RESTRICTED_UPSIDE' : 'RESTRICTED_DOWNSIDE';
-      restrictionReason = `${breakoutSide} breakout testing at $${(currentPrice * (breakoutSide === 'BULLISH' ? 1.03 : 0.97)).toFixed(2)} (ATR surge 1.48x). Restricting ${breakoutSide === 'BULLISH' ? 'sell' : 'buy'} limit rungs.`;
-      actionGuidance = `Cut position size to 40%. Widen ${breakoutSide === 'BULLISH' ? 'upper exit' : 'lower entry'} rungs by 2x. Hold inventory until breakout confirmation or rejection.`;
-      tentativeTargetRegime = breakoutSide === 'BULLISH' ? 'BULL_TREND_STRONG' : 'BEAR_TREND_STRONG';
-      resolution = 'PENDING';
-    } else if (phase === 'EXPANDING_VOLATILITY') {
-      positionSizeMultiplier = 0.50;
-      gridRestrictionStatus = 'WIDEN_DEFENSIVE';
-      restrictionReason = `Volatility expanding (ATR ratio 1.35x, ADX slope +2.4). Throttling capital allocation to 50%.`;
-      actionGuidance = `Widen rung spacing defensively by 1.5x. Halt aggressive ladder rebalancing.`;
-      tentativeTargetRegime = 'BREAKOUT_VOLATILITY';
-      resolution = 'PENDING';
-    } else if (phase === 'BREAKOUT_CONFIRMED') {
-      positionSizeMultiplier = 0.60;
-      gridRestrictionStatus = breakoutSide === 'BULLISH' ? 'RESTRICTED_UPSIDE' : 'RESTRICTED_DOWNSIDE';
-      tentativeTargetRegime = breakoutSide === 'BULLISH' ? 'BULL_TREND_STRONG' : 'BEAR_TREND_STRONG';
-      restrictionReason = `Breakout confirmed into ${tentativeTargetRegime}. Shift away from bilateral grid into directional momentum trailing mode.`;
-      actionGuidance = `Reallocate capital from Mean Reversion to Trend Grid / Momentum Breakout. Trail stops on breakout side.`;
-      resolution = 'BREAKOUT_CONFIRMED';
-    } else if (phase === 'BREAKOUT_REJECTED') {
-      positionSizeMultiplier = 0.85;
-      gridRestrictionStatus = 'NORMAL';
-      tentativeTargetRegime = 'RANGE_BOUND_LOW_VOL';
-      restrictionReason = `Breakout rejected (fakeout detected). Mean reversion resumed back inside Bollinger bounds.`;
-      actionGuidance = `Restore standard grid placement. Harvest mean reversion back to mid-price.`;
-      resolution = 'BREAKOUT_REJECTED';
-    }
-
-    const transitionState = {
-      isTransitioning: phase !== 'STABLE',
-      phase,
-      sourceRegime: store.currentRegime.regime,
-      targetRegimes: [
-        {
-          regime: breakoutSide === 'BEARISH' ? 'BEAR_TREND_STRONG' : 'BULL_TREND_STRONG',
-          probability: phase === 'BREAKOUT_CONFIRMED' ? 0.88 : (phase === 'BREAKOUT_REJECTED' ? 0.12 : 0.65),
-          triggerCondition: 'Breakout sustained with ADX > 24 and 2+ consecutive closes outside boundary.'
-        },
-        {
-          regime: 'RANGE_BOUND_HIGH_VOL',
-          probability: phase === 'BREAKOUT_CONFIRMED' ? 0.12 : (phase === 'BREAKOUT_REJECTED' ? 0.88 : 0.35),
-          triggerCondition: 'Breakout rejected back inside band with volume contraction & mean reversion.'
-        }
-      ],
-      tentativeTargetRegime,
-      resolution,
-      confidence: 0.88,
-      transitionStartTime: new Date().toISOString(),
-      timeInTransitionSeconds: phase !== 'STABLE' ? 180 : 0,
-      metrics: {
-        volatilityExpansionRatio: phase === 'STABLE' ? 1.02 : 1.48,
-        adxSlope: phase === 'STABLE' ? 0.2 : (phase === 'BREAKOUT_REJECTED' ? -1.8 : 3.8),
-        adxValue: phase === 'BREAKOUT_CONFIRMED' ? 28.5 : 22.4,
-        bbBandwidthExpansionPct: phase === 'STABLE' ? 3.5 : 44.2,
-        breakoutThresholdUpper: Number((currentPrice * 1.025).toFixed(2)),
-        breakoutThresholdLower: Number((currentPrice * 0.975).toFixed(2)),
-        breakoutDistancePct: phase === 'BREAKOUT_TESTING' ? 0.15 : 2.5,
-        breakoutSide: breakoutSide as any,
-        volumeSurgeRatio: phase === 'STABLE' ? 0.95 : 1.85,
-        confirmationBarsCount: phase === 'BREAKOUT_CONFIRMED' ? 3 : 1
-      },
-      positionSizeMultiplier,
-      gridRestrictionStatus,
-      restrictionReason,
-      actionGuidance
-    };
-
-    store.currentRegime.transition = transitionState as any;
-    if (phase === 'BREAKOUT_CONFIRMED' && tentativeTargetRegime) {
-      store.currentRegime.regime = tentativeTargetRegime;
-    }
-
-    // Regenerate active grid with transition constraints if grid exists
-    if (store.activeGrid) {
-      const regenerated = store.gridEngine.generateGrid({
-        symbol,
-        currentPrice,
-        totalAllocatedUsd: store.activeGrid.totalAllocatedUsd,
-        levelsCount: store.activeGrid.levelsCount,
-        spacingType: store.activeGrid.spacingType,
-        volatilityAdjustment: true,
-        trendProtection: true,
-        regime: store.currentRegime
-      });
-      if (regenerated.grid) {
-        store.activeGrid = regenerated.grid;
-      }
-    }
-
-    store.monitor.logAudit({
-      category: 'REGIME_TRANSITION_RESTRICTION',
-      action: `Regime Transition Updated: Phase=${phase}, Multiplier=${positionSizeMultiplier * 100}%, Restriction=${gridRestrictionStatus}`,
-      details: { symbol, phase, restrictionReason, actionGuidance }
-    });
-
-    return res.json({
-      success: true,
-      phase,
-      currentRegime: store.currentRegime,
-      activeGrid: store.activeGrid
-    });
-  } catch (err: any) {
-    return res.status(500).json({ success: false, error: err.message });
-  }
-});
-
 // 31. Inventory-Aware Grid Metrics & Multi-Variable Equation Read
 tradingRouter.get('/inventory-awareness', async (req: Request, res: Response) => {
   try {
@@ -1128,62 +930,3 @@ tradingRouter.get('/inventory-awareness', async (req: Request, res: Response) =>
     return res.status(500).json({ success: false, error: err.message });
   }
 });
-
-// 32. Simulate Inventory Skew & Distance from Liquidation
-tradingRouter.post('/inventory-awareness/simulate', async (req: Request, res: Response) => {
-  try {
-    const store = globalTradingStore;
-    const symbol = store.activeSymbol;
-    const liveData = store.dataEngine.getPairData(symbol);
-    const currentPrice = liveData?.currentPrice || 66850;
-
-    const {
-      simulatedBaseRatio, // e.g. 0.85 (heavily long) or 0.15 (heavily short)
-      simulatedLiquidationDistancePct, // e.g. 8.5% (critical) or 35% (safe)
-      customTargetRatio = 0.50
-    } = req.body;
-
-    const newGridRes = store.gridEngine.generateGrid({
-      symbol,
-      currentPrice,
-      totalAllocatedUsd: store.activeGrid?.totalAllocatedUsd || 3500,
-      levelsCount: store.activeGrid?.levelsCount || 16,
-      spacingType: store.activeGrid?.spacingType || 'GEOMETRIC',
-      volatilityAdjustment: true,
-      trendProtection: true,
-      regime: store.currentRegime,
-      positions: store.exchangeExec.getPositions(),
-      orderBook: liveData?.orderBook,
-      candles: liveData?.candles,
-      totalEquityUsd: store.capital.totalEquity || store.capital.tradingCapital,
-      customTargetRatio,
-      simulatedBaseRatio,
-      simulatedLiquidationDistancePct
-    });
-
-    if (newGridRes.grid) {
-      store.activeGrid = newGridRes.grid;
-    }
-
-    store.monitor.logAudit({
-      category: 'INVENTORY_SKEW_ADJUSTMENT',
-      action: `Simulated Inventory Skew: BaseRatio=${simulatedBaseRatio !== undefined ? `${Math.round(simulatedBaseRatio * 100)}%` : 'live'}, DistLiq=${simulatedLiquidationDistancePct ?? 'live'}%`,
-      details: {
-        skew: newGridRes.grid?.inventoryAwareness?.inventorySkew,
-        posture: newGridRes.grid?.inventoryAwareness?.inventoryPosturing,
-        buyAlloc: newGridRes.grid?.inventoryAwareness?.asymmetricBudgeting.buyAllocationPct,
-        sellAlloc: newGridRes.grid?.inventoryAwareness?.asymmetricBudgeting.sellAllocationPct,
-        buyHurdle: newGridRes.grid?.inventoryAwareness?.asymmetricEdgeHurdles.requiredBuyEdgeHurdleBps
-      }
-    });
-
-    return res.json({
-      success: true,
-      grid: store.activeGrid,
-      metrics: store.activeGrid?.inventoryAwareness
-    });
-  } catch (err: any) {
-    return res.status(500).json({ success: false, error: err.message });
-  }
-});
-
