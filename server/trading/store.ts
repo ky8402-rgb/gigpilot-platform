@@ -115,6 +115,34 @@ export class TradingStore {
       this.syncCapitalFromRealExchange().catch(() => {});
     }, 10000);
 
+    // Automatic profit withdrawal runs only when explicitly enabled and the destination
+    // remains persistently configured/verified. Dispatch is real Bybit withdrawal only;
+    // failures are fail-closed and never recorded as successful transfers.
+    setInterval(() => {
+      this.sweeper.reconcilePendingSweeps().catch(() => {});
+      this.sweeper.executeAutomaticSweep(this.capital.eligibleRealizedProfit).then((result) => {
+        if (result.success && result.sweep) {
+          this.profitAccounting.recordSweepExecuted(result.sweep.amountUsd || 0);
+          this.monitor.logAudit({
+            category: 'PROFIT_SWEEP',
+            action: 'AUTONOMOUS_REAL_BYBIT_WITHDRAWAL_SUBMITTED',
+            details: {
+              withdrawalId: (result.sweep as any).withdrawalId,
+              destinationAddress: result.sweep.destinationAddress,
+              amountUsd: result.sweep.amountUsd,
+              status: result.sweep.status
+            }
+          });
+        }
+      }).catch((error) => {
+        this.monitor.logAudit({
+          category: 'SECURITY_ALERT',
+          action: 'AUTONOMOUS_PROFIT_SWEEP_FAILED_CLOSED',
+          details: { error: String(error) }
+        });
+      });
+    }, 30000);
+
     this.monitor.logAudit({
       category: 'SYSTEM_BOOT',
       action: 'GigPilot Modular Engine Architecture Booted',
