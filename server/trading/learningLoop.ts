@@ -35,444 +35,66 @@ export class LearningLoopEngine implements EngineModule {
   private rapidReplacementAttemptsBlocked: number = 4;
 
   constructor() {
-    // Current Champion: Frozen for tenure stability (deployed 3.5h ago, ~20.5h remaining)
-    const deployedTime = new Date(Date.now() - 3.5 * 3600 * 1000).toISOString();
+    // Live-evidence-only initialization.
+    // No fabricated champion, challenger, backtest, shadow-fill, historical,
+    // or synthetic performance is allowed to influence autonomous decisions.
+    const now = new Date().toISOString();
+    const zeroMetrics = (): StrategyPerformanceMetrics => ({
+      netProfit: 0,
+      grossProfit: 0,
+      totalFees: 0,
+      roiPct: 0,
+      sharpeRatio: 0,
+      sortinoRatio: 0,
+      maxDrawdownPct: 0,
+      winRatePct: 0,
+      profitFactor: 0,
+      tradesCount: 0,
+      avgTradeProfitUsd: 0,
+      avgHoldingTimeMinutes: 0,
+      orderFillRatePct: 0,
+      capitalUtilizationPct: 0
+    });
+
     this.championStrategy = {
-      id: 'STRAT-GRID-001',
-      name: 'Dynamic Volatility-Scaled Geometric Grid',
-      version: 'v2.1.0-LIVE',
+      id: 'LIVE-EVIDENCE-PENDING',
+      name: 'Live Evidence Pending',
+      version: 'live-evidence-only',
       type: 'ADAPTIVE_GRID',
       status: 'CHAMPION',
-      createdAt: new Date(Date.now() - 86400000 * 7).toISOString(),
-      deployedAt: deployedTime,
-      reasonForChange: 'Validated across 5-window walk-forward tests with 2.45 Sharpe and 4.8% max drawdown',
-      parameters: {
-        upperBoundary: 92500,
-        lowerBoundary: 78000,
-        gridLevels: 24,
-        spacingType: 'GEOMETRIC',
-        gridSpacingPct: 0.65,
-        volatilityMultiplier: 1.15,
-        trendFilterEma: 50,
-        rsiFilterThreshold: 35,
-        stopLossPct: 8.5,
-        takeProfitPct: 15.0,
-        rebalanceIntervalSec: 120
-      },
-      backtestResults: {
-        netProfit: 1420.50,
-        grossProfit: 1610.80,
-        totalFees: 190.30,
-        roiPct: 14.2,
-        sharpeRatio: 2.45,
-        sortinoRatio: 3.12,
-        maxDrawdownPct: 4.8,
-        winRatePct: 78.4,
-        profitFactor: 2.18,
-        tradesCount: 184,
-        avgTradeProfitUsd: 7.72,
-        avgHoldingTimeMinutes: 48,
-        orderFillRatePct: 91.5,
-        capitalUtilizationPct: 65.0
-      },
-      liveTradingResults: {
-        netProfit: 0.0,
-        grossProfit: 0.0,
-        totalFees: 0.0,
-        roiPct: 0.0,
-        sharpeRatio: 0.0,
-        sortinoRatio: 0.0,
-        maxDrawdownPct: 0.0,
-        winRatePct: 0.0,
-        profitFactor: 0.0,
-        tradesCount: 0,
-        avgTradeProfitUsd: 0.0,
-        avgHoldingTimeMinutes: 0,
-        orderFillRatePct: 100.0,
-        capitalUtilizationPct: 0.0
-      }
+      createdAt: now,
+      reasonForChange: 'No strategy is treated as proven until sufficient real Bybit Spot execution evidence exists.',
+      parameters: {},
+      backtestResults: zeroMetrics(),
+      liveTradingResults: zeroMetrics(),
+      validationScore: 0,
+      actualEffect: 'No live performance evidence recorded yet.'
     };
 
-    // Candidate Strategies progressing through the Anti-Overfitting Pipeline:
-    // TRAINING DATA -> Candidate models -> Walk-forward test -> Out-of-sample test -> Paper/shadow trading -> Small capital -> Promotion
-    this.challengerStrategies = [
-      {
-        id: 'STRAT-CHALLENGER-01',
-        name: 'Asymmetric Mean-Reverting Spread Grid',
-        version: 'v2.2.0-CHALLENGER',
-        type: 'CUSTOM_SCRIPT',
-        status: 'CHALLENGER',
-        createdAt: new Date(Date.now() - 86400000 * 2).toISOString(),
-        reasonForChange: 'Compressed grid spacing to 0.45% targeting tighter order book spreads in range regimes',
-        parameters: {
-          upperBoundary: 91500,
-          lowerBoundary: 79000,
-          gridLevels: 32,
-          spacingType: 'GEOMETRIC',
-          gridSpacingPct: 0.45,
-          volatilityMultiplier: 1.05,
-          trendFilterEma: 40,
-          rsiFilterThreshold: 30,
-          stopLossPct: 6.0,
-          takeProfitPct: 12.0,
-          rebalanceIntervalSec: 90
-        },
-        backtestResults: {
-          netProfit: 1580.20,
-          grossProfit: 1795.00,
-          totalFees: 214.80,
-          roiPct: 15.8,
-          sharpeRatio: 2.62,
-          sortinoRatio: 3.41,
-          maxDrawdownPct: 4.1,
-          winRatePct: 81.2,
-          profitFactor: 2.34,
-          tradesCount: 220,
-          avgTradeProfitUsd: 7.18,
-          avgHoldingTimeMinutes: 32,
-          orderFillRatePct: 94.2,
-          capitalUtilizationPct: 70.0
-        },
-        validationPipeline: {
-          currentStage: 'ELIGIBLE_FOR_PROMOTION',
-          overallScore: 92,
-          overfittingRiskPct: 12,
-          canPromote: true,
-          promotionBlockReason: undefined,
-          trainingData: {
-            inSampleWindowDays: 60,
-            sampleSizeCandles: 5760,
-            inSampleSharpe: 2.62,
-            inSampleRoiPct: 15.8,
-            inSampleWinRatePct: 81.2,
-            inSampleProfitFactor: 2.34,
-            fittedAt: new Date(Date.now() - 86400000 * 2).toISOString()
-          },
-          candidateModel: {
-            hypothesis: 'Compressed grid spacing to 0.45% captures micro-reversions in range regimes with lower inventory variance',
-            parameterDeltaSummary: 'gridLevels: 24 -> 32, gridSpacingPct: 0.65% -> 0.45%, stopLossPct: 8.5% -> 6.0%',
-            complexityPenaltyBps: 2.5,
-            generatedAt: new Date(Date.now() - 86400000 * 2).toISOString()
-          },
-          walkForward: {
-            status: 'PASSED',
-            windows: [
-              { windowIndex: 1, regimeName: 'Ranging Mean-Reverting', inSampleSharpe: 2.65, outOfSampleSharpe: 2.51, wfeRatio: 0.74, isProfitable: true },
-              { windowIndex: 2, regimeName: 'Bullish Momentum Expansion', inSampleSharpe: 2.58, outOfSampleSharpe: 2.42, wfeRatio: 0.69, isProfitable: true },
-              { windowIndex: 3, regimeName: 'Low Volatility Compression', inSampleSharpe: 2.70, outOfSampleSharpe: 2.38, wfeRatio: 0.62, isProfitable: true },
-              { windowIndex: 4, regimeName: 'Bearish Pullback Drift', inSampleSharpe: 2.60, outOfSampleSharpe: 2.46, wfeRatio: 0.71, isProfitable: true },
-              { windowIndex: 5, regimeName: 'Liquidity Absorption Churn', inSampleSharpe: 2.54, outOfSampleSharpe: 2.39, wfeRatio: 0.66, isProfitable: true }
-            ],
-            averageWfeRatio: 0.684,
-            passedWindowsCount: 5,
-            totalWindowsCount: 5,
-            parameterStabilityScore: 89,
-            evaluatedAt: new Date(Date.now() - 86400000 * 1.5).toISOString()
-          },
-          outOfSample: {
-            status: 'PASSED',
-            heldOutDays: 30,
-            oosSharpe: 2.38,
-            oosRoiPct: 12.4,
-            oosMaxDrawdownPct: 4.1,
-            sharpeDegradationPct: 9.16, // (1 - 2.38 / 2.62) = 9.16% degradation (< 30% hurdle)
-            maxDdDegradationPct: 0.0,
-            passedOverfitHurdle: true,
-            evaluatedAt: new Date(Date.now() - 86400000 * 1.2).toISOString()
-          },
-          paperShadow: {
-            status: 'PASSED',
-            hoursObserved: 24,
-            requiredHours: 12,
-            simulatedFillsCount: 42,
-            requiredFills: 25,
-            shadowNetProfitUsd: 84.50,
-            shadowFillRatePct: 93.8,
-            shadowSharpe: 2.41,
-            slippageVarianceBps: 1.2,
-            startedAt: new Date(Date.now() - 86400000 * 1.0).toISOString()
-          },
-          smallCapital: {
-            status: 'PASSED',
-            canaryAllocationPct: 8.0,
-            canaryExposureUsd: 450,
-            realFillsCount: 14,
-            requiredFills: 10,
-            realizedNetProfitUsd: 19.40,
-            feeDragBps: 5.8,
-            riskRuleBreaches: 0,
-            startedAt: new Date(Date.now() - 3600000 * 8).toISOString()
-          }
-        }
-      },
-      {
-        id: 'STRAT-CHALLENGER-02',
-        name: 'Adaptive Volatility-Expanding Breakout Grid',
-        version: 'v2.3.0-CHALLENGER',
-        type: 'VOLATILITY_BREAKOUT',
-        status: 'CHALLENGER',
-        createdAt: new Date(Date.now() - 86400000 * 1).toISOString(),
-        reasonForChange: 'Testing wider 0.95% rungs with 1.35x ATR scaling to prevent excessive turnover during volatility surges',
-        parameters: {
-          upperBoundary: 94000,
-          lowerBoundary: 76000,
-          gridLevels: 20,
-          spacingType: 'GEOMETRIC',
-          gridSpacingPct: 0.95,
-          volatilityMultiplier: 1.35,
-          trendFilterEma: 60,
-          rsiFilterThreshold: 40,
-          stopLossPct: 9.5,
-          takeProfitPct: 18.0,
-          rebalanceIntervalSec: 180
-        },
-        backtestResults: {
-          netProfit: 1340.00,
-          grossProfit: 1510.00,
-          totalFees: 170.00,
-          roiPct: 13.4,
-          sharpeRatio: 2.55,
-          sortinoRatio: 3.25,
-          maxDrawdownPct: 3.9,
-          winRatePct: 78.0,
-          profitFactor: 2.22,
-          tradesCount: 140,
-          avgTradeProfitUsd: 9.57,
-          avgHoldingTimeMinutes: 72,
-          orderFillRatePct: 89.0,
-          capitalUtilizationPct: 60.0
-        },
-        validationPipeline: {
-          currentStage: 'WALK_FORWARD',
-          overallScore: 65,
-          overfittingRiskPct: 38,
-          canPromote: false,
-          promotionBlockReason: 'Walk-forward rolling analysis pending execution. Must verify parameter stability across regimes.',
-          trainingData: {
-            inSampleWindowDays: 60,
-            sampleSizeCandles: 5760,
-            inSampleSharpe: 2.55,
-            inSampleRoiPct: 13.4,
-            inSampleWinRatePct: 78.0,
-            inSampleProfitFactor: 2.22,
-            fittedAt: new Date(Date.now() - 86400000 * 1).toISOString()
-          },
-          candidateModel: {
-            hypothesis: 'Wider geometric rungs and 1.35x ATR multiplier avoid whipsaw stops in high volatility expansions',
-            parameterDeltaSummary: 'gridLevels: 24 -> 20, gridSpacingPct: 0.65% -> 0.95%, volMultiplier: 1.15x -> 1.35x',
-            complexityPenaltyBps: 3.0,
-            generatedAt: new Date(Date.now() - 86400000 * 1).toISOString()
-          },
-          walkForward: {
-            status: 'PENDING',
-            windows: [],
-            averageWfeRatio: 0,
-            passedWindowsCount: 0,
-            totalWindowsCount: 5,
-            parameterStabilityScore: 0
-          },
-          outOfSample: {
-            status: 'PENDING',
-            heldOutDays: 30,
-            oosSharpe: 0,
-            oosRoiPct: 0,
-            oosMaxDrawdownPct: 0,
-            sharpeDegradationPct: 0,
-            maxDdDegradationPct: 0,
-            passedOverfitHurdle: false
-          },
-          paperShadow: {
-            status: 'PENDING',
-            hoursObserved: 0,
-            requiredHours: 12,
-            simulatedFillsCount: 0,
-            requiredFills: 25,
-            shadowNetProfitUsd: 0,
-            shadowFillRatePct: 0,
-            shadowSharpe: 0,
-            slippageVarianceBps: 0
-          },
-          smallCapital: {
-            status: 'PENDING',
-            canaryAllocationPct: 8.0,
-            canaryExposureUsd: 450,
-            realFillsCount: 0,
-            requiredFills: 10,
-            realizedNetProfitUsd: 0,
-            feeDragBps: 0,
-            riskRuleBreaches: 0
-          }
-        }
-      },
-      {
-        id: 'STRAT-CHALLENGER-03',
-        name: 'Overfitted Polynomial Orderbook Scalper',
-        version: 'v1.9.9-OVERFIT-REJECTED',
-        type: 'CUSTOM_SCRIPT',
-        status: 'REJECTED',
-        createdAt: new Date(Date.now() - 86400000 * 3).toISOString(),
-        reasonForChange: 'Demonstration of anti-overfitting protection: Model achieved 3.48 in-sample Sharpe but collapsed out-of-sample',
-        parameters: {
-          upperBoundary: 90000,
-          lowerBoundary: 82000,
-          gridLevels: 48,
-          spacingType: 'ARITHMETIC',
-          gridSpacingPct: 0.22,
-          volatilityMultiplier: 0.85,
-          trendFilterEma: 15,
-          rsiFilterThreshold: 25,
-          stopLossPct: 3.5,
-          takeProfitPct: 5.0,
-          rebalanceIntervalSec: 30
-        },
-        backtestResults: {
-          netProfit: 2150.00,
-          grossProfit: 2680.00,
-          totalFees: 530.00,
-          roiPct: 21.5,
-          sharpeRatio: 3.48, // In-sample looks amazing, but it's noise overfitting!
-          sortinoRatio: 4.80,
-          maxDrawdownPct: 2.8,
-          winRatePct: 89.2,
-          profitFactor: 2.85,
-          tradesCount: 480,
-          avgTradeProfitUsd: 4.47,
-          avgHoldingTimeMinutes: 14,
-          orderFillRatePct: 96.5,
-          capitalUtilizationPct: 85.0
-        },
-        validationPipeline: {
-          currentStage: 'REJECTED_OVERFIT',
-          overallScore: 24,
-          overfittingRiskPct: 96,
-          canPromote: false,
-          promotionBlockReason: 'REJECTED AT OUT-OF-SAMPLE: Model overfit to historical sample noise. Out-of-sample Sharpe collapsed by 78.7% (from 3.48 to 0.74). Overfitting barrier safely blocked paper or small capital allocation.',
-          trainingData: {
-            inSampleWindowDays: 60,
-            sampleSizeCandles: 5760,
-            inSampleSharpe: 3.48,
-            inSampleRoiPct: 21.5,
-            inSampleWinRatePct: 89.2,
-            inSampleProfitFactor: 2.85,
-            fittedAt: new Date(Date.now() - 86400000 * 3).toISOString()
-          },
-          candidateModel: {
-            hypothesis: 'Hyper-tuned 0.22% spacing with 15-EMA fit to 3-day micro-swings',
-            parameterDeltaSummary: 'gridLevels: 24 -> 48, gridSpacingPct: 0.65% -> 0.22%, stopLossPct: 8.5% -> 3.5%',
-            complexityPenaltyBps: 8.5,
-            generatedAt: new Date(Date.now() - 86400000 * 3).toISOString()
-          },
-          walkForward: {
-            status: 'FAILED',
-            windows: [
-              { windowIndex: 1, regimeName: 'Ranging Mean-Reverting', inSampleSharpe: 3.40, outOfSampleSharpe: 1.82, wfeRatio: 0.42, isProfitable: true },
-              { windowIndex: 2, regimeName: 'Bullish Momentum Expansion', inSampleSharpe: 3.55, outOfSampleSharpe: 0.62, wfeRatio: 0.18, isProfitable: false },
-              { windowIndex: 3, regimeName: 'Low Volatility Compression', inSampleSharpe: 3.60, outOfSampleSharpe: 2.05, wfeRatio: 0.52, isProfitable: true },
-              { windowIndex: 4, regimeName: 'Bearish Pullback Drift', inSampleSharpe: 3.35, outOfSampleSharpe: -0.45, wfeRatio: -0.12, isProfitable: false },
-              { windowIndex: 5, regimeName: 'Liquidity Absorption Churn', inSampleSharpe: 3.45, outOfSampleSharpe: 0.95, wfeRatio: 0.24, isProfitable: false }
-            ],
-            averageWfeRatio: 0.248, // Failed the 0.60 threshold
-            passedWindowsCount: 2,
-            totalWindowsCount: 5,
-            parameterStabilityScore: 28,
-            evaluatedAt: new Date(Date.now() - 86400000 * 2.8).toISOString()
-          },
-          outOfSample: {
-            status: 'REJECTED',
-            heldOutDays: 30,
-            oosSharpe: 0.74, // Severe collapse from 3.48
-            oosRoiPct: 2.1,
-            oosMaxDrawdownPct: 11.8,
-            sharpeDegradationPct: 78.7, // > 30% hurdle -> REJECTED
-            maxDdDegradationPct: 321.4,
-            passedOverfitHurdle: false,
-            evaluatedAt: new Date(Date.now() - 86400000 * 2.5).toISOString()
-          },
-          paperShadow: {
-            status: 'REJECTED',
-            hoursObserved: 0,
-            requiredHours: 12,
-            simulatedFillsCount: 0,
-            requiredFills: 25,
-            shadowNetProfitUsd: 0,
-            shadowFillRatePct: 0,
-            shadowSharpe: 0,
-            slippageVarianceBps: 0
-          },
-          smallCapital: {
-            status: 'REJECTED',
-            canaryAllocationPct: 0,
-            canaryExposureUsd: 0,
-            realFillsCount: 0,
-            requiredFills: 10,
-            realizedNetProfitUsd: 0,
-            feeDragBps: 0,
-            riskRuleBreaches: 0
-          }
-        }
-      }
-    ];
+    // Challengers are created only by the live optimizer after a measured,
+    // evidence-backed hypothesis is available. Never seed fabricated candidates.
+    this.challengerStrategies = [];
+    this.strategyHistory = [];
 
-    // Initialize 3-Way Decision Architecture Stats
-    // "DO NOTHING" is a legitimate optimized action: profitable automated systems trade selectively
     this.decisionStats = {
-      totalEvaluated: 148,
-      buyDecisions: 26,
-      sellDecisions: 22,
-      doNothingDecisions: 100,
-      doNothingRatioPct: 67.6,
-      buyRatioPct: 17.6,
-      sellRatioPct: 14.8,
-      totalCapitalPreservedUsd: 2185.50,
-      totalFeesAvoidedUsd: 364.20,
-      avoidedDrawdownPct: 3.8,
+      totalEvaluated: 0,
+      buyDecisions: 0,
+      sellDecisions: 0,
+      doNothingDecisions: 0,
+      doNothingRatioPct: 0,
+      buyRatioPct: 0,
+      sellRatioPct: 0,
+      totalCapitalPreservedUsd: 0,
+      totalFeesAvoidedUsd: 0,
+      avoidedDrawdownPct: 0,
       gateRejectionBreakdown: {
-        regimeUnsuitable: 38,
-        negativeEdge: 31,
-        insufficientLiquidity: 16,
-        inventorySaturated: 11,
-        portfolioRiskBreach: 4
+        regimeUnsuitable: 0,
+        negativeEdge: 0,
+        insufficientLiquidity: 0,
+        inventorySaturated: 0,
+        portfolioRiskBreach: 0
       },
-      recentDecisions: [
-        {
-          id: 'dec_seed_01',
-          timestamp: new Date(Date.now() - 60000 * 2).toISOString(),
-          symbol: 'BTC/USDT',
-          candidateSignal: { side: 'BUY', price: 83120, amount: 0.0035, source: 'GRID_RUNG_11', confidence: 0.88 },
-          gates: {
-            regime: { gate: 'REGIME_SUITABILITY', name: 'Regime Suitability', passed: true, reason: 'RANGING_SIDEWAYS suitable for limit grid rung' },
-            edge: { gate: 'EDGE_EXCEEDS_COSTS', name: 'Microstructure Edge vs Costs', passed: true, reason: 'Expected net edge +5.4 bps > 4.0 bps hurdle' },
-            liquidity: { gate: 'LIQUIDITY_SUFFICIENCY', name: 'Liquidity & Market Depth', passed: true, reason: '$138k ask depth within 1.5%' },
-            inventory: { gate: 'INVENTORY_ACCEPTABILITY', name: 'Inventory & Liquidation Safety', passed: true, reason: 'Base ratio 58% within 75% max ceiling' },
-            risk: { gate: 'PORTFOLIO_RISK_ACCEPTABILITY', name: 'Portfolio Risk & Capital Safety', passed: true, reason: 'Drawdown 0.8% below 15% limit' }
-          },
-          finalOutcome: 'BUY',
-          actionTaken: 'TRADE',
-          capitalPreservedUsd: 0,
-          feesAvoidedUsd: 0,
-          rationale: 'All 5 quality gates verified. BUY limit order placed.'
-        },
-        {
-          id: 'dec_seed_02',
-          timestamp: new Date(Date.now() - 60000 * 5).toISOString(),
-          symbol: 'BTC/USDT',
-          candidateSignal: { side: 'BUY', price: 82950, amount: 0.004, source: 'MOMENTUM_PULLBACK', confidence: 0.65 },
-          gates: {
-            regime: { gate: 'REGIME_SUITABILITY', name: 'Regime Suitability', passed: false, reason: 'Transition state RESTRICTED_DOWNSIDE: aggressive buys halted to prevent knife-catching', metrics: { restriction: 'RESTRICTED_DOWNSIDE' } },
-            edge: { gate: 'EDGE_EXCEEDS_COSTS', name: 'Microstructure Edge vs Costs', passed: false, reason: 'Skipped: Prior gate rejected trade' },
-            liquidity: { gate: 'LIQUIDITY_SUFFICIENCY', name: 'Liquidity & Market Depth', passed: false, reason: 'Skipped: Prior gate rejected trade' },
-            inventory: { gate: 'INVENTORY_ACCEPTABILITY', name: 'Inventory & Liquidation Safety', passed: false, reason: 'Skipped: Prior gate rejected trade' },
-            risk: { gate: 'PORTFOLIO_RISK_ACCEPTABILITY', name: 'Portfolio Risk & Capital Safety', passed: false, reason: 'Skipped: Prior gate rejected trade' }
-          },
-          finalOutcome: 'DO_NOTHING',
-          actionTaken: 'NO_TRADE',
-          rejectionGate: 'REGIME_SUITABILITY',
-          rejectionReason: 'Transition state RESTRICTED_DOWNSIDE: aggressive buys halted to prevent knife-catching',
-          capitalPreservedUsd: 28.50,
-          feesAvoidedUsd: 4.80,
-          rationale: 'DO NOTHING: Prudent non-trade executed at Regime Suitability gate. Avoided entering into downside breakdown.'
-        }
-      ]
+      recentDecisions: []
     };
   }
 
