@@ -67,7 +67,7 @@ export const DecisionPipelineVisualizer: React.FC<DecisionPipelineVisualizerProp
           <div className="flex items-center gap-2 text-white font-bold mb-3"><Activity className="w-4 h-4 text-cyan-400" />Live evaluation result</div>
           <div className="flex items-center gap-2 mb-3">
             {evaluationResult.finalOutcome === 'BUY' ? <CheckCircle2 className="w-4 h-4 text-emerald-400" /> : evaluationResult.finalOutcome === 'SELL' ? <XCircle className="w-4 h-4 text-rose-400" /> : <AlertTriangle className="w-4 h-4 text-amber-400" />}
-            <span className="text-white font-bold">{evaluationResult.outcome}</span>
+            <span className="text-white font-bold">{evaluationResult.finalOutcome}</span>
             <span className="text-slate-400 text-xs">{evaluationResult.symbol}</span>
           </div>
           <div className="space-y-1 text-xs text-slate-300">
