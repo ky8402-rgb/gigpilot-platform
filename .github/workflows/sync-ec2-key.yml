@@ -84,6 +84,14 @@ jobs:
 
           echo "ssh_success=$SSH_SUCCESS" >> "$GITHUB_OUTPUT"
 
+          echo "=== Step 4: Inspecting ARN secret ==="
+          if [ -n "${{ secrets.ARN }}" ]; then
+            ARN_VAL="${{ secrets.ARN }}"
+            echo "ARN length: ${#ARN_VAL}, prefix: ${ARN_VAL:0:15}"
+          else
+            echo "ARN secret is empty."
+          fi
+
       - name: Update GitHub Actions Secret EC2_SSH_KEY
         env:
           GH_TOKEN: ${{ inputs.pat || secrets.GITHUB_TOKEN }}
