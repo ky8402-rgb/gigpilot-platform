@@ -578,8 +578,10 @@ tradingRouter.post('/research/analyze', async (req: Request, res: Response) => {
 });
 
 // 17. Profit Sweep Subsystem
-tradingRouter.get('/sweep/info', (req: Request, res: Response) => {
+tradingRouter.get('/sweep/info', async (req: Request, res: Response) => {
   const store = globalTradingStore;
+  const confirmed = await store.sweeper.reconcilePendingSweeps();
+  for (const sweep of confirmed) store.profitAccounting.recordSweepExecuted(sweep.amountUsd || sweep.grossSweepAmount || 0, sweep.feePaidUsd || sweep.networkFeeUsd || 0);
   res.json({
     success: true,
     destinationWallet: store.sweeper.getDestinationWallet(),
@@ -596,19 +598,18 @@ tradingRouter.post('/sweep/wallet', requireOwnerAuth, (req: Request, res: Respon
   res.json(result);
 });
 
-tradingRouter.post('/sweep/execute', requireOwnerAuth, (req: Request, res: Response) => {
+tradingRouter.post('/sweep/execute', requireOwnerAuth, async (req: Request, res: Response) => {
   const { amountUsd } = req.body;
   const numAmount = Number(amountUsd);
   if (!numAmount || numAmount <= 0) return res.status(400).json({ success: false, error: 'Valid amount required' });
 
   const store = globalTradingStore;
-  const result = store.sweeper.executeManualSweep(numAmount, store.capital.eligibleRealizedProfit);
+  const result = await store.sweeper.executeManualSweep(numAmount, store.capital.eligibleRealizedProfit, 'MANUAL_OWNER');
   if (!result.success) {
     return res.status(422).json(result);
   }
 
-  // Deduct swept profit from accounting
-  store.profitAccounting.recordSweepExecuted(numAmount);
+  // Capital is deducted only after Bybit confirms the withdrawal.
 
   store.monitor.logAudit({
     category: 'PROFIT_SWEEP',
@@ -618,6 +619,15 @@ tradingRouter.post('/sweep/execute', requireOwnerAuth, (req: Request, res: Respo
 
   res.json(result);
 });
+tradingRouter.post('/sweep/auto', requireOwnerAuth, async (req: Request, res: Response) => {
+  const store = globalTradingStore;
+  const enabled = Boolean(req.body?.enabled);
+  const result = store.sweeper.toggleAutoSweep(enabled);
+  if (enabled && !result) return res.status(422).json({ success: false, autoSweepEnabled: false, error: 'Whitelisted destination wallet is required before automatic sweep can be enabled.' });
+  return res.json({ success: true, autoSweepEnabled: result });
+});
+
+
 
 // 18. Risk Configuration & Circuit Breaker
 tradingRouter.get('/risk', (req: Request, res: Response) => {
