@@ -74,7 +74,7 @@ export function detectMarketRegime(candles: Candle[], orderBook?: OrderBook): Ma
   }
 
   const transition = regimeTransitionDetector.detectTransition(
-    candles[candles.length - 1]?.symbol || 'UNKNOWN',
+    orderBook?.symbol || 'UNKNOWN',
     currentPrice,
     candles,
     regime,
