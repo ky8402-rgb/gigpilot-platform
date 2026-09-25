@@ -1,7 +1,7 @@
 import crypto from 'crypto';
 import fs from 'fs';
 import path from 'path';
-import { EngineErrorRecord, EngineHealth, EngineModule, Fill, Order, OrderBook, Position, SupportedExchange } from './types.js';
+import { EngineErrorRecord, EngineHealth, EngineModule, Fill, Order, OrderBook, OrderStatus, Position, SupportedExchange } from './types.js';
 
 export interface ExchangeApiCredentials {
   exchange: SupportedExchange;
