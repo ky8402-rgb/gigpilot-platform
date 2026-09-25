@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   CapitalAccounting,
   DestinationWallet,
@@ -17,6 +17,7 @@ import {
 } from 'lucide-react';
 import {
   executeProfitSweep,
+  fetchProfitSweepInfo,
   toggleAutomaticProfitSweep,
   updateDestinationWallet
 } from '../../services/tradingService';
@@ -56,6 +57,12 @@ export const ProfitSweepView: React.FC<ProfitSweepViewProps> = ({
   const [walletNotice, setWalletNotice] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
   const [sweepSuccessMessage, setSweepSuccessMessage] = useState<string | null>(null);
   const [sweepErrorMessage, setSweepErrorMessage] = useState<string | null>(null);
+
+  useEffect(() => {
+    fetchProfitSweepInfo()
+      .then((info: any) => setAutoSweepEnabled(Boolean(info?.autoSweepEnabled)))
+      .catch(() => {});
+  }, [destinationWallet?.address, sweepsHistory.length]);
 
   const handleUpdateWallet = async (e: React.FormEvent) => {
     e.preventDefault();
