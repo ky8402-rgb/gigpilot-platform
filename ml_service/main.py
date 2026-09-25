@@ -117,9 +117,9 @@ def predict_issue(payload: FeaturesPayload):
 def trigger_training(payload: Optional[TrainPayload] = None):
     """
     Triggers model retraining:
-    1. Loads dataset from PostgreSQL (or synthetic bootstrap).
+    1. Loads verified production observations from PostgreSQL only.
     2. Trains Random Forest classifier with 5-Fold Stratified Cross-Validation.
-    3. If new accuracy >= current accuracy + 0.02 (or force_deploy=True), deploys new model.
+    3. If new accuracy meets the configured promotion threshold, deploys new model.
     4. Logs experiment metadata to MLflow and updates model registry.
     """
     try:
