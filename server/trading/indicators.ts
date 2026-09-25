@@ -239,9 +239,9 @@ export function calculateOrderBookImbalance(orderBook: OrderBook): number {
 }
 
 export function computeAllIndicators(candles: Candle[], orderBook?: OrderBook): TechnicalIndicators {
-  const closes = candles.map(c => c.close);
-  const currentPrice = closes[closes.length - 1] || 65000;
-  
+  const closes = candles.map(c => c.close).filter(v => Number.isFinite(v) && v > 0);
+  const currentPrice = closes[closes.length - 1] || 0;
+
   const rsi14 = calculateRSI(closes, 14);
   const macd = calculateMACD(closes);
   const ema9 = calculateEMA(closes, 9);
@@ -252,38 +252,40 @@ export function computeAllIndicators(candles: Candle[], orderBook?: OrderBook): 
   const atr14 = calculateATR(candles, 14);
   const vwap = calculateVWAP(candles);
   const adxResult = calculateADX(candles, 14);
-  
-  const spreadBps = orderBook ? orderBook.spreadBps : 2.5;
+
+  const spreadBps = orderBook?.spreadBps || 0;
   const recentSlice = candles.slice(-24);
-  const high24h = recentSlice.length > 0 ? Math.max(...recentSlice.map(c => c.high || currentPrice)) : currentPrice * 1.02;
-  const low24h = recentSlice.length > 0 ? Math.min(...recentSlice.map(c => c.low || currentPrice)) : currentPrice * 0.98;
-  const rawVol = currentPrice > 0 ? (((high24h - low24h) / currentPrice) * 100) : 3.5;
-  const volatility24h = Number.isFinite(rawVol) ? Number(rawVol.toFixed(2)) : 3.5;
+  const high24h = recentSlice.length ? Math.max(...recentSlice.map(c => Number.isFinite(c.high) ? c.high : 0)) : 0;
+  const low24h = recentSlice.length ? Math.min(...recentSlice.map(c => Number.isFinite(c.low) ? c.low : 0)) : 0;
+  const rawVol = currentPrice > 0 && high24h >= low24h && low24h > 0
+    ? ((high24h - low24h) / currentPrice) * 100
+    : 0;
+  const volatility24h = Number.isFinite(rawVol) ? Number(rawVol.toFixed(2)) : 0;
 
   return {
-    rsi14: Number.isFinite(rsi14) ? Number(rsi14.toFixed(2)) : 50,
+    rsi14: Number.isFinite(rsi14) ? Number(rsi14.toFixed(2)) : 0,
     macd: {
       macd: Number.isFinite(macd?.macd) ? macd.macd : 0,
       signal: Number.isFinite(macd?.signal) ? macd.signal : 0,
       histogram: Number.isFinite(macd?.histogram) ? macd.histogram : 0,
     },
-    ema9: Number.isFinite(ema9) ? Number(ema9.toFixed(2)) : currentPrice,
-    ema21: Number.isFinite(ema21) ? Number(ema21.toFixed(2)) : currentPrice,
-    ema50: Number.isFinite(ema50) ? Number(ema50.toFixed(2)) : currentPrice,
-    ema200: Number.isFinite(ema200) ? Number(ema200.toFixed(2)) : currentPrice,
+    ema9: Number.isFinite(ema9) ? Number(ema9.toFixed(2)) : 0,
+    ema21: Number.isFinite(ema21) ? Number(ema21.toFixed(2)) : 0,
+    ema50: Number.isFinite(ema50) ? Number(ema50.toFixed(2)) : 0,
+    ema200: Number.isFinite(ema200) ? Number(ema200.toFixed(2)) : 0,
     bollingerBands: {
-      upper: Number.isFinite(bollingerBands?.upper) ? bollingerBands.upper : currentPrice * 1.02,
-      middle: Number.isFinite(bollingerBands?.middle) ? bollingerBands.middle : currentPrice,
-      lower: Number.isFinite(bollingerBands?.lower) ? bollingerBands.lower : currentPrice * 0.98,
-      bandwidth: Number.isFinite(bollingerBands?.bandwidth) ? bollingerBands.bandwidth : 3.0,
+      upper: Number.isFinite(bollingerBands?.upper) ? bollingerBands.upper : 0,
+      middle: Number.isFinite(bollingerBands?.middle) ? bollingerBands.middle : 0,
+      lower: Number.isFinite(bollingerBands?.lower) ? bollingerBands.lower : 0,
+      bandwidth: Number.isFinite(bollingerBands?.bandwidth) ? bollingerBands.bandwidth : 0,
     },
-    atr14: Number.isFinite(atr14) ? atr14 : 100,
-    vwap: Number.isFinite(vwap) ? vwap : currentPrice,
-    spreadBps: Number.isFinite(spreadBps) ? spreadBps : 2.5,
-    volatility24h: Number.isFinite(volatility24h) ? volatility24h : 3.5,
-    adx: adxResult.adx,
-    adxSlope: adxResult.adxSlope,
-    plusDI: adxResult.plusDI,
-    minusDI: adxResult.minusDI
+    atr14: Number.isFinite(atr14) ? atr14 : 0,
+    vwap: Number.isFinite(vwap) ? vwap : 0,
+    spreadBps: Number.isFinite(spreadBps) ? spreadBps : 0,
+    volatility24h,
+    adx: Number.isFinite(adxResult.adx) ? adxResult.adx : 0,
+    adxSlope: Number.isFinite(adxResult.adxSlope) ? adxResult.adxSlope : 0,
+    plusDI: Number.isFinite(adxResult.plusDI) ? adxResult.plusDI : 0,
+    minusDI: Number.isFinite(adxResult.minusDI) ? adxResult.minusDI : 0
   };
 }
