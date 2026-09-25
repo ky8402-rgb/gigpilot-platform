@@ -1,11 +1,10 @@
-import { Candle, EngineErrorRecord, EngineHealth, EngineModule, OrderBook, Position, StrategyValidationResult } from './types.js';
-import { calculateRSI, calculateEMA, calculateSMA, calculateATR, calculateMACD, calculateVWAP } from './indicators.js';
+import { EngineErrorRecord, EngineHealth, EngineModule, StrategyValidationResult } from './types.js';
 
 export class StrategyValidatorEngine implements EngineModule {
   public readonly id = 'STRATEGY_IDE';
   public readonly name = 'Strategy IDE (Live Strategy Validator)';
 
-  private enabled: boolean = true; // Off-switch
+  private enabled: boolean = true;
   private status: 'HEALTHY' | 'DEGRADED' | 'DOWN' | 'OFF' = 'HEALTHY';
   private latencyMs: number = 0;
   private lastHeartbeat: string = new Date().toISOString();
@@ -65,7 +64,7 @@ export class StrategyValidatorEngine implements EngineModule {
     if (this.errorSurface.length > 50) this.errorSurface.pop();
   }
 
-  public validateUserScript(code: string): ScriptExecutionResult {
+  public validateUserScript(code: string): StrategyValidationResult {
     const startTime = Date.now();
     const logs: string[] = [];
     if (!this.enabled) {
@@ -78,9 +77,9 @@ export class StrategyValidatorEngine implements EngineModule {
       return { success: false, output: err, ordersGenerated: [], logs: [err], executionTimeMs: Date.now() - startTime, error: err };
     }
     const forbiddenPatterns = [
-      /\bprocess\b/, /\brequire\b/, /\bimport\b/, /\bchild_process\b/, /\bfs\b/,
-      /\beval\b/, /\bFunction\b/, /\bglobal\b/, /\bwindow\b/, /\bdocument\b/,
-      /\bfetch\b/, /\bXMLHttpRequest\b/, /\bWebSocket\b/
+      /\\bprocess\\b/, /\\brequire\\b/, /\\bimport\\b/, /\\bchild_process\\b/, /\\bfs\\b/,
+      /\\beval\\b/, /\\bFunction\\b/, /\\bglobal\\b/, /\\bwindow\\b/, /\\bdocument\\b/,
+      /\\bfetch\\b/, /\\bXMLHttpRequest\\b/, /\\bWebSocket\\b/
     ];
     for (const pattern of forbiddenPatterns) {
       if (pattern.test(code)) {
@@ -89,11 +88,11 @@ export class StrategyValidatorEngine implements EngineModule {
         return { success: false, output: err, ordersGenerated: [], logs: [err], executionTimeMs: Date.now() - startTime, error: 'Security validation failed' };
       }
     }
-    if (!/\bonTick\s*\(/.test(code)) {
+    if (!/\\bonTick\\s*\\(/.test(code)) {
       const err = 'Strategy validation failed: an onTick(ctx) entrypoint is required.';
       return { success: false, output: err, ordersGenerated: [], logs: [err], executionTimeMs: Date.now() - startTime, error: err };
     }
-    const forbiddenExecutionCalls = [/ctx\.buy\s*\(/, /ctx\.sell\s*\(/, /ctx\.place_grid\s*\(/];
+    const forbiddenExecutionCalls = [/ctx\\.buy\\s*\\(/, /ctx\\.sell\\s*\\(/, /ctx\\.place_grid\\s*\\(/];
     if (forbiddenExecutionCalls.some(pattern => pattern.test(code))) {
       const err = 'Strategy source contains direct order-emission calls. Live orders must be produced only by the governed autonomous strategy builder and execution engine.';
       return { success: false, output: err, ordersGenerated: [], logs: [err], executionTimeMs: Date.now() - startTime, error: err };
@@ -112,5 +111,4 @@ export class StrategyValidatorEngine implements EngineModule {
       executionTimeMs: this.latencyMs
     };
   }
-
 }
