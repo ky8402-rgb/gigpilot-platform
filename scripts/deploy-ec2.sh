@@ -41,6 +41,14 @@ git fetch origin main --prune 2>/dev/null || true
 git checkout -B main origin/main 2>/dev/null || git checkout -f main 2>/dev/null || true
 git reset --hard origin/main 2>/dev/null || true
 
+# Record the exact source revision that this host is running. Health verification
+# uses this value to prove the live process matches the GitHub deployment SHA.
+DEPLOYED_COMMIT="$(git rev-parse HEAD)"
+mkdir -p "$APP_DIR/.gigpilot-data"
+printf '%s\n' "$DEPLOYED_COMMIT" > "$APP_DIR/.gigpilot-data/deployed-commit.txt"
+chmod 600 "$APP_DIR/.gigpilot-data/deployed-commit.txt"
+echo "Deployed commit recorded: $DEPLOYED_COMMIT"
+
 # Restore .env
 if [ -f "/tmp/gigpilot.env.bak" ]; then
   cp -f /tmp/gigpilot.env.bak "$APP_DIR/.env" 2>/dev/null || true
