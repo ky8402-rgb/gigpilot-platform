@@ -17,7 +17,7 @@ import { ProfitAccountingEngine } from './profitAccounting.js';
 import { ProfitSweepEngine } from './profitSweep.js';
 import { AutonomousResearchAgent } from './researchAgent.js';
 import { LearningLoopEngine } from './learningLoop.js';
-import { ScriptingSandboxEngine } from './scriptingEngine.js';
+import { StrategyValidatorEngine } from './scriptingEngine.js';
 import { SystemMonitorSecurity } from './systemMonitor.js';
 import { EmergencyKillSwitch } from './killSwitch.js';
 import { bybitAdapter } from './bybitAdapter.js';
@@ -35,7 +35,7 @@ export class TradingStore {
   public sweeper: ProfitSweepEngine;
   public research: AutonomousResearchAgent;
   public learningLoop: LearningLoopEngine;
-  public scripting: ScriptingSandboxEngine;
+  public scripting: StrategyValidatorEngine;
   public monitor: SystemMonitorSecurity;
   public killSwitch: EmergencyKillSwitch;
   public profitOptimizer: AutonomousProfitOptimizer;
@@ -62,7 +62,7 @@ export class TradingStore {
     this.sweeper = new ProfitSweepEngine();
     this.research = new AutonomousResearchAgent();
     this.learningLoop = new LearningLoopEngine();
-    this.scripting = new ScriptingSandboxEngine();
+    this.scripting = new StrategyValidatorEngine();
     this.monitor = new SystemMonitorSecurity();
     this.killSwitch = new EmergencyKillSwitch();
     this.profitOptimizer = new AutonomousProfitOptimizer();
