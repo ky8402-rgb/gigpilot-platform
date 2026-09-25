@@ -715,3 +715,53 @@ tradingRouter.get('/assets', async (req: Request, res: Response) => {
     return res.status(500).json({ success: false, error: err.message });
   }
 });
+
+
+// 22. Autonomous Revenue Optimization — live state audit and decisioning
+tradingRouter.get('/optimizer', (req: Request, res: Response) => {
+  try {
+    const optimizer = globalTradingStore.profitOptimizer;
+    return res.json({
+      success: true,
+      objective: 'NET_REALIZED_PROFIT_AFTER_FEES',
+      autonomousDecisioning: true,
+      decisions: optimizer.getDecisions(),
+      strategyBuilds: optimizer.getStrategyBuilds(),
+      engine: optimizer.healthCheck()
+    });
+  } catch (err: any) {
+    return res.status(500).json({ success: false, error: err.message || 'Optimizer telemetry unavailable.' });
+  }
+});
+
+tradingRouter.post('/optimizer/run', async (req: Request, res: Response) => {
+  try {
+    const store = globalTradingStore;
+    const livePair = store.dataEngine.getPairData(store.activeSymbol);
+    const systemHealthy = !store.monitor.isSystemFailClosed().failClosed
+      && !store.GLOBAL_KILL_SWITCH_ACTIVE
+      && store.autonomyLevel >= 2
+      && Boolean(livePair?.currentPrice && livePair.currentPrice > 0);
+
+    if (!systemHealthy) {
+      return res.status(409).json({
+        success: false,
+        error: 'Optimizer is fail-closed: live market/account state is not eligible for autonomous optimization.',
+        decision: store.profitOptimizer.getDecisions()[0] || null
+      });
+    }
+
+    const decision = await store.profitOptimizer.auditAndOptimize({
+      capital: store.capital,
+      grid: store.activeGrid,
+      regime: store.currentRegime,
+      research: store.research.getResearchItems(),
+      champion: store.learningLoop.getChampionStrategy(),
+      systemHealthy
+    });
+
+    return res.json({ success: true, objective: 'NET_REALIZED_PROFIT_AFTER_FEES', decision });
+  } catch (err: any) {
+    return res.status(500).json({ success: false, error: err.message || 'Autonomous optimizer failed closed.' });
+  }
+});
