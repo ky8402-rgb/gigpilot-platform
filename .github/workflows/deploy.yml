@@ -12,7 +12,42 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  wait-for-ci:
+    name: ⏳ Wait for CI to pass
+    runs-on: ubuntu-latest
+    steps:
+      - name: Wait for exact commit CI success
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          echo "Waiting for CI checks on ${SHA}..."
+          for attempt in $(seq 1 40); do
+            JSON="$(curl -fsSL               -H "Authorization: Bearer ${GH_TOKEN}"               -H "Accept: application/vnd.github+json"               "https://api.github.com/repos/${GITHUB_REPOSITORY}/commits/${SHA}/check-runs?per_page=100")"
+            RESULT="$(node -e '
+              const data = JSON.parse(process.argv[1]);
+              const ci = (data.check_runs || []).find(x => x.name === "Typecheck and production build");
+              process.stdout.write(JSON.stringify({status: ci?.status || "", conclusion: ci?.conclusion || ""}));
+            ' "${JSON}")"
+            STATUS="$(node -e 'process.stdout.write(JSON.parse(process.argv[1]).status)' "${RESULT}")"
+            CONCLUSION="$(node -e 'process.stdout.write(JSON.parse(process.argv[1]).conclusion)' "${RESULT}")"
+            echo "CI status=${STATUS} conclusion=${CONCLUSION}"
+            if [ "${CONCLUSION}" = "success" ]; then
+              echo "✔ Exact commit CI passed."
+              exit 0
+            fi
+            if [ "${CONCLUSION}" = "failure" ] || [ "${CONCLUSION}" = "cancelled" ] || [ "${CONCLUSION}" = "timed_out" ]; then
+              echo "ERROR: Exact commit CI did not pass."
+              exit 1
+            fi
+            sleep 15
+          done
+          echo "ERROR: Timed out waiting for exact commit CI."
+          exit 1
+
   deploy-amplify:
+    needs: wait-for-ci
     name: 🚀 Deploy Frontend (AWS Amplify - gigpilot-platform)
     runs-on: ubuntu-latest
     steps:
@@ -85,6 +120,7 @@ jobs:
           echo "- **Live URL:** [https://main.$AMPLIFY_APP_ID.amplifyapp.com](https://main.$AMPLIFY_APP_ID.amplifyapp.com)" >> $GITHUB_STEP_SUMMARY
 
   deploy-ec2:
+    needs: wait-for-ci
     name: 🛡️ Deploy Backend (AWS EC2 - gigpilot-backend)
     runs-on: ubuntu-latest
     steps:
@@ -177,8 +213,8 @@ jobs:
             echo "SSH direct connection could not be established. Falling back to signed push webhook."
           fi
 
-      - name: Trigger EC2 Push-to-Deploy Webhook (Parallel / Fallback)
-        continue-on-error: true
+      - name: Trigger EC2 Push-to-Deploy Webhook (Fallback)
+        if: env.DEPLOYMENT_DELIVERY != 'SSH'
         env:
           EC2_HOST: ${{ secrets.EC2_HOST || '' }}
           WEBHOOK_SECRET: ${{ secrets.GITHUB_WEBHOOK_SECRET || secrets.WEBHOOK_SECRET }}
