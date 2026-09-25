@@ -29,9 +29,6 @@ export interface GridParams {
   totalEquityUsd?: number;
   customTargetRatio?: number;
   minHurdleThresholdBps?: number;
-  // Simulation overrides
-  simulatedBaseRatio?: number;
-  simulatedLiquidationDistancePct?: number;
 }
 
 export class GridEngine implements EngineModule {
@@ -132,8 +129,6 @@ export class GridEngine implements EngineModule {
       totalEquityUsd = totalAllocatedUsd * 1.8,
       customTargetRatio = 0.50,
       minHurdleThresholdBps = 4.0,
-      simulatedBaseRatio,
-      simulatedLiquidationDistancePct
     } = params;
 
     const parts = symbol.split('/');
@@ -145,20 +140,9 @@ export class GridEngine implements EngineModule {
     let baseAmount = pos ? pos.baseAmount : 0;
     let baseValueUsd = Math.abs(baseAmount * currentPrice);
 
-    // If simulation override provided:
-    let currentBaseRatio: number;
-    if (simulatedBaseRatio !== undefined) {
-      currentBaseRatio = Math.max(0, Math.min(1.0, simulatedBaseRatio));
-      baseValueUsd = totalEquityUsd * currentBaseRatio;
-      baseAmount = baseValueUsd / currentPrice;
-    } else if (pos && baseAmount > 0) {
-      currentBaseRatio = Math.max(0.01, Math.min(0.99, baseValueUsd / Math.max(100, totalEquityUsd)));
-    } else {
-      // Default realistic spot holding in active trading account (62% base asset)
-      currentBaseRatio = 0.62;
-      baseValueUsd = totalEquityUsd * currentBaseRatio;
-      baseAmount = baseValueUsd / currentPrice;
-    }
+    let currentBaseRatio = pos && baseAmount > 0
+      ? Math.max(0, Math.min(1, baseValueUsd / Math.max(1, totalEquityUsd)))
+      : 0;
 
     const targetBaseRatio = customTargetRatio;
     // Normalized skew: -1.0 (empty base inventory, extreme short) to +1.0 (all base inventory, extreme long)
@@ -177,31 +161,20 @@ export class GridEngine implements EngineModule {
     let distanceFromLiquidationPct: number | undefined;
     let liquidationRiskTier: LiquidationRiskTier = 'NO_LIQUIDATION_RISK';
 
-    if (simulatedLiquidationDistancePct !== undefined) {
-      distanceFromLiquidationPct = simulatedLiquidationDistancePct;
-      liquidationPrice = currentPrice * (1 - simulatedLiquidationDistancePct / 100);
-      if (distanceFromLiquidationPct < 12.0) liquidationRiskTier = 'CRITICAL';
-      else if (distanceFromLiquidationPct < 25.0) liquidationRiskTier = 'ELEVATED';
-      else liquidationRiskTier = 'SAFE';
-    } else if (liquidationPrice && liquidationPrice > 0) {
+    if (liquidationPrice && liquidationPrice > 0) {
       distanceFromLiquidationPct = Number(
         (Math.abs((currentPrice - liquidationPrice) / currentPrice) * 100).toFixed(2)
       );
       if (distanceFromLiquidationPct < 12.0) liquidationRiskTier = 'CRITICAL';
       else if (distanceFromLiquidationPct < 25.0) liquidationRiskTier = 'ELEVATED';
       else liquidationRiskTier = 'SAFE';
-    } else {
-      // Spot grid with cross-margin simulation safety distance
-      distanceFromLiquidationPct = 38.5;
-      liquidationPrice = Number((currentPrice * 0.615).toFixed(2));
-      liquidationRiskTier = 'SAFE';
     }
 
     // 3. Order Book Liquidity Depth
-    let bidDepthUsd = 125000;
-    let askDepthUsd = 118000;
-    let liquidityImbalanceRatio = 0.51;
-    let orderBookToxicityScore = 18;
+    let bidDepthUsd = 0;
+    let askDepthUsd = 0;
+    let liquidityImbalanceRatio = 0;
+    let orderBookToxicityScore = 100;
 
     if (orderBook && orderBook.bids?.length > 0 && orderBook.asks?.length > 0) {
       const topBids = orderBook.bids.slice(0, 10);
@@ -209,14 +182,14 @@ export class GridEngine implements EngineModule {
       bidDepthUsd = topBids.reduce((sum, b) => sum + (b.total || b.price * b.amount), 0);
       askDepthUsd = topAsks.reduce((sum, a) => sum + (a.total || a.price * a.amount), 0);
       const totalDepth = bidDepthUsd + askDepthUsd;
-      liquidityImbalanceRatio = totalDepth > 0 ? Number((bidDepthUsd / totalDepth).toFixed(4)) : 0.50;
+      liquidityImbalanceRatio = totalDepth > 0 ? Number((bidDepthUsd / totalDepth).toFixed(4)) : 0;
       const spreadBps = ((topAsks[0].price - topBids[0].price) / currentPrice) * 10000;
       orderBookToxicityScore = Math.min(100, Math.round(spreadBps * 3.5 + Math.abs(liquidityImbalanceRatio - 0.5) * 60));
     }
 
     // 4. Volatility & Trend Strength Modulation
-    const normalizedVol = regime?.atr ? Math.min(0.06, Math.max(0.005, regime.atr / currentPrice)) : 0.012;
-    const adxStrength = regime?.adx || 20;
+    const normalizedVol = regime?.atr && currentPrice > 0 ? Math.min(0.06, Math.max(0, regime.atr / currentPrice)) : 0;
+    const adxStrength = regime?.adx || 0;
     const isStrongTrend = adxStrength > 25;
 
     // 5. Avellaneda-Stoikov Reservation Price Calculation
