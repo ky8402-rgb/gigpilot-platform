@@ -290,8 +290,8 @@ export class QuantEngine implements EngineModule {
     minHurdleBps?: number;
   }): ExpectedNetEdgeBreakdown {
     const {
-      price = 65000,
-      amount = 0.01,
+      price,
+      amount,
       orderType = 'GRID_LIMIT',
       orderBook,
       candles = [],
@@ -305,8 +305,8 @@ export class QuantEngine implements EngineModule {
     const closes = candles.map(c => c.close);
     const highs = candles.map(c => c.high);
     const lows = candles.map(c => c.low);
-    const currentPrice = closes[closes.length - 1] || price || 65000;
-    const atr = this.calculateATR(highs, lows, closes, 14) || (currentPrice * 0.008);
+    const currentPrice = closes[closes.length - 1] || price || 0;
+    const atr = this.calculateATR(highs, lows, closes, 14);
     const atrBps = Number(((atr / currentPrice) * 10000).toFixed(2));
 
     // 1. Expected Gross Edge (bps)
@@ -323,7 +323,7 @@ export class QuantEngine implements EngineModule {
     const makerTakerFeesBps = isMaker ? makerFeeBps : takerFeeBps;
 
     // 3. Expected Spread Cost (bps)
-    let spreadBps = 2.4;
+    let spreadBps = 0;
     if (orderBook && orderBook.bids?.length > 0 && orderBook.asks?.length > 0) {
       const bestBid = orderBook.bids[0].price;
       const bestAsk = orderBook.asks[0].price;
@@ -338,12 +338,28 @@ export class QuantEngine implements EngineModule {
 
     // 4. Expected Slippage (bps)
     const orderCostUsd = currentPrice * amount;
-    let topLiquidityUsd = 15000;
+    let topLiquidityUsd = 0;
     if (orderBook && orderBook.asks?.length > 0 && orderBook.bids?.length > 0) {
       const topLevels = (params.side === 'BUY' ? orderBook.asks : orderBook.bids).slice(0, 3);
-      topLiquidityUsd = topLevels.reduce((acc, lvl) => acc + (lvl.total || (lvl.price * lvl.amount)), 0) || 15000;
+      topLiquidityUsd = topLevels.reduce((acc, lvl) => acc + (lvl.total || (lvl.price * lvl.amount)), 0);
     }
-    const liquidityRatio = Math.min(2.0, orderCostUsd / Math.max(1000, topLiquidityUsd));
+    if (!Number.isFinite(currentPrice) || currentPrice <= 0 || !Number.isFinite(amount || 0) || (amount || 0) <= 0 || atr <= 0 || !orderBook?.bids?.length || !orderBook?.asks?.length || topLiquidityUsd <= 0) {
+      return {
+        expectedGrossEdgeBps: 0,
+        makerTakerFeesBps: isMaker ? makerFeeBps : takerFeeBps,
+        expectedSpreadCostBps: 0,
+        expectedSlippageBps: 0,
+        adverseSelectionCostBps: 0,
+        fundingCarryingCostBps: 0,
+        executionUncertaintyBps: 0,
+        expectedNetEdgeBps: 0,
+        isTradeable: false,
+        minHurdleRateBps: minHurdleBps,
+        edgeFormula: 'LIVE_MARKET_DATA_REQUIRED',
+        timestamp: new Date().toISOString()
+      };
+    }
+    const liquidityRatio = Math.min(2.0, orderCostUsd / topLiquidityUsd);
     const expectedSlippageBps = isMaker
       ? Number(Math.max(0.3, liquidityRatio * 0.8).toFixed(2))
       : Number(Math.max(1.5, liquidityRatio * spreadBps * 0.7).toFixed(2));
