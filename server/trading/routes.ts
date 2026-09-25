@@ -510,7 +510,22 @@ tradingRouter.get('/sweep/info', (req: Request, res: Response) => {
     destinationWallet: store.sweeper.getDestinationWallet(),
     sweeps: store.sweeper.getSweeps(),
     eligibleProfitUsd: store.capital.eligibleRealizedProfit,
-    totalSweptUsd: store.capital.totalSweptProfit
+    totalSweptUsd: store.capital.totalSweptProfit,
+    autoSweepEnabled: store.sweeper.isAutoSweepEnabled(),
+    sweepEngine: store.sweeper.healthCheck()
+  });
+});
+
+tradingRouter.post('/sweep/auto', (req: Request, res: Response) => {
+  const enabled = Boolean(req.body?.enabled);
+  const store = globalTradingStore;
+  const value = store.sweeper.toggleAutoSweep(enabled);
+  return res.json({
+    success: true,
+    autoSweepEnabled: value,
+    message: value
+      ? 'Automatic live Bybit profit withdrawal enabled for the persisted whitelisted destination.'
+      : 'Automatic profit withdrawal disabled.'
   });
 });
 
