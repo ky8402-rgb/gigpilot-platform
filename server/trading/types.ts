@@ -438,7 +438,7 @@ export interface AuditLog {
   result?: 'SUCCESS' | 'REJECTED' | 'FAILED' | 'ROLLED_BACK' | string;
 }
 
-export interface ScriptExecutionResult {
+export interface StrategyValidationResult {
   success: boolean;
   output: string;
   ordersGenerated: Array<{
