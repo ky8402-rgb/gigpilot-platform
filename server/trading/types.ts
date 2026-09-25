@@ -344,9 +344,7 @@ export interface StrategyVersion {
     takeProfitPct?: number;
     rebalanceIntervalSec?: number;
   };
-  backtestResults: StrategyPerformanceMetrics;
-  paperTradingResults?: StrategyPerformanceMetrics;
-  liveTradingResults?: StrategyPerformanceMetrics;
+  liveTradingResults: StrategyPerformanceMetrics;
   validationScore?: number; // 0 - 100
   parameterStability?: ParameterStabilityReport;
   promotionScore?: number; // robustness × net expectancy × risk-adjusted return, normalized 0-100
