@@ -202,7 +202,9 @@ function onTick(ctx) {
               <span>Validation Logs</span>
               {validationResult && (
                 <span className="ml-auto text-[10px] font-normal text-slate-400">
-                  {validationResult.validationTimeMs}ms
+                  {!validationResult.executable && (
+                    <div className="mt-2 pt-2 border-t border-slate-800 text-slate-400">Source validation never executes code or generates orders.</div>
+                  )}validationTimeMs}ms
                 </span>
               )}
             </div>
@@ -210,7 +212,7 @@ function onTick(ctx) {
             <div className="flex-1 overflow-y-auto max-h-[220px] bg-black/50 p-2.5 rounded font-mono text-[11px] space-y-1 custom-scrollbar">
               {!validationResult ? (
                 <div className="text-slate-600 text-center py-8">
-                  Hit "Validate Live Strategy Source" to verify script logs & order generation.
+                  Hit "Validate Live Strategy Source" to verify the live strategy source contract.
                 </div>
               ) : validationResult.error ? (
                 <div className="text-rose-400 p-2 bg-rose-950/40 rounded border border-rose-900">
@@ -234,16 +236,13 @@ function onTick(ctx) {
           <div className="bg-slate-900/80 border border-slate-800 rounded-xl p-3 text-xs">
             <div className="flex items-center gap-2 font-bold text-white mb-2">
               <BookOpen className="w-3.5 h-3.5 text-cyan-400" />
-              <span>Runtime `ctx` Reference</span>
+              <span>Live Strategy Contract</span>
             </div>
             <div className="space-y-1 text-[11px] text-slate-300 font-mono">
               <div><code className="text-cyan-300">ctx.price()</code> : Current market price</div>
               <div><code className="text-cyan-300">ctx.rsi(period=14)</code> : Relative Strength Index</div>
               <div><code className="text-cyan-300">ctx.regime()</code> : Detected regime string</div>
-              <div><code className="text-cyan-300">ctx.place_grid(levels, low, high, type)</code></div>
-              <div><code className="text-cyan-300">ctx.buy(amount, price)</code> / <code className="text-rose-300">ctx.sell(...)</code></div>
-              <div><code className="text-cyan-300">ctx.position()</code> : Current open inventory</div>
-              <div><code className="text-cyan-300">ctx.log(msg)</code> : Print output to console</div>
+                            <div><code className="text-cyan-300">live-source logging contract</code> : Print output to console</div>
             </div>
           </div>
         </div>
