@@ -29,28 +29,37 @@ def main():
     target_path = Path(os.path.expanduser("~/.ssh/id_rsa"))
     target_path.parent.mkdir(parents=True, exist_ok=True)
 
+    log(f"Input key metadata - length: {len(raw_key)}, lines: {len(raw_key.splitlines())}, prefix: {repr(raw_key[:35])}, suffix: {repr(raw_key[-35:])}")
+
     # 1. Strip surrounding quotes if present
     if (raw_key.startswith('"') and raw_key.endswith('"')) or \
        (raw_key.startswith("'") and raw_key.endswith("'")):
         raw_key = raw_key[1:-1].strip()
 
-    # 2. Check if it's base64 encoded
-    if not ("BEGIN" in raw_key or "PuTTY" in raw_key):
+    # 2. Handle literal '\n' escaping first
+    if "\\n" in raw_key:
+        log("Detected literal '\\n' sequences. Unescaping...")
+        raw_key = raw_key.replace("\\n", "\n")
+
+    # 3. Normalize CRLF
+    raw_key = raw_key.replace("\r", "").strip()
+
+    # 4. Check if it's base64 encoded
+    if not ("BEGIN" in raw_key or "PuTTY" in raw_key or raw_key.startswith("ssh-")):
         try:
             decoded = base64.b64decode(raw_key).decode("utf-8", errors="ignore")
-            if "BEGIN" in decoded or "PuTTY" in decoded:
+            if "BEGIN" in decoded or "PuTTY" in decoded or decoded.startswith("ssh-"):
                 log("Detected base64-encoded SSH key. Decoded successfully.")
-                raw_key = decoded
+                raw_key = decoded.replace("\r", "").strip()
         except Exception:
             pass
 
-    # 3. Handle PuTTY .ppk format
+    # 5. Handle PuTTY .ppk format
     if raw_key.startswith("PuTTY-User-Key-File"):
         log("Detected PuTTY .ppk format. Converting to OpenSSH...")
         ppk_path = target_path.parent / "key.ppk"
         ppk_path.write_text(raw_key.replace("\r", "") + "\n")
         
-        # Ensure putty-tools is installed
         try:
             subprocess.run(["which", "puttygen"], check=True, stdout=subprocess.DEVNULL)
         except Exception:
@@ -69,31 +78,29 @@ def main():
         else:
             log(f"puttygen conversion failed: {res.stderr}")
 
-    # 4. Check if user accidentally pasted public key
+    # 6. Check if user accidentally provided public key
     if raw_key.startswith("ssh-rsa ") or raw_key.startswith("ssh-ed25519 ") or raw_key.startswith("ecdsa-"):
-        log("⚠️ WARNING: The provided secret looks like an SSH PUBLIC key, not a PRIVATE key (.pem)!")
-        log("OpenSSH requires the private key file downloaded from AWS EC2 Console when launching the instance.")
+        log("⚠️ WARNING: The provided secret is an SSH PUBLIC key, not a PRIVATE key (.pem)!")
+        log("EC2 SSH requires the private key file downloaded when creating the AWS key pair.")
 
-    # 5. Handle literal '\n' escaping
-    if "\\n" in raw_key:
-        log("Detected literal '\\n' sequences. Unescaping...")
-        raw_key = raw_key.replace("\\n", "\n")
+    # 7. Handle raw base64 RSA/OpenSSH key body without headers (e.g. starts with MIIE...)
+    if (raw_key.startswith("MIIE") or raw_key.startswith("MIIB")) and "BEGIN" not in raw_key:
+        log("Detected raw base64 RSA private key without PEM headers. Wrapping with standard PEM markers...")
+        body_clean = "".join(raw_key.split())
+        chunks = [body_clean[i:i+64] for i in range(0, len(body_clean), 64)]
+        raw_key = "-----BEGIN RSA PRIVATE KEY-----\n" + "\n".join(chunks) + "\n-----END RSA PRIVATE KEY-----\n"
 
-    # 6. Normalize CRLF
-    raw_key = raw_key.replace("\r", "").strip()
-
-    # 7. Check for single-line flattened PEM key (e.g. from copy-pasting into a single-line input)
-    lines = raw_key.splitlines()
-    if len(lines) <= 2 and ("BEGIN" in raw_key and "END" in raw_key):
-        log("Detected flattened single-line PEM key. Reconstructing 64-character lines...")
-        m = re.search(r"(-----BEGIN [A-Z0-9 ]+-----)(.+)(-----END [A-Z0-9 ]+-----)", raw_key)
+    # 8. Check for flattened single-line or space-delimited PEM key
+    if "BEGIN" in raw_key and "END" in raw_key:
+        m = re.search(r"(-----BEGIN [A-Z0-9 _-]+-----)\s*(.+?)\s*(-----END [A-Z0-9 _-]+-----)", raw_key, re.DOTALL)
         if m:
             header, body, footer = m.groups()
             body_clean = "".join(body.split())
             chunks = [body_clean[i:i+64] for i in range(0, len(body_clean), 64)]
             raw_key = header + "\n" + "\n".join(chunks) + "\n" + footer
+            log("PEM structure normalized and chunked to 64-char lines.")
 
-    # 8. Ensure trailing newline
+    # 9. Ensure trailing newline
     if not raw_key.endswith("\n"):
         raw_key += "\n"
 
