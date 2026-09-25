@@ -1,4 +1,4 @@
-import { Candle, EngineErrorRecord, EngineHealth, EngineModule, OrderBook, Position, ScriptExecutionResult } from './types.js';
+import { Candle, EngineErrorRecord, EngineHealth, EngineModule, OrderBook, Position, StrategyValidationResult } from './types.js';
 import { calculateRSI, calculateEMA, calculateSMA, calculateATR, calculateMACD, calculateVWAP } from './indicators.js';
 
 export class StrategyValidatorEngine implements EngineModule {
@@ -42,7 +42,7 @@ export class StrategyValidatorEngine implements EngineModule {
     this.enabled = enabled;
     if (!enabled) {
       this.status = 'OFF';
-      this.recordError('WARN', 'Strategy IDE switched OFF. User script execution blocked.');
+      this.recordError('WARN', 'Strategy IDE switched OFF. User strategy validation blocked.');
     } else {
       this.status = 'HEALTHY';
       this.recordError('WARN', 'Strategy IDE switched ON.');
@@ -102,7 +102,7 @@ export class StrategyValidatorEngine implements EngineModule {
     this.lastHeartbeat = new Date().toISOString();
     this.status = 'HEALTHY';
     logs.push('Strategy source validated successfully.');
-    logs.push('No code was executed and no synthetic orders were generated.');
+    logs.push('No user code was executed and no orders were generated.');
     logs.push('Live deployment remains governed by the strategy builder, exchange execution engine, and risk engine.');
     return {
       success: true,
