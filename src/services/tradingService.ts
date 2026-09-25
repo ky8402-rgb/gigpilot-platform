@@ -547,12 +547,11 @@ export async function fetchBybitStatus(): Promise<{
 export async function updateBybitKeys(
   apiKey: string,
   apiSecret: string,
-  isTestnet?: boolean
 ): Promise<{ success: boolean; message: string; accountState?: any; error?: string }> {
   return await fetchWithFailover<{ success: boolean; message?: string; error?: string }>('/exchanges/keys', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ exchange: 'BYBIT', apiKey, apiSecret, isTestnet }),
+    body: JSON.stringify({ exchange: 'BYBIT', apiKey, apiSecret }),
     timeoutMs: 25000
   }).then((res) => ({
     success: Boolean(res.success),
