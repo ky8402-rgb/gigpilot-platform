@@ -66,13 +66,13 @@ export const DecisionPipelineVisualizer: React.FC<DecisionPipelineVisualizerProp
         <div className="bg-slate-950 border border-slate-800 rounded-xl p-4">
           <div className="flex items-center gap-2 text-white font-bold mb-3"><Activity className="w-4 h-4 text-cyan-400" />Live evaluation result</div>
           <div className="flex items-center gap-2 mb-3">
-            {evaluationResult.outcome === 'BUY' ? <CheckCircle2 className="w-4 h-4 text-emerald-400" /> : evaluationResult.outcome === 'SELL' ? <XCircle className="w-4 h-4 text-rose-400" /> : <AlertTriangle className="w-4 h-4 text-amber-400" />}
+            {evaluationResult.finalOutcome === 'BUY' ? <CheckCircle2 className="w-4 h-4 text-emerald-400" /> : evaluationResult.finalOutcome === 'SELL' ? <XCircle className="w-4 h-4 text-rose-400" /> : <AlertTriangle className="w-4 h-4 text-amber-400" />}
             <span className="text-white font-bold">{evaluationResult.outcome}</span>
             <span className="text-slate-400 text-xs">{evaluationResult.symbol}</span>
           </div>
           <div className="space-y-1 text-xs text-slate-300">
-            {evaluationResult.gates?.map((gate, index) => (
-              <div key={gate.gate || index} className="flex justify-between border-b border-slate-900 py-1">
+            {Object.entries(evaluationResult.gates).map(([key, gate]) => (
+              <div key={key} className="flex justify-between border-b border-slate-900 py-1">
                 <span>{gate.name}</span><span className={gate.passed ? 'text-emerald-300' : 'text-rose-300'}>{gate.passed ? 'PASS' : 'BLOCK'}</span>
               </div>
             ))}
