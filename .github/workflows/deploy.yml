@@ -181,7 +181,7 @@ jobs:
         continue-on-error: true
         env:
           EC2_HOST: ${{ secrets.EC2_HOST || '' }}
-          WEBHOOK_SECRET: ${{ secrets.GITHUB_WEBHOOK_SECRET || secrets.WEBHOOK_SECRET || 'gigpilot_prod_webhook_secret_2026' }}
+          WEBHOOK_SECRET: ${{ secrets.GITHUB_WEBHOOK_SECRET || secrets.WEBHOOK_SECRET }}
           COMMIT_MSG: ${{ github.event.head_commit.message }}
         run: |
           if [ -z "$EC2_HOST" ] && [ -f deployment/backend-host.txt ]; then
