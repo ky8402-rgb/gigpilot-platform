@@ -73,10 +73,19 @@ app.use((req, res, next) => {
 app.get("/api/health", (req, res) => {
   const store = globalTradingStore;
   const mem = process.memoryUsage();
+  const deployedCommitPath = process.env.GIGPILOT_DEPLOYED_COMMIT_FILE || path.join(process.cwd(), ".gigpilot-data", "deployed-commit.txt");
+  let deployedCommit: string | null = null;
+  try {
+    const value = fs.readFileSync(deployedCommitPath, "utf8").trim();
+    if (/^[0-9a-f]{40}$/i.test(value)) deployedCommit = value;
+  } catch {
+    deployedCommit = null;
+  }
   res.json({
     status: "ok",
     service: "Autonomous Crypto Grid Trading Platform",
     version: "v2.5.0",
+    deployedCommit,
     uptimeSeconds: Math.floor(process.uptime()),
     timestamp: new Date().toISOString(),
     environment: process.env.NODE_ENV || "development",
