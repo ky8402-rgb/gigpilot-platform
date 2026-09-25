@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React from 'react';
 import {
   Activity,
   AlertTriangle,
@@ -35,36 +35,6 @@ export const RegimeTransitionView: React.FC<RegimeTransitionViewProps> = ({
   symbol,
   onRefresh
 }) => {
-  const [isSimulating, setIsSimulating] = useState(false);
-  const [simMessage, setSimMessage] = useState<string | null>(null);
-
-  const transition = regime.transition;
-  const metrics = transition?.metrics;
-  const phase = transition?.phase || 'STABLE';
-  const isTransitioning = transition?.isTransitioning ?? false;
-  const sizeMultiplier = transition?.positionSizeMultiplier ?? 1.0;
-  const restrictionStatus = transition?.gridRestrictionStatus ?? 'NORMAL';
-
-  const handleSimulate = async (simPhase: RegimeTransitionPhase, side: 'BULLISH' | 'BEARISH' | 'NONE' = 'BULLISH') => {
-    setIsSimulating(true);
-    setSimMessage(null);
-    try {
-      const res = await fetch('/api/trading/regime-transition/simulate', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ phase: simPhase, breakoutSide: side })
-      });
-      const data = await res.json();
-      if (data.success) {
-        setSimMessage(`Transition state simulated: ${simPhase} (${side}). Grid safeguards engaged.`);
-        if (onRefresh) onRefresh();
-      }
-    } catch (err: any) {
-      setSimMessage(`Simulation error: ${err.message}`);
-    } finally {
-      setIsSimulating(false);
-    }
-  };
 
   const getPhaseColor = (p: RegimeTransitionPhase) => {
     switch (p) {
@@ -414,113 +384,6 @@ export const RegimeTransitionView: React.FC<RegimeTransitionViewProps> = ({
               </div>
             </div>
           ))}
-        </div>
-      </div>
-
-      {/* 5. Interactive Transition Simulation Controller (for Operator Testing) */}
-      <div className="bg-[#0B101D] border border-slate-800 rounded-xl p-5 shadow-xl">
-        <div className="flex items-center justify-between mb-4 pb-2 border-b border-slate-800">
-          <div className="flex items-center gap-2">
-            <Play className="w-5 h-5 text-amber-400" />
-            <h3 className="text-base font-bold font-mono text-white">Live Transition Simulator &amp; Safeguard Verification</h3>
-          </div>
-          <span className="text-xs font-mono text-slate-400">
-            Verify automated position size curtailment &amp; grid restrictions
-          </span>
-        </div>
-
-        <p className="text-xs text-slate-300 mb-4">
-          Test how the trading engine dynamically restricts adverse rungs, cuts position sizing to 40%, and shields capital when transitioning from a range into momentum or vice-versa.
-        </p>
-
-        {simMessage && (
-          <div className="mb-4 p-3 bg-indigo-950/60 border border-indigo-500/40 rounded-lg text-xs font-mono text-indigo-200 flex items-center gap-2">
-            <Info className="w-4 h-4 text-indigo-400 shrink-0" />
-            <span>{simMessage}</span>
-          </div>
-        )}
-
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3">
-          <button
-            onClick={() => handleSimulate('EXPANDING_VOLATILITY', 'NONE')}
-            disabled={isSimulating}
-            className="p-3 bg-orange-950/40 hover:bg-orange-900/60 border border-orange-500/40 rounded-lg text-left transition-all group cursor-pointer"
-          >
-            <div className="text-xs font-mono font-bold text-orange-300 flex items-center justify-between">
-              <span>1. Vol Expansion</span>
-              <Activity className="w-3.5 h-3.5 group-hover:scale-110 transition-transform" />
-            </div>
-            <div className="text-[10px] text-slate-400 mt-1">
-              ATR ratio surges 1.35x. Sizing drops to 50%, rungs widen.
-            </div>
-          </button>
-
-          <button
-            onClick={() => handleSimulate('BREAKOUT_TESTING', 'BULLISH')}
-            disabled={isSimulating}
-            className="p-3 bg-amber-950/40 hover:bg-amber-900/60 border border-amber-500/40 rounded-lg text-left transition-all group cursor-pointer"
-          >
-            <div className="text-xs font-mono font-bold text-amber-300 flex items-center justify-between">
-              <span>2. Bullish Test</span>
-              <TrendingUp className="w-3.5 h-3.5 group-hover:scale-110 transition-transform" />
-            </div>
-            <div className="text-[10px] text-slate-400 mt-1">
-              Probing upper boundary. Sizing cuts to 40%, restricts sell limits.
-            </div>
-          </button>
-
-          <button
-            onClick={() => handleSimulate('BREAKOUT_TESTING', 'BEARISH')}
-            disabled={isSimulating}
-            className="p-3 bg-rose-950/40 hover:bg-rose-900/60 border border-rose-500/40 rounded-lg text-left transition-all group cursor-pointer"
-          >
-            <div className="text-xs font-mono font-bold text-rose-300 flex items-center justify-between">
-              <span>3. Bearish Test</span>
-              <TrendingDown className="w-3.5 h-3.5 group-hover:scale-110 transition-transform" />
-            </div>
-            <div className="text-[10px] text-slate-400 mt-1">
-              Falling knife guard. Sizing cuts to 40%, freezes blind buy limits.
-            </div>
-          </button>
-
-          <button
-            onClick={() => handleSimulate('BREAKOUT_CONFIRMED', 'BULLISH')}
-            disabled={isSimulating}
-            className="p-3 bg-purple-950/40 hover:bg-purple-900/60 border border-purple-500/40 rounded-lg text-left transition-all group cursor-pointer"
-          >
-            <div className="text-xs font-mono font-bold text-purple-300 flex items-center justify-between">
-              <span>4. Breakout Confirmed</span>
-              <CheckCircle2 className="w-3.5 h-3.5 group-hover:scale-110 transition-transform" />
-            </div>
-            <div className="text-[10px] text-slate-400 mt-1">
-              Sustained thrust. Shifts to Momentum trailing stops.
-            </div>
-          </button>
-
-          <button
-            onClick={() => handleSimulate('BREAKOUT_REJECTED', 'NONE')}
-            disabled={isSimulating}
-            className="p-3 bg-cyan-950/40 hover:bg-cyan-900/60 border border-cyan-500/40 rounded-lg text-left transition-all group cursor-pointer"
-          >
-            <div className="text-xs font-mono font-bold text-cyan-300 flex items-center justify-between">
-              <span>5. Breakout Rejected</span>
-              <RotateCcw className="w-3.5 h-3.5 group-hover:scale-110 transition-transform" />
-            </div>
-            <div className="text-[10px] text-slate-400 mt-1">
-              Fakeout back into band. Sizing restored to 85% for mean reversion.
-            </div>
-          </button>
-        </div>
-
-        <div className="mt-4 pt-3 border-t border-slate-800 flex justify-end">
-          <button
-            onClick={() => handleSimulate('STABLE', 'NONE')}
-            disabled={isSimulating}
-            className="px-3.5 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-mono font-bold rounded-lg transition-all flex items-center gap-1.5 cursor-pointer"
-          >
-            <RotateCcw className="w-3 h-3" />
-            <span>Reset to Live Stable State</span>
-          </button>
         </div>
       </div>
 
