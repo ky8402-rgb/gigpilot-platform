@@ -137,7 +137,23 @@ export class DataEngine implements EngineModule {
   public getPairData(symbol: string): LivePairMarketData | undefined {
     if (!this.enabled) return undefined;
     const norm = this.normalizeSymbol(symbol);
-    return this.marketData.get(norm) || this.marketData.get(symbol);
+    const data = this.marketData.get(norm) || this.marketData.get(symbol);
+    if (!data) return undefined;
+
+    // A fresh ticker does not make an old order book/candle set safe for execution.
+    // Trading consumers receive no market snapshot unless all execution-critical inputs
+    // are within their explicit freshness budgets.
+    const now = Date.now();
+    const bookAgeMs = now - Number(data.orderBook?.timestamp || 0);
+    const newestCandleMs = data.candles.length
+      ? Math.max(...data.candles.map(c => Number(c.timestamp || 0)))
+      : 0;
+    const candleAgeMs = now - newestCandleMs;
+
+    if (bookAgeMs > 5000 || candleAgeMs > 120000 || data.currentPrice <= 0) {
+      return undefined;
+    }
+    return data;
   }
 
   public getAllPairs(): LivePairMarketData[] {
