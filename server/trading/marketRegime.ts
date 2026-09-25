@@ -4,16 +4,16 @@ import { computeAllIndicators, calculateOrderBookImbalance } from './indicators.
 export function detectMarketRegime(candles: Candle[], orderBook?: OrderBook): MarketRegime {
   if (candles.length < 20) {
     return {
-      regime: 'RANGE_BOUND_LOW_VOL',
-      confidence: 0.75,
-      atr: 250,
-      rsi: 50,
-      adx: 18,
-      bbBandwidth: 2.1,
-      orderBookImbalance: 0.05,
+      regime: 'UNKNOWN',
+      confidence: 0,
+      atr: 0,
+      rsi: 0,
+      adx: 0,
+      bbBandwidth: 0,
+      orderBookImbalance: 0,
       trendDirection: 'NEUTRAL',
-      recommendedGridSpacing: 0.6,
-      suggestedAction: 'Maintain balanced arithmetic grid with neutral inventory',
+      recommendedGridSpacing: 0,
+      suggestedAction: 'Insufficient live Bybit candles for a valid market-regime decision. Trading remains fail-closed.',
       detectedAt: new Date().toISOString()
     };
   }
