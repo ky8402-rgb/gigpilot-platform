@@ -841,7 +841,7 @@ export class BybitAdapter {
       });
       const json = await res.json() as any;
       if (!res.ok || json?.retCode !== 0) {
-        return { success: false, error: formatBybitError(json, res.status) };
+        return { success: false, error: formatBybitError(Number(json?.retCode), json?.retMsg || `HTTP ${res.status}`) };
       }
       return {
         success: true,
