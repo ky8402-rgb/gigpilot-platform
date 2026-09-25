@@ -792,7 +792,9 @@ tradingRouter.get('/strategy-allocator/current', (_req: Request, res: Response) 
         capital: store.capital,
         regime: store.currentRegime,
         midPrice: store.dataEngine.getPairData(store.activeSymbol)?.currentPrice,
-        edge: store.profitOptimizer.getLatestAudit()?.expectedNetEdge
+        edge: store.profitOptimizer.getLatestAudit()?.expectedNetEdge,
+        champion: store.learningLoop.getChampionStrategy(),
+        gridCapitalUsd: store.activeGrid?.totalAllocatedUsd || 0
       })
     });
   } catch (err: any) {
