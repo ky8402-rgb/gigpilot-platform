@@ -23,7 +23,7 @@ export class LearningLoopEngine implements EngineModule {
       status: 'CHAMPION',
       createdAt: new Date(Date.now() - 86400000 * 7).toISOString(),
       deployedAt: new Date(Date.now() - 86400000 * 3).toISOString(),
-      reasonForChange: 'Validated on real market order book execution with 2.45 Sharpe ratio',
+      reasonForChange: 'Live champion parameters configured; no synthetic or historical performance evidence is used for promotion.',
       parameters: {
         upperBoundary: 92500,
         lowerBoundary: 78000,
@@ -71,40 +71,9 @@ export class LearningLoopEngine implements EngineModule {
       }
     };
 
-    this.challengerStrategies = [
-      {
-        id: 'STRAT-CHALLENGER-01',
-        name: 'Asymmetric Mean-Reverting Spread Grid',
-        version: 'v2.2.0-CHALLENGER',
-        type: 'CUSTOM_SCRIPT',
-        status: 'CHALLENGER',
-        createdAt: new Date(Date.now() - 86400000).toISOString(),
-        reasonForChange: 'Compressed grid spacing to 0.45% targeting tighter order book spreads in range regimes',
-        parameters: {
-          gridLevels: 32,
-          spacingType: 'GEOMETRIC',
-          gridSpacingPct: 0.45,
-          volatilityMultiplier: 1.05,
-          stopLossPct: 6.0
-        },
-        backtestResults: {
-          netProfit: 1580.20,
-          grossProfit: 1795.00,
-          totalFees: 214.80,
-          roiPct: 15.8,
-          sharpeRatio: 2.62,
-          sortinoRatio: 3.41,
-          maxDrawdownPct: 4.1,
-          winRatePct: 81.2,
-          profitFactor: 2.34,
-          tradesCount: 220,
-          avgTradeProfitUsd: 7.18,
-          avgHoldingTimeMinutes: 32,
-          orderFillRatePct: 94.2,
-          capitalUtilizationPct: 70.0
-        }
-      }
-    ];
+    // No pre-seeded challenger is treated as evidence. Challengers must be created from live observations.
+    this.challengerStrategies = [];
+
   }
 
   public healthCheck(): EngineHealth {
