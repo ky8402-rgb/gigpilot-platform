@@ -9,6 +9,8 @@ export interface GridParams {
   volatilityAdjustment?: boolean;
   trendProtection?: boolean;
   regime?: MarketRegime | null;
+  /** Optional optimizer target spacing in percent. When supplied, it is used as the grid's actual spacing target. */
+  targetGridSpacingPct?: number;
 }
 
 export class GridEngine implements EngineModule {
@@ -104,16 +106,28 @@ export class GridEngine implements EngineModule {
         spacingType = 'GEOMETRIC',
         volatilityAdjustment = true,
         trendProtection = true,
-        regime
+        regime,
+        targetGridSpacingPct
       } = params;
 
-      // Calculate baseline width from ATR or regime
+      // Calculate baseline width from regime. An optimizer target overrides the baseline so
+      // the generated prices actually reflect the proposed spacing rather than only changing metadata.
       let baseWidthPct = 0.05; // 5% default
       if (regime) {
         if (regime.regime === 'BREAKOUT_VOLATILITY') baseWidthPct = 0.08;
         else if (regime.regime === 'RANGE_BOUND_LOW_VOL') baseWidthPct = 0.035;
         else if (regime.regime === 'BULL_TREND_STRONG') baseWidthPct = 0.06;
         else if (regime.regime === 'BEAR_TREND_STRONG') baseWidthPct = 0.065;
+      }
+
+      const totalRungs = Math.max(4, Math.min(64, levelsCount));
+      if (targetGridSpacingPct !== undefined) {
+        const target = Number(targetGridSpacingPct);
+        if (!Number.isFinite(target) || target < 0.10 || target > 5.00) {
+          return { grid: null, error: 'Invalid target grid spacing. Allowed range is 0.10% to 5.00%.' };
+        }
+        // For symmetric boundaries, spacingPct = 2 * baseWidthPct / totalRungs * 100.
+        baseWidthPct = (target * totalRungs) / 200;
       }
 
       let upperBoundary = currentPrice * (1 + baseWidthPct);
@@ -130,7 +144,6 @@ export class GridEngine implements EngineModule {
         }
       }
 
-      const totalRungs = Math.max(4, Math.min(64, levelsCount));
       const rungsPerSide = Math.floor(totalRungs / 2);
       const buyBudgetUsd = totalAllocatedUsd * 0.5;
       const sellBudgetUsd = totalAllocatedUsd * 0.5;
