@@ -800,18 +800,12 @@ export interface AuditLog {
   result?: 'SUCCESS' | 'REJECTED' | 'FAILED' | 'ROLLED_BACK' | string;
 }
 
-export interface ScriptExecutionResult {
+export interface StrategyValidationResult {
   success: boolean;
-  output: string;
-  ordersGenerated: Array<{
-    side: OrderSide;
-    type: OrderType;
-    price: number;
-    amount: number;
-  }>;
   logs: string[];
-  executionTimeMs: number;
   error?: string;
+  validationTimeMs: number;
+  executable: false;
 }
 
 // 3-Way Trade Decision System (BUY / SELL / DO NOTHING)
