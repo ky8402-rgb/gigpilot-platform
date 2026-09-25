@@ -49,10 +49,7 @@ export class DataEngine implements EngineModule {
   ];
 
   // Official public endpoints for Bybit V5 live market data
-  private bybitEndpoints = [
-    'https://api.bybit.com',
-    'https://api-testnet.bybit.com'
-  ];
+  private bybitEndpoints = ['https://api.bybit.com'];
 
   constructor() {
     this.startLiveIngestion();
