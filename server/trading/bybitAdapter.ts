@@ -756,6 +756,215 @@ export class BybitAdapter {
   }
 
   /**
+   * Private Signed: Verify that a destination is an active Bybit withdrawal address.
+   * The withdrawal API requires the exact address-book value and a whitelisted/verified address.
+   */
+  public async verifyWithdrawalAddress(params: {
+    coin: string;
+    chain: string;
+    address: string;
+  }): Promise<{ verified: boolean; error?: string }> {
+    if (!this.apiKey || !this.apiSecret) {
+      return { verified: false, error: 'Bybit API credentials missing.' };
+    }
+
+    const coin = params.coin.trim().toUpperCase();
+    const chain = params.chain.trim();
+    const address = params.address.trim();
+    if (!coin || !chain || !address) {
+      return { verified: false, error: 'Withdrawal coin, chain, and destination address are required.' };
+    }
+
+    try {
+      const { headers, queryString } = this.signGet({
+        coin,
+        chain,
+        addressType: 0,
+        limit: 50
+      });
+      const res = await fetch(`${this.getActiveBaseUrl()}/v5/asset/withdraw/query-address?${queryString}`, { headers });
+      const json = (await res.json()) as any;
+      if (!res.ok || json.retCode !== 0) {
+        return {
+          verified: false,
+          error: formatBybitError(json?.retCode, json?.retMsg || `HTTP ${res.status}`)
+        };
+      }
+
+      const rows = Array.isArray(json?.result?.rows) ? json.result.rows : [];
+      const match = rows.find((row: any) =>
+        String(row?.address || '') === address &&
+        String(row?.chain || '').toUpperCase() === chain.toUpperCase() &&
+        Number(row?.status) === 0 &&
+        Number(row?.verified) === 1
+      );
+
+      return match
+        ? { verified: true }
+        : { verified: false, error: 'Destination address is not an active verified Bybit withdrawal-address-book entry.' };
+    } catch (e: any) {
+      return { verified: false, error: `Bybit withdrawal-address verification failed: ${e.message}` };
+    }
+  }
+
+  /**
+   * Private Signed: Query the amount Bybit currently allows to be withdrawn.
+   */
+  public async getWithdrawableAmount(coin: string): Promise<{ amount: number; error?: string }> {
+    if (!this.apiKey || !this.apiSecret) {
+      return { amount: 0, error: 'Bybit API credentials missing.' };
+    }
+
+    const normalizedCoin = coin.trim().toUpperCase();
+    try {
+      const { headers, queryString } = this.signGet({ coin: normalizedCoin });
+      const res = await fetch(`${this.getActiveBaseUrl()}/v5/asset/withdraw/withdrawable-amount?${queryString}`, { headers });
+      const json = (await res.json()) as any;
+      if (!res.ok || json.retCode !== 0) {
+        return {
+          amount: 0,
+          error: formatBybitError(json?.retCode, json?.retMsg || `HTTP ${res.status}`)
+        };
+      }
+
+      const result = json?.result?.withdrawableAmount || {};
+      const candidates = [result.FUND, result.UTA, result.SPOT, result.EARN];
+      const amounts = candidates
+        .map((item: any) => Number(item?.withdrawableAmount || 0))
+        .filter((value: number) => Number.isFinite(value) && value > 0);
+
+      return { amount: amounts.length ? Math.max(...amounts) : 0 };
+    } catch (e: any) {
+      return { amount: 0, error: `Bybit withdrawable-balance query failed: ${e.message}` };
+    }
+  }
+
+  /**
+   * Private Signed: Submit a real Bybit V5 withdrawal.
+   * This method never fabricates a transaction hash or confirmation.
+   */
+  public async createWithdrawal(params: {
+    coin: string;
+    chain: string;
+    address: string;
+    amount: number;
+    tag?: string;
+    accountType?: 'FUND' | 'UTA' | 'EARN' | 'FUND,UTA,EARN';
+    forceChain?: 0 | 1;
+    requestId?: string;
+  }): Promise<{ success: boolean; withdrawalId?: string; error?: string; raw?: any }> {
+    if (!this.apiKey || !this.apiSecret) {
+      return { success: false, error: 'Bybit API credentials missing.' };
+    }
+
+    const coin = params.coin.trim().toUpperCase();
+    const chain = params.chain.trim();
+    const address = params.address.trim();
+    const amount = Number(params.amount);
+    if (!coin || !chain || !address || !Number.isFinite(amount) || amount <= 0) {
+      return { success: false, error: 'Valid withdrawal coin, chain, address, and positive amount are required.' };
+    }
+
+    const addressCheck = await this.verifyWithdrawalAddress({ coin, chain, address });
+    if (!addressCheck.verified) {
+      return { success: false, error: addressCheck.error || 'Withdrawal destination is not verified.' };
+    }
+
+    const withdrawable = await this.getWithdrawableAmount(coin);
+    if (withdrawable.error) {
+      return { success: false, error: withdrawable.error };
+    }
+    if (amount > withdrawable.amount) {
+      return {
+        success: false,
+        error: `Requested ${amount} ${coin} exceeds Bybit withdrawable amount ${withdrawable.amount} ${coin}.`
+      };
+    }
+
+    const payload: Record<string, any> = {
+      coin,
+      chain,
+      address,
+      amount: String(amount),
+      timestamp: this.getSyncedTimestamp(),
+      forceChain: params.forceChain ?? 1,
+      accountType: params.accountType || 'UTA'
+    };
+    if (params.tag) payload.tag = params.tag;
+    if (params.requestId) payload.requestId = params.requestId;
+
+    try {
+      const { headers, bodyStr } = this.signPost(payload);
+      const res = await fetch(`${this.getActiveBaseUrl()}/v5/asset/withdraw/create`, {
+        method: 'POST',
+        headers,
+        body: bodyStr
+      });
+      const json = (await res.json()) as any;
+      if (!res.ok || json.retCode !== 0) {
+        return {
+          success: false,
+          error: formatBybitError(json?.retCode, json?.retMsg || `HTTP ${res.status}`),
+          raw: json
+        };
+      }
+
+      const withdrawalId = String(json?.result?.id || '');
+      if (!withdrawalId) {
+        return { success: false, error: 'Bybit accepted the request without returning a withdrawal ID; treating dispatch as unconfirmed.' };
+      }
+
+      return { success: true, withdrawalId, raw: json.result };
+    } catch (e: any) {
+      return { success: false, error: `Bybit withdrawal dispatch failed: ${e.message}` };
+    }
+  }
+
+  /**
+   * Private Signed: Query a specific Bybit withdrawal record after dispatch.
+   */
+  public async getWithdrawalRecord(withdrawalId: string): Promise<{
+    found: boolean;
+    status?: string;
+    txId?: string;
+    amount?: number;
+    fee?: number;
+    error?: string;
+  }> {
+    if (!this.apiKey || !this.apiSecret) {
+      return { found: false, error: 'Bybit API credentials missing.' };
+    }
+
+    try {
+      const { headers, queryString } = this.signGet({
+        withdrawID: withdrawalId,
+        limit: 50
+      });
+      const res = await fetch(`${this.getActiveBaseUrl()}/v5/asset/withdraw/query-record?${queryString}`, { headers });
+      const json = (await res.json()) as any;
+      if (!res.ok || json.retCode !== 0) {
+        return {
+          found: false,
+          error: formatBybitError(json?.retCode, json?.retMsg || `HTTP ${res.status}`)
+        };
+      }
+
+      const row = json?.result?.rows?.[0];
+      if (!row) return { found: false };
+
+      return {
+        found: true,
+        status: String(row.status || ''),
+        txId: row.txID ? String(row.txID) : undefined,
+        amount: Number(row.amount || 0),
+        fee: Number(row.withdrawFee || 0)
+      };
+    } catch (e: any) {
+      return { found: false, error: `Bybit withdrawal-record query failed: ${e.message}` };
+    }
+  }
+
+  /**
    * Private Signed: Cancel single order on Bybit
    */
   public async cancelOrder(symbol: string, orderId: string): Promise<{ success: boolean; error?: string }> {
