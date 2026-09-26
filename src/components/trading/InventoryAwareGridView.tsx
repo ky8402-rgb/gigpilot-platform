@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React from 'react';
 import {
   Scale,
   Shield,
@@ -11,7 +11,6 @@ import {
   Sliders,
   Sparkles,
   RefreshCw,
-  CheckCircle2,
   Info,
   Layers,
   Percent,
@@ -41,8 +40,6 @@ export const InventoryAwareGridView: React.FC<InventoryAwareGridViewProps> = ({
   const metrics: InventoryAwarenessMetrics | undefined = activeGrid?.inventoryAwareness;
 
   const baseAsset = activeSymbol.split('/')[0] || 'BTC';
-  const quoteAsset = activeSymbol.split('/')[1] || 'USDT';
-
   // Fallback defaults if metrics not yet computed
   const currentBaseRatio = metrics?.currentBaseRatio ?? 0;
   const inventorySkew = metrics?.inventorySkew ?? 0;
@@ -58,61 +55,6 @@ export const InventoryAwareGridView: React.FC<InventoryAwareGridViewProps> = ({
   const distLiqPct = metrics?.distanceFromLiquidationPct ?? 0;
   const liqTier = metrics?.liquidationRiskTier || 'UNKNOWN';
 
-  const handleRunPreset = async (ratio: number, liqDist: number, label: string) => {
-    setSimBaseRatio(ratio);
-    setSimLiqDistance(liqDist);
-    setIsSimulating(true);
-    setStatusMessage(`Applying scenario: ${label}...`);
-    try {
-      if (onApplySimulatedInventory) {
-        await onApplySimulatedInventory(ratio, liqDist);
-      } else {
-        const res = await fetch('/api/trading/inventory-awareness/simulate', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            simulatedBaseRatio: ratio,
-            simulatedLiquidationDistancePct: liqDist
-          })
-        });
-        await res.json();
-      }
-      setStatusMessage(`Grid reconfigured for ${label}`);
-      setTimeout(() => setStatusMessage(null), 4000);
-    } catch (err: any) {
-      setStatusMessage(`Simulation error: ${err.message}`);
-    } finally {
-      setIsSimulating(false);
-      if (onRefresh) onRefresh();
-    }
-  };
-
-  const handleCustomApply = async () => {
-    setIsSimulating(true);
-    setStatusMessage(`Applying custom inventory state (${Math.round(simBaseRatio * 100)}% base, ${simLiqDistance}% liq buffer)...`);
-    try {
-      if (onApplySimulatedInventory) {
-        await onApplySimulatedInventory(simBaseRatio, simLiqDistance);
-      } else {
-        const res = await fetch('/api/trading/inventory-awareness/simulate', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            simulatedBaseRatio: simBaseRatio,
-            simulatedLiquidationDistancePct: simLiqDistance
-          })
-        });
-        await res.json();
-      }
-      setStatusMessage('Custom inventory parameters applied to live grid');
-      setTimeout(() => setStatusMessage(null), 4000);
-    } catch (err: any) {
-      setStatusMessage(`Error: ${err.message}`);
-    } finally {
-      setIsSimulating(false);
-      if (onRefresh) onRefresh();
-    }
-  };
 
   return (
     <div className="space-y-6">
@@ -151,12 +93,6 @@ export const InventoryAwareGridView: React.FC<InventoryAwareGridViewProps> = ({
           </div>
 
           <div className="flex items-center gap-2">
-            {statusMessage && (
-              <span className="text-xs font-mono text-emerald-400 bg-emerald-950/70 border border-emerald-500/40 px-3 py-1.5 rounded-lg flex items-center gap-1.5 animate-fade-in">
-                <CheckCircle2 className="w-3.5 h-3.5" />
-                {statusMessage}
-              </span>
-            )}
             <button
               onClick={onRefresh}
               className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-mono font-bold bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 transition-colors"
