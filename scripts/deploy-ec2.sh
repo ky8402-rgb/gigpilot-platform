@@ -54,6 +54,24 @@ if [ -f "/tmp/gigpilot.env.bak" ]; then
   cp -f /tmp/gigpilot.env.bak "$APP_DIR/.env" 2>/dev/null || true
 fi
 
+# Require a production database connection for live persistence. The value is supplied
+# by the deployment workflow from GitHub Secrets and is never committed to source.
+if [ -n "${DATABASE_URL:-}" ]; then
+  case "$DATABASE_URL" in
+    postgres://*|postgresql://*) ;;
+    *) echo "ERROR: DATABASE_URL is not a PostgreSQL URL."; exit 1 ;;
+  esac
+  umask 077
+  touch "$APP_DIR/.env"
+  if grep -q '^DATABASE_URL=' "$APP_DIR/.env"; then
+    sed -i "s|^DATABASE_URL=.*|DATABASE_URL=\"$DATABASE_URL\"" "$APP_DIR/.env"
+  else
+    printf '%s\n' "DATABASE_URL=\"$DATABASE_URL\"" >> "$APP_DIR/.env"
+  fi
+elif ! grep -qE '^DATABASE_URL=(postgres://|postgresql://)' "$APP_DIR/.env" 2>/dev/null; then
+  echo "ERROR: No production DATABASE_URL is configured. Refusing live deployment."; exit 1
+fi
+
 echo "Installing production build dependencies..."
 npm install --prefer-offline || npm install --legacy-peer-deps
 
