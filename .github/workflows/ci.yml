@@ -30,5 +30,14 @@ jobs:
       - name: Typecheck
         run: npm run test
 
+      - name: Secret scan
+        shell: bash
+        run: |
+          set -euo pipefail
+          if git grep -nE '(gigpilot_prod_webhook_secret_2026|-----BEGIN (RSA |OPENSSH )?PRIVATE KEY-----|AKIA[0-9A-Z]{16}|sk_live_[A-Za-z0-9]+|BINANCE_API_(KEY|SECRET)=[^[:space:]]+|GITHUB_WEBHOOK_SECRET=[^$[:space:]]+)' -- ':!*.lock' ':!AWS_DEPLOYMENT.md'; then
+            echo 'Potential credential material found in tracked source.' >&2
+            exit 1
+          fi
+
       - name: Production build
         run: npm run build
