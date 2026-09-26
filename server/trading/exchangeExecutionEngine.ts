@@ -488,7 +488,11 @@ export class ExchangeExecutionEngine implements EngineModule {
     // Dispatch real cancellation to exchange if keys exist
     const cred = this.credentials.get('BYBIT');
     if (cred && cred.isConfigured && order.id) {
-      await this.dispatchBybitCancel(cred, order.symbol, order.id);
+      const exchangeResult = await this.dispatchBybitCancel(cred, order.symbol, order.id);
+      if (!exchangeResult.success) {
+        this.recordError('ERROR', `Bybit cancellation not confirmed for ${orderId}: ${exchangeResult.error || 'unknown exchange error'}`);
+        return { success: false, error: exchangeResult.error || 'Exchange cancellation was not confirmed; local order state preserved.' };
+      }
     }
 
     order.status = 'CANCELLED';
