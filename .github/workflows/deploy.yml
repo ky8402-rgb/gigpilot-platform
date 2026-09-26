@@ -278,7 +278,7 @@ jobs:
           fi
 
       - name: Trigger EC2 Push-to-Deploy Webhook (Fallback)
-        if: steps.ec2_ssh.outputs.delivery != 'SSH'
+        if: steps.ec2_ssh.outcome == 'failure'
         env:
           EC2_HOST: ${{ secrets.EC2_HOST || '' }}
           WEBHOOK_SECRET: ${{ secrets.GITHUB_WEBHOOK_SECRET || secrets.WEBHOOK_SECRET }}
