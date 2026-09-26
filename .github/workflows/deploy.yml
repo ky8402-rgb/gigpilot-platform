@@ -210,6 +210,18 @@ jobs:
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY || secrets.AWS }}
           aws-region: 'ap-south-1'
 
+      - name: Verify Production Database Secret Availability
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL || secrets.NEON_DATABASE_URL || '' }}
+        run: |
+          set -euo pipefail
+          printf '%s\n' "$DATABASE_URL" | grep -Eq '^postgres(ql)?://' || {
+            echo "ERROR: Production deployment is blocked: configure the GitHub Actions secret DATABASE_URL (or NEON_DATABASE_URL)."
+            exit 1
+          }
+          echo "✔ Production database secret is configured."
+          echo "::add-mask::$DATABASE_URL"
+
       - name: Deploy via SSH (Direct EC2 Execution)
         id: ec2_ssh
         continue-on-error: true
