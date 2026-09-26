@@ -425,45 +425,7 @@ jobs:
           mkdir -p ~/.ssh
           python3 scripts/prepare_ec2_key.py
           test -s ~/.ssh/id_rsa
-          ssh -o StrictHostKeyChecking=no -o ConnectTimeout=10 -i ~/.ssh/id_rsa "$EC2_USER@$EC2_HOST" "DATABASE_URL=$(printf '%q' "$DATABASE_URL") bash -s" <<'REMOTE_RUN'
-          set -e
-          cd /home/ubuntu/gigpilot
-          if [ -n "$DATABASE_URL" ]; then
-            touch .env
-            if grep -q '^DATABASE_URL=' .env; then
-              sed -i "s|^DATABASE_URL=.*|DATABASE_URL=\"$DATABASE_URL\"|" .env
-            else
-              echo "DATABASE_URL=\"$DATABASE_URL\"" >> .env
-            fi
-            export DATABASE_URL="$DATABASE_URL"
-          elif [ -f .env ]; then
-            export $(grep -E '^DATABASE_URL=' .env | head -n 1 | xargs) 2>/dev/null || true
-          fi
-          node - <<'NODE'
-          const fs = require("fs");
-          const { Client } = require("pg");
-          let url = (process.env.DATABASE_URL || "").trim();
-          if (!url && fs.existsSync(".env")) {
-            const envContent = fs.readFileSync(".env", "utf8");
-            const match = envContent.match(/^DATABASE_URL=(.+)$/m);
-            if (match) url = match[1].replace(/^["']|["']$/g, "").trim();
-          }
-          if (!url) { console.error("DATABASE_URL is not configured on production host"); process.exit(2); }
-          const client = new Client({ connectionString: url, ssl: url.includes("localhost") ? false : { rejectUnauthorized: false }, connectionTimeoutMillis: 5000 });
-          (async () => {
-            await client.connect();
-            const ping = await client.query("SELECT 1 AS ok, current_database() AS db, current_schema() AS schema");
-            const tables = await client.query("SELECT COUNT(*)::int AS count FROM information_schema.tables WHERE table_schema NOT IN ('pg_catalog','information_schema')");
-            await client.query("BEGIN");
-            await client.query("CREATE TEMP TABLE gigpilot_cert_probe (value integer) ON COMMIT DROP");
-            await client.query("INSERT INTO gigpilot_cert_probe(value) VALUES (1)");
-            const before = await client.query("SELECT COUNT(*)::int AS count FROM gigpilot_cert_probe");
-            await client.query("ROLLBACK");
-            console.log(JSON.stringify({ connectivity: ping.rows[0], applicationTableCount: tables.rows[0].count, transactionRollbackVerified: before.rows[0].count === 1 }));
-            await client.end();
-          })().catch(async err => { console.error("DB probe failed:", err.message); try { await client.end(); } catch {} process.exit(1); });
-NODE
-REMOTE_RUN
+          ssh -o StrictHostKeyChecking=no -o ConnectTimeout=10 -i ~/.ssh/id_rsa "$EC2_USER@$EC2_HOST" "cd /home/ubuntu/gigpilot && DATABASE_URL=$(printf '%q' "$DATABASE_URL") node -" < scripts/verify-ec2-db.cjs
 
       - name: Report EC2 Status to Step Summary
         env:
