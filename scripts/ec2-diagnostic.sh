@@ -162,7 +162,7 @@ echo -e "\n${BOLD}5. Relational Database (RDS PostgreSQL)${NC}"
 if [ -f .env ]; then
   # export variables safely without breaking on complex values
   set -a
-  source <(grep -E '^(DATABASE_URL|POSTGRES_URL|REDIS_URL|PAYPAL_|FREELANCER_)' .env | sed 's/\r$//')
+  source <(grep -E '^(DATABASE_URL|POSTGRES_URL|REDIS_URL|EXCHANGE_)' .env | sed 's/\r$//')
   set +a
 fi
 
@@ -242,24 +242,16 @@ elif [ -n "$DOMAIN" ] && [[ "$DOMAIN" == *"https://"* ]]; then
 fi
 
 # ------------------------------------------------------------------------------
-# 8. EXTERNAL API INTEGRATIONS (PayPal & Freelancer)
+# 8. EXTERNAL API INTEGRATIONS (Crypto Exchange Reachability)
 # ------------------------------------------------------------------------------
 echo -e "\n${BOLD}8. External Partner API Reachability${NC}"
 
-# Freelancer API Ping
-FL_STATUS=$(curl -s -m 5 -o /dev/null -w "%{http_code}" https://www.freelancer.com/api/projects/0.1/projects/active || echo "000")
-if [ "$FL_STATUS" == "200" ] || [ "$FL_STATUS" == "401" ] || [ "$FL_STATUS" == "403" ]; then
-  record_result "Freelancer API" "PASS" "Endpoint reachable (HTTP $FL_STATUS - network link OK)"
+# Bybit Public Market API Ping
+BYBIT_STATUS=$(curl -s -m 5 -o /dev/null -w "%{http_code}" https://api.bybit.com/v5/market/time || echo "000")
+if [ "$BYBIT_STATUS" == "200" ]; then
+  record_result "Bybit Exchange API" "PASS" "Endpoint reachable (HTTP $BYBIT_STATUS - network link OK)"
 else
-  record_result "Freelancer API" "FAIL" "Cannot reach freelancer.com (HTTP $FL_STATUS - check outbound internet NAT/IGW)"
-fi
-
-# PayPal API Ping
-PP_STATUS=$(curl -s -m 5 -o /dev/null -w "%{http_code}" https://api-m.sandbox.paypal.com/v1/oauth2/token || echo "000")
-if [ "$PP_STATUS" == "401" ] || [ "$PP_STATUS" == "200" ]; then
-  record_result "PayPal Sandbox OAuth" "PASS" "PayPal endpoint reachable (HTTP $PP_STATUS - TLS handshake verified)"
-else
-  record_result "PayPal Sandbox OAuth" "FAIL" "Cannot reach PayPal API (HTTP $PP_STATUS)"
+  record_result "Bybit Exchange API" "WARN" "Bybit API ping returned HTTP $BYBIT_STATUS (check outbound internet or geo-routing)"
 fi
 
 # ------------------------------------------------------------------------------

@@ -1,36 +1,36 @@
-# 🚀 GigPilot - Autonomous AI Freelance Engine
+# 🚀 GigPilot - Autonomous Crypto Grid Trading Platform
 
-Production-ready Full-Stack application (React + Express + Node.js) with AWS EC2 & Amplify deployment support, autonomous freelance project scraping, AI proposal generation with Google Gemini, and real-time dashboard telemetry.
-
----
-
-## 🌟 Features
-
-- **Autonomous Bid Proposal Generator**: Powered by Google Gemini 2.5/Flash AI.
-- **Freelance Platform Aggregator**: Scrapes and tracks projects from RemoteOK, Freelancer, and multi-source APIs.
-- **Interactive Analytics Dashboard**: Real-time win rate, earnings, pipeline status, and performance telemetry.
-- **Telegram & Webhook Alerts**: Instant notification dispatcher for newly discovered high-match leads.
-- **Secure Persistence**: PostgreSQL with Prisma ORM and resilient in-memory caching.
+Production-grade Autonomous Crypto Grid Trading Platform featuring live exchange execution (Bybit), adaptive grid placement, quantitative risk guardrails, real-time telemetry, and automated wallet profit sweeping.
 
 ---
 
-## 📡 API Endpoints Spec
+## 🌟 Core Architecture & Features
+
+- **Autonomous Grid Engine**: Geometric and arithmetic grid placement with live order execution and dynamic spread management.
+- **Risk Guardrails & Circuit Breakers**: Max drawdown protection, position size throttling, volatility scaling, and emergency kill switches.
+- **Multi-Level Autonomy**: Configurable from full manual assist (Level 0) to autonomous parameter adaptation (Level 4).
+- **Automated Profit Sweeper**: Real-time monitoring and threshold-based profit extraction to self-custody wallet addresses.
+- **AI Market Analyst**: Server-side Google Gemini 2.5 integration for quantitative market structure analysis and volatility forecasting.
+- **Production DevOps**: Automated dual-target CI/CD deploying Frontend to AWS Amplify and Backend to AWS EC2 with systemd and PM2.
+
+---
+
+## 📡 API Endpoints
 
 | Method | Endpoint | Description |
 |---|---|---|
-| `GET` | `/health` | Health probe: `{"status": "healthy"}` |
-| `GET` | `/api/bids/stats` | Aggregated metrics: `{ total, active, won, earned, win_rate, package_counts }` |
-| `GET` | `/api/bids?limit=50` | Array of placed bids: `[{ id, job_title, company, package, bid_amount, status, submitted_at }, ...]` |
-| `GET` | `/api/leads?limit=20` | Scored leads stream: `[{ job_title, company, source, matched_package, created_at }, ...]` |
-| `GET` | `/api/cron/find-and-bid` | Automated cron to search Freelancer, generate Gemini cover letters & bid |
-| `GET` | `/api/cron/sync-bids` | Automated cron to sync statuses of active bids |
-| `GET` | `/dashboard` | Password-protected admin view (HTTP Basic Auth) |
+| `GET` | `/api/health` | Comprehensive system, database, and trading engine health telemetry |
+| `GET` | `/api/trading/state` | Live trading state, portfolio metrics, active grid, and recent executions |
+| `POST` | `/api/trading/grid/configure` | Deploy or update grid bounds, spacing, and capital allocation |
+| `POST` | `/api/trading/kill-switch` | Global emergency trading halt and open order cancellation |
+| `POST` | `/api/trading/profit-sweep/trigger` | Manually or autonomously extract realized profits to destination wallet |
+| `POST` | `/api/deploy` | GitOps push-to-deploy trigger for AWS EC2 and Amplify synchronization |
 
 ---
 
 ## 🚀 Deployment (AWS EC2 & Amplify)
 
-- **Backend API Service (AWS EC2)**: `https://3-222-149-9.sslip.io`
+- **Backend API Service (AWS EC2)**: `https://35-154-110-156.sslip.io`
 - **Frontend / Client Service**: AWS Amplify production distribution
 
 ---

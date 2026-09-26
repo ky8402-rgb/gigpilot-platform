@@ -1410,18 +1410,8 @@ export async function pushAndDeployAll(options: {
   if (!pushSuccess) {
     addLog('Notice: Push did not complete. Provide a GitHub Personal Access Token (PAT) with repo scope or add your SSH public key.');
   } else {
-    // Automatically trigger GitHub Actions deployment workflow via devops_actions module
-    try {
-      addLog('Triggering GitHub Actions workflow via devops_actions module...');
-      const { onCommitPushed } = await import('./devops_actions.js');
-      const devopsResult = await onCommitPushed({
-        branch,
-        commitMessage: options.commitMessage,
-      });
-      addLog(`DevOps Actions auto-trigger: ${devopsResult.message}`);
-    } catch (devopsErr: any) {
-      addLog(`DevOps Actions auto-trigger note: ${devopsErr.message}`);
-    }
+    // GitHub push event automatically triggers GitHub Actions workflow
+    addLog('GitHub push event delivered. GitHub Actions automated workflow triggered on branch.');
   }
 
   // Step 5: AWS Amplify Frontend Deployment (gigpilot-platform)

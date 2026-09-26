@@ -197,13 +197,6 @@ DATABASE_URL="${NEON_DATABASE_URL}"
 # Redis / Render / ElastiCache Connection
 REDIS_URL=redis://red-daarifid0e5s7392b3k0:6379
 
-# PayPal Payment Gateway & Virtual Terminal (Sandbox / Production Mode)
-PAYPAL_CLIENT_ID="${PAYPAL_CLIENT_ID:-}"
-PAYPAL_CLIENT_SECRET="${PAYPAL_CLIENT_SECRET:-}"
-PAYPAL_MODE=sandbox
-PAYPAL_RECEIVER_EMAIL=kundank4@icloud.com
-PAYPAL_ME_USERNAME=ky8402
-
 # Self-Healing, Python ML Microservice & Telemetry
 ML_SERVICE_URL=http://127.0.0.1:8000
 ML_ENABLED=true

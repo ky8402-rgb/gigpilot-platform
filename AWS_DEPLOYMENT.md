@@ -307,12 +307,8 @@ Regardless of the method chosen, prepare these environment variables:
 | `PORT` | Web server listening port | `3000` |
 | `DATABASE_URL` | PostgreSQL connection string | `postgresql://user:pass@host:5432/dbname` (Neon or AWS RDS) |
 | `GEMINI_API_KEY` | Google Gemini API Key | *(Your API Key)* |
-| `PAYPAL_CLIENT_ID` | PayPal Live REST Client ID | `configured via secret/environment` |
-| `PAYPAL_CLIENT_SECRET` | PayPal Live REST Client Secret | `configured via secret/environment` |
-| `PAYPAL_RECEIVER_EMAIL` | PayPal notification / payout email | `kundank4@icloud.com` |
-| `PAYPAL_ME_USERNAME` | Direct PayPal.Me handle | `ky8402` |
-| `PAYPAL_MODE` | Payment mode | `live` |
-| `FREELANCER_ACCESS_TOKEN` | Freelancer.com API Bearer Token | *(Your Freelancer Token)* |
+| `OWNER_AUTH_PIN` | Owner Authentication PIN | `778899` |
+| `DESTINATION_WALLET_ADDRESS` | Self-custody wallet address for profit sweep | `0x1781...` |
 | `JWT_SECRET` | Secret token for session signing | *(Any random 32+ char string)* |
 | `AUTO_HEAL_ENABLED` | Autonomous AIOps self-healing loop | `true` |
 | `ML_ENABLED` | Predictive failure forecasting | `true` |
@@ -348,10 +344,8 @@ AWS App Runner provides 100% automated backend deployment on every `git push`. T
 Add your production variables in the App Runner console:
 - `NODE_ENV`: `production`
 - `DATABASE_URL`: `${DATABASE_URL:-}`
-- `PAYPAL_CLIENT_ID`: `configured via secret/environment`
-- `PAYPAL_CLIENT_SECRET`: `configured via secret/environment`
-- `PAYPAL_MODE`: `live`
 - `GEMINI_API_KEY`: *(Your Google Gemini API Key)*
+- `EXCHANGE_DEFAULT`: `bybit`
 - `AUTO_HEAL_ENABLED`: `true`
 - `ML_ENABLED`: `true`
 
@@ -427,11 +421,7 @@ NODE_ENV=production
 PORT=3000
 DATABASE_URL=${DATABASE_URL:-}
 GEMINI_API_KEY=your_gemini_key_here
-PAYPAL_CLIENT_ID="${PAYPAL_CLIENT_ID:-}"
-PAYPAL_CLIENT_SECRET="${PAYPAL_CLIENT_SECRET:-}"
-PAYPAL_RECEIVER_EMAIL=kundank4@icloud.com
-PAYPAL_ME_USERNAME=ky8402
-PAYPAL_MODE=live
+EXCHANGE_DEFAULT=bybit
 AUTO_HEAL_ENABLED=true
 ML_ENABLED=true
 EOF
@@ -487,7 +477,7 @@ sudo nginx -t && sudo systemctl restart nginx
 3. Application name: `gigpilot-platform`.
 4. Platform: **Node.js** (Platform branch: **Node.js 20 running on 64bit Amazon Linux 2023**).
 5. Under **Application code**, select **Upload your code** or deploy using the AWS EB CLI (`eb init` & `eb deploy`).
-6. Under **Configuration** &rarr; **Software** &rarr; **Environment properties**, set the required environment variables (`DATABASE_URL`, `PAYPAL_CLIENT_ID`, etc.).
+6. Under **Configuration** &rarr; **Software** &rarr; **Environment properties**, set the required environment variables (`DATABASE_URL`, `OWNER_AUTH_PIN`, etc.).
 7. Click **Create App**.
 
 ---
@@ -499,6 +489,6 @@ Once your AWS service is live, check the health endpoints:
 # Lightweight ping (returns HTTP 200)
 curl https://<YOUR-AWS-URL>/api/health/ping
 
-# Full system diagnostic (PostgreSQL, PayPal OAuth2 REST, ML Ops, Self-Healer)
+# Full system diagnostic (PostgreSQL, Exchange Connectivity, Trading Engine Health)
 curl https://<YOUR-AWS-URL>/api/health
 ```

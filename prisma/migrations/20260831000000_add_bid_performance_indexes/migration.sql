@@ -4,7 +4,7 @@ CREATE TABLE IF NOT EXISTS "Bid" (
     "jobTitle" TEXT,
     "company" TEXT,
     "clientName" TEXT,
-    "platform" TEXT NOT NULL DEFAULT 'freelancer',
+    "platform" TEXT NOT NULL DEFAULT 'exchange',
     "package" TEXT,
     "amount" DOUBLE PRECISION,
     "status" TEXT NOT NULL DEFAULT 'pending',
