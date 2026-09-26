@@ -406,7 +406,7 @@ jobs:
           mkdir -p ~/.ssh
           python3 scripts/prepare_ec2_key.py
           test -s ~/.ssh/id_rsa
-          ssh -o StrictHostKeyChecking=no -o ConnectTimeout=10 -i ~/.ssh/id_rsa "$EC2_USER@$EC2_HOST" "node -" <<'NODE'
+          ssh -o StrictHostKeyChecking=no -o ConnectTimeout=10 -i ~/.ssh/id_rsa "$EC2_USER@$EC2_HOST" "cd /home/ubuntu/gigpilot && node -" <<'NODE'
           const { Client } = require("pg");
           const url = (process.env.DATABASE_URL || "").trim();
           if (!url) { console.error("DATABASE_URL is not configured on production host"); process.exit(2); }
