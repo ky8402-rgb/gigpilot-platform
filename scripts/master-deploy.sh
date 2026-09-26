@@ -41,7 +41,7 @@ COMMIT_MSG=""
 SKIP_SSH=false
 DRY_RUN=false
 
-NEON_DATABASE_URL="postgresql://neondb_owner:npg_L6xTbr0PsJuG@ep-green-bread-ae4bhk9u-pooler.c-2.us-east-2.aws.neon.tech/neondb?sslmode=require&channel_binding=require"
+NEON_DATABASE_URL="${DATABASE_URL:-${NEON_DATABASE_URL:-}}"
 
 print_header() {
   echo -e "${CYAN}${BOLD}"
