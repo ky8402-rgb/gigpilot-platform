@@ -111,11 +111,27 @@ export class TradingStore {
     });
 
     // 6. Background capital sync & order reconciliation from real exchange account
-    this.syncCapitalFromRealExchange();
-    this.exchangeExec.reconcileOpenOrders(this.activeSymbol).catch(() => {});
+    this.syncCapitalFromRealExchange().catch(() => {});
+    this.exchangeExec.reconcileOpenOrders(this.activeSymbol).then(result => {
+      if (result.error) {
+        this.exchangeExec.setOffSwitch(false);
+        this.triggerEmergencyKillSwitch(`Exchange reconciliation failed at startup: ${result.error}`);
+      }
+    }).catch((err: any) => {
+      this.exchangeExec.setOffSwitch(false);
+      this.triggerEmergencyKillSwitch(`Exchange reconciliation failed at startup: ${err?.message || 'unknown error'}`);
+    });
     setInterval(() => {
       this.syncCapitalFromRealExchange().catch(() => {});
-      this.exchangeExec.reconcileOpenOrders(this.activeSymbol).catch(() => {});
+      this.exchangeExec.reconcileOpenOrders(this.activeSymbol).then(result => {
+        if (result.error) {
+          this.exchangeExec.setOffSwitch(false);
+          this.triggerEmergencyKillSwitch(`Exchange reconciliation failed: ${result.error}`);
+        }
+      }).catch((err: any) => {
+        this.exchangeExec.setOffSwitch(false);
+        this.triggerEmergencyKillSwitch(`Exchange reconciliation failed: ${err?.message || 'unknown error'}`);
+      });
     }, 15000);
 
     // 7. Continuous Autonomous AI Revenue Optimizer (Audit -> Decide -> Build -> Auto-Deploy)
