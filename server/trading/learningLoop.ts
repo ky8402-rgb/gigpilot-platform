@@ -154,59 +154,6 @@ export class LearningLoopEngine implements EngineModule {
       };
     }
 
-    // Production is live-only. Never manufacture walk-forward, OOS, paper/shadow,
-    // fill, Sharpe, ROI, drawdown, or slippage evidence.
-    const live = challenger.liveTradingResults;
-    const hasLiveEvidence =
-      Number.isFinite(live.netProfit) &&
-      Number.isFinite(live.totalFees) &&
-      Number.isFinite(live.tradesCount) &&
-      live.tradesCount > 0;
-
-    if (!hasLiveEvidence) {
-      if (challenger.validationPipeline) {
-        challenger.validationPipeline.promotionBlockReason =
-          'Blocked: insufficient real live-execution evidence. No synthetic or paper/shadow results are permitted.';
-      }
-      this.recordError(
-        'WARN',
-        `Candidate '${challenger.name}' blocked from autonomous promotion: insufficient live execution evidence.`
-      );
-      return {
-        success: false,
-        message: 'Candidate promotion blocked until sufficient real live execution evidence is recorded.',
-        challenger,
-        tenureStatus: this.getChampionTenureStatus()
-      };
-    }
-
-    if (!challenger.validationPipeline) {
-      challenger.validationPipeline = this.initDefaultPipeline(challenger);
-    }
-
-    challenger.validationPipeline.promotionBlockReason =
-      'Live evidence exists; measured validation data is required before autonomous promotion.';
-    this.recordError(
-      'WARN',
-      `Candidate '${challenger.name}' retained pending measured live validation evidence; no synthetic stage advancement performed.`
-    );
-
-    return {
-      success: false,
-      message: 'Live evidence detected, but autonomous stage advancement is blocked until measured validation data is attached.',
-      challenger,
-      tenureStatus: this.getChampionTenureStatus()
-    };
-  } {
-    const challenger = this.challengerStrategies.find(s => s.id === challengerId);
-    if (!challenger) {
-      return {
-        success: false,
-        message: `Challenger '${challengerId}' not found in candidate pool.`,
-        tenureStatus: this.getChampionTenureStatus()
-      };
-    }
-
     if (!challenger.validationPipeline) {
       challenger.validationPipeline = this.initDefaultPipeline(challenger);
     }
