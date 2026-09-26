@@ -46,7 +46,7 @@ fi
 EC2_USER="${EC2_USER:-ubuntu}"
 EC2_KEY_FILE="${EC2_KEY_FILE:-}"
 APP_DIR="${APP_DIR:-/home/ubuntu/gigpilot}"
-DATABASE_URL="${DATABASE_URL:-postgresql://neondb_owner:npg_L6xTbr0PsJuG@ep-green-bread-ae4bhk9u-pooler.c-2.us-east-2.aws.neon.tech/neondb?sslmode=require&channel_binding=require}"
+DATABASE_URL="${DATABASE_URL:-}"
 
 # Normalize URLs (strip trailing slash)
 BACKEND_URL="${BACKEND_URL%/}"
