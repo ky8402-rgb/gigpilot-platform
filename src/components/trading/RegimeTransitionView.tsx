@@ -36,6 +36,14 @@ export const RegimeTransitionView: React.FC<RegimeTransitionViewProps> = ({
   onRefresh
 }) => {
 
+  // Live transition state comes from the market-regime payload; simulation controls are intentionally absent.
+  const transition = regime.transition;
+  const metrics = transition?.metrics;
+  const phase = transition?.phase || 'STABLE';
+  const isTransitioning = transition?.isTransitioning ?? false;
+  const sizeMultiplier = transition?.positionSizeMultiplier ?? 1.0;
+  const restrictionStatus = transition?.gridRestrictionStatus ?? 'NORMAL';
+
   const getPhaseColor = (p: RegimeTransitionPhase) => {
     switch (p) {
       case 'BREAKOUT_TESTING':
