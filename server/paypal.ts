@@ -12,8 +12,8 @@ export interface PayPalConfig {
 }
 
 // Verified Production REST API Credentials
-export const VERIFIED_PAYPAL_CLIENT_ID = 'BAAv8rRenc5jlfD6eH_8pvgcU250jXTZCnyPKdBby13EAYRKhCempoPQ3Hj41GEfe2qBMu1P8ZslnbdkIc';
-export const VERIFIED_PAYPAL_CLIENT_SECRET = 'EH8CcxBIVPvFhoAKbL-HN8l_jSdOYzlGA2oahgGs1wPV7bogYK_TE4hIOjPtzOVj-mOUUXVy8uMIt6-N';
+export const VERIFIED_PAYPAL_CLIENT_ID = process.env.PAYPAL_CLIENT_ID || '';
+export const VERIFIED_PAYPAL_CLIENT_SECRET = process.env.PAYPAL_CLIENT_SECRET || '';
 
 // Known placeholder dummy credentials that must not be used for live REST API calls
 const DUMMY_CREDENTIALS = [
