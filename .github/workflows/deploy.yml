@@ -417,6 +417,7 @@ jobs:
           SSH_KEY: ${{ secrets.EC2_SSH_KEY || secrets.GIGPILOT_MUMBAI_EC2 }}
           EC2_HOST: ${{ secrets.EC2_HOST || '' }}
           EC2_USER: ${{ secrets.EC2_USER || 'ubuntu' }}
+          DATABASE_URL: ${{ secrets.DATABASE_URL || secrets.NEON_DATABASE_URL || '' }}
         run: |
           set -euo pipefail
           if [ -z "$EC2_HOST" ] && [ -f deployment/backend-host.txt ]; then EC2_HOST="$(tr -d '\r\n' < deployment/backend-host.txt)"; fi
@@ -424,9 +425,29 @@ jobs:
           mkdir -p ~/.ssh
           python3 scripts/prepare_ec2_key.py
           test -s ~/.ssh/id_rsa
-          ssh -o StrictHostKeyChecking=no -o ConnectTimeout=10 -i ~/.ssh/id_rsa "$EC2_USER@$EC2_HOST" "cd /home/ubuntu/gigpilot && node -" <<'NODE'
+          ssh -o StrictHostKeyChecking=no -o ConnectTimeout=10 -i ~/.ssh/id_rsa "$EC2_USER@$EC2_HOST" "DATABASE_URL=$(printf '%q' "$DATABASE_URL") bash -s" <<'REMOTE_RUN'
+          set -e
+          cd /home/ubuntu/gigpilot
+          if [ -n "$DATABASE_URL" ]; then
+            touch .env
+            if grep -q '^DATABASE_URL=' .env; then
+              sed -i "s|^DATABASE_URL=.*|DATABASE_URL=\"$DATABASE_URL\"|" .env
+            else
+              echo "DATABASE_URL=\"$DATABASE_URL\"" >> .env
+            fi
+            export DATABASE_URL="$DATABASE_URL"
+          elif [ -f .env ]; then
+            export $(grep -E '^DATABASE_URL=' .env | head -n 1 | xargs) 2>/dev/null || true
+          fi
+          node - <<'NODE'
+          const fs = require("fs");
           const { Client } = require("pg");
-          const url = (process.env.DATABASE_URL || "").trim();
+          let url = (process.env.DATABASE_URL || "").trim();
+          if (!url && fs.existsSync(".env")) {
+            const envContent = fs.readFileSync(".env", "utf8");
+            const match = envContent.match(/^DATABASE_URL=(.+)$/m);
+            if (match) url = match[1].replace(/^["']|["']$/g, "").trim();
+          }
           if (!url) { console.error("DATABASE_URL is not configured on production host"); process.exit(2); }
           const client = new Client({ connectionString: url, ssl: url.includes("localhost") ? false : { rejectUnauthorized: false }, connectionTimeoutMillis: 5000 });
           (async () => {
@@ -441,7 +462,8 @@ jobs:
             console.log(JSON.stringify({ connectivity: ping.rows[0], applicationTableCount: tables.rows[0].count, transactionRollbackVerified: before.rows[0].count === 1 }));
             await client.end();
           })().catch(async err => { console.error("DB probe failed:", err.message); try { await client.end(); } catch {} process.exit(1); });
-          NODE
+NODE
+REMOTE_RUN
 
       - name: Report EC2 Status to Step Summary
         env:
