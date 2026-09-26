@@ -522,7 +522,7 @@ export class BybitAdapter {
       // Fetch recent trade fills
       let recentTrades: Fill[] = [];
       try {
-        recentTrades = await this.getRealTrades('BTCUSDT', 20);
+        recentTrades = await this.getRealTrades(undefined, 50);
       } catch {
         // ignore
       }
@@ -627,11 +627,12 @@ export class BybitAdapter {
   /**
    * Private Signed: Real trade execution history from Bybit
    */
-  public async getRealTrades(symbol = 'BTCUSDT', limit = 50): Promise<Fill[]> {
+  public async getRealTrades(symbol?: string, limit = 50): Promise<Fill[]> {
     if (!this.apiKey || !this.apiSecret) return [];
 
-    const norm = this.normalizeSymbol(symbol);
-    const { headers, queryString } = this.signGet({ category: 'spot', symbol: norm, limit });
+    const params: Record<string, any> = { category: 'spot', limit };
+    if (symbol) params.symbol = this.normalizeSymbol(symbol);
+    const { headers, queryString } = this.signGet(params);
     const res = await fetch(`${this.getActiveBaseUrl()}/v5/execution/list?${queryString}`, {
       headers
     });
