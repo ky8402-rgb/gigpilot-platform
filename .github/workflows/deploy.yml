@@ -110,8 +110,26 @@ jobs:
             curl -sS -X POST -d '{}' "$AMPLIFY_WEBHOOK" || true
           fi
           
-          echo "✔ AWS Amplify frontend auto-deploy triggered successfully."
+          echo "✔ AWS Amplify frontend deployment trigger completed."
           echo "Amplify URL: https://main.$AMPLIFY_APP_ID.amplifyapp.com"
+          echo "Waiting for the deployed frontend to expose its exact commit..."
+          FRONTEND_URL="https://main.$AMPLIFY_APP_ID.amplifyapp.com"
+          VERIFIED=0
+          for attempt in $(seq 1 30); do
+            VERSION_JSON="$(curl -fsSL "$FRONTEND_URL/version.json" --max-time 10 || true)"
+            RUNNING_COMMIT="$(node -e 'try { const x=JSON.parse(process.argv[1]); process.stdout.write(x.commit || "") } catch { process.stdout.write("") }' "$VERSION_JSON")"
+            if [ "$RUNNING_COMMIT" = "$GITHUB_SHA" ]; then
+              echo "✔ Amplify frontend is serving the exact GitHub SHA: $RUNNING_COMMIT"
+              VERIFIED=1
+              break
+            fi
+            echo "Amplify commit not verified yet: running=$RUNNING_COMMIT expected=$GITHUB_SHA attempt=$attempt/30"
+            sleep 10
+          done
+          if [ "$VERIFIED" -ne 1 ]; then
+            echo "ERROR: Amplify frontend deployment was triggered but exact-commit live verification failed."
+            exit 1
+          fi
 
       - name: Report Amplify Status to Step Summary
         env:
