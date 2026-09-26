@@ -87,7 +87,9 @@ function hashPassword(password: string, salt: string): string {
   return crypto.pbkdf2Sync(password, salt, 100000, 64, 'sha512').toString('hex');
 }
 
-const PERSISTENT_CONFIG_PATH = path.join(process.cwd(), '.owner-auth-config.json');
+const PERSISTENT_DATA_DIR = process.env.GIGPILOT_DATA_DIR || path.join(process.cwd(), '.gigpilot-data');
+const PERSISTENT_CONFIG_PATH = path.join(PERSISTENT_DATA_DIR, 'owner-auth-config.json');
+const LEGACY_CONFIG_PATH = path.join(process.cwd(), '.owner-auth-config.json');
 
 interface OwnerConfig {
   ownerEmail: string;
@@ -120,10 +122,16 @@ class OwnerAuthManager {
     // Cryptographically secure emergency PIN generation (never default to hardcoded public PIN)
     const secureGeneratedPin = crypto.randomBytes(4).toString('hex');
 
-    if (fs.existsSync(PERSISTENT_CONFIG_PATH)) {
+    const configCandidates = [PERSISTENT_CONFIG_PATH, LEGACY_CONFIG_PATH];
+    for (const configPath of [...new Set(configCandidates)]) {
+      if (!fs.existsSync(configPath)) continue;
       try {
-        const raw = fs.readFileSync(PERSISTENT_CONFIG_PATH, 'utf-8');
+        const raw = fs.readFileSync(configPath, 'utf-8');
         const parsed = JSON.parse(raw);
+        if (configPath !== PERSISTENT_CONFIG_PATH) {
+          fs.mkdirSync(PERSISTENT_DATA_DIR, { recursive: true });
+          fs.writeFileSync(PERSISTENT_CONFIG_PATH, JSON.stringify(parsed, null, 2), { mode: 0o600 });
+        }
         // Scrub any legacy insecure 778899 default PIN
         if (!parsed.emergencyPin || parsed.emergencyPin === '778899') {
           parsed.emergencyPin = envPin || secureGeneratedPin;
@@ -131,7 +139,7 @@ class OwnerAuthManager {
         }
         return parsed;
       } catch (err) {
-        console.error('Failed to load owner config, creating fresh:', err);
+        console.error('Failed to load owner config, trying next location:', err);
       }
     }
 
@@ -151,6 +159,7 @@ class OwnerAuthManager {
     };
 
     try {
+      fs.mkdirSync(PERSISTENT_DATA_DIR, { recursive: true });
       fs.writeFileSync(PERSISTENT_CONFIG_PATH, JSON.stringify(newConfig, null, 2), { mode: 0o600 });
     } catch {
       // Ignored if read-only filesystem
