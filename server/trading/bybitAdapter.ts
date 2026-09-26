@@ -641,17 +641,27 @@ export class BybitAdapter {
     const json = (await res.json()) as any;
     const list = json?.result?.list || [];
 
-    return list.map((t: any) => ({
-      id: String(t.execId),
-      orderId: String(t.orderId),
-      symbol: this.denormalizeSymbol(t.symbol),
-      side: t.side.toUpperCase() as 'BUY' | 'SELL',
-      price: parseFloat(t.execPrice || '0'),
-      amount: parseFloat(t.execQty || '0'),
-      feeUsd: parseFloat(t.execFee || '0'),
-      slippageBps: 0,
-      realizedPnL: 0,
-      timestamp: new Date(Number(t.execTime)).toISOString()
+    return Promise.all(list.map(async (t: any) => {
+      const feeAmount = Math.max(0, parseFloat(t.execFee || '0') || 0);
+      const feeCurrency = String(t.feeCurrency || '').toUpperCase();
+      let feeUsd = feeAmount;
+      if (feeCurrency && !['USD', 'USDT', 'USDC'].includes(feeCurrency) && feeAmount > 0) {
+        const feePrice = await this.getRealPrice(`${feeCurrency}USDT`);
+        feeUsd = feePrice > 0 ? feeAmount * feePrice : 0;
+      }
+
+      return {
+        id: String(t.execId),
+        orderId: String(t.orderId),
+        symbol: this.denormalizeSymbol(t.symbol),
+        side: t.side.toUpperCase() as 'BUY' | 'SELL',
+        price: parseFloat(t.execPrice || '0'),
+        amount: parseFloat(t.execQty || '0'),
+        feeUsd,
+        slippageBps: 0,
+        realizedPnL: 0,
+        timestamp: new Date(Number(t.execTime)).toISOString()
+      };
     }));
   }
 
