@@ -266,9 +266,21 @@ export class TradingStore {
         for (const fill of acct.recentTrades || []) {
           this.profitAccounting.recordFill(fill);
         }
+        return;
       }
-    } catch {
-      // Handled gracefully
+
+      const exchangeCred = this.exchangeExec.getExchangeCredentials().find(c => c.exchange === 'BYBIT');
+      if (exchangeCred?.isConfigured) {
+        const reason = acct.message || `Bybit account state is ${acct.status}`;
+        this.exchangeExec.setOffSwitch(false);
+        this.triggerEmergencyKillSwitch(`Bybit account reconciliation unavailable: ${reason}`);
+      }
+    } catch (err: any) {
+      const exchangeCred = this.exchangeExec.getExchangeCredentials().find(c => c.exchange === 'BYBIT');
+      if (exchangeCred?.isConfigured) {
+        this.exchangeExec.setOffSwitch(false);
+        this.triggerEmergencyKillSwitch(`Bybit account reconciliation failed: ${err?.message || 'unknown error'}`);
+      }
     }
   }
 
