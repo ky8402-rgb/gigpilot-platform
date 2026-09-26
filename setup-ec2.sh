@@ -203,7 +203,11 @@ ML_ENABLED=true
 AUTO_HEAL_ENABLED=true
 
 # GitHub Automated Push-to-Deploy Webhook Secret
-GITHUB_WEBHOOK_SECRET=gigpilot_prod_webhook_secret_2026
+# Secret must be supplied by the operator; never store a default in source.
+GITHUB_WEBHOOK_SECRET="${GITHUB_WEBHOOK_SECRET:-}"
+if [ -z "$GITHUB_WEBHOOK_SECRET" ]; then
+  GITHUB_WEBHOOK_SECRET="$(openssl rand -hex 32)"
+fi
 EOF
 
 chmod 600 "${APP_DIR}/.env"
