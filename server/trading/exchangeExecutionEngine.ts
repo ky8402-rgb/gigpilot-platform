@@ -503,7 +503,11 @@ export class ExchangeExecutionEngine implements EngineModule {
   public async cancelAllOrders(symbol?: string): Promise<number> {
     const cred = this.credentials.get('BYBIT');
     if (cred && cred.isConfigured) {
-      await this.dispatchBybitCancelAll(cred, symbol);
+      const exchangeResult = await this.dispatchBybitCancelAll(cred, symbol);
+      if (!exchangeResult.success) {
+        this.recordError('ERROR', `Bybit bulk cancellation not confirmed: ${exchangeResult.error || 'unknown exchange error'}`);
+        return 0;
+      }
     }
 
     let count = 0;
