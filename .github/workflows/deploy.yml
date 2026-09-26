@@ -214,6 +214,7 @@ jobs:
           SSH_KEY: ${{ secrets.EC2_SSH_KEY || secrets.GIGPILOT_MUMBAI_EC2 }}
           EC2_HOST: ${{ secrets.EC2_HOST || '' }}
           EC2_USER: ${{ secrets.EC2_USER || 'ubuntu' }}
+          DATABASE_URL: ${{ secrets.DATABASE_URL || secrets.NEON_DATABASE_URL || '' }}
           EC2_INSTANCE_ID: ${{ secrets.EC2_INSTANCE_ID }}
         run: |
           if [ -z "$EC2_HOST" ] && [ -f deployment/backend-host.txt ]; then
@@ -266,7 +267,8 @@ jobs:
 
           if [ "$SSH_CONNECTED" -eq 1 ]; then
             echo "Executing remote production deployment on EC2 via scripts/deploy-ec2.sh..."
-            ssh -o StrictHostKeyChecking=no -o ConnectTimeout=20 -i "$SSH_KEY_FILE" "$EC2_USER@$EC2_HOST" "GITHUB_TOKEN='${{ secrets.GITHUB_TOKEN }}' bash -s" < scripts/deploy-ec2.sh
+            printf '%s\n' "$DATABASE_URL" | grep -Eq '^postgres(ql)?://' || { echo "ERROR: DATABASE_URL/NEON_DATABASE_URL GitHub secret is required for production deployment."; exit 1; }
+          ssh -o StrictHostKeyChecking=no -o ConnectTimeout=20 -i "$SSH_KEY_FILE" "$EC2_USER@$EC2_HOST" "GITHUB_TOKEN='${{ secrets.GITHUB_TOKEN }}' DATABASE_URL='$DATABASE_URL' bash -s" < scripts/deploy-ec2.sh
             echo "✔ SSH deployment command finished successfully."
             echo "DEPLOYMENT_DELIVERY=SSH" >> "$GITHUB_ENV"
           else
