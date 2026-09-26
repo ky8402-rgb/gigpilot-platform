@@ -436,7 +436,10 @@ githubRoutes.post('/simulate-webhook', async (req, res) => {
     } = req.body || {};
 
     const deliveryId = `del-sim-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`;
-    const secret = (process.env.GITHUB_WEBHOOK_SECRET || process.env.WEBHOOK_SECRET || 'gigpilot_prod_webhook_secret_2026').trim();
+    const secret = (process.env.GITHUB_WEBHOOK_SECRET || process.env.WEBHOOK_SECRET || '').trim();
+    if (!secret) {
+      return res.status(503).json({ success: false, message: 'Webhook secret is not configured' });
+    }
 
     const payload = {
       ref: `refs/heads/${branch}`,
