@@ -285,7 +285,7 @@ else
       }
     }))")
     
-    WEBHOOK_SECRET="${GITHUB_WEBHOOK_SECRET:-${WEBHOOK_SECRET:-gigpilot_prod_webhook_secret_2026}}"
+    WEBHOOK_SECRET="${GITHUB_WEBHOOK_SECRET:-${WEBHOOK_SECRET:-}}"
     SIG_HEADER=()
     if [[ -n "$WEBHOOK_SECRET" ]]; then
       SIG=$(node -e "
