@@ -333,7 +333,11 @@ fi
 # ==============================================================================
 echo -e "\n${BOLD}[6/7] Testing GitHub Push-to-Deploy Webhook Receiver...${NC}"
 PING_BODY='{"zen":"Production verification ping","hook_id":101010}'
-SECRET_VAL="${GITHUB_WEBHOOK_SECRET:-gigpilot_prod_webhook_secret_2026}"
+SECRET_VAL="${GITHUB_WEBHOOK_SECRET:-}"
+if [ -z "$SECRET_VAL" ]; then
+  echo "GITHUB_WEBHOOK_SECRET is required for webhook verification" >&2
+  exit 1
+fi
 PING_SIG=$(node -e "
   const crypto = require('crypto');
   const secret = process.argv[1] || '';
