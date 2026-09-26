@@ -209,6 +209,7 @@ jobs:
           aws-region: 'ap-south-1'
 
       - name: Deploy via SSH (Direct EC2 Execution)
+        id: ec2_ssh
         continue-on-error: true
         env:
           SSH_KEY: ${{ secrets.EC2_SSH_KEY || secrets.GIGPILOT_MUMBAI_EC2 }}
@@ -271,12 +272,13 @@ jobs:
           { printf 'export DATABASE_URL=%q\n' "$DATABASE_URL"; printf 'export GITHUB_TOKEN=%q\n' "${{ secrets.GITHUB_TOKEN }}"; cat scripts/deploy-ec2.sh; } | ssh -o StrictHostKeyChecking=no -o ConnectTimeout=20 -i "$SSH_KEY_FILE" "$EC2_USER@$EC2_HOST" "bash -s"
             echo "✔ SSH deployment command finished successfully."
             echo "DEPLOYMENT_DELIVERY=SSH" >> "$GITHUB_ENV"
+            echo "delivery=SSH" >> "$GITHUB_OUTPUT"
           else
             echo "SSH direct connection could not be established. Falling back to signed push webhook."
           fi
 
       - name: Trigger EC2 Push-to-Deploy Webhook (Fallback)
-        if: env.DEPLOYMENT_DELIVERY != 'SSH'
+        if: steps.ec2_ssh.outputs.delivery != 'SSH'
         env:
           EC2_HOST: ${{ secrets.EC2_HOST || '' }}
           WEBHOOK_SECRET: ${{ secrets.GITHUB_WEBHOOK_SECRET || secrets.WEBHOOK_SECRET }}
