@@ -142,6 +142,40 @@ jobs:
           echo "- **Auto-Deploy Status:** ✅ Triggered on push to \`${GITHUB_REF_NAME}\`" >> $GITHUB_STEP_SUMMARY
           echo "- **Live URL:** [https://main.$AMPLIFY_APP_ID.amplifyapp.com](https://main.$AMPLIFY_APP_ID.amplifyapp.com)" >> $GITHUB_STEP_SUMMARY
 
+  live-compatibility:
+    needs: [deploy-amplify, deploy-ec2]
+    name: 🔎 Verify Live Frontend/Backend Compatibility
+    runs-on: ubuntu-latest
+    steps:
+      - name: Verify live frontend, backend, CORS, auth boundary, and API contract
+        env:
+          AMPLIFY_APP_ID: ${{ secrets.AMPLIFY_APP_ID || 'd2qe2q720fbn3x' }}
+          EC2_HOST: ${{ secrets.EC2_HOST || '' }}
+        run: |
+          set -euo pipefail
+          if [ -z "$EC2_HOST" ] && [ -f deployment/backend-host.txt ]; then EC2_HOST="$(tr -d '\r\n' < deployment/backend-host.txt)"; fi
+          if [ -z "$EC2_HOST" ]; then echo "ERROR: No production EC2 host configured."; exit 1; fi
+          FRONTEND="https://main.$AMPLIFY_APP_ID.amplifyapp.com"
+          BACKEND="https://${EC2_HOST//./-}.sslip.io"
+          HTML="$(curl -fsSL "$FRONTEND/" --max-time 15)"
+          echo "$HTML" | grep -Eqi '<html|<script|<div' || { echo "ERROR: Live frontend did not return expected HTML."; exit 1; }
+          VERSION="$(curl -fsSL "$FRONTEND/version.json" --max-time 15)"
+          COMMIT="$(node -e 'const x=JSON.parse(process.argv[1]); process.stdout.write(x.commit||"")' "$VERSION")"
+          [ "$COMMIT" = "$GITHUB_SHA" ] || { echo "ERROR: Frontend SHA mismatch: $COMMIT != $GITHUB_SHA"; exit 1; }
+          HEALTH="$(curl -fsSL "$BACKEND/api/health" --max-time 10)"
+          node -e 'const x=JSON.parse(process.argv[1]); if(x.status!=="ok"||x.deployedCommit!==process.argv[2]) process.exit(1)' "$HEALTH" "$GITHUB_SHA"
+          STATE_CODE="$(curl -sS -o /tmp/state.json -w '%{http_code}' -H 'Accept: application/json' "$BACKEND/api/trading/state" --max-time 10)"
+          [ "$STATE_CODE" = "200" ] || { echo "ERROR: Live trading state endpoint returned HTTP $STATE_CODE"; cat /tmp/state.json; exit 1; }
+          node -e 'const j=JSON.parse(require("fs").readFileSync("/tmp/state.json","utf8")); if(j.success!==true) process.exit(1);'
+          RISK_CODE="$(curl -sS -o /tmp/risk.json -w '%{http_code}' -H 'Accept: application/json' "$BACKEND/api/trading/risk" --max-time 10)"
+          [ "$RISK_CODE" = "200" ] || { echo "ERROR: Live risk endpoint returned HTTP $RISK_CODE"; cat /tmp/risk.json; exit 1; }
+          AUTH_STATUS="$(curl -sS -o /tmp/auth-status.json -w '%{http_code}' -H "Origin: $FRONTEND" -H 'Accept: application/json' "$BACKEND/api/auth/status" --max-time 10)"
+          [ "$AUTH_STATUS" = "200" ] || { echo "ERROR: Auth status endpoint returned HTTP $AUTH_STATUS"; cat /tmp/auth-status.json; exit 1; }
+          ORDER_CODE="$(curl -sS -o /tmp/order.json -w '%{http_code}' -X POST -H "Origin: $FRONTEND" -H 'Content-Type: application/json' -d '{}' "$BACKEND/api/trading/order/place" --max-time 10)"
+          case "$ORDER_CODE" in 401|403) echo "✔ Unauthorized order placement rejected with HTTP $ORDER_CODE.";; *) echo "ERROR: Unauthorized order placement returned HTTP $ORDER_CODE"; cat /tmp/order.json; exit 1;; esac
+          OPTIONS_CODE="$(curl -sS -o /tmp/options.txt -w '%{http_code}' -X OPTIONS -H "Origin: $FRONTEND" -H 'Access-Control-Request-Method: GET' "$BACKEND/api/trading/state" --max-time 10)"
+          case "$OPTIONS_CODE" in 200|204) echo "✔ CORS preflight accepted with HTTP $OPTIONS_CODE.";; *) echo "ERROR: CORS preflight returned HTTP $OPTIONS_CODE"; cat /tmp/options.txt; exit 1;; esac
+          echo "✔ Live frontend/backend compatibility smoke tests passed for $GITHUB_SHA."
   deploy-ec2:
     needs: wait-for-ci
     name: 🛡️ Deploy Backend (AWS EC2 - gigpilot-backend)
