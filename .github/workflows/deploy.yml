@@ -147,6 +147,9 @@ jobs:
     name: 🔎 Verify Live Frontend/Backend Compatibility
     runs-on: ubuntu-latest
     steps:
+      - name: Checkout Source Code
+        uses: actions/checkout@v4
+
       - name: Verify live frontend, backend, CORS, auth boundary, and API contract
         env:
           AMPLIFY_APP_ID: ${{ secrets.AMPLIFY_APP_ID || 'd2qe2q720fbn3x' }}
