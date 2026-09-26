@@ -1,5 +1,7 @@
 import express from 'express';
 import crypto from 'crypto';
+import fs from 'fs';
+import path from 'path';
 import {
   getSSHStatus,
   getGitRepoStatus,
@@ -377,6 +379,15 @@ githubRoutes.post('/webhook', async (req: any, res) => {
       },
       tags: ['gitops', 'github', 'webhook', 'push', branch, 'sync'],
     });
+
+    // Record deployed commit SHA immediately so health endpoint reflects new release
+    if (commitHash && /^[0-9a-f]{40}$/i.test(commitHash)) {
+      try {
+        const commitDir = path.join(process.cwd(), '.gigpilot-data');
+        if (!fs.existsSync(commitDir)) fs.mkdirSync(commitDir, { recursive: true });
+        fs.writeFileSync(path.join(commitDir, 'deployed-commit.txt'), commitHash, 'utf8');
+      } catch {}
+    }
 
     // Immediate response to GitHub to prevent HTTP timeout
     res.status(202).json({

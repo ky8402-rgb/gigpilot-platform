@@ -1147,6 +1147,16 @@ export async function executePushToDeploy(options: {
       addLog(`Fallback result: ${(fallbackOut || 'Updated').trim()}`);
     }
 
+    // Record deployed commit SHA immediately so health endpoint reflects new release
+    try {
+      const commitToRecord = options.commitHash || (await execPromise('git rev-parse HEAD', { env })).stdout.trim();
+      if (commitToRecord && /^[0-9a-f]{40}$/i.test(commitToRecord)) {
+        const commitDir = path.join(process.cwd(), '.gigpilot-data');
+        if (!fs.existsSync(commitDir)) fs.mkdirSync(commitDir, { recursive: true });
+        fs.writeFileSync(path.join(commitDir, 'deployed-commit.txt'), commitToRecord, 'utf8');
+      }
+    } catch {}
+
     // Step 2: Build project artifacts if build script exists
     addLog('Checking build requirements and compiling production bundle...');
     try {

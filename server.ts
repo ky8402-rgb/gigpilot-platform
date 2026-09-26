@@ -81,6 +81,20 @@ app.get("/api/health", (req, res) => {
   } catch {
     deployedCommit = null;
   }
+
+  if (!deployedCommit) {
+    if (process.env.DEPLOYED_COMMIT && /^[0-9a-f]{40}$/i.test(process.env.DEPLOYED_COMMIT.trim())) {
+      deployedCommit = process.env.DEPLOYED_COMMIT.trim();
+    } else if (process.env.GITHUB_SHA && /^[0-9a-f]{40}$/i.test(process.env.GITHUB_SHA.trim())) {
+      deployedCommit = process.env.GITHUB_SHA.trim();
+    } else {
+      try {
+        const { execSync } = require("child_process");
+        const gitSha = execSync("git rev-parse HEAD", { timeout: 2000, stdio: ["ignore", "pipe", "ignore"] }).toString().trim();
+        if (/^[0-9a-f]{40}$/i.test(gitSha)) deployedCommit = gitSha;
+      } catch {}
+    }
+  }
   res.json({
     status: "ok",
     service: "Autonomous Crypto Grid Trading Platform",
