@@ -7,7 +7,7 @@ import { EngineId, SupportedExchange } from './types.js';
 export const tradingRouter = Router();
 
 // 1. Master System State
-tradingRouter.get('/state', (req: Request, res: Response) => {
+tradingRouter.get('/state', requireOwnerAuth, (req: Request, res: Response) => {
   try {
     const store = globalTradingStore;
     const livePair = store.dataEngine.getPairData(store.activeSymbol);
@@ -111,7 +111,7 @@ tradingRouter.post('/engines/:id/clear-errors', requireOwnerAuth, (req: Request,
 });
 
 // 5. Exchange Credentials Management (Trade-Only Keys for Bybit)
-tradingRouter.get('/exchanges/credentials', (req: Request, res: Response) => {
+tradingRouter.get('/exchanges/credentials', requireOwnerAuth, (req: Request, res: Response) => {
   try {
     const creds = globalTradingStore.exchangeExec.getExchangeCredentials();
     return res.json({
@@ -580,7 +580,7 @@ tradingRouter.post('/research/analyze', async (req: Request, res: Response) => {
 });
 
 // 17. Profit Sweep Subsystem
-tradingRouter.get('/sweep/info', async (req: Request, res: Response) => {
+tradingRouter.get('/sweep/info', requireOwnerAuth, async (req: Request, res: Response) => {
   const store = globalTradingStore;
   const confirmed = await store.sweeper.reconcilePendingSweeps();
   for (const sweep of confirmed) store.profitAccounting.recordSweepExecuted(sweep.amountUsd || sweep.grossSweepAmount || 0, sweep.feePaidUsd || sweep.networkFeeUsd || 0);
@@ -647,7 +647,7 @@ tradingRouter.post('/risk/circuit-breaker/reset', requireOwnerAuth, (req: Reques
 });
 
 // 19. Audit Logs & System Updates
-tradingRouter.get('/audit-logs', (req: Request, res: Response) => {
+tradingRouter.get('/audit-logs', requireOwnerAuth, (req: Request, res: Response) => {
   res.json({
     success: true,
     logs: globalTradingStore.monitor.getAuditLogs()
@@ -745,7 +745,7 @@ tradingRouter.all(['/auth/logout', '/auth/logout/', '/logout', '/logout/'], (req
 });
 
 // 21. Real Live Exchange Assets & Spot Balances
-tradingRouter.get('/assets', async (req: Request, res: Response) => {
+tradingRouter.get('/assets', requireOwnerAuth, async (req: Request, res: Response) => {
   try {
     const force = req.query.refresh === 'true';
     const accountState = await bybitAdapter.getRealAccountState(force);
