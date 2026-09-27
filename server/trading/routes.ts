@@ -22,7 +22,11 @@ tradingRouter.get('/state', requireOwnerAuth, (req: Request, res: Response) => {
       ? (latestDecision.rejectionReason || latestDecision.gates?.edge?.reason || latestDecision.rationale)
       : (latestDecision?.rationale || 'Waiting for the next authoritative strategy decision.');
 
-    const isKillActive = store.GLOBAL_KILL_SWITCH_ACTIVE || store.killSwitch.getState().isActive;
+    const killState = store.killSwitch.getState();
+    const startupSafetyLatch = killState.isActive &&
+      killState.triggeredBy === 'RISK_ENGINE' &&
+      killState.reason?.startsWith('GLOBAL_KILL_SWITCH_ACTIVE=true on startup:');
+    const isKillActive = store.GLOBAL_KILL_SWITCH_ACTIVE || killState.isActive;
     const failClosedStatus = store.monitor.isSystemFailClosed();
     const engines = store.monitor.getAllEngineHealth();
 
@@ -35,9 +39,10 @@ tradingRouter.get('/state', requireOwnerAuth, (req: Request, res: Response) => {
       botsDisabled: store.activeBotsDisabled || isKillActive,
       activeBotsCount: isKillActive ? 0 : (store.autonomyLevel > 0 ? 1 : 0),
       autonomousBot: {
-        status: isKillActive ? 'BLOCKED' : (store.autonomousBotRunning ? 'RUNNING' : 'PAUSED'),
+        status: (!startupSafetyLatch && isKillActive) ? 'BLOCKED' : (store.autonomousBotRunning ? 'RUNNING' : 'PAUSED'),
         allocatedCapitalUsd: store.autonomousAllocatedCapitalUsd,
         startedAt: store.autonomousStartedAt || null,
+        startupSafetyLatch,
         currentNetEdgeBps,
         decisionReason,
         requiredNetEdgeBps: store.risk.getConfig().minimum_edge_threshold ?? store.risk.getConfig().minExpectedNetEdgeBps ?? 4.0
