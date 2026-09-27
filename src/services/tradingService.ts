@@ -322,6 +322,20 @@ export async function configureGrid(config: {
   return res;
 }
 
+export async function fetchOrderPreview(order: {
+  symbol: string;
+  side: 'BUY' | 'SELL';
+  type: 'LIMIT' | 'MARKET';
+  price: number;
+  amount: number;
+}): Promise<{ success: boolean; symbol: string; currentPrice: number; estimatedExecutionPrice: number; estimatedFeeUsd: number; expectedNetEdge: any; serverTime: string; error?: string }> {
+  return await fetchWithFailover('/order/preview', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(order) });
+}
+
+export async function placeProtectiveExit(spec: { symbol: string; kind: 'TAKE_PROFIT' | 'STOP_LOSS'; triggerPrice: number; amount: number }): Promise<{ success: boolean; orderId?: string; error?: string }> {
+  return await fetchWithFailover('/position/protection', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(spec) });
+}
+
 export async function placeManualOrder(order: {
   symbol: string;
   side: 'BUY' | 'SELL';
