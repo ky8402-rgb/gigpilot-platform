@@ -234,6 +234,16 @@ console.log('\n[4] Off-switch fail-closed behavior');
   });
 }
 
+// ---- Health truthfulness ----
+console.log('\n[6] Profit optimizer health truthfulness');
+{
+  const opt = new AutonomousProfitOptimizer();
+  process.env.GEMINI_API_KEY = 'test-only';
+  t('health is DEGRADED before evidence-backed audit', () => assert.equal(opt.healthCheck().status, 'DEGRADED'));
+  opt.conductRevenueAudit({ capital: { ...baseCap, netRealizedProfit: 120.5, grossProfit: 148.5, totalTradingFees: 28 }, grid: grid(0.72), regime: regime(), midPrice: 60000, costEvidence });
+  t('health becomes HEALTHY only after evidence-backed audit', () => assert.equal(opt.healthCheck().status, 'HEALTHY'));
+}
+
 // ---- Post-cost evidence regression ----
 console.log('\n[5] Authoritative post-cost evidence');
 {
