@@ -134,7 +134,7 @@ export class AutonomousProfitOptimizer implements EngineModule {
   }
 
   private saveDecision(action: AutonomousOptimizationDecision['decision'], confidence: number, rationale: string, expectedEffect: string, applied: boolean, previousParams?: unknown, proposedParams?: unknown, builtStrategy?: AutonomousStrategyBuild, audit?: RevenueAuditReport, allocation?: StrategyAllocationDecision): AutonomousOptimizationDecision {
-    const result: AutonomousOptimizationDecision = { id: `opt_${Date.now()}`, timestamp: new Date().toISOString(), decision: action, confidence, rationale, expectedEffect, applied, previousParams, proposedParams, builtStrategy, auditReport: audit, strategyAllocation: allocation };
+    const result: AutonomousOptimizationDecision = { id: `opt_${Date.now()}`, timestamp: new Date().toISOString(), objective: 'NET_REALIZED_PROFIT_AFTER_FEES', decision: action, confidence, reason: rationale, expectedEffect, applied, previousParams, proposedParams, builtStrategy, auditReport: audit, strategyAllocation: allocation };
     this.decisions.unshift(result);
     if (this.decisions.length > 100) this.decisions.pop();
     this.lastHeartbeat = new Date().toISOString();
