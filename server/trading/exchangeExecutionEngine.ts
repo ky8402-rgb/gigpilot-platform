@@ -553,6 +553,21 @@ export class ExchangeExecutionEngine implements EngineModule {
     return count;
   }
 
+  public async cancelNewEntryOrders(symbol?: string): Promise<number> {
+    const candidates = Array.from(this.openOrders.values()).filter((ord) =>
+      ord.isGridOrder &&
+      ord.side === 'BUY' &&
+      (!symbol || ord.symbol === symbol)
+    );
+
+    let count = 0;
+    for (const order of candidates) {
+      const result = await this.cancelOrder(order.id);
+      if (result.success) count++;
+    }
+    return count;
+  }
+
   /** Place a live Spot protective exit on Bybit. This is a real exchange order; no simulated fill is created. */
   public async executeProtectiveExit(spec: { symbol: string; amount: number; triggerPrice: number; kind: 'TAKE_PROFIT' | 'STOP_LOSS'; }): Promise<{ success: boolean; orderId?: string; error?: string }> {
     if (!this.enabled) return { success: false, error: 'EXCHANGE_EXECUTION_ENGINE_OFF: Protective exits are disabled.' };

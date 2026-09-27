@@ -578,6 +578,15 @@ export interface MasterTradingState {
   GLOBAL_KILL_SWITCH_ACTIVE?: boolean;
   botsDisabled?: boolean;
   activeBotsCount?: number;
+  autonomousBot?: {
+    status: 'RUNNING' | 'PAUSED' | 'BLOCKED';
+    allocatedCapitalUsd: number;
+    startedAt?: string | null;
+    startupSafetyLatch: boolean;
+    currentNetEdgeBps: number | null;
+    decisionReason: string;
+    requiredNetEdgeBps: number;
+  };
   failClosedStatus?: { failClosed: boolean; downEngines: string[] };
   engines?: EngineHealth[];
   killSwitch: {
