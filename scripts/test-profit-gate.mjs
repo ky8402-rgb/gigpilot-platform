@@ -234,7 +234,7 @@ console.log('\n[4] Off-switch fail-closed behavior');
   });
 }
 
-// ---- Health truthfulness ----
+// ---- Health truthfulness: HEALTHY requires fresh post-cost evidence ----
 console.log('\n[6] Profit optimizer health truthfulness');
 {
   const opt = new AutonomousProfitOptimizer();
