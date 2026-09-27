@@ -54,6 +54,18 @@ if [ -f "/tmp/gigpilot.env.bak" ]; then
   cp -f /tmp/gigpilot.env.bak "$APP_DIR/.env" 2>/dev/null || true
 fi
 
+# Configure GEMINI_API_KEY if supplied
+if [ -n "${GEMINI_API_KEY:-}" ]; then
+  umask 077
+  touch "$APP_DIR/.env"
+  if grep -q '^GEMINI_API_KEY=' "$APP_DIR/.env"; then
+    sed -i "s|^GEMINI_API_KEY=.*|GEMINI_API_KEY=\"$GEMINI_API_KEY\"|" "$APP_DIR/.env"
+  else
+    printf '%s\n' "GEMINI_API_KEY=\"$GEMINI_API_KEY\"" >> "$APP_DIR/.env"
+  fi
+  echo "✔ GEMINI_API_KEY updated in $APP_DIR/.env"
+fi
+
 # Require a production database connection for live persistence. The value is supplied
 # by the deployment workflow from GitHub Secrets and is never committed to source.
 if [ -n "${DATABASE_URL:-}" ]; then
