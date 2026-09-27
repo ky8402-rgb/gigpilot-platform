@@ -48,8 +48,10 @@ export class AutonomousProfitOptimizer implements EngineModule {
   private readonly strategyBuilder = new AutonomousStrategyBuilder();
 
   public healthCheck(): EngineHealth {
-    const hasKey = Boolean(process.env.GEMINI_API_KEY);
-    return { id: this.id, name: this.name, status: !this.enabled ? 'OFF' : (!hasKey ? 'DEGRADED' : this.status), enabled: this.enabled, latencyMs: this.latencyMs, lastHeartbeat: this.lastHeartbeat, errorCount: this.errorSurface.length, lastError: this.errorSurface[0]?.message, errorSurface: this.errorSurface.slice(0, 10), details: { objective: 'NET_REALIZED_PROFIT_AFTER_FEES', autonomousDecisioning: true, autonomousBuild: true, autoApplyEnabled: this.autoApplyEnabled, sourceData: 'LIVE_PRODUCTION_ONLY', decisionsCount: this.decisions.length, strategyBuildsCount: this.strategyBuilder.getBuilds().length, revenueEfficiencyScore: this.latestAuditReport?.revenueEfficiencyScore ?? 0, activeRevenueLeaksCount: this.latestAuditReport?.leaks.length ?? 0 } };
+    const hasKey = Boolean(process.env.GEMINI_API_KEY?.trim());
+    const hasFreshPostCostEvidence = Boolean(this.latestAuditReport?.expectedNetEdge);
+    const operational = hasKey && hasFreshPostCostEvidence && this.status === 'HEALTHY';
+    return { id: this.id, name: this.name, status: !this.enabled ? 'OFF' : (operational ? 'HEALTHY' : 'DEGRADED'), enabled: this.enabled, latencyMs: this.latencyMs, lastHeartbeat: this.lastHeartbeat, errorCount: this.errorSurface.length, lastError: this.errorSurface[0]?.message, errorSurface: this.errorSurface.slice(0, 10), details: { objective: 'NET_REALIZED_PROFIT_AFTER_FEES_AND_ALL_VERIFIED_COSTS', autonomousDecisioning: true, autonomousBuild: true, autoApplyEnabled: this.autoApplyEnabled, sourceData: 'LIVE_PRODUCTION_ONLY', decisionsCount: this.decisions.length, strategyBuildsCount: this.strategyBuilder.getBuilds().length, revenueEfficiencyScore: this.latestAuditReport?.revenueEfficiencyScore ?? 0, activeRevenueLeaksCount: this.latestAuditReport?.leaks.length ?? 0, geminiConfigured: hasKey, freshPostCostEvidence: hasFreshPostCostEvidence, healthRequirement: 'HEALTHY only after a fresh evidence-backed audit and required Gemini dependency are operational' } };
   }
 
   public getErrorSurface(): EngineErrorRecord[] { return [...this.errorSurface]; }
