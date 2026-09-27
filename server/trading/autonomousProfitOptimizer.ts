@@ -121,20 +121,20 @@ export class AutonomousProfitOptimizer implements EngineModule {
     const now = Date.now();
     const midPrice = input.midPrice && input.midPrice > 0 ? input.midPrice : (input.grid ? (input.grid.upperBoundary + input.grid.lowerBoundary) / 2 : 0);
     const auditReport = this.conductRevenueAudit({ capital: input.capital, grid: input.grid, regime: input.regime, midPrice });
-    if (!this.enabled || !input.systemHealthy || !input.grid || !auditReport.expectedNetEdge?.isTradeable || input.regime.regime === 'UNKNOWN') return this.saveDecision('PAUSE_OPTIMIZATION', 1, 'Fail-closed: live system health, fresh regime data, active grid, and positive verified net edge are required.', 'Zero live parameter mutation.', false, undefined, undefined, undefined, auditReport);
+    if (!this.enabled || !input.systemHealthy || !input.grid || !auditReport.expectedNetEdge?.isTradeable || input.regime.regime === 'UNKNOWN') return this.saveDecision('PAUSE_OPTIMIZATION', 1, 'Fail-closed: live system health, fresh regime data, active grid, and positive verified net edge are required.', 'Zero live parameter mutation.', false, auditReport);
     if (!input.forceImmediate && now - this.lastRunAt < 25000 && this.decisions[0]) return this.decisions[0];
     this.lastRunAt = now;
     const strategyAllocation = this.computeStrategyAllocations({ capital: input.capital, regime: input.regime, midPrice, edge: auditReport.expectedNetEdge, champion: input.champion, gridCapitalUsd: input.grid.totalAllocatedUsd });
     this.latestStrategyAllocation = strategyAllocation;
     const topCandidate = strategyAllocation.strategies[0];
-    if (!topCandidate) return this.saveDecision('PAUSE_OPTIMIZATION', 1, 'No strategy has sufficient verified live evidence for autonomous capital routing.', 'Zero live parameter mutation.', false, undefined, undefined, undefined, auditReport, strategyAllocation);
+    if (!topCandidate) return this.saveDecision('PAUSE_OPTIMIZATION', 1, 'No strategy has sufficient verified live evidence for autonomous capital routing.', 'Zero live parameter mutation.', false, auditReport, strategyAllocation);
     const ai = this.getAiClient();
     void ai;
-    return this.saveDecision('ALLOCATE_CAPITAL', 0.92, strategyAllocation.riskAdjustedRationale, 'Maintain only the verified champion allocation; no risk increase.', false, undefined, undefined, undefined, auditReport, strategyAllocation);
+    return this.saveDecision('ALLOCATE_CAPITAL', 0.92, strategyAllocation.riskAdjustedRationale, 'Maintain only the verified champion allocation; no risk increase.', false, auditReport, strategyAllocation);
   }
 
-  private saveDecision(action: AutonomousOptimizationDecision['decision'], confidence: number, rationale: string, expectedEffect: string, applied: boolean, previousParams?: unknown, proposedParams?: unknown, builtStrategy?: AutonomousStrategyBuild, audit?: RevenueAuditReport, allocation?: StrategyAllocationDecision): AutonomousOptimizationDecision {
-    const result: AutonomousOptimizationDecision = { id: `opt_${Date.now()}`, timestamp: new Date().toISOString(), objective: 'NET_REALIZED_PROFIT_AFTER_FEES', decision: action, confidence, reason: rationale, expectedEffect, applied, previousParams, proposedParams, builtStrategy, auditReport: audit, strategyAllocation: allocation };
+  private saveDecision(action: AutonomousOptimizationDecision['decision'], confidence: number, rationale: string, expectedEffect: string, applied: boolean, audit?: RevenueAuditReport, allocation?: StrategyAllocationDecision): AutonomousOptimizationDecision {
+    const result: AutonomousOptimizationDecision = { id: `opt_${Date.now()}`, timestamp: new Date().toISOString(), objective: 'NET_REALIZED_PROFIT_AFTER_FEES', decision: action, confidence, reason: rationale, expectedEffect, applied, auditReport: audit, strategyAllocation: allocation };
     this.decisions.unshift(result);
     if (this.decisions.length > 100) this.decisions.pop();
     this.lastHeartbeat = new Date().toISOString();
