@@ -286,9 +286,7 @@ export const TradingDashboard: React.FC<TradingDashboardProps> = ({ onLogout }) 
   };
 
   const activePairInfo = pairs.find(p => p.symbol.replace(/[\/\-_]/g, '').toUpperCase() === state.activeSymbol.replace(/[\/\-_]/g, '').toUpperCase());
-  const activePrice = (pairDetails?.currentPrice && pairDetails.currentPrice > 0)
-    ? pairDetails.currentPrice
-    : (activePairInfo?.price || DEFAULT_PAIRS.find(p => p.symbol.replace(/[\/\-_]/g, '').toUpperCase() === state.activeSymbol.replace(/[\/\-_]/g, '').toUpperCase())?.price || 85859.20);
+  const activePrice = (pairDetails?.currentPrice && pairDetails.currentPrice > 0) ? pairDetails.currentPrice : 0;
 
   return (
     <div className="min-h-screen bg-[#070B14] text-slate-100 flex flex-col font-sans selection:bg-emerald-500 selection:text-black">
