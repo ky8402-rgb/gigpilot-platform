@@ -50,6 +50,9 @@ export class TradingStore {
   public currentRegime: MarketRegime;
   public activeGrid: GridConfiguration | null = null;
   public ownerAuthenticated: boolean = false;
+  public autonomousBotRunning: boolean = false;
+  public autonomousAllocatedCapitalUsd: number = 0;
+  public autonomousStartedAt?: string;
 
   constructor() {
     // 1. Instantiate all 11 modular engines
@@ -475,6 +478,111 @@ export class TradingStore {
         });
       });
     }
+  }
+
+  public async startAutonomousTrading(symbol: string, allocatedCapitalUsd: number): Promise<void> {
+    if (this.GLOBAL_KILL_SWITCH_ACTIVE || this.killSwitch.getState().isActive) {
+      throw new Error('GLOBAL KILL SWITCH is active. Resolve the safety halt before autonomous trading can start.');
+    }
+
+    const norm = this.dataEngine.normalizeSymbol(symbol);
+    const allocation = Number(allocatedCapitalUsd);
+    if (!Number.isFinite(allocation) || allocation <= 0) {
+      throw new Error('Trading capital must be a positive live amount.');
+    }
+
+    const liveData = this.dataEngine.getPairData(norm);
+    if (!liveData || !Number.isFinite(liveData.currentPrice) || liveData.currentPrice <= 0 ||
+        !liveData.orderBook?.bids?.length || !liveData.orderBook?.asks?.length ||
+        !Array.isArray(liveData.candles) || liveData.candles.length < 5) {
+      throw new Error('FAIL-CLOSED: authoritative live price, order book, and minimum candle depth are required before autonomous trading can start.');
+    }
+
+    const failStatus = this.monitor.isSystemFailClosed();
+    if (failStatus.failClosed) {
+      throw new Error(`FAIL-CLOSED: critical engine(s) are degraded or offline: ${failStatus.downEngines.join(', ')}`);
+    }
+    if (this.risk.isCircuitBreakerActive()) {
+      throw new Error('Risk circuit breaker is active. Autonomous trading cannot start.');
+    }
+
+    const cred = this.exchangeExec.getExchangeCredentials().find(c => c.exchange === 'BYBIT');
+    if (!cred?.isConfigured || cred.status !== 'CONNECTED' || !cred.canTrade) {
+      throw new Error(`Bybit trading credentials are not trade-ready (status: ${cred?.status || 'UNCONFIGURED'}).`);
+    }
+
+    const riskConfig = this.risk.getConfig();
+    const availableCash = Number(this.capital.availableCash || 0);
+    const maxByPct = availableCash * (riskConfig.maxCapitalAllocationPct / 100);
+    const maxAllowed = Math.max(0, Math.min(availableCash - riskConfig.minAccountReserveUsd, maxByPct));
+    if (allocation > maxAllowed + 1e-9) {
+      throw new Error(`Allocated capital ${allocation.toFixed(2)} USDT exceeds the current risk-approved maximum ${maxAllowed.toFixed(2)} USDT after reserve and allocation limits.`);
+    }
+
+    const qResult = this.quantEngine.computeSignals(norm, liveData.candles, liveData.orderBook);
+    if (qResult.regime) this.currentRegime = qResult.regime;
+
+    const gridResult = this.gridEngine.generateGrid({
+      symbol: norm,
+      currentPrice: liveData.currentPrice,
+      totalAllocatedUsd: allocation,
+      levelsCount: 16,
+      spacingType: 'GEOMETRIC',
+      volatilityAdjustment: true,
+      trendProtection: true,
+      regime: this.currentRegime,
+      positions: this.exchangeExec.getPositions(),
+      orderBook: liveData.orderBook,
+      candles: liveData.candles,
+      totalEquityUsd: this.capital.totalEquity || this.capital.tradingCapital
+    });
+    if (!gridResult.grid) {
+      throw new Error(gridResult.error || 'Autonomous strategy could not produce a risk-valid grid from live market evidence.');
+    }
+
+    this.activeSymbol = norm;
+    this.activeGrid = gridResult.grid;
+    this.autonomousAllocatedCapitalUsd = allocation;
+    this.autonomousBotRunning = true;
+    this.autonomousStartedAt = new Date().toISOString();
+    this.autonomyLevel = 2;
+    this.activeBotsDisabled = false;
+
+    this.monitor.logAudit({
+      category: 'CONFIG_CHANGE',
+      action: 'AUTONOMOUS_TRADING_STARTED',
+      details: {
+        symbol: norm,
+        allocatedCapitalUsd: allocation,
+        autonomyLevel: this.autonomyLevel,
+        requiredNetEdgeBps: riskConfig.minimum_edge_threshold ?? riskConfig.minExpectedNetEdgeBps ?? 4.0
+      }
+    });
+
+    this.placeGridOrdersInExchange(this.activeGrid, liveData.currentPrice);
+  }
+
+  public async stopAutonomousTrading(): Promise<{ cancelledEntryOrders: number; reconciledCount: number }> {
+    this.autonomousBotRunning = false;
+    this.autonomyLevel = 0;
+    this.activeBotsDisabled = true;
+
+    const cancelledEntryOrders = await this.exchangeExec.cancelNewEntryOrders(this.activeSymbol);
+    const reconciliation = await this.exchangeExec.reconcileOpenOrders(this.activeSymbol);
+    await this.syncCapitalFromRealExchange();
+
+    this.monitor.logAudit({
+      category: 'EMERGENCY_SHUTDOWN',
+      action: 'AUTONOMOUS_TRADING_STOPPED',
+      details: {
+        symbol: this.activeSymbol,
+        cancelledEntryOrders,
+        reconciledCount: reconciliation.reconciledCount,
+        existingPositionsRemainUnderExchangeRiskControls: true
+      }
+    });
+
+    return { cancelledEntryOrders, reconciledCount: reconciliation.reconciledCount };
   }
 
   public setAutonomyLevel(level: AutonomyLevel) {
