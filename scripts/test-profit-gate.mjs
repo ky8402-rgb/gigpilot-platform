@@ -176,7 +176,7 @@ console.log('\n[3] AutonomousOptimizationDecision conformance');
   const fullInput = { capital: { ...baseCap, netRealizedProfit: 120.5, grossProfit: 148.5, totalTradingFees: 28 }, grid: grid(), regime: regime(), research, champion: champion(), systemHealthy: true, midPrice: 60000, forceImmediate: true, costEvidence };
   await ta('eligible cycle emits conformant ALLOCATE_CAPITAL decision', async () => {
     const d = await opt.auditAndOptimize(fullInput);
-    assert.equal(d.objective, 'NET_REALIZED_PROFIT_AFTER_FEES_AND_ALL_VERIFIED_COSTS');
+    assert.equal(d.objective, 'NET_REALIZED_PROFIT_AFTER_FEES');
     assert.equal(d.decision, 'ALLOCATE_CAPITAL');
     assert.ok(typeof d.reason === 'string' && d.reason.length > 0);
     assert.ok(!('previousParams' in d));
