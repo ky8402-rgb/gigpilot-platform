@@ -258,14 +258,15 @@ export class ExchangeExecutionEngine implements EngineModule {
     const timestamp = Date.now().toString();
     const endpoint = 'https://api.bybit.com/v5/order/create';
 
-    const body = {
-      category: 'spot',
-      symbol: rawSymbol,
-      side: spec.side === 'BUY' ? 'Buy' : 'Sell',
-      orderType: spec.type === 'MARKET' ? 'Market' : 'Limit',
-      qty: spec.amount.toString(),
-      price: spec.type === 'LIMIT' ? spec.price.toString() : undefined
+    const body: Record<string, any> = {
+      category: 'spot', symbol: rawSymbol, side: spec.side === 'BUY' ? 'Buy' : 'Sell',
+      orderType: spec.type === 'MARKET' ? 'Market' : 'Limit', qty: spec.amount.toString(),
+      price: spec.type === 'LIMIT' ? spec.price.toString() : undefined,
+      timeInForce: spec.type === 'MARKET' ? 'IOC' : 'GTC'
     };
+    if (spec.triggerPrice) body.triggerPrice = spec.triggerPrice.toString();
+    if (spec.orderFilter) body.orderFilter = spec.orderFilter;
+    if (spec.orderLinkId) body.orderLinkId = spec.orderLinkId;
 
     const bodyStr = JSON.stringify(body);
     const signPayload = `${timestamp}${cred.apiKey}5000${bodyStr}`;
@@ -519,6 +520,20 @@ export class ExchangeExecutionEngine implements EngineModule {
       }
     }
     return count;
+  }
+
+  /** Place a live Spot protective exit on Bybit. This is a real exchange order; no simulated fill is created. */
+  public async executeProtectiveExit(spec: { symbol: string; amount: number; triggerPrice: number; kind: 'TAKE_PROFIT' | 'STOP_LOSS'; }): Promise<{ success: boolean; orderId?: string; error?: string }> {
+    if (!this.enabled) return { success: false, error: 'EXCHANGE_EXECUTION_ENGINE_OFF: Protective exits are disabled.' };
+    const cred = this.credentials.get('BYBIT');
+    if (!cred || !cred.isConfigured) return { success: false, error: 'FAIL-CLOSED: Bybit trade-only API keys are not configured.' };
+    if (!Number.isFinite(spec.amount) || spec.amount <= 0 || !Number.isFinite(spec.triggerPrice) || spec.triggerPrice <= 0) return { success: false, error: 'Protective exit amount and trigger price must be positive live values.' };
+    try {
+      const result = await this.dispatchBybitOrder(cred, { symbol: spec.symbol, side: 'SELL', type: 'MARKET', amount: spec.amount, triggerPrice: spec.triggerPrice, orderFilter: 'StopOrder', orderLinkId: ('gp-' + spec.kind.toLowerCase() + '-' + Date.now()).slice(0, 36) });
+      if (!result.success) return { success: false, error: result.error };
+      this.lastHeartbeat = new Date().toISOString();
+      return { success: true, orderId: result.orderId };
+    } catch (err: any) { this.recordError('ERROR', 'Protective exit dispatch failed: ' + err.message); return { success: false, error: err.message || 'Protective exit dispatch failed' }; }
   }
 
   public getOpenOrders(symbol?: string): Order[] {
