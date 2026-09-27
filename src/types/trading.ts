@@ -582,6 +582,9 @@ export interface MasterTradingState {
     status: 'RUNNING' | 'PAUSED' | 'BLOCKED';
     allocatedCapitalUsd: number;
     startedAt?: string | null;
+    currentNetEdgeBps: number | null;
+    decisionReason: string;
+    requiredNetEdgeBps: number;
   };
   failClosedStatus?: { failClosed: boolean; downEngines: string[] };
   engines?: EngineHealth[];
