@@ -284,7 +284,7 @@ jobs:
           if [ "$SSH_CONNECTED" -eq 1 ]; then
             echo "Executing remote production deployment on EC2 via scripts/deploy-ec2.sh..."
             printf '%s\n' "$DATABASE_URL" | grep -Eq '^postgres(ql)?://' || { echo "ERROR: DATABASE_URL/NEON_DATABASE_URL GitHub secret is required for production deployment."; exit 1; }
-          { printf 'export DATABASE_URL=%q\n' "$DATABASE_URL"; printf 'export GITHUB_TOKEN=%q\n' "${{ secrets.GITHUB_TOKEN }}"; cat scripts/deploy-ec2.sh; } | ssh -o StrictHostKeyChecking=no -o ConnectTimeout=20 -i "$SSH_KEY_FILE" "$EC2_USER@$EC2_HOST" "bash -s"
+          { printf 'export DATABASE_URL=%q\n' "$DATABASE_URL"; printf 'export GEMINI_API_KEY=%q\n' "${{ secrets.GEMINI_API_KEY }}"; printf 'export GITHUB_TOKEN=%q\n' "${{ secrets.GITHUB_TOKEN }}"; cat scripts/deploy-ec2.sh; } | ssh -o StrictHostKeyChecking=no -o ConnectTimeout=20 -i "$SSH_KEY_FILE" "$EC2_USER@$EC2_HOST" "bash -s"
             echo "✔ SSH deployment command finished successfully."
             echo "DEPLOYMENT_DELIVERY=SSH" >> "$GITHUB_ENV"
             echo "delivery=SSH" >> "$GITHUB_OUTPUT"
