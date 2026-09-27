@@ -55,7 +55,7 @@ export const OperatorOverview: React.FC<OperatorOverviewProps> = ({
   const edge = audit?.expectedNetEdge;
   const latestDecision = state.decisionStats?.recentDecisions?.[0];
   const position = state.position;
-  const positionExposure = Math.abs(position?.currentPositionCostUsd ?? 0);
+  const positionExposure = Math.abs(position?.quoteAmount ?? 0);
   const orderExposure = (state.openOrders || []).reduce(
     (sum, order) => sum + Math.max(0, Number(order.costUsd) || Number(order.price * order.amount) || 0),
     0
@@ -170,7 +170,7 @@ export const OperatorOverview: React.FC<OperatorOverviewProps> = ({
             <Target className="h-4 w-4 text-purple-400" />
           </div>
           <div className="text-sm font-black text-purple-200">{state.championStrategy?.name || 'No active strategy'}</div>
-          <div className="mt-0.5 text-[10px] font-mono text-slate-500">{state.championStrategy?.version || '—'} • {state.currentRegime?.type || 'REGIME UNKNOWN'}</div>
+          <div className="mt-0.5 text-[10px] font-mono text-slate-500">{state.championStrategy?.version || '—'} • {state.currentRegime?.regime || 'REGIME UNKNOWN'}</div>
           <div className="mt-3 flex items-center justify-between rounded-lg border border-slate-800 bg-slate-900/60 px-2.5 py-2">
             <span className="text-[10px] text-slate-500">Latest outcome</span>
             <strong className={latestDecision?.finalOutcome === 'DO_NOTHING' ? 'text-amber-300' : 'text-emerald-300'}>
