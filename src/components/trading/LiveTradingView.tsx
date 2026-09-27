@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { AlertTriangle, CheckCircle2, CircleDollarSign, Clock3, LockKeyhole, ShieldCheck, TrendingDown, TrendingUp, X } from 'lucide-react';
 import { MasterTradingState, Position } from '../../types/trading';
-import { fetchOrderPreview, placeManualOrder, placeProtectiveExit } from '../../services/tradingService';
+import { fetchOrderPreview, fetchWithFailover, placeManualOrder, placeProtectiveExit } from '../../services/tradingService';
 
 type Pair = { symbol: string; price: number; change24hPct: number };
 type LiveTradingViewProps = {
@@ -34,6 +34,7 @@ export const LiveTradingView: React.FC<LiveTradingViewProps> = ({
   const [preview, setPreview] = useState<any>(null);
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState<string>('');
+  const [autoTrading, setAutoTrading] = useState<any>(null);
   const [confirm, setConfirm] = useState<null | { action: 'ORDER' | 'TP' | 'SL' | 'CLOSE'; title: string; body: string; run: () => Promise<void> }>(null);
 
   const position = ((state as any).position || null) as Position | null;
@@ -56,6 +57,25 @@ export const LiveTradingView: React.FC<LiveTradingViewProps> = ({
 
   const notional = Number(amount || 0) * (orderType === 'LIMIT' ? Number(limitPrice || 0) : Number(livePrice || 0));
   const realizedNet = ((state as any).recentFills || []).reduce((sum: number, fill: any) => sum + (Number(fill.realizedPnL) || 0), 0);
+
+  useEffect(() => {
+    let cancelled = false;
+    const loadAutoTradingStatus = async () => {
+      if (!isOwnerAuthenticated) {
+        if (!cancelled) setAutoTrading(null);
+        return;
+      }
+      try {
+        const result = await fetchWithFailover<any>('/autonomy/status');
+        if (!cancelled) setAutoTrading(result);
+      } catch {
+        if (!cancelled) setAutoTrading(null);
+      }
+    };
+    loadAutoTradingStatus();
+    const interval = setInterval(loadAutoTradingStatus, 5000);
+    return () => { cancelled = true; clearInterval(interval); };
+  }, [isOwnerAuthenticated]);
 
   useEffect(() => {
     setPreview(null);
@@ -141,6 +161,29 @@ export const LiveTradingView: React.FC<LiveTradingViewProps> = ({
     <div className="mx-auto max-w-6xl space-y-4">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div><div className="text-xs font-bold uppercase tracking-[0.2em] text-slate-500">Live Trading</div><h1 className="text-2xl font-black tracking-tight">Execute → Protect → Close → Realized Net Profit</h1></div>
+
+      {autoTrading && (
+        <section className={`rounded-2xl border p-4 sm:p-5 ${autoTrading.automaticTradingReady ? 'border-emerald-500/40 bg-emerald-950/20' : 'border-amber-500/40 bg-amber-950/20'}`}>
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+            <div>
+              <div className="text-xs font-bold uppercase tracking-[0.18em] text-slate-500">Automatic Trading</div>
+              <div className={`mt-1 text-xl font-black ${autoTrading.automaticTradingReady ? 'text-emerald-300' : 'text-amber-300'}`}>{autoTrading.automaticTradingReady ? 'READY' : 'BLOCKED'}</div>
+              <div className="mt-1 text-sm text-slate-300">{autoTrading.activeSymbol} · Autonomy Level {autoTrading.autonomyLevel}</div>
+            </div>
+            <div className="text-left sm:text-right text-xs text-slate-400">
+              <div>Bybit: <span className={autoTrading.bybitCanTrade ? 'text-emerald-300' : 'text-amber-300'}>{autoTrading.bybitCredentialStatus}</span></div>
+              <div className="mt-1">Live market data: <span className={autoTrading.liveMarketData ? 'text-emerald-300' : 'text-amber-300'}>{autoTrading.liveMarketData ? 'LIVE' : 'UNAVAILABLE'}</span></div>
+              <div className="mt-1">Candle depth: {autoTrading.candleCount}</div>
+            </div>
+          </div>
+          {!autoTrading.automaticTradingReady && autoTrading.blockers?.length > 0 && (
+            <div className="mt-4 rounded-xl border border-amber-500/20 bg-slate-950/30 p-3">
+              <div className="text-xs font-bold uppercase tracking-wider text-amber-200">Why automatic trading is blocked</div>
+              <ul className="mt-2 space-y-1 text-xs text-slate-300">{autoTrading.blockers.map((blocker: string, index: number) => <li key={index}>• {blocker}</li>)}</ul>
+            </div>
+          )}
+        </section>
+      )}
         <div className={`inline-flex items-center gap-2 rounded-full border px-3 py-2 text-xs font-black ${statusClass}`}><span className="h-2 w-2 rounded-full bg-current" />{freshness}<span className="font-normal opacity-70">backend sync</span></div>
       </div>
 
