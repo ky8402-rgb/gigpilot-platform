@@ -470,6 +470,8 @@ export const TradingDashboard: React.FC<TradingDashboardProps> = ({ onLogout }) 
         </div>
       )}
 
+      {isLiveConnected ? (
+        <>
       {/* 2. Backend-sourced operator control surface */}
       <div className="px-4 pt-3">
         <div className="max-w-[1700px] mx-auto">
@@ -858,6 +860,22 @@ export const TradingDashboard: React.FC<TradingDashboardProps> = ({ onLogout }) 
           />
         )}
       </main>
+
+        </>
+      ) : (
+        <div className="flex min-h-[calc(100vh-80px)] items-center justify-center p-6">
+          <div className="w-full max-w-2xl rounded-2xl border border-rose-500/30 bg-rose-950/20 p-6 text-center shadow-2xl">
+            <div className="mx-auto mb-3 flex h-10 w-10 items-center justify-center rounded-full border border-rose-500/40 bg-rose-500/10 text-rose-300">
+              <WifiOff className="h-5 w-5" />
+            </div>
+            <h2 className="text-lg font-black uppercase tracking-wider text-rose-200">LIVE TRADING DATA UNAVAILABLE</h2>
+            <p className="mt-2 text-sm leading-6 text-slate-300">
+              Trading telemetry and controls are withheld until the authenticated backend provides a live state. Demo/default balances, prices, orders, positions, profit, and strategy data are not shown as production truth.
+            </p>
+            <div className="mt-4 text-[11px] font-mono uppercase tracking-wider text-slate-500">Fail-closed UI • refresh will retry automatically</div>
+          </div>
+        </div>
+      )}
 
       {/* 6. Single Owner Authentication & TOTP Modal */}
       <OwnerAuthModal
