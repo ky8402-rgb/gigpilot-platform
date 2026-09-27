@@ -1,6 +1,6 @@
 /**
  * Characterization tests for the autonomous profit gate.
- * Zero-dependency Node runner: node scripts/test-profit-gate.mjs
+ * Run after npm ci: node scripts/test-profit-gate.mjs (uses the tsx dev dependency).
  * These pin the profit-critical invariants that CI must protect:
  *   1. Net-edge formula and the 4.0 bps tradeability hurdle.
  *   2. Fail-closed allocation gating when live evidence is insufficient.
@@ -8,18 +8,15 @@
  *   4. AutonomousOptimizationDecision shape conformance on every decision path.
  *   5. Off-switch and system-health fail-closed behavior.
  * Any change that breaks these invariants must fail CI.
+ * Fixtures below are synthetic test data, never production performance evidence.
  */
 import assert from 'node:assert/strict';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import path from 'node:path';
-import { createRequire } from 'node:module';
+import { register } from 'tsx/esm/api';
 
-const require = createRequire(import.meta.url);
 const here = path.dirname(fileURLToPath(import.meta.url));
-
-const tsx = require.resolve('tsx', { paths: [path.join(here, '..')] });
-const { register } = require(tsx);
-register();
+const unregister = register();
 const optimizerUrl = pathToFileURL(path.join(here, '..', 'server', 'trading', 'autonomousProfitOptimizer.ts')).href;
 const { AutonomousProfitOptimizer } = await import(optimizerUrl);
 
@@ -73,7 +70,7 @@ const champion = (over = {}) => ({
   id: 'sv_1', name: 'Champion Grid', version: 'v1', type: 'TREND_GRID', status: 'CHAMPION',
   createdAt: new Date().toISOString(), reasonForChange: 'genesis',
   parameters: { upperBoundary: 65000, lowerBoundary: 55000, gridLevels: 12, spacingType: 'GEOMETRIC', gridSpacingPct: 0.72 },
-  backtestResults: perf(), liveTradingResults: perf(), validationScore: 75, ...over
+  backtestResults: perf(), liveTradingResults: perf(), validationScore: 75, validationPipeline: pipeline(), ...over
 });
 const research = [];
 
@@ -133,6 +130,13 @@ console.log('\n[2] Fail-closed allocation gating');
     assert.equal(alloc.strategies.length, 0);
     assert.equal(alloc.applied, false);
   });
+  t('missing validation pipeline -> empty allocation despite positive profit', () => {
+    const ch = champion({ validationPipeline: undefined });
+    const alloc = opt.computeStrategyAllocations({ capital: cap, regime: regime(), edge: { expectedNetEdgeBps: 10 }, champion: ch });
+    assert.equal(alloc.strategies.length, 0);
+    assert.equal(alloc.applied, false);
+    assert.equal(alloc.rebalanceRequired, false);
+  });
   t('edge at/below 4.0 bps -> empty allocation regardless of champion quality', () => {
     const alloc = opt.computeStrategyAllocations({ capital: cap, regime: regime(), edge: { expectedNetEdgeBps: 4.0 }, champion: champion() });
     assert.equal(alloc.strategies.length, 0);
@@ -165,6 +169,7 @@ console.log('\n[2] Fail-closed allocation gating');
     assert.equal(alloc.strategies.length, 1);
     assert.equal(alloc.strategies[0].action, 'MAINTAIN');
     assert.ok(alloc.strategies[0].metrics.meetsMinimumEdgeThreshold);
+    assert.equal(alloc.applied, false);
   });
 }
 
@@ -182,6 +187,13 @@ console.log('\n[3] AutonomousOptimizationDecision conformance');
     assert.ok(!('proposedParams' in d));
     assert.ok(!('builtStrategy' in d));
     assert.ok(d.auditReport && d.auditReport.expectedNetEdge);
+    assert.equal(d.applied, false);
+  });
+  await ta('missing validation pipeline pauses optimization without applying allocation', async () => {
+    const d = await opt.auditAndOptimize({ ...fullInput, champion: champion({ validationPipeline: undefined }) });
+    assert.equal(d.decision, 'PAUSE_OPTIMIZATION');
+    assert.equal(d.applied, false);
+    assert.equal(d.strategyAllocation.strategies.length, 0);
   });
   await ta('fail-closed cycle emits conformant PAUSE_OPTIMIZATION decision', async () => {
     const d = await opt.auditAndOptimize({ ...fullInput, grid: null });
@@ -226,6 +238,7 @@ console.log('\n[4] Off-switch fail-closed behavior');
   });
 }
 
+unregister();
 console.log(`\nProfit-gate characterization: ${passed} passed, ${failures.length} failed`);
 if (failures.length > 0) {
   console.error('\nFAILED assertions:');
