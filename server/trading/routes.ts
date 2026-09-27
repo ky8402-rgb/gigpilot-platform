@@ -111,12 +111,34 @@ tradingRouter.post('/engines/:id/clear-errors', requireOwnerAuth, (req: Request,
 });
 
 // 5. Exchange Credentials Management (Trade-Only Keys for Bybit)
-tradingRouter.get('/exchanges/credentials', requireOwnerAuth, (req: Request, res: Response) => {
+tradingRouter.get('/exchanges/credentials', requireOwnerAuth, async (req: Request, res: Response) => {
   try {
-    const creds = globalTradingStore.exchangeExec.getExchangeCredentials();
+    const current = globalTradingStore.exchangeExec.getExchangeCredentials();
+    const bybit = current.find(c => c.exchange === 'BYBIT');
+
+    // Keys loaded from disk/environment start in VALIDATING state. Perform exactly one
+    // authenticated live check before exposing a definitive connection state.
+    if (bybit?.status === 'VALIDATING') {
+      const accountState = await bybitAdapter.getRealAccountState(true);
+      const validationStatus =
+        accountState.status === 'CONNECTED'
+          ? 'CONNECTED'
+          : accountState.status === 'RESTRICTED'
+            ? 'RESTRICTED'
+            : accountState.status === 'DISCONNECTED'
+              ? 'DISCONNECTED'
+              : 'ERROR';
+
+      globalTradingStore.exchangeExec.setCredentialValidation('BYBIT', {
+        status: validationStatus,
+        lastChecked: accountState.timestamp,
+        errorMessage: validationStatus === 'CONNECTED' ? undefined : accountState.message
+      });
+    }
+
     return res.json({
       success: true,
-      credentials: creds,
+      credentials: globalTradingStore.exchangeExec.getExchangeCredentials(),
       securityPolicy: 'TRADE_ONLY_KEYS_STRICT (Withdrawal permissions blocked)'
     });
   } catch (err: any) {
