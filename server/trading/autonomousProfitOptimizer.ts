@@ -28,7 +28,7 @@ type ProfitOptimizerInput = {
   systemHealthy: boolean;
   midPrice?: number;
   forceImmediate?: boolean;
-  costEvidence?: { realizedSpreadCostUsd: number; realizedSlippageCostUsd: number; realizedAdverseSelectionCostUsd: number; realizedFundingCostUsd: number; expectedSpreadCostBps: number; expectedSlippageCostBps: number; expectedAdverseSelectionCostBps: number; expectedFundingCarryingCostBps: number; expectedExecutionUncertaintyBps: number; sampleCount: number; observedAt: string };
+  costEvidence?: { realizedSpreadCostUsd: number; realizedSlippageCostUsd: number; realizedAdverseSelectionCostUsd: number; realizedFundingCostUsd: number; expectedMakerTakerFeesBps: number; expectedSpreadCostBps: number; expectedSlippageCostBps: number; expectedAdverseSelectionCostBps: number; expectedFundingCarryingCostBps: number; expectedExecutionUncertaintyBps: number; sampleCount: number; observedAt: string };
 };
 
 export class AutonomousProfitOptimizer implements EngineModule {
@@ -103,7 +103,7 @@ export class AutonomousProfitOptimizer implements EngineModule {
     const expectedGrossEdgeBps = Number((gridSpacing * 100 * 0.55).toFixed(2));
     let expectedNetEdge: ExpectedNetEdgeBreakdown | undefined;
     if (evidenceValid) {
-      const makerTakerFeesBps = Number(((totalFees / Math.max(1, grossProfit)) * 10000).toFixed(2));
+      const makerTakerFeesBps = evidence!.expectedMakerTakerFeesBps;
       const expectedNetEdgeBps = Number((expectedGrossEdgeBps - makerTakerFeesBps - evidence!.expectedSpreadCostBps - evidence!.expectedSlippageCostBps - evidence!.expectedAdverseSelectionCostBps - evidence!.expectedFundingCarryingCostBps - evidence!.expectedExecutionUncertaintyBps).toFixed(2));
       expectedNetEdge = { expectedGrossEdgeBps, makerTakerFeesBps, expectedSpreadCostBps: evidence!.expectedSpreadCostBps, expectedSlippageBps: evidence!.expectedSlippageCostBps, adverseSelectionCostBps: evidence!.expectedAdverseSelectionCostBps, fundingCarryingCostBps: evidence!.expectedFundingCarryingCostBps, executionUncertaintyBps: evidence!.expectedExecutionUncertaintyBps, expectedNetEdgeBps, isTradeable: expectedNetEdgeBps > 4, minHurdleRateBps: 4, edgeFormula: 'authoritative gross edge minus observed fees/spread/slippage/adverse-selection/carry/uncertainty', timestamp: new Date().toISOString() };
     }
