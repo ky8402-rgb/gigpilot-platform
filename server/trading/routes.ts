@@ -14,6 +14,13 @@ tradingRouter.get('/state', requireOwnerAuth, (req: Request, res: Response) => {
     const position = store.exchangeExec.getPosition(store.activeSymbol);
     const openOrders = store.exchangeExec.getOpenOrders(store.activeSymbol);
     const qResult = livePair ? store.quantEngine.computeSignals(store.activeSymbol, livePair.candles, livePair.orderBook) : { indicators: null, regime: null };
+    const latestDecision = store.learningLoop.getDecisionStats().recentDecisions?.[0];
+    const edgeFromOpenOrder = openOrders.find((o: any) => o?.expectedNetEdge?.expectedNetEdgeBps !== undefined)?.expectedNetEdge?.expectedNetEdgeBps;
+    const edgeFromDecision = latestDecision?.gates?.edge?.metrics?.expectedNetEdgeBps;
+    const currentNetEdgeBps = typeof edgeFromOpenOrder === 'number' ? edgeFromOpenOrder : (typeof edgeFromDecision === 'number' ? edgeFromDecision : null);
+    const decisionReason = latestDecision?.finalOutcome === 'DO_NOTHING'
+      ? (latestDecision.rejectionReason || latestDecision.gates?.edge?.reason || latestDecision.rationale)
+      : (latestDecision?.rationale || 'Waiting for the next authoritative strategy decision.');
 
     const isKillActive = store.GLOBAL_KILL_SWITCH_ACTIVE || store.killSwitch.getState().isActive;
     const failClosedStatus = store.monitor.isSystemFailClosed();
@@ -30,7 +37,10 @@ tradingRouter.get('/state', requireOwnerAuth, (req: Request, res: Response) => {
       autonomousBot: {
         status: isKillActive ? 'BLOCKED' : (store.autonomousBotRunning ? 'RUNNING' : 'PAUSED'),
         allocatedCapitalUsd: store.autonomousAllocatedCapitalUsd,
-        startedAt: store.autonomousStartedAt || null
+        startedAt: store.autonomousStartedAt || null,
+        currentNetEdgeBps,
+        decisionReason,
+        requiredNetEdgeBps: store.risk.getConfig().minimum_edge_threshold ?? store.risk.getConfig().minExpectedNetEdgeBps ?? 4.0
       },
       killSwitch: store.killSwitch.getState(),
       failClosedStatus,
