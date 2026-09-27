@@ -28,6 +28,7 @@ type ProfitOptimizerInput = {
   systemHealthy: boolean;
   midPrice?: number;
   forceImmediate?: boolean;
+  costEvidence?: { realizedSpreadCostUsd: number; realizedSlippageCostUsd: number; realizedAdverseSelectionCostUsd: number; realizedFundingCostUsd: number; expectedMakerTakerFeesBps: number; expectedSpreadCostBps: number; expectedSlippageCostBps: number; expectedAdverseSelectionCostBps: number; expectedFundingCarryingCostBps: number; expectedExecutionUncertaintyBps: number; sampleCount: number; observedAt: string };
 };
 
 export class AutonomousProfitOptimizer implements EngineModule {
@@ -84,44 +85,45 @@ export class AutonomousProfitOptimizer implements EngineModule {
   private recordError(level: EngineErrorRecord['level'], message: string, details?: unknown): void { this.errorSurface.unshift({ id: `err_profitopt_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`, timestamp: new Date().toISOString(), level, message, details }); if (this.errorSurface.length > 50) this.errorSurface.pop(); }
   private getAiClient(): GoogleGenAI | null { if (!this.aiClient && process.env.GEMINI_API_KEY) this.aiClient = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY }); return this.aiClient; }
 
-  public conductRevenueAudit(input: { capital: CapitalAccounting; grid: GridConfiguration | null; regime: MarketRegime; midPrice?: number }): RevenueAuditReport {
-    const netProfit = input.capital.netRealizedProfit || 0;
-    const totalFees = input.capital.totalTradingFees || 0;
-    const grossProfit = netProfit + totalFees;
+  public conductRevenueAudit(input: { capital: CapitalAccounting; grid: GridConfiguration | null; regime: MarketRegime; midPrice?: number; costEvidence?: ProfitOptimizerInput['costEvidence'] }): RevenueAuditReport {
+    const evidence = input.costEvidence;
+    const netProfit = Number(input.capital.netRealizedProfit || 0);
+    const totalFees = Number(input.capital.totalTradingFees || 0);
+    const grossProfit = Number(input.capital.grossProfit || 0);
+    const gridSpacing = Number(input.grid?.gridSpacingPct || 0);
+    const evidenceValid = Boolean(evidence && evidence.sampleCount > 0 &&
+      Number.isFinite(evidence.realizedSpreadCostUsd) && Number.isFinite(evidence.realizedSlippageCostUsd) &&
+      Number.isFinite(evidence.realizedAdverseSelectionCostUsd) && Number.isFinite(evidence.realizedFundingCostUsd) &&
+      Number.isFinite(evidence.expectedSpreadCostBps) && Number.isFinite(evidence.expectedSlippageCostBps) &&
+      Number.isFinite(evidence.expectedAdverseSelectionCostBps) && Number.isFinite(evidence.expectedFundingCarryingCostBps) &&
+      Number.isFinite(evidence.expectedExecutionUncertaintyBps) && Number.isFinite(Date.parse(evidence.observedAt)) &&
+      Date.now() - Date.parse(evidence.observedAt) <= 30 * 60 * 1000);
+    const realizedNetAfterAllCosts = evidenceValid ? Number((netProfit - evidence!.realizedSpreadCostUsd - evidence!.realizedSlippageCostUsd - evidence!.realizedAdverseSelectionCostUsd - evidence!.realizedFundingCostUsd).toFixed(2)) : null;
     const feeToProfitRatioPct = grossProfit > 0 ? Number(((totalFees / grossProfit) * 100).toFixed(2)) : (totalFees > 0 ? 100 : 0);
-    const gridSpacing = input.grid?.gridSpacingPct || 0;
-    const roundTripFeePct = 0.16;
-    const effectiveNetMarginPct = Math.max(0, gridSpacing - roundTripFeePct);
-    const effectiveNetMarginBps = Number((effectiveNetMarginPct * 100).toFixed(1));
-    const spreadCaptureEfficiencyPct = gridSpacing > 0 ? Number(((effectiveNetMarginPct / gridSpacing) * 100).toFixed(1)) : 0;
-    const expectedGrossEdgeBps = Number(((gridSpacing * 100) * 0.55).toFixed(2));
-    const makerTakerFeesBps = 10.0;
-    const expectedSpreadCostBps = Number((2.2 * 0.15).toFixed(2));
-    const expectedSlippageBps = 1.2;
-    const adverseSelectionCostBps = Number((Math.min(6.5, Math.abs(input.regime.orderBookImbalance || 0) * 4.0 + 1.8)).toFixed(2));
-    const fundingCarryingCostBps = 1.2;
-    const executionUncertaintyBps = 1.8;
-    const totalFrictionsBps = Number((makerTakerFeesBps + expectedSpreadCostBps + expectedSlippageBps + adverseSelectionCostBps + fundingCarryingCostBps + executionUncertaintyBps).toFixed(2));
-    const expectedNetEdgeBps = Number((expectedGrossEdgeBps - totalFrictionsBps).toFixed(2));
-    const isTradeable = expectedNetEdgeBps > 4.0;
-    const expectedNetEdge: ExpectedNetEdgeBreakdown = { expectedGrossEdgeBps, makerTakerFeesBps, expectedSpreadCostBps, expectedSlippageBps, adverseSelectionCostBps, fundingCarryingCostBps, executionUncertaintyBps, expectedNetEdgeBps, isTradeable, minHurdleRateBps: 4.0, edgeFormula: `${expectedGrossEdgeBps} − ${makerTakerFeesBps} (fees) − ${expectedSpreadCostBps} (spread) − ${expectedSlippageBps} (slip) − ${adverseSelectionCostBps} (adv) − ${fundingCarryingCostBps} (carry) − ${executionUncertaintyBps} (uncert) = ${expectedNetEdgeBps} bps`, timestamp: new Date().toISOString() };
+    const expectedGrossEdgeBps = Number((gridSpacing * 100 * 0.55).toFixed(2));
+    let expectedNetEdge: ExpectedNetEdgeBreakdown | undefined;
+    if (evidenceValid) {
+      const makerTakerFeesBps = evidence!.expectedMakerTakerFeesBps;
+      const expectedNetEdgeBps = Number((expectedGrossEdgeBps - makerTakerFeesBps - evidence!.expectedSpreadCostBps - evidence!.expectedSlippageCostBps - evidence!.expectedAdverseSelectionCostBps - evidence!.expectedFundingCarryingCostBps - evidence!.expectedExecutionUncertaintyBps).toFixed(2));
+      expectedNetEdge = { expectedGrossEdgeBps, makerTakerFeesBps, expectedSpreadCostBps: evidence!.expectedSpreadCostBps, expectedSlippageBps: evidence!.expectedSlippageCostBps, adverseSelectionCostBps: evidence!.expectedAdverseSelectionCostBps, fundingCarryingCostBps: evidence!.expectedFundingCarryingCostBps, executionUncertaintyBps: evidence!.expectedExecutionUncertaintyBps, expectedNetEdgeBps, isTradeable: expectedNetEdgeBps > 4, minHurdleRateBps: 4, edgeFormula: 'authoritative gross edge minus observed fees/spread/slippage/adverse-selection/carry/uncertainty', timestamp: new Date().toISOString() };
+    }
+    const effectiveNetMarginBps = expectedNetEdge?.expectedNetEdgeBps ?? 0;
+    const spreadCaptureEfficiencyPct = gridSpacing > 0 ? Number((Math.max(0, effectiveNetMarginBps) / (gridSpacing * 100) * 100).toFixed(1)) : 0;
     const leaks: RevenueLeak[] = [];
-    if (!isTradeable) leaks.push({ id: `leak_negative_edge_${Date.now()}`, type: 'NEGATIVE_NET_EDGE_DRAG', severity: 'HIGH', description: `Expected Net Edge is ${expectedNetEdgeBps.toFixed(2)} bps; trading is disabled until it exceeds the 4.0 bps hurdle.`, estimatedDailyDragUsd: 0, recommendedRemediation: 'Do not trade; wait for a verified positive net edge.' });
-    if (gridSpacing > 0 && roundTripFeePct / gridSpacing > 0.25) leaks.push({ id: `leak_fee_drag_${Date.now()}`, type: 'FEE_DRAG', severity: 'HIGH', description: `Grid spacing ${gridSpacing.toFixed(2)}% leaves insufficient fee-adjusted margin.`, estimatedDailyDragUsd: 0, recommendedRemediation: 'Do not tighten spacing unless live post-cost evidence proves positive expectancy.' });
+    if (!evidenceValid) leaks.push({ id: 'leak_missing_cost_evidence_' + Date.now(), type: 'NEGATIVE_NET_EDGE_DRAG', severity: 'HIGH', description: 'Fresh realized spread, slippage, adverse-selection and carrying-cost evidence is missing or stale.', estimatedDailyDragUsd: 0, recommendedRemediation: 'Do not optimize or trade until authoritative cost telemetry is available.' });
+    if (expectedNetEdge && !expectedNetEdge.isTradeable) leaks.push({ id: 'leak_negative_net_edge_' + Date.now(), type: 'NEGATIVE_NET_EDGE_DRAG', severity: 'HIGH', description: 'Verified expected net edge is at or below the required hurdle.', estimatedDailyDragUsd: 0, recommendedRemediation: 'Do not trade; wait for a verified positive net edge.' });
     const p = input.midPrice && input.midPrice > 0 ? input.midPrice : 0;
     const normalizedAtrPct = input.regime.atr > 0 && p > 0 ? (input.regime.atr / p) * 100 : 0;
-    if (Math.abs(gridSpacing - normalizedAtrPct) > 0.35) leaks.push({ id: `leak_vol_mismatch_${Date.now()}`, type: 'VOLATILITY_MISALIGNMENT', severity: 'MEDIUM', description: `ATR ${normalizedAtrPct.toFixed(2)}% diverges from grid spacing ${gridSpacing.toFixed(2)}%.`, estimatedDailyDragUsd: 0, recommendedRemediation: 'Recalculate only from fresh exchange data and remain fail-closed when stale.' });
-    const score = leaks.some(leak => leak.severity === 'HIGH') ? 35 : leaks.length > 0 ? 70 : 92;
-    const report: RevenueAuditReport = { timestamp: new Date().toISOString(), revenueEfficiencyScore: score, netRealizedProfitUsd: netProfit, totalTradingFeesUsd: totalFees, feeToProfitRatioPct, spreadCaptureEfficiencyPct, effectiveNetMarginBps, expectedNetEdge, leaks, vanityMetricsFiltered: { grossVolumeIgnoredUsd: 0, rawFillsCountIgnored: 0, cosmeticWinRateIgnoredPct: 0, statement: 'Vanity metrics are excluded. Decisions use verified realized net profit and post-cost edge only.' } };
+    if (gridSpacing > 0 && p > 0 && Math.abs(gridSpacing - normalizedAtrPct) > 0.35) leaks.push({ id: 'leak_vol_mismatch_' + Date.now(), type: 'VOLATILITY_MISALIGNMENT', severity: 'MEDIUM', description: 'ATR diverges materially from grid spacing.', estimatedDailyDragUsd: 0, recommendedRemediation: 'Recalculate from fresh exchange data and remain fail-closed when stale.' });
+    const score = !evidenceValid ? 0 : leaks.some(leak => leak.severity === 'HIGH') ? 35 : leaks.length > 0 ? 70 : 92;
+    const report: RevenueAuditReport = { timestamp: new Date().toISOString(), revenueEfficiencyScore: score, netRealizedProfitUsd: realizedNetAfterAllCosts ?? 0, totalTradingFeesUsd: totalFees, feeToProfitRatioPct, spreadCaptureEfficiencyPct, effectiveNetMarginBps, expectedNetEdge, leaks, vanityMetricsFiltered: { grossVolumeIgnoredUsd: 0, rawFillsCountIgnored: 0, cosmeticWinRateIgnoredPct: 0, statement: 'No profitability decision is made without verified realized post-cost evidence.' } };
     this.latestAuditReport = report;
     return report;
-  }
-
   public async auditAndOptimize(input: ProfitOptimizerInput): Promise<AutonomousOptimizationDecision> {
     const now = Date.now();
     const midPrice = input.midPrice && input.midPrice > 0 ? input.midPrice : (input.grid ? (input.grid.upperBoundary + input.grid.lowerBoundary) / 2 : 0);
-    const auditReport = this.conductRevenueAudit({ capital: input.capital, grid: input.grid, regime: input.regime, midPrice });
-    if (!this.enabled || !input.systemHealthy || !input.grid || !auditReport.expectedNetEdge?.isTradeable || input.regime.regime === 'UNKNOWN') return this.saveDecision('PAUSE_OPTIMIZATION', 1, 'Fail-closed: live system health, fresh regime data, active grid, and positive verified net edge are required.', 'Zero live parameter mutation.', false, auditReport);
+    const auditReport = this.conductRevenueAudit({ capital: input.capital, grid: input.grid, regime: input.regime, midPrice, costEvidence: input.costEvidence });
+    if (!this.enabled || !input.systemHealthy || !input.grid || !auditReport.expectedNetEdge?.isTradeable || input.regime.regime === 'UNKNOWN' || auditReport.netRealizedProfitUsd <= 0) return this.saveDecision('PAUSE_OPTIMIZATION', 1, 'Fail-closed: live health, fresh regime, active grid, fresh post-cost evidence, positive realized net profit, and verified net edge are required.', 'Zero live parameter mutation.', false, auditReport);
     if (!input.forceImmediate && now - this.lastRunAt < 25000 && this.decisions[0]) return this.decisions[0];
     this.lastRunAt = now;
     const strategyAllocation = this.computeStrategyAllocations({ capital: input.capital, regime: input.regime, midPrice, edge: auditReport.expectedNetEdge, champion: input.champion, gridCapitalUsd: input.grid.totalAllocatedUsd });
