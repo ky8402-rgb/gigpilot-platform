@@ -265,6 +265,56 @@ tradingRouter.post('/pair/select', (req: Request, res: Response) => {
   res.json({ success: true, activeSymbol: globalTradingStore.activeSymbol });
 });
 
+// 9. Autonomy / automatic-trading status diagnostics
+tradingRouter.get('/autonomy/status', requireOwnerAuth, async (req: Request, res: Response) => {
+  try {
+    const store = globalTradingStore;
+    const failStatus = store.monitor.isSystemFailClosed();
+    const credentials = store.exchangeExec.getExchangeCredentials().find(c => c.exchange === 'BYBIT');
+    const pairData = store.dataEngine.getPairData(store.activeSymbol);
+    const blockers: string[] = [];
+
+    if (store.GLOBAL_KILL_SWITCH_ACTIVE || store.killSwitch.getState().isActive) {
+      blockers.push('GLOBAL_KILL_SWITCH_ACTIVE: automatic orders are disabled');
+    }
+    if (store.autonomyLevel < 2) {
+      blockers.push(`Autonomy level L${store.autonomyLevel}: automatic grid execution requires L2 or higher`);
+    }
+    if (!credentials?.isConfigured) {
+      blockers.push('Bybit trade-only API credentials are not configured');
+    } else if (credentials.status !== 'CONNECTED' || !credentials.canTrade) {
+      blockers.push(`Bybit credentials are not trade-ready: ${credentials.status}${credentials.errorMessage ? ` — ${credentials.errorMessage}` : ''}`);
+    }
+    if (failStatus.failClosed) {
+      blockers.push(`System fail-closed: ${failStatus.downEngines.join(', ') || 'critical engine unavailable'}`);
+    }
+    if (!pairData || !(pairData.currentPrice > 0)) {
+      blockers.push(`No authoritative live market price for ${store.activeSymbol}`);
+    }
+    if (!pairData || pairData.candles.length < 5) {
+      blockers.push(`Insufficient live candle depth for ${store.activeSymbol}: ${pairData?.candles.length ?? 0}/5`);
+    }
+
+    return res.json({
+      success: true,
+      activeSymbol: store.activeSymbol,
+      autonomyLevel: store.autonomyLevel,
+      tradingMode: store.tradingMode,
+      globalKillSwitchActive: store.GLOBAL_KILL_SWITCH_ACTIVE || store.killSwitch.getState().isActive,
+      botsDisabled: store.activeBotsDisabled,
+      bybitCredentialStatus: credentials?.status ?? 'UNCONFIGURED',
+      bybitCanTrade: credentials?.canTrade ?? false,
+      systemFailClosed: failStatus.failClosed,
+      liveMarketData: Boolean(pairData && pairData.currentPrice > 0),
+      candleCount: pairData?.candles.length ?? 0,
+      automaticTradingReady: blockers.length === 0,
+      blockers
+    });
+  } catch (err: any) {
+    return res.status(500).json({ success: false, error: err?.message || 'Unable to determine automatic trading status' });
+  }
+});
+
 // 9. Autonomy Level
 tradingRouter.post('/autonomy', requireOwnerAuth, (req: Request, res: Response) => {
   const { level } = req.body;
