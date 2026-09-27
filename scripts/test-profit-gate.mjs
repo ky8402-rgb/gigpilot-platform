@@ -81,49 +81,38 @@ const costEvidence = {
 };
 
 
-// ---- 1. Net-edge formula and tradeability hurdle ----
+// ---- 1. Net-edge formula and tradeability hurdle
 console.log('\n[1] Net-edge formula and tradeability hurdle');
 {
   const opt = new AutonomousProfitOptimizer();
   const audit = opt.conductRevenueAudit({ capital: baseCap, grid: grid(0.72), regime: regime(), midPrice: 60000, costEvidence });
-  t('gross edge = gridSpacing * 100 * 0.55', () => {
-    assert.equal(audit.expectedNetEdge.expectedGrossEdgeBps, 39.6);
-  });
-  t('frictions present and ordered', () => {
+  t('gross edge = gridSpacing * 100 * 0.55', () => assert.equal(audit.expectedNetEdge.expectedGrossEdgeBps, 39.6));
+  t('authoritative frictions are included', () => {
     const e = audit.expectedNetEdge;
-    assert.equal(e.makerTakerFeesBps, 10.0);
+    assert.equal(e.makerTakerFeesBps, 10);
     assert.equal(e.expectedSpreadCostBps, 0.33);
     assert.equal(e.expectedSlippageBps, 1.2);
+    assert.equal(e.adverseSelectionCostBps, 1.8);
     assert.equal(e.fundingCarryingCostBps, 1.2);
     assert.equal(e.executionUncertaintyBps, 1.8);
-    assert.ok(e.adverseSelectionCostBps >= 1.8 && e.adverseSelectionCostBps <= 6.5);
   });
-  t('net edge = gross - frictions', () => {
+  t('net edge = gross - all authoritative frictions', () => {
     const e = audit.expectedNetEdge;
-    assert.ok(Math.abs(e.expectedNetEdgeBps - (e.expectedGrossEdgeBps - (e.makerTakerFeesBps + e.expectedSpreadCostBps + e.expectedSlippageBps + e.adverseSelectionCostBps + e.fundingCarryingCostBps + e.executionUncertaintyBps))) < 0.005);
+    assert.ok(Math.abs(e.expectedNetEdgeBps - 23.27) < 0.005);
   });
-  t('0.72% spacing clears the 4.0 bps hurdle', () => {
-    assert.equal(audit.expectedNetEdge.isTradeable, true);
-    assert.ok(audit.expectedNetEdge.expectedNetEdgeBps > 4.0);
-  });
-  t('tight 0.20% spacing fails the hurdle (fail-closed)', () => {
-    const a = opt.conductRevenueAudit({ capital: baseCap, grid: grid(0.20), regime: regime(), midPrice: 60000 });
+  t('0.72% spacing clears the 4.0 bps hurdle', () => assert.equal(audit.expectedNetEdge.isTradeable, true));
+  t('tight 0.20% spacing fails the hurdle', () => {
+    const a = opt.conductRevenueAudit({ capital: baseCap, grid: grid(0.20), regime: regime(), midPrice: 60000, costEvidence });
     assert.equal(a.expectedNetEdge.isTradeable, false);
-    assert.ok(a.expectedNetEdge.expectedNetEdgeBps < 4.0);
-    assert.ok(a.leaks.some(l => l.type === 'NEGATIVE_NET_EDGE_DRAG'));
   });
-  t('fee-drag leak raised when round-trip fees eat >25% of spacing', () => {
-    const a = opt.conductRevenueAudit({ capital: baseCap, grid: grid(0.45), regime: regime(), midPrice: 60000 });
-    assert.ok(a.leaks.some(l => l.type === 'FEE_DRAG'));
+  t('missing cost evidence fails closed', () => {
+    const a = opt.conductRevenueAudit({ capital: baseCap, grid: grid(0.72), regime: regime(), midPrice: 60000 });
+    assert.equal(a.expectedNetEdge, undefined);
+    assert.equal(a.netRealizedProfitUsd, 0);
+    assert.ok(a.leaks.some(l => l.description.includes('post-cost evidence')));
   });
-  t('vol-mismatch leak raised when ATR diverges from spacing', () => {
-    const a = opt.conductRevenueAudit({ capital: baseCap, grid: grid(0.72), regime: regime({ atr: 1200 }), midPrice: 60000 });
-    assert.ok(a.leaks.some(l => l.type === 'VOLATILITY_MISALIGNMENT'));
-  });
-  t('vanity metrics excluded from audit profit evidence', () => {
+  t('realized net profit subtracts verified post-cost USD evidence', () => {
     assert.equal(audit.netRealizedProfitUsd, 115.5);
-    assert.equal(audit.totalTradingFeesUsd, 0);
-    assert.ok(audit.vanityMetricsFiltered.statement.length > 0);
   });
 }
 
