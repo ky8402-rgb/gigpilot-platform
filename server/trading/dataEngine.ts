@@ -29,6 +29,7 @@ export class DataEngine implements EngineModule {
   private wsReconnectTimeout: NodeJS.Timeout | null = null;
   private isPolling: boolean = false;
   private consecutiveFailures: number = 0;
+  private lastCandleFetchAt: Map<string, number> = new Map();
 
   // Real-time WebSocket connection to Bybit V5 public spot stream
   private ws: WebSocket | null = null;
@@ -404,29 +405,37 @@ export class DataEngine implements EngineModule {
           // Depth network timeout
         }
 
-        // Fetch real klines (1m, limit 30) from Bybit V5
+        // Fetch real 1m klines at a bounded cadence. Tickers/depth remain live-fast;
+        // candles are authoritative but do not need a new HTTP request every 2.5s.
         let candles: Candle[] = existing?.candles || [];
-
-        try {
-          const klineRes = await fetch(`https://api.bybit.com/v5/market/kline?category=spot&symbol=${raw}&interval=1&limit=30`, {
-            headers: { 'Accept': 'application/json' }
-          });
-          if (klineRes.ok) {
-            const klineJson = (await klineRes.json()) as any;
-            const list = klineJson?.result?.list;
-            if (Array.isArray(list) && list.length > 0) {
-              candles = list.slice().reverse().map((k: any[]) => ({
-                timestamp: Number(k[0]),
-                open: parseFloat(k[1]),
-                high: parseFloat(k[2]),
-                low: parseFloat(k[3]),
-                close: parseFloat(k[4]),
-                volume: parseFloat(k[5])
-              }));
+        const lastCandleFetch = this.lastCandleFetchAt.get(sym) || 0;
+        const candleCacheFresh = candles.length >= 5 && (Date.now() - lastCandleFetch) < 30000;
+        if (!candleCacheFresh) {
+          try {
+            const klineRes = await fetch(`https://api.bybit.com/v5/market/kline?category=spot&symbol=${raw}&interval=1&limit=30`, {
+              headers: { 'Accept': 'application/json' }
+            });
+            if (klineRes.ok) {
+              const klineJson = (await klineRes.json()) as any;
+              const list = klineJson?.result?.list;
+              if (Array.isArray(list) && list.length >= 5) {
+                const parsed = list.slice().reverse().map((k: any[]) => ({
+                  timestamp: Number(k[0]),
+                  open: parseFloat(k[1]),
+                  high: parseFloat(k[2]),
+                  low: parseFloat(k[3]),
+                  close: parseFloat(k[4]),
+                  volume: parseFloat(k[5])
+                })).filter((k: Candle) => Number.isFinite(k.timestamp) && k.close > 0);
+                if (parsed.length >= 5) {
+                  candles = parsed;
+                  this.lastCandleFetchAt.set(sym, Date.now());
+                }
+              }
             }
+          } catch {
+            // Keep only previously fetched authoritative exchange candles.
           }
-        } catch {
-          // Fall back to existing cached real candles
         }
 
         const currentPrice = resolvedPrice;
