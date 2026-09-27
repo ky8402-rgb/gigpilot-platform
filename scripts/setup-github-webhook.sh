@@ -140,9 +140,13 @@ if [[ -z "$SECRET" ]]; then
     SECRET=$(grep -E '^GITHUB_WEBHOOK_SECRET=' .env.production | cut -d'=' -f2- | tr -d '"' | tr -d "'" | tr -d '\r')
     echo -e "  ${GREEN}✔ Using existing secret from .env.production${NC}"
   else
-    # Default to production EC2 webhook secret
-    SECRET="gigpilot_prod_webhook_secret_2026"
-    echo -e "  ${GREEN}✔ Using existing production EC2 secret (${SECRET})${NC}"
+    # Never embed a production credential. Generate a fresh high-entropy secret.
+    if command -v openssl >/dev/null 2>&1; then
+      SECRET="$(openssl rand -hex 32)"
+    else
+      SECRET="$(node -e 'console.log(require("crypto").randomBytes(32).toString("hex"))')"
+    fi
+    echo -e "  ${GREEN}✔ Generated a new high-entropy webhook secret${NC}"
   fi
 else
   echo -e "  ${GREEN}✔ Using provided secret${NC}"
