@@ -177,7 +177,12 @@ export const AutonomousRevenueEngineView: React.FC<AutonomousRevenueEngineViewPr
         onReallocateCapital={handleRunAudit}
       />
 
-      {/* 2. Top Core Revenue Efficiency Gauges */}\n      {!audit && (\n        <div className="rounded-xl border border-amber-500/20 bg-amber-950/20 p-4 text-xs font-mono text-amber-200">\n          <strong>LIVE AUDIT DATA UNAVAILABLE.</strong> Revenue efficiency, realized profit, fee burn, and spread-margin metrics are withheld until the backend provides a current audit. No estimated or demo values are displayed as production truth.\n        </div>\n      )}
+      {/* 2. Top Core Revenue Efficiency Gauges */}
+      {!audit && (
+        <div className="rounded-xl border border-amber-500/20 bg-amber-950/20 p-4 text-xs font-mono text-amber-200">
+          <strong>LIVE AUDIT DATA UNAVAILABLE.</strong> Revenue efficiency, realized profit, fee burn, and spread-margin metrics are withheld until the backend provides a current audit. No estimated or demo values are displayed as production truth.
+        </div>
+      )}
       {audit && <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         {/* Gauge 1: Revenue Efficiency Score */}
         <div className="bg-[#0B0F19] border border-slate-800 rounded-xl p-5 shadow-lg relative overflow-hidden">
@@ -214,7 +219,7 @@ export const AutonomousRevenueEngineView: React.FC<AutonomousRevenueEngineViewPr
             </span>
           </div>
           <div className="text-3xl font-black font-mono text-emerald-400">
-            ${audit.netRealizedProfitUsd.toFixed(2)}
+            {audit ? `${audit.netRealizedProfitUsd.toFixed(2)}` : '—'}
           </div>
           <div className="text-[11px] font-mono text-slate-400 mt-3 flex items-center justify-between">
             <span>Capital Equity:</span>
@@ -258,7 +263,7 @@ export const AutonomousRevenueEngineView: React.FC<AutonomousRevenueEngineViewPr
             <span className="text-white font-bold">{grid ? `${grid.gridSpacingPct.toFixed(2)}%` : '—'}</span>
           </div>
         </div>
-      </div>
+      </div>}
 
       {/* 3. Anti-Vanity Metric Filter Shield */}
       {audit && <div className="bg-slate-900/60 border border-slate-800/90 rounded-xl p-4 flex flex-col md:flex-row items-center justify-between gap-4 text-xs font-mono">
@@ -295,7 +300,7 @@ export const AutonomousRevenueEngineView: React.FC<AutonomousRevenueEngineViewPr
             <span className="text-slate-300 font-bold">{audit.vanityMetricsFiltered.cosmeticWinRateIgnoredPct}%</span>
           </div>
         </div>
-      </div>
+      </div>}
 
       {/* 3.5 Microstructure Expected Net Edge Equation */}
       {audit?.expectedNetEdge && (
