@@ -15,11 +15,13 @@ import { CapitalAccounting } from '../../types/trading';
 
 interface CapitalMetricsBarProps {
   capital: CapitalAccounting;
+  isLive?: boolean;
   onOpenSweepModal?: () => void;
 }
 
 export const CapitalMetricsBar: React.FC<CapitalMetricsBarProps> = ({
   capital,
+  isLive = false,
   onOpenSweepModal
 }) => {
   const isProfitPositive = capital.netRealizedProfit >= 0;
@@ -27,7 +29,12 @@ export const CapitalMetricsBar: React.FC<CapitalMetricsBarProps> = ({
 
   return (
     <div className="bg-[#0B0F19]/90 border-b border-slate-800/80 px-4 py-2.5">
-      <div className="max-w-[1700px] mx-auto grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-8 gap-3">
+      {!isLive && (
+        <div className="max-w-[1700px] mx-auto mb-2 rounded-lg border border-amber-500/20 bg-amber-950/20 px-3 py-2 text-[10px] font-mono text-amber-200">
+          LIVE CAPITAL TELEMETRY UNAVAILABLE — values below are withheld until the authenticated trading backend is connected.
+        </div>
+      )}
+      <div className={`max-w-[1700px] mx-auto grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-8 gap-3 ${!isLive ? 'opacity-40 pointer-events-none' : ''}`}>
         {/* 1. Total Equity */}
         <div className="bg-slate-900/60 border border-slate-800/80 rounded-lg p-2.5">
           <div className="flex items-center justify-between text-[11px] font-mono text-slate-400 mb-1">
