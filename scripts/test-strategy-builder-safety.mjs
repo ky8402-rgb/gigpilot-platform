@@ -1,8 +1,12 @@
 import assert from 'node:assert/strict';
-import { pathToFileURL } from 'node:url';
+import { pathToFileURL, fileURLToPath } from 'node:url';
+import path from 'node:path';
+import { register } from 'tsx/esm/api';
 
+const unregister = register();
+const here = path.dirname(fileURLToPath(import.meta.url));
 process.env.GEMINI_API_KEY = '';
-const { AutonomousStrategyBuilder } = await import(pathToFileURL(new URL('../server/trading/autonomousStrategyBuilder.ts', import.meta.url)).href);
+const { AutonomousStrategyBuilder } = await import(pathToFileURL(path.join(here, '..', 'server', 'trading', 'autonomousStrategyBuilder.ts')).href);
 
 const input = {
   capital: { netRealizedProfit: 100, totalTradingFees: 5, totalTrades: 30, currentDrawdownPct: 1 },
@@ -30,3 +34,4 @@ assert.equal(recovered.getBuilds().length, 1);
 assert.equal(recovered.healthCheck().status, 'HEALTHY');
 
 console.log('Strategy Builder safety regression tests: ALL PASSED');
+unregister();
