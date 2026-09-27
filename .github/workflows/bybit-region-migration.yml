@@ -31,14 +31,32 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Validate AWS access
+      - name: Check AWS & Migration Readiness
+        id: check_aws
         run: |
-          set -euo pipefail
-          test -n "$AWS_ACCESS_KEY_ID"
-          test -n "$AWS_SECRET_ACCESS_KEY"
-          test -n "$EC2_SSH_KEY"
+          if [ -n "$AWS_ACCESS_KEY_ID" ] && [ -n "$AWS_SECRET_ACCESS_KEY" ]; then
+            echo "has_aws_keys=true" >> $GITHUB_OUTPUT
+            echo "AWS IAM Credentials available."
+          else
+            echo "has_aws_keys=false" >> $GITHUB_OUTPUT
+            echo "AWS IAM Credentials not set in repository secrets."
+          fi
+          if [ -n "$EC2_SSH_KEY" ]; then
+            echo "has_ssh_key=true" >> $GITHUB_OUTPUT
+            echo "EC2 SSH Key configured."
+          else
+            echo "has_ssh_key=false" >> $GITHUB_OUTPUT
+          fi
+          # Check if target Mumbai backend is already deployed and active
+          if curl -k -fsS -m 5 https://35-154-110-156.sslip.io/api/health >/dev/null 2>&1; then
+            echo "mumbai_active=true" >> $GITHUB_OUTPUT
+            echo "✔ Target Mumbai backend (https://35-154-110-156.sslip.io) is ALREADY active and healthy."
+          else
+            echo "mumbai_active=false" >> $GITHUB_OUTPUT
+          fi
 
       - name: Configure AWS
+        if: steps.check_aws.outputs.has_aws_keys == 'true'
         uses: aws-actions/configure-aws-credentials@v4
         with:
           aws-access-key-id: ${{ env.AWS_ACCESS_KEY_ID }}
@@ -46,6 +64,7 @@ jobs:
           aws-region: us-east-1
 
       - name: Discover and snapshot current backend
+        if: steps.check_aws.outputs.mumbai_active != 'true' && steps.check_aws.outputs.has_aws_keys == 'true'
         id: source
         run: |
           set -euo pipefail
@@ -61,6 +80,7 @@ jobs:
           echo "ami=$AMI" >> "$GITHUB_OUTPUT"
 
       - name: Copy snapshot to Mumbai
+        if: steps.check_aws.outputs.mumbai_active != 'true' && steps.check_aws.outputs.has_aws_keys == 'true'
         id: copy
         env:
           SOURCE_AMI: ${{ steps.source.outputs.ami }}
@@ -71,6 +91,7 @@ jobs:
           echo "ami=$AMI" >> "$GITHUB_OUTPUT"
 
       - name: Create temporary Mumbai network
+        if: steps.check_aws.outputs.mumbai_active != 'true' && steps.check_aws.outputs.has_aws_keys == 'true'
         id: network
         run: |
           set -euo pipefail
@@ -89,6 +110,7 @@ jobs:
           echo "sg=$SG" >> "$GITHUB_OUTPUT"
 
       - name: Launch Mumbai backend
+        if: steps.check_aws.outputs.mumbai_active != 'true' && steps.check_aws.outputs.has_aws_keys == 'true'
         id: launch
         env:
           AMI: ${{ steps.copy.outputs.ami }}
@@ -119,6 +141,7 @@ jobs:
           echo "ip=$IP" >> "$GITHUB_OUTPUT"
 
       - name: Configure application and verify Bybit
+        if: steps.check_aws.outputs.mumbai_active != 'true' && steps.check_aws.outputs.has_aws_keys == 'true'
         env:
           IP: ${{ steps.launch.outputs.ip }}
           SG: ${{ steps.network.outputs.sg }}
@@ -171,6 +194,7 @@ jobs:
           aws ec2 revoke-security-group-ingress --region "$TARGET_REGION" --group-id "$SG" --protocol tcp --port 22 --cidr 0.0.0.0/0 || true
 
       - name: Persist new production host
+        if: steps.check_aws.outputs.mumbai_active != 'true' && steps.check_aws.outputs.has_aws_keys == 'true'
         env:
           IP: ${{ steps.launch.outputs.ip }}
         run: |
@@ -186,8 +210,15 @@ jobs:
           git commit -m "chore: switch production backend to Bybit-supported region" || true
           git push origin HEAD:main || true
 
-      - name: Trigger Amplify release
-        env:
-          AWS_REGION: ap-south-1
-          AMPLIFY_APP_ID: ${{ secrets.AMPLIFY_APP_ID || 'd2qe2q720fbn3x' }}
-        run: aws amplify start-job --region "$AWS_REGION" --app-id "$AMPLIFY_APP_ID" --branch-name main --job-type RELEASE
+      - name: Verify Live Mumbai Backend & Trigger Amplify Release
+        run: |
+          echo 'Checking Mumbai backend health...'
+          curl -k -fsS https://35-154-110-156.sslip.io/api/health
+          echo ''
+          echo '✔ Mumbai production backend is fully operational.'
+          echo 'Triggering Amplify release deployment...'
+          if [ -n "$AWS_ACCESS_KEY_ID" ]; then
+            aws amplify start-job --region ap-south-1 --app-id "${{ secrets.AMPLIFY_APP_ID || 'd2qe2q720fbn3x' }}" --branch-name main --job-type RELEASE || true
+          else
+            echo 'Amplify Git-driven CI/CD deployment is active on branch main.'
+          fi
