@@ -328,6 +328,49 @@ tradingRouter.post('/grid/configure', requireOwnerAuth, async (req: Request, res
   res.json({ success: true, grid: store.activeGrid });
 });
 
+// Live order preview: authoritative backend market data and the same net-edge model used by the execution gate.
+tradingRouter.post('/order/preview', requireOwnerAuth, (req: Request, res: Response) => {
+  const store = globalTradingStore;
+  const { symbol, side, type, price, amount } = req.body || {};
+  if (side !== 'BUY' && side !== 'SELL') return res.status(400).json({ success: false, error: 'side must be BUY or SELL' });
+  if (type !== 'MARKET' && type !== 'LIMIT') return res.status(400).json({ success: false, error: 'type must be MARKET or LIMIT' });
+  const norm = store.dataEngine.normalizeSymbol(String(symbol || store.activeSymbol));
+  const liveData = store.dataEngine.getPairData(norm);
+  const livePrice = liveData?.currentPrice;
+  const numPrice = type === 'MARKET' ? Number(livePrice) : Number(price);
+  const numAmount = Number(amount);
+  if (!liveData || !Number.isFinite(livePrice) || livePrice <= 0 || !liveData.orderBook?.bids?.length || !liveData.orderBook?.asks?.length) {
+    return res.status(503).json({ success: false, error: 'Live market data is unavailable or stale.' });
+  }
+  if (!Number.isFinite(numPrice) || numPrice <= 0 || !Number.isFinite(numAmount) || numAmount <= 0) return res.status(400).json({ success: false, error: 'Positive price and amount are required.' });
+  const edge = store.quantEngine.computeExpectedNetEdge({ symbol: norm, side, price: numPrice, amount: numAmount, orderType: type, orderBook: liveData.orderBook, candles: liveData.candles, gridSpacingPct: store.activeGrid?.gridSpacingPct, regime: store.currentRegime });
+  const feeUsd = Number(((numPrice * numAmount) * (edge.makerTakerFeesBps / 10000)).toFixed(4));
+  return res.json({ success: true, symbol: norm, currentPrice: livePrice, estimatedExecutionPrice: numPrice, estimatedFeeUsd: feeUsd, expectedNetEdge: edge, serverTime: new Date().toISOString() });
+});
+
+// Live Spot protective exit. This is a risk-reducing exchange order, but remains fail-closed on gateway/engine degradation.
+tradingRouter.post('/position/protection', requireOwnerAuth, async (req: Request, res: Response) => {
+  const store = globalTradingStore;
+  if (store.GLOBAL_KILL_SWITCH_ACTIVE || store.killSwitch.getState().isActive) return res.status(403).json({ success: false, error: 'Cannot place protective exits while the GLOBAL KILL SWITCH is engaged.' });
+  const failStatus = store.monitor.isSystemFailClosed();
+  if (failStatus.failClosed) return res.status(503).json({ success: false, error: 'FAIL-CLOSED: Protective exits are blocked while critical engines are degraded: ' + failStatus.downEngines.join(', ') });
+  const { symbol, kind, triggerPrice, amount } = req.body || {};
+  if (kind !== 'TAKE_PROFIT' && kind !== 'STOP_LOSS') return res.status(400).json({ success: false, error: 'kind must be TAKE_PROFIT or STOP_LOSS' });
+  const norm = store.dataEngine.normalizeSymbol(String(symbol || store.activeSymbol));
+  const liveData = store.dataEngine.getPairData(norm);
+  const position = store.exchangeExec.getPosition(norm);
+  const trigger = Number(triggerPrice);
+  const qty = Number(amount ?? position?.baseAmount ?? 0);
+  if (!liveData?.currentPrice || !position || position.baseAmount <= 0) return res.status(422).json({ success: false, error: 'No authoritative live position is available to protect.' });
+  if (!Number.isFinite(trigger) || trigger <= 0 || !Number.isFinite(qty) || qty <= 0 || qty > position.baseAmount) return res.status(400).json({ success: false, error: 'Protective trigger and quantity must be valid and no larger than the live position.' });
+  if (kind === 'TAKE_PROFIT' && trigger <= liveData.currentPrice) return res.status(422).json({ success: false, error: 'Take-profit trigger must be above the live spot price for a long spot position.' });
+  if (kind === 'STOP_LOSS' && trigger >= liveData.currentPrice) return res.status(422).json({ success: false, error: 'Stop-loss trigger must be below the live spot price for a long spot position.' });
+  const result = await store.exchangeExec.executeProtectiveExit({ symbol: norm, amount: qty, triggerPrice: trigger, kind });
+  if (!result.success) return res.status(400).json(result);
+  store.monitor.logAudit({ category: 'ORDER_EXECUTION', action: 'Live protective exit placed on BYBIT', details: { symbol: norm, kind, triggerPrice: trigger, amount: qty, orderId: result.orderId } });
+  return res.json({ success: true, orderId: result.orderId, symbol: norm, kind, triggerPrice: trigger, amount: qty, serverTime: new Date().toISOString() });
+});
+
 // 12. Manual Live Order Placement (Validated via Independent Risk Engine)
 tradingRouter.post('/order/place', requireOwnerAuth, async (req: Request, res: Response) => {
   const store = globalTradingStore;
