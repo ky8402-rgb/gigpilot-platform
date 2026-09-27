@@ -64,7 +64,11 @@ export class ProfitAccountingEngine implements EngineModule {
   }
 
   private recalculateSweepEligibility(): void {
-    const eligible = Math.max(0, this.capital.netRealizedProfit - this.capital.profitReserve);
+    // Swept profit is permanently unavailable until new realized profit is produced.
+    const eligible = Math.max(
+      0,
+      this.capital.netRealizedProfit - this.capital.profitReserve - this.capital.totalSweptProfit
+    );
     this.capital.eligibleRealizedProfit = Number(eligible.toFixed(2));
     this.capital.withdrawableProfit = this.capital.eligibleRealizedProfit;
   }
