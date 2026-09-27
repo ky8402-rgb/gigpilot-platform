@@ -23,6 +23,7 @@
     "push": "bash ./scripts/push-and-deploy.sh",
     "lint": "tsc --noEmit",
     "test": "tsc --noEmit",
+    "test:profit": "node scripts/test-profit-gate.mjs",
     "test:loop": "tsx scripts/test-autonomous-loop.ts",
     "postinstall": "node scripts/postinstall.js"
   },
