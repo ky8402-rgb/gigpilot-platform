@@ -42,7 +42,7 @@ export const LiveTradingView: React.FC<LiveTradingViewProps> = ({
   const blockedReason = useMemo(() => {
     if (!isLiveConnected) return 'Live backend or exchange market data is unavailable.';
     if (!isOwnerAuthenticated) return 'Owner authentication is required.';
-    if (killActive) return state.killSwitch?.reason || 'Global kill switch is active.';
+    if (killActive && !bot?.startupSafetyLatch) return state.killSwitch?.reason || 'Global kill switch is active.';
     if (failClosed) return `FAIL-CLOSED: ${state.failClosedStatus?.downEngines?.join(', ') || 'critical engine degradation'}.`;
     if (state.circuitBreakerActive) return 'Risk circuit breaker is active.';
     if (bot?.status === 'BLOCKED') return bot.decisionReason || 'Autonomous trading is blocked by a safety gate.';
@@ -152,7 +152,7 @@ export const LiveTradingView: React.FC<LiveTradingViewProps> = ({
             <RiskRow label="Drawdown" value={pct(state.capital?.currentDrawdownPct)} ok={!state.capital || state.capital.currentDrawdownPct < 15} />
             <RiskRow label="Risk circuit breaker" value={state.circuitBreakerActive ? 'ACTIVE' : 'CLEAR'} ok={!state.circuitBreakerActive} />
             <RiskRow label="System fail-closed" value={failClosed ? 'ACTIVE' : 'CLEAR'} ok={!failClosed} />
-            <RiskRow label="Global kill switch" value={killActive ? 'ACTIVE' : 'CLEAR'} ok={!killActive} />
+            <RiskRow label="Global kill switch" value={bot?.startupSafetyLatch ? 'STARTUP SAFETY LATCH' : killActive ? 'ACTIVE' : 'CLEAR'} ok={!killActive || Boolean(bot?.startupSafetyLatch)} />
             <RiskRow label="Live market price" value={price(livePrice)} ok={Boolean(livePrice)} />
           </div>
           <p className="mt-3 text-xs leading-5 text-slate-500">The backend remains authoritative: every entry must pass live-data, exchange, reconciliation, accounting, risk and strict expected-net-edge gates. Profit cannot be guaranteed.</p>
@@ -168,6 +168,7 @@ export const LiveTradingView: React.FC<LiveTradingViewProps> = ({
               CONFIRM & START AUTONOMOUS BOT
             </button>
             {blockedReason && <div className="mt-3 rounded-xl border border-rose-500/30 bg-rose-950/20 p-3 text-xs text-rose-200"><b>Why no trade:</b> {blockedReason}</div>}
+            {bot?.startupSafetyLatch && <div className="mt-3 rounded-xl border border-sky-500/30 bg-sky-950/20 p-3 text-xs text-sky-200">The startup safety latch is active by design. Your explicit confirmation may clear this startup-only latch after all live safety checks pass; emergency/risk-triggered kill states cannot be bypassed.</div>}
             {!allocationValid && <div className="mt-3 rounded-xl border border-amber-500/30 bg-amber-950/20 p-3 text-xs text-amber-200">Enter a positive allocation no greater than the authoritative available cash balance.</div>}
           </>
         ) : (
