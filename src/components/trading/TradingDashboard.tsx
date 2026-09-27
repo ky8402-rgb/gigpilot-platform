@@ -28,6 +28,7 @@ import {
   fetchUpdatesHistory,
   fetchAuditLogs,
   isEngineLiveConnected,
+  getLastSyncTime,
   fetchOwnerAuthStatus,
   logoutOwner,
   getStoredOwnerToken,
@@ -52,6 +53,7 @@ import {
 
 import { HeaderNav } from './HeaderNav';
 import { CapitalMetricsBar } from './CapitalMetricsBar';
+import { OperatorOverview } from './OperatorOverview';
 import { InteractiveGridChart } from './InteractiveGridChart';
 import { GridMatrixAndOrders } from './GridMatrixAndOrders';
 import { AdaptiveGridConfigurator } from './AdaptiveGridConfigurator';
@@ -468,13 +470,25 @@ export const TradingDashboard: React.FC<TradingDashboardProps> = ({ onLogout }) 
         </div>
       )}
 
-      {/* 2. Real-Time Net Capital Accounting & Performance Metrics Bar */}
+      {/* 2. Backend-sourced operator control surface */}
+      <div className="px-4 pt-3">
+        <div className="max-w-[1700px] mx-auto">
+          <OperatorOverview
+            state={state}
+            isLiveConnected={isLiveConnected}
+            lastSyncTime={getLastSyncTime()}
+          />
+        </div>
+      </div>
+
+      {/* 3. Real-Time Net Capital Accounting & Performance Metrics Bar */}
       <CapitalMetricsBar
         capital={state.capital}
+        isLive={isLiveConnected}
         onOpenSweepModal={() => setActiveTab('PROFIT_SWEEP')}
       />
 
-      {/* 3. Terminal View Tabs Bar */}
+      {/* 4. Terminal View Tabs Bar */}
       <div className="border-b border-slate-800 bg-[#090D18] px-4 py-1.5">
         <div className="max-w-[1700px] mx-auto flex items-center justify-between gap-2 overflow-x-auto">
           <div className="flex items-center gap-1">
@@ -674,7 +688,7 @@ export const TradingDashboard: React.FC<TradingDashboardProps> = ({ onLogout }) 
         </div>
       </div>
 
-      {/* 4. Active Tab Content Body */}
+      {/* 5. Active Tab Content Body */}
       <main className="flex-1 p-4 max-w-[1700px] w-full mx-auto">
         {activeTab === 'TERMINAL' && (
           <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 h-[calc(100vh-190px)] min-h-[700px]">
@@ -845,7 +859,7 @@ export const TradingDashboard: React.FC<TradingDashboardProps> = ({ onLogout }) 
         )}
       </main>
 
-      {/* 5. Single Owner Authentication & TOTP Modal */}
+      {/* 6. Single Owner Authentication & TOTP Modal */}
       <OwnerAuthModal
         isOpen={showAuthModal}
         onClose={() => setShowAuthModal(false)}
