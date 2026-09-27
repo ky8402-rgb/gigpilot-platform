@@ -481,7 +481,12 @@ export class TradingStore {
   }
 
   public async startAutonomousTrading(symbol: string, allocatedCapitalUsd: number): Promise<void> {
-    if (this.GLOBAL_KILL_SWITCH_ACTIVE || this.killSwitch.getState().isActive) {
+    const killState = this.killSwitch.getState();
+    const startupSafetyLatch = killState.isActive &&
+      killState.triggeredBy === 'RISK_ENGINE' &&
+      killState.reason?.startsWith('GLOBAL_KILL_SWITCH_ACTIVE=true on startup:');
+
+    if ((this.GLOBAL_KILL_SWITCH_ACTIVE || killState.isActive) && !startupSafetyLatch) {
       throw new Error('GLOBAL KILL SWITCH is active. Resolve the safety halt before autonomous trading can start.');
     }
 
@@ -538,6 +543,11 @@ export class TradingStore {
     });
     if (!gridResult.grid) {
       throw new Error(gridResult.error || 'Autonomous strategy could not produce a risk-valid grid from live market evidence.');
+    }
+
+    if (startupSafetyLatch) {
+      this.GLOBAL_KILL_SWITCH_ACTIVE = false;
+      this.killSwitch.deactivate();
     }
 
     this.activeSymbol = norm;
