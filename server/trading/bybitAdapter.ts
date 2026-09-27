@@ -121,7 +121,8 @@ export class BybitAdapter {
           },
           null,
           2
-        )
+        ),
+        { mode: 0o600 }
       );
     } catch (e) {
       console.error('Failed to save Bybit config:', e);
