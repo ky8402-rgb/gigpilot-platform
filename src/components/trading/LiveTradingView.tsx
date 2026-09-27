@@ -161,6 +161,8 @@ export const LiveTradingView: React.FC<LiveTradingViewProps> = ({
     <div className="mx-auto max-w-6xl space-y-4">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div><div className="text-xs font-bold uppercase tracking-[0.2em] text-slate-500">Live Trading</div><h1 className="text-2xl font-black tracking-tight">Execute → Protect → Close → Realized Net Profit</h1></div>
+        <div className={`inline-flex items-center gap-2 rounded-full border px-3 py-2 text-xs font-black ${statusClass}`}><span className="h-2 w-2 rounded-full bg-current" />{freshness}<span className="font-normal opacity-70">backend sync</span></div>
+      </div>
 
       {autoTrading && (
         <section className={`rounded-2xl border p-4 sm:p-5 ${autoTrading.automaticTradingReady ? 'border-emerald-500/40 bg-emerald-950/20' : 'border-amber-500/40 bg-amber-950/20'}`}>
@@ -184,8 +186,6 @@ export const LiveTradingView: React.FC<LiveTradingViewProps> = ({
           )}
         </section>
       )}
-        <div className={`inline-flex items-center gap-2 rounded-full border px-3 py-2 text-xs font-black ${statusClass}`}><span className="h-2 w-2 rounded-full bg-current" />{freshness}<span className="font-normal opacity-70">backend sync</span></div>
-      </div>
 
       <div className="grid gap-4 lg:grid-cols-[1.35fr_.85fr]">
         <section className={`${card} p-4 sm:p-5`}>
