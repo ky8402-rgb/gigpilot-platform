@@ -119,15 +119,6 @@ export class AutonomousProfitOptimizer implements EngineModule {
     const report: RevenueAuditReport = { timestamp: new Date().toISOString(), revenueEfficiencyScore: score, netRealizedProfitUsd: realizedNetAfterAllCosts ?? 0, totalTradingFeesUsd: totalFees, feeToProfitRatioPct, spreadCaptureEfficiencyPct, effectiveNetMarginBps, expectedNetEdge, leaks, vanityMetricsFiltered: { grossVolumeIgnoredUsd: 0, rawFillsCountIgnored: 0, cosmeticWinRateIgnoredPct: 0, statement: 'No profitability decision is made without verified realized post-cost evidence.' } };
     this.latestAuditReport = report;
     return report;
-    const p = input.midPrice && input.midPrice > 0 ? input.midPrice : 0;
-    const normalizedAtrPct = input.regime.atr > 0 && p > 0 ? (input.regime.atr / p) * 100 : 0;
-    if (Math.abs(gridSpacing - normalizedAtrPct) > 0.35) leaks.push({ id: `leak_vol_mismatch_${Date.now()}`, type: 'VOLATILITY_MISALIGNMENT', severity: 'MEDIUM', description: `ATR ${normalizedAtrPct.toFixed(2)}% diverges from grid spacing ${gridSpacing.toFixed(2)}%.`, estimatedDailyDragUsd: 0, recommendedRemediation: 'Recalculate only from fresh exchange data and remain fail-closed when stale.' });
-    const score = leaks.some(leak => leak.severity === 'HIGH') ? 35 : leaks.length > 0 ? 70 : 92;
-    const report: RevenueAuditReport = { timestamp: new Date().toISOString(), revenueEfficiencyScore: score, netRealizedProfitUsd: netProfit, totalTradingFeesUsd: totalFees, feeToProfitRatioPct, spreadCaptureEfficiencyPct, effectiveNetMarginBps, expectedNetEdge, leaks, vanityMetricsFiltered: { grossVolumeIgnoredUsd: 0, rawFillsCountIgnored: 0, cosmeticWinRateIgnoredPct: 0, statement: 'Vanity metrics are excluded. Decisions use verified realized net profit and post-cost edge only.' } };
-    this.latestAuditReport = report;
-    return report;
-  }
-
   public async auditAndOptimize(input: ProfitOptimizerInput): Promise<AutonomousOptimizationDecision> {
     const now = Date.now();
     const midPrice = input.midPrice && input.midPrice > 0 ? input.midPrice : (input.grid ? (input.grid.upperBoundary + input.grid.lowerBoundary) / 2 : 0);
