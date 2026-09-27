@@ -11,7 +11,7 @@ export interface ExchangeApiCredentials {
   isConfigured: boolean;
   canTrade: boolean;
   canWithdraw: boolean; // MUST be false for security
-  status: 'CONNECTED' | 'DISCONNECTED' | 'ERROR' | 'RESTRICTED';
+  status: 'CONNECTED' | 'VALIDATING' | 'DISCONNECTED' | 'ERROR' | 'RESTRICTED';
   lastChecked: string;
   errorMessage?: string;
 }
@@ -58,7 +58,7 @@ export class ExchangeExecutionEngine implements EngineModule {
       isConfigured: Boolean(bybitKey && bybitSecret),
       canTrade: true,
       canWithdraw: false,
-      status: bybitKey && bybitSecret ? 'CONNECTED' : 'DISCONNECTED',
+      status: bybitKey && bybitSecret ? 'VALIDATING' : 'DISCONNECTED',
       lastChecked: new Date().toISOString()
     });
   }
@@ -147,7 +147,7 @@ export class ExchangeExecutionEngine implements EngineModule {
       isConfigured: true,
       canTrade: true,
       canWithdraw: false, // Strict: Never permit withdrawals
-      status: 'CONNECTED',
+      status: 'VALIDATING',
       lastChecked: new Date().toISOString()
     };
 
@@ -165,7 +165,6 @@ export class ExchangeExecutionEngine implements EngineModule {
       this.recordError('WARN', `Could not persist exchange keys to disk: ${err.message}`);
     }
 
-    this.recordError('WARN', `Trade-only API keys configured for ${exchange}. Validating connection...`);
     return { success: true };
   }
 
@@ -173,6 +172,31 @@ export class ExchangeExecutionEngine implements EngineModule {
    * Execute real live order across Bybit
    * Fails visibly and fails closed if credentials missing or exchange rejects
    */
+  /**
+   * Update the authoritative exchange credential connection state after a live API check.
+   * Execution remains fail-closed unless the exchange has returned a successful authenticated response.
+   */
+  public setCredentialValidation(exchange: SupportedExchange, result: {
+    status: 'CONNECTED' | 'ERROR' | 'RESTRICTED' | 'DISCONNECTED';
+    lastChecked?: string;
+    errorMessage?: string;
+  }): void {
+    const cred = this.credentials.get(exchange);
+    if (!cred) return;
+    cred.status = result.status;
+    cred.lastChecked = result.lastChecked || new Date().toISOString();
+    cred.errorMessage = result.errorMessage;
+    cred.canTrade = result.status === 'CONNECTED';
+    cred.canWithdraw = false;
+    this.credentials.set(exchange, cred);
+    if (result.status === 'CONNECTED') {
+      this.status = 'HEALTHY';
+    } else {
+      this.status = 'DEGRADED';
+      if (result.errorMessage) this.recordError('WARN', result.errorMessage);
+    }
+  }
+
   public async executeOrder(spec: {
     symbol: string;
     side: 'BUY' | 'SELL';
@@ -198,6 +222,13 @@ export class ExchangeExecutionEngine implements EngineModule {
     if (!cred || !cred.isConfigured) {
       const err = `FAIL-CLOSED: No trade-only API keys configured for ${targetExchange}. Live order rejected. Configure exchange keys in Risk/Engines panel.`;
       this.recordError('ERROR', err, { orderSpec: spec });
+      return { success: false, error: err };
+    }
+    if (cred.status !== 'CONNECTED' || !cred.canTrade) {
+      const err = cred.errorMessage
+        ? `FAIL-CLOSED: Bybit connection is not validated. ${cred.errorMessage}`
+        : `FAIL-CLOSED: Bybit connection is ${cred.status}. Live order rejected until an authenticated connection check succeeds.`;
+      this.recordError('ERROR', err);
       return { success: false, error: err };
     }
 
