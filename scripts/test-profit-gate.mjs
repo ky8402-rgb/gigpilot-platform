@@ -229,7 +229,7 @@ console.log('\n[4] Off-switch fail-closed behavior');
     opt.setOffSwitch(false);
     const h = opt.healthCheck();
     assert.equal(h.status, 'OFF');
-    assert.equal(h.details.objective, 'NET_REALIZED_PROFIT_AFTER_FEES');
+    assert.equal(h.details.objective, 'NET_REALIZED_PROFIT_AFTER_FEES_AND_ALL_VERIFIED_COSTS');
     opt.setOffSwitch(true);
   });
 }
