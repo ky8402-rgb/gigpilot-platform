@@ -5,6 +5,7 @@ import {
   CapitalAccounting,
   EngineErrorRecord,
   EngineHealth,
+  EngineModule,
   ExpectedNetEdgeBreakdown,
   GridConfiguration,
   MarketRegime,
@@ -45,35 +46,9 @@ export class AutonomousProfitOptimizer implements EngineModule {
   private lastRunAt = 0;
   private readonly strategyBuilder = new AutonomousStrategyBuilder();
 
-  constructor() {
-    this.latestAuditReport = null;
-    this.latestStrategyAllocation = null;
-  }
-
   public healthCheck(): EngineHealth {
     const hasKey = Boolean(process.env.GEMINI_API_KEY);
-    return {
-      id: this.id,
-      name: this.name,
-      status: !this.enabled ? 'OFF' : (!hasKey ? 'DEGRADED' : this.status),
-      enabled: this.enabled,
-      latencyMs: this.latencyMs,
-      lastHeartbeat: this.lastHeartbeat,
-      errorCount: this.errorSurface.length,
-      lastError: this.errorSurface[0]?.message,
-      errorSurface: this.errorSurface.slice(0, 10),
-      details: {
-        objective: 'NET_REALIZED_PROFIT_AFTER_FEES',
-        autonomousDecisioning: true,
-        autonomousBuild: true,
-        autoApplyEnabled: this.autoApplyEnabled,
-        sourceData: 'LIVE_PRODUCTION_ONLY',
-        decisionsCount: this.decisions.length,
-        strategyBuildsCount: this.strategyBuilder.getBuilds().length,
-        revenueEfficiencyScore: this.latestAuditReport?.revenueEfficiencyScore ?? 0,
-        activeRevenueLeaksCount: this.latestAuditReport?.leaks.length ?? 0
-      }
-    };
+    return { id: this.id, name: this.name, status: !this.enabled ? 'OFF' : (!hasKey ? 'DEGRADED' : this.status), enabled: this.enabled, latencyMs: this.latencyMs, lastHeartbeat: this.lastHeartbeat, errorCount: this.errorSurface.length, lastError: this.errorSurface[0]?.message, errorSurface: this.errorSurface.slice(0, 10), details: { objective: 'NET_REALIZED_PROFIT_AFTER_FEES', autonomousDecisioning: true, autonomousBuild: true, autoApplyEnabled: this.autoApplyEnabled, sourceData: 'LIVE_PRODUCTION_ONLY', decisionsCount: this.decisions.length, strategyBuildsCount: this.strategyBuilder.getBuilds().length, revenueEfficiencyScore: this.latestAuditReport?.revenueEfficiencyScore ?? 0, activeRevenueLeaksCount: this.latestAuditReport?.leaks.length ?? 0 } };
   }
 
   public getErrorSurface(): EngineErrorRecord[] { return [...this.errorSurface]; }
@@ -87,6 +62,10 @@ export class AutonomousProfitOptimizer implements EngineModule {
   public getLatestAudit(): RevenueAuditReport | null { return this.latestAuditReport; }
   public getLatestStrategyAllocation(): StrategyAllocationDecision | null { return this.latestStrategyAllocation; }
 
+  private emptyAllocation(totalCap: number, regime: MarketRegime['regime'], rationale: string): StrategyAllocationDecision {
+    return { id: `alloc_${Date.now()}`, timestamp: new Date().toISOString(), primaryQuestion: 'Which strategy should receive capital right now?', totalTradingCapitalUsd: totalCap, activeRegime: regime, strategies: [], topRecipientStrategyId: '', topRecipientStrategyName: '', riskAdjustedRationale: rationale, diversificationScore: 0, rebalanceRequired: false, totalCapitalReallocatedUsd: 0, applied: false };
+  }
+
   public computeStrategyAllocations(input: { capital: CapitalAccounting; regime: MarketRegime; midPrice?: number; edge?: ExpectedNetEdgeBreakdown | null; champion?: StrategyVersion; gridCapitalUsd?: number }): StrategyAllocationDecision {
     const totalCap = Math.max(0, input.capital.tradingCapital || input.capital.totalEquity || 0);
     const liveEdge = input.edge?.expectedNetEdgeBps ?? 0;
@@ -94,39 +73,16 @@ export class AutonomousProfitOptimizer implements EngineModule {
     const live = champion?.liveTradingResults;
     const stable = Boolean(champion?.validationPipeline && champion.validationPipeline.overallScore >= 60 && champion.validationScore !== undefined && champion.validationScore >= 60);
     const sufficientEvidence = Boolean(live && live.tradesCount >= 30 && stable && live.netProfit > 0 && live.sharpeRatio > 0);
-
-    if (!champion || !live || input.regime.regime === 'UNKNOWN' || totalCap <= 0 || liveEdge <= 4.0 || !sufficientEvidence) {
-      return this.emptyAllocation(totalCap, input.regime.regime, 'No capital allocation change: live fills, stable parameters, regime evidence, and positive net edge are required.');
-    }
-
+    if (!champion || !live || input.regime.regime === 'UNKNOWN' || totalCap <= 0 || liveEdge <= 4.0 || !sufficientEvidence) return this.emptyAllocation(totalCap, input.regime.regime, 'No capital allocation change: live fills, stable parameters, regime evidence, and positive net edge are required.');
     const typeMap: Record<StrategyVersion['type'], StrategyCategory | null> = { ADAPTIVE_GRID: 'ADAPTIVE_DEFENSIVE', TREND_GRID: 'TREND_GRID', VOLATILITY_BREAKOUT: 'MOMENTUM_BREAKOUT', MEAN_REVERSION_GRID: 'MEAN_REVERSION', CUSTOM_SCRIPT: null };
     const strategyType = typeMap[champion.type];
     if (!strategyType) return this.emptyAllocation(totalCap, input.regime.regime, 'Custom strategies require a dedicated live-evidence adapter before capital routing.');
-
-    const currentSpacing = champion.parameters.gridSpacingPct || input.regime.recommendedGridSpacing;
-    const candidate: StrategyAllocationCandidate = {
-      strategyId: champion.id, strategyName: champion.name, strategyType, description: 'Live-evidence champion strategy.', targetRegimes: [input.regime.regime], regimeMatchScore: 100,
-      metrics: { outOfSampleSharpe: live.sharpeRatio, outOfSampleSortino: live.sortinoRatio, outOfSampleNetRoiPct: live.roiPct, profitFactor: live.profitFactor, winRatePct: live.winRatePct, realizedVolatilityPct: 0, volatilityRiskPenalty: 0, correlationWithPortfolio: 0, decorrelationBonus: 1, executionQualityScore: live.orderFillRatePct, expectedNetEdgeBps: liveEdge, meetsMinimumEdgeThreshold: liveEdge > 4.0, fillRatePct: live.orderFillRatePct, avgSlippageBps: 0 },
-      compositeScore: 100, targetWeightPct: 100, allocatedCapitalUsd: totalCap, currentCapitalUsd: input.gridCapitalUsd || 0, capitalDeltaUsd: totalCap - (input.gridCapitalUsd || 0), action: 'MAINTAIN',
-      rationale: `Live champion evidence supports allocation: ${live.tradesCount} live trades, stable parameters, positive net profit, and expected net edge ${liveEdge.toFixed(2)} bps.`
-    };
-    void currentSpacing;
+    const candidate: StrategyAllocationCandidate = { strategyId: champion.id, strategyName: champion.name, strategyType, description: 'Live-evidence champion strategy.', targetRegimes: [input.regime.regime], regimeMatchScore: 100, metrics: { outOfSampleSharpe: live.sharpeRatio, outOfSampleSortino: live.sortinoRatio, outOfSampleNetRoiPct: live.roiPct, profitFactor: live.profitFactor, winRatePct: live.winRatePct, realizedVolatilityPct: 0, volatilityRiskPenalty: 0, correlationWithPortfolio: 0, decorrelationBonus: 1, executionQualityScore: live.orderFillRatePct, expectedNetEdgeBps: liveEdge, meetsMinimumEdgeThreshold: liveEdge > 4.0, fillRatePct: live.orderFillRatePct, avgSlippageBps: 0 }, compositeScore: 100, targetWeightPct: 100, allocatedCapitalUsd: totalCap, currentCapitalUsd: input.gridCapitalUsd || 0, capitalDeltaUsd: totalCap - (input.gridCapitalUsd || 0), action: 'MAINTAIN', rationale: `Live champion evidence supports allocation: ${live.tradesCount} live trades, stable parameters, positive net profit, and expected net edge ${liveEdge.toFixed(2)} bps.` };
     return { id: `alloc_${Date.now()}`, timestamp: new Date().toISOString(), primaryQuestion: 'Which strategy should receive capital right now?', totalTradingCapitalUsd: totalCap, activeRegime: input.regime.regime, strategies: [candidate], topRecipientStrategyId: candidate.strategyId, topRecipientStrategyName: candidate.strategyName, riskAdjustedRationale: candidate.rationale, diversificationScore: 100, rebalanceRequired: Math.abs(candidate.capitalDeltaUsd) > Math.max(50, totalCap * 0.05), totalCapitalReallocatedUsd: Math.abs(candidate.capitalDeltaUsd), applied: false };
   }
 
-  private emptyAllocation(totalCap: number, regime: MarketRegime['regime'], rationale: string): StrategyAllocationDecision {
-    return { id: `alloc_${Date.now()}`, timestamp: new Date().toISOString(), primaryQuestion: 'Which strategy should receive capital right now?', totalTradingCapitalUsd: totalCap, activeRegime: regime, strategies: [], topRecipientStrategyId: '', topRecipientStrategyName: '', riskAdjustedRationale: rationale, diversificationScore: 0, rebalanceRequired: false, totalCapitalReallocatedUsd: 0, applied: false };
-  }
-
-  private recordError(level: EngineErrorRecord['level'], message: string, details?: unknown): void {
-    this.errorSurface.unshift({ id: `err_profitopt_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`, timestamp: new Date().toISOString(), level, message, details });
-    if (this.errorSurface.length > 50) this.errorSurface.pop();
-  }
-
-  private getAiClient(): GoogleGenAI | null {
-    if (!this.aiClient && process.env.GEMINI_API_KEY) this.aiClient = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
-    return this.aiClient;
-  }
+  private recordError(level: EngineErrorRecord['level'], message: string, details?: unknown): void { this.errorSurface.unshift({ id: `err_profitopt_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`, timestamp: new Date().toISOString(), level, message, details }); if (this.errorSurface.length > 50) this.errorSurface.pop(); }
+  private getAiClient(): GoogleGenAI | null { if (!this.aiClient && process.env.GEMINI_API_KEY) this.aiClient = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY }); return this.aiClient; }
 
   public conductRevenueAudit(input: { capital: CapitalAccounting; grid: GridConfiguration | null; regime: MarketRegime; midPrice?: number }): RevenueAuditReport {
     const netProfit = input.capital.netRealizedProfit || 0;
@@ -174,14 +130,14 @@ export class AutonomousProfitOptimizer implements EngineModule {
     if (!topCandidate) return this.saveDecision('PAUSE_OPTIMIZATION', 1, 'No strategy has sufficient verified live evidence for autonomous capital routing.', 'Zero live parameter mutation.', false, undefined, undefined, undefined, auditReport, strategyAllocation);
     const ai = this.getAiClient();
     void ai;
-    return this.saveDecision('ALLOCATE_CAPITAL', 0.92, strategyAllocation.riskAdjustedRationale, `Maintain only the verified champion allocation; no risk increase.`, false, undefined, undefined, undefined, auditReport, strategyAllocation);
+    return this.saveDecision('ALLOCATE_CAPITAL', 0.92, strategyAllocation.riskAdjustedRationale, 'Maintain only the verified champion allocation; no risk increase.', false, undefined, undefined, undefined, auditReport, strategyAllocation);
   }
 
-  private saveDecision(decision: AutonomousOptimizationDecision['decision'], confidence: number, rationale: string, expectedEffect: string, applied: boolean, previousParams?: unknown, proposedParams?: unknown, builtStrategy?: AutonomousStrategyBuild, audit?: RevenueAuditReport, allocation?: StrategyAllocationDecision): AutonomousOptimizationDecision {
-    const decision: AutonomousOptimizationDecision = { id: `opt_${Date.now()}`, timestamp: new Date().toISOString(), decision, confidence, rationale, expectedEffect, applied, previousParams, proposedParams, builtStrategy, auditReport: audit, strategyAllocation: allocation };
-    this.decisions.unshift(decision);
+  private saveDecision(action: AutonomousOptimizationDecision['decision'], confidence: number, rationale: string, expectedEffect: string, applied: boolean, previousParams?: unknown, proposedParams?: unknown, builtStrategy?: AutonomousStrategyBuild, audit?: RevenueAuditReport, allocation?: StrategyAllocationDecision): AutonomousOptimizationDecision {
+    const result: AutonomousOptimizationDecision = { id: `opt_${Date.now()}`, timestamp: new Date().toISOString(), decision: action, confidence, rationale, expectedEffect, applied, previousParams, proposedParams, builtStrategy, auditReport: audit, strategyAllocation: allocation };
+    this.decisions.unshift(result);
     if (this.decisions.length > 100) this.decisions.pop();
     this.lastHeartbeat = new Date().toISOString();
-    return decision;
+    return result;
   }
 }
