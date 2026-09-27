@@ -146,7 +146,7 @@ tradingRouter.get('/exchanges/credentials', requireOwnerAuth, async (req: Reques
   }
 });
 
-tradingRouter.post('/exchanges/keys', requireOwnerAuth, (req: Request, res: Response) => {
+tradingRouter.post('/exchanges/keys', requireOwnerAuth, async (req: Request, res: Response) => {
   try {
     const { exchange, apiKey, apiSecret, isTestnet } = req.body || {};
     if (isTestnet === true) return res.status(400).json({ success: false, error: 'Bybit testnet is disabled. GigPilot is live-production only.' });
