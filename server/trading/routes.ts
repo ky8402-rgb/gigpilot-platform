@@ -27,6 +27,11 @@ tradingRouter.get('/state', requireOwnerAuth, (req: Request, res: Response) => {
       GLOBAL_KILL_SWITCH_ACTIVE: isKillActive,
       botsDisabled: store.activeBotsDisabled || isKillActive,
       activeBotsCount: isKillActive ? 0 : (store.autonomyLevel > 0 ? 1 : 0),
+      autonomousBot: {
+        status: isKillActive ? 'BLOCKED' : (store.autonomousBotRunning ? 'RUNNING' : 'PAUSED'),
+        allocatedCapitalUsd: store.autonomousAllocatedCapitalUsd,
+        startedAt: store.autonomousStartedAt || null
+      },
       killSwitch: store.killSwitch.getState(),
       failClosedStatus,
       engines,
@@ -215,7 +220,45 @@ tradingRouter.post('/pair/select', (req: Request, res: Response) => {
   res.json({ success: true, activeSymbol: globalTradingStore.activeSymbol });
 });
 
-// 9. Autonomy Level
+// 9. Autonomous Trading Lifecycle
+tradingRouter.post('/autonomous/start', requireOwnerAuth, async (req: Request, res: Response) => {
+  const { symbol, allocatedCapitalUsd } = req.body || {};
+  try {
+    await globalTradingStore.startAutonomousTrading(String(symbol || globalTradingStore.activeSymbol), Number(allocatedCapitalUsd));
+    return res.json({
+      success: true,
+      status: 'RUNNING',
+      activeSymbol: globalTradingStore.activeSymbol,
+      allocatedCapitalUsd: globalTradingStore.autonomousAllocatedCapitalUsd,
+      autonomyLevel: globalTradingStore.autonomyLevel,
+      serverTime: new Date().toISOString()
+    });
+  } catch (err: any) {
+    return res.status(422).json({
+      success: false,
+      status: globalTradingStore.GLOBAL_KILL_SWITCH_ACTIVE || globalTradingStore.killSwitch.getState().isActive ? 'BLOCKED' : 'PAUSED',
+      error: err?.message || 'Autonomous trading could not start.'
+    });
+  }
+});
+
+tradingRouter.post('/autonomous/stop', requireOwnerAuth, async (req: Request, res: Response) => {
+  try {
+    const result = await globalTradingStore.stopAutonomousTrading();
+    return res.json({
+      success: true,
+      status: 'PAUSED',
+      autonomyLevel: globalTradingStore.autonomyLevel,
+      cancelledEntryOrders: result.cancelledEntryOrders,
+      reconciledCount: result.reconciledCount,
+      message: 'New autonomous entries are stopped. Existing positions and exchange risk controls remain subject to reconciliation.'
+    });
+  } catch (err: any) {
+    return res.status(503).json({ success: false, status: 'BLOCKED', error: err?.message || 'Autonomous trading stop/reconciliation failed.' });
+  }
+});
+
+// 10. Autonomy Level
 tradingRouter.post('/autonomy', requireOwnerAuth, (req: Request, res: Response) => {
   const { level } = req.body;
   if (level === undefined || level < 0 || level > 4) {
