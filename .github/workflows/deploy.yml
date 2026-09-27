@@ -29,12 +29,13 @@ jobs:
           set -euo pipefail
           echo "Waiting for CI checks on ${SHA}..."
           for attempt in $(seq 1 40); do
-            JSON="$(curl -fsSL               -H "Authorization: Bearer ${GH_TOKEN}"               -H "Accept: application/vnd.github+json"               "https://api.github.com/repos/${GITHUB_REPOSITORY}/commits/${SHA}/check-runs?per_page=100")"
+            curl -fsSL               -H "Authorization: Bearer ${GH_TOKEN}"               -H "Accept: application/vnd.github+json"               "https://api.github.com/repos/${GITHUB_REPOSITORY}/commits/${SHA}/check-runs?per_page=100" -o /tmp/check_runs.json
             RESULT="$(node -e '
-              const data = JSON.parse(process.argv[1]);
+              const fs = require("fs");
+              const data = JSON.parse(fs.readFileSync("/tmp/check_runs.json", "utf8"));
               const ci = (data.check_runs || []).find(x => x.name === "Typecheck and production build");
               process.stdout.write(JSON.stringify({status: ci?.status || "", conclusion: ci?.conclusion || ""}));
-            ' "${JSON}")"
+            ')"
             STATUS="$(node -e 'process.stdout.write(JSON.parse(process.argv[1]).status)' "${RESULT}")"
             CONCLUSION="$(node -e 'process.stdout.write(JSON.parse(process.argv[1]).conclusion)' "${RESULT}")"
             echo "CI status=${STATUS} conclusion=${CONCLUSION}"
