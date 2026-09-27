@@ -66,6 +66,7 @@ import { CanaryAndAuditView } from './CanaryAndAuditView';
 import { AssetDashboard } from './AssetDashboard';
 import { OwnerAuthModal } from './OwnerAuthModal';
 import { AutonomousRevenueEngineView } from './AutonomousRevenueEngineView';
+import { LiveTradingView } from './LiveTradingView';
 
 import {
   BarChart2,
@@ -693,43 +694,18 @@ export const TradingDashboard: React.FC<TradingDashboardProps> = ({ onLogout }) 
       {/* 5. Active Tab Content Body */}
       <main className="flex-1 p-4 max-w-[1700px] w-full mx-auto">
         {activeTab === 'TERMINAL' && (
-          <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 h-[calc(100vh-190px)] min-h-[700px]">
-            {/* Left: Interactive Candlestick + Grid Overlay Chart */}
-            <div className="lg:col-span-7 h-full">
-              <InteractiveGridChart
-                symbol={state.activeSymbol}
-                candles={pairDetails?.candles || []}
-                orderBook={pairDetails?.orderBook || { bids: [], asks: [] }}
-                grid={state.activeGrid}
-                indicators={state.indicators}
-                currentPrice={activePrice}
-              />
-            </div>
-
-            {/* Right: Grid Matrix, Orders, Execution Fills, and Manual Ticket */}
-            <div className="lg:col-span-5 h-full">
-              <GridMatrixAndOrders
-                grid={state.activeGrid}
-                currentPrice={activePrice}
-                openOrders={state.openOrders}
-                recentFills={state.recentFills}
-                position={state.position}
-                onCancelOrder={async (id) => {
-                  await cancelOrder(id);
-                  loadFullState();
-                }}
-                onCancelAllOrders={async () => {
-                  await cancelAllOrders();
-                  loadFullState();
-                }}
-                onPlaceManualOrder={async (order) => {
-                  const res = await placeManualOrder(order);
-                  loadFullState();
-                  return res;
-                }}
-              />
-            </div>
-          </div>
+          <LiveTradingView
+            state={state}
+            pairs={pairs}
+            pairDetails={pairDetails}
+            isLiveConnected={isLiveConnected}
+            isOwnerAuthenticated={isOwnerAuth}
+            onSelectSymbol={async (sym) => {
+              await selectActivePair(sym);
+              await loadFullState();
+            }}
+            onRefresh={loadFullState}
+          />
         )}
 
         {activeTab === 'AUTONOMOUS_OPTIMIZER' && (
