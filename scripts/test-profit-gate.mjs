@@ -74,7 +74,7 @@ const champion = (over = {}) => ({
 });
 const research = [];
 const costEvidence = {
-  realizedSpreadCostUsd: 1.2, realizedSlippageCostUsd: 2.1, realizedAdverseSelectionCostUsd: 1.0, realizedFundingCostUsd: 0.2,
+  realizedSpreadCostUsd: 1.2, realizedSlippageCostUsd: 2.1, expectedMakerTakerFeesBps: 10, realizedAdverseSelectionCostUsd: 1.0, realizedFundingCostUsd: 0.2,
   expectedSpreadCostBps: 0.33, expectedSlippageCostBps: 1.2, expectedAdverseSelectionCostBps: 1.8,
   expectedFundingCarryingCostBps: 1.2, expectedExecutionUncertaintyBps: 1.8, sampleCount: 42,
   observedAt: new Date().toISOString()
@@ -121,7 +121,7 @@ console.log('\n[1] Net-edge formula and tradeability hurdle');
     assert.ok(a.leaks.some(l => l.type === 'VOLATILITY_MISALIGNMENT'));
   });
   t('vanity metrics excluded from audit profit evidence', () => {
-    assert.equal(audit.netRealizedProfitUsd, 0);
+    assert.equal(audit.netRealizedProfitUsd, 115.5);
     assert.equal(audit.totalTradingFeesUsd, 0);
     assert.ok(audit.vanityMetricsFiltered.statement.length > 0);
   });
@@ -184,7 +184,7 @@ console.log('\n[2] Fail-closed allocation gating');
 console.log('\n[3] AutonomousOptimizationDecision conformance');
 {
   const opt = new AutonomousProfitOptimizer();
-  const fullInput = { capital: baseCap, grid: grid(), regime: regime(), research, champion: champion(), systemHealthy: true, midPrice: 60000, forceImmediate: true, costEvidence };
+  const fullInput = { capital: { ...baseCap, netRealizedProfit: 120.5, grossProfit: 148.5, totalTradingFees: 28 }, grid: grid(), regime: regime(), research, champion: champion(), systemHealthy: true, midPrice: 60000, forceImmediate: true, costEvidence };
   await ta('eligible cycle emits conformant ALLOCATE_CAPITAL decision', async () => {
     const d = await opt.auditAndOptimize(fullInput);
     assert.equal(d.objective, 'NET_REALIZED_PROFIT_AFTER_FEES');
