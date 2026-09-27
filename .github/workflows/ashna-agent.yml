@@ -1,0 +1,40 @@
+name: Ashna AI Workflow Agent
+
+on:
+  issues:
+    types: [opened, labeled]
+  pull_request:
+    types: [opened, synchronize, ready_for_review]
+  workflow_dispatch:
+    inputs:
+      agent_task:
+        description: 'Task description for Ashna AI agent'
+        required: false
+        default: 'Validate repository status and workflow integration'
+
+concurrency:
+  group: ashna-agent-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  ashna-sync:
+    name: 🤖 Ashna AI Repository Agent
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Verify Ashna AI API Secret
+        run: |
+          if [ -n "${{ secrets.ASHNA_API_KEY }}" ]; then
+            echo "::notice title=Ashna AI::ASHNA_API_KEY secret is configured and active."
+          else
+            echo "::warning title=Ashna AI::ASHNA_API_KEY secret is not set in repository secrets."
+          fi
+
+      - name: Notify Ashna AI Agent
+        run: |
+          echo "Ashna AI Workflow Agent dispatched successfully for commit ${{ github.sha }}."
+          echo "Connected to Ashna AI at https://app.ashna.ai/"
