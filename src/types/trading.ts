@@ -839,7 +839,7 @@ export interface ExchangeCredentialsInfo {
   exchange: SupportedExchange;
   configured: boolean;
   apiKeyMask: string;
-  status: 'CONNECTED' | 'ERROR' | 'UNCONFIGURED';
+  status: 'CONNECTED' | 'VALIDATING' | 'ERROR' | 'RESTRICTED' | 'DISCONNECTED' | 'UNCONFIGURED';
   permissions: {
     spotTrading: boolean;
     marginTrading: boolean;
