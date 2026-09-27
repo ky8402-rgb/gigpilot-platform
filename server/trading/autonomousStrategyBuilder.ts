@@ -22,9 +22,11 @@ export class AutonomousStrategyBuilder implements EngineModule {
   private errorSurface: EngineErrorRecord[] = [];
   private builds: AutonomousStrategyBuild[] = [];
   private aiClient: GoogleGenAI | null = null;
+  private lastSuccessfulBuildAt: number | null = null;
+  private readonly requestTimeoutMs = 15_000;
 
   constructor() {
-    this.seedBaselineBuild();
+    // No synthetic baseline builds. A build exists only after a real validated Gemini response.
   }
 
   public healthCheck(): EngineHealth {
@@ -32,7 +34,7 @@ export class AutonomousStrategyBuilder implements EngineModule {
     return {
       id: this.id,
       name: this.name,
-      status: !this.enabled ? 'OFF' : (!hasKey ? 'DEGRADED' : this.status),
+      status: !this.enabled ? 'OFF' : (!hasKey || this.lastSuccessfulBuildAt === null || Date.now() - this.lastSuccessfulBuildAt > 30 * 60 * 1000 ? 'DEGRADED' : this.status),
       enabled: this.enabled,
       latencyMs: this.latencyMs,
       lastHeartbeat: this.lastHeartbeat,
@@ -43,7 +45,9 @@ export class AutonomousStrategyBuilder implements EngineModule {
         objective: 'NET_REALIZED_PROFIT_AFTER_FEES',
         autonomousBuild: true,
         sourceData: 'LIVE_PRODUCTION_ONLY',
-        buildsCount: this.builds.length
+        buildsCount: this.builds.length,
+        lastSuccessfulBuildAt: this.lastSuccessfulBuildAt ? new Date(this.lastSuccessfulBuildAt).toISOString() : null,
+        freshnessWindowMinutes: 30
       }
     };
   }
@@ -78,21 +82,18 @@ export class AutonomousStrategyBuilder implements EngineModule {
 
     const targetSpacing = input.overrideSpacing ?? input.grid.gridSpacingPct;
 
-    let strategyName = `AI Live Revenue Strategy v${(input.champion.version ? parseFloat(input.champion.version.replace(/[^0-9.]/g, '')) + 0.1 : 2.1).toFixed(1)}`;
-    let confidence = 0.91;
-    let rationale = `Autonomous build optimizing net profit after fees for ${input.regime.regime} regime. Spacing adjusted to ${targetSpacing}%.`;
-    let expectedEffect = `Expected +14% improvement in net spread capture after 16 bps round-trip exchange fees.`;
-    let mutatedParams: StrategyVersion['parameters'] = {
-      ...input.champion.parameters,
-      gridSpacingPct: targetSpacing,
-      volatilityMultiplier: input.regime.bbBandwidth > 3.0 ? 1.25 : 1.05,
-      trendFilterEma: input.regime.trendDirection === 'BULLISH' ? 21 : 50,
-      rsiFilterThreshold: 35,
-      rebalanceIntervalSec: 120
-    };
+    if (!ai) {
+      this.status = 'DEGRADED';
+      this.recordError('ERROR', 'Gemini API credential is required for autonomous strategy builds; no fallback build is permitted.');
+      return null;
+    }
 
-    if (ai) {
-      try {
+    let strategyName = '';
+    let confidence: number | null = null;
+    let rationale = '';
+    let expectedEffect = '';
+    let mutatedParams: StrategyVersion['parameters'] = { ...input.champion.parameters, gridSpacingPct: targetSpacing };
+    try {
         const prompt = `You are GigPilot's Autonomous Strategy Builder.
 Your sole mission: Build a refined crypto grid strategy variant optimizing ONLY FOR NET REALIZED PROFIT AFTER EXCHANGE FEES.
 Zero vanity metrics (turnover volume, raw order count, cosmetic win rate).
@@ -129,19 +130,25 @@ Return JSON ONLY:
   }
 }`;
 
-        const response = await ai.models.generateContent({
-          model: 'gemini-flash-latest',
-          contents: prompt
-        });
+        const response = await Promise.race([
+          ai.models.generateContent({ model: 'gemini-flash-latest', contents: prompt }),
+          new Promise<never>((_, reject) => setTimeout(() => reject(new Error('Gemini strategy build timed out.')), this.requestTimeoutMs))
+        ]);
 
         const raw = response.text?.trim() || '{}';
         const match = raw.match(/\{[\s\S]*\}/);
         if (match) {
           const parsed = JSON.parse(match[0]);
-          if (parsed.strategyName) strategyName = String(parsed.strategyName);
-          if (parsed.rationale) rationale = String(parsed.rationale);
-          if (parsed.expectedEffect) expectedEffect = String(parsed.expectedEffect);
-          if (typeof parsed.confidence === 'number') confidence = Math.max(0.70, Math.min(0.99, parsed.confidence));
+          if (typeof parsed.strategyName !== 'string' || !parsed.strategyName.trim() ||
+              typeof parsed.rationale !== 'string' || !parsed.rationale.trim() ||
+              typeof parsed.expectedEffect !== 'string' || !parsed.expectedEffect.trim() ||
+              !Number.isFinite(parsed.confidence) || parsed.confidence < 0.70 || parsed.confidence > 0.99) {
+            throw new Error('Gemini strategy build response failed strict evidence validation.');
+          }
+          strategyName = parsed.strategyName.trim();
+          rationale = parsed.rationale.trim();
+          expectedEffect = parsed.expectedEffect.trim();
+          confidence = Number(parsed.confidence);
 
           const p = parsed.parameters || {};
           if (Number.isFinite(p.gridSpacingPct) && p.gridSpacingPct >= 0.15 && p.gridSpacingPct <= 4.0) {
@@ -158,8 +165,15 @@ Return JSON ONLY:
           }
         }
       } catch (err: any) {
-        this.recordError('WARN', `Gemini strategy build generative fallback: ${err?.message}`);
-      }
+      this.status = 'DEGRADED';
+      this.recordError('ERROR', `Gemini strategy build failed; no build was accepted: ${err?.message || String(err)}`);
+      return null;
+    }
+
+    if (!strategyName || confidence === null || !rationale || !expectedEffect) {
+      this.status = 'DEGRADED';
+      this.recordError('ERROR', 'Gemini strategy build returned incomplete evidence; no build was accepted.');
+      return null;
     }
 
     const build: AutonomousStrategyBuild = {
@@ -185,36 +199,9 @@ Return JSON ONLY:
     if (this.builds.length > 50) this.builds.pop();
     this.latencyMs = Date.now() - start;
     this.lastHeartbeat = new Date().toISOString();
+    this.lastSuccessfulBuildAt = Date.now();
     this.status = 'HEALTHY';
     return build;
-  }
-
-  private seedBaselineBuild() {
-    this.builds.push({
-      id: 'build_baseline_rev_1',
-      createdAt: new Date(Date.now() - 3600000).toISOString(),
-      objective: 'NET_REALIZED_PROFIT_AFTER_FEES',
-      status: 'BUILT',
-      strategyName: 'Baseline Fee-Optimized Geometric Rung Strategy',
-      parentStrategyId: 'STRAT-CHAMPION-001',
-      parameters: {
-        gridLevels: 16,
-        gridSpacingPct: 0.72,
-        volatilityMultiplier: 1.10,
-        trendFilterEma: 50,
-        rsiFilterThreshold: 35,
-        rebalanceIntervalSec: 120
-      },
-      confidence: 0.94,
-      rationale: 'Calibrated 0.72% geometric spacing ensures 4.5x headroom over 16 bps Bybit spot maker/taker round-trip fees, preserving 77.8% net revenue retention.',
-      expectedEffect: '+$24.50 projected net profit per $3,500 capital round-trip cycle.',
-      liveEvidence: {
-        netRealizedProfit: 148.50,
-        totalFees: 12.40,
-        totalTrades: 42,
-        currentDrawdownPct: 0.4
-      }
-    });
   }
 
   private recordError(level: EngineErrorRecord['level'], message: string) {
