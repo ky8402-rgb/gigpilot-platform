@@ -140,8 +140,24 @@ tradingRouter.post('/exchanges/keys', requireOwnerAuth, (req: Request, res: Resp
       return res.status(400).json(result);
     }
 
-    // Update bybitAdapter
+    // Keep execution fail-closed while the newly supplied credentials are validated.
     bybitAdapter.updateCredentials(apiKey, apiSecret);
+
+    const accountState = await bybitAdapter.getRealAccountState(true);
+    const validationStatus =
+      accountState.status === 'CONNECTED'
+        ? 'CONNECTED'
+        : accountState.status === 'RESTRICTED'
+          ? 'RESTRICTED'
+          : accountState.status === 'DISCONNECTED'
+            ? 'DISCONNECTED'
+            : 'ERROR';
+
+    globalTradingStore.exchangeExec.setCredentialValidation('BYBIT', {
+      status: validationStatus,
+      lastChecked: accountState.timestamp,
+      errorMessage: validationStatus === 'CONNECTED' ? undefined : accountState.message
+    });
 
     globalTradingStore.monitor.logAudit({
       category: 'CONFIG_CHANGE',
@@ -149,10 +165,22 @@ tradingRouter.post('/exchanges/keys', requireOwnerAuth, (req: Request, res: Resp
       details: { exchange, environment: 'BYBIT_LIVE' }
     });
 
-    return res.json({
-      success: true,
-      message: `Trade-only keys for ${exchange} configured successfully.`,
-      credentials: globalTradingStore.exchangeExec.getExchangeCredentials()
+    const validated = validationStatus === 'CONNECTED';
+    return res.status(validated ? 200 : 503).json({
+      success: validated,
+      message: validated
+        ? `Trade-only keys for ${exchange} validated successfully against Bybit.`
+        : `Trade-only keys for ${exchange} were saved, but authenticated Bybit validation failed. Live trading remains fail-closed.`,
+      credentials: globalTradingStore.exchangeExec.getExchangeCredentials(),
+      accountState: {
+        status: accountState.status,
+        message: accountState.message,
+        serverIp: accountState.serverIp,
+        timestamp: accountState.timestamp,
+        canTrade: accountState.canTrade,
+        canWithdraw: false,
+        accountType: accountState.accountType
+      }
     });
   } catch (err: any) {
     return res.status(500).json({ success: false, error: err.message });
