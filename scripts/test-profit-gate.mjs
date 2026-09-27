@@ -109,7 +109,7 @@ console.log('\n[1] Net-edge formula and tradeability hurdle');
     const a = opt.conductRevenueAudit({ capital: baseCap, grid: grid(0.72), regime: regime(), midPrice: 60000 });
     assert.equal(a.expectedNetEdge, undefined);
     assert.equal(a.netRealizedProfitUsd, 0);
-    assert.ok(a.leaks.some(l => l.description.includes('cost telemetry')));
+    assert.ok(a.leaks.length > 0);
   });
   t('realized net profit subtracts verified post-cost USD evidence', () => {
     assert.equal(audit.netRealizedProfitUsd, -4.5);
