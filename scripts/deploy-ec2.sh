@@ -54,6 +54,29 @@ if [ -f "/tmp/gigpilot.env.bak" ]; then
   cp -f /tmp/gigpilot.env.bak "$APP_DIR/.env" 2>/dev/null || true
 fi
 
+# Configure BYBIT_API_KEY & BYBIT_API_SECRET if supplied
+if [ -n "${BYBIT_API_KEY:-}" ]; then
+  umask 077
+  touch "$APP_DIR/.env"
+  if grep -q '^BYBIT_API_KEY=' "$APP_DIR/.env"; then
+    sed -i "s|^BYBIT_API_KEY=.*|BYBIT_API_KEY=\"$BYBIT_API_KEY\"|" "$APP_DIR/.env"
+  else
+    printf '%s\n' "BYBIT_API_KEY=\"$BYBIT_API_KEY\"" >> "$APP_DIR/.env"
+  fi
+  echo "✔ BYBIT_API_KEY updated in $APP_DIR/.env"
+fi
+
+if [ -n "${BYBIT_API_SECRET:-}" ]; then
+  umask 077
+  touch "$APP_DIR/.env"
+  if grep -q '^BYBIT_API_SECRET=' "$APP_DIR/.env"; then
+    sed -i "s|^BYBIT_API_SECRET=.*|BYBIT_API_SECRET=\"$BYBIT_API_SECRET\"|" "$APP_DIR/.env"
+  else
+    printf '%s\n' "BYBIT_API_SECRET=\"$BYBIT_API_SECRET\"" >> "$APP_DIR/.env"
+  fi
+  echo "✔ BYBIT_API_SECRET updated in $APP_DIR/.env"
+fi
+
 # Configure GEMINI_API_KEY if supplied
 if [ -n "${GEMINI_API_KEY:-}" ]; then
   umask 077
