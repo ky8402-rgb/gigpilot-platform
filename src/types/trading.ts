@@ -278,6 +278,7 @@ export interface Position {
   totalFeesPaid: number;
   netPnL: number;
   liquidationPrice?: number;
+  leverage?: number;
 }
 
 export interface CapitalAccounting {

@@ -269,6 +269,11 @@ export class TradingStore {
         for (const fill of acct.recentTrades || []) {
           this.profitAccounting.recordFill(fill);
         }
+        const positionSync = await this.exchangeExec.syncLiveFuturesPositions(this.activeSymbol);
+        if (positionSync.error) {
+          this.exchangeExec.setOffSwitch(false);
+          this.triggerEmergencyKillSwitch('Bybit futures position reconciliation failed: ' + positionSync.error);
+        }
         return;
       }
 
