@@ -31,10 +31,10 @@ export class DataEngine implements EngineModule {
   private consecutiveFailures: number = 0;
   private lastCandleFetchAt: Map<string, number> = new Map();
 
-  // Real-time WebSocket connection to Bybit V5 public spot stream
+  // Real-time WebSocket connection to Bybit V5 public linear futures stream
   private ws: WebSocket | null = null;
   private wsConnected: boolean = false;
-  private wsUrl: string = 'wss://stream.bybit.com/v5/public/spot';
+  private wsUrl: string = 'wss://stream.bybit.com/v5/public/linear';
 
   private marketData: Map<string, LivePairMarketData> = new Map();
   private tickCallbacks: Array<(symbol: string, price: number, data: LivePairMarketData) => void> = [];
@@ -51,8 +51,7 @@ export class DataEngine implements EngineModule {
 
   // Official public endpoints for Bybit V5 live market data
   private bybitEndpoints = [
-    'https://api.bybit.com',
-    'https://api-testnet.bybit.com'
+    'https://api.bybit.com'
   ];
 
   constructor() {
@@ -169,7 +168,7 @@ export class DataEngine implements EngineModule {
   }
 
   /**
-   * Connect to Bybit V5 Public Spot WebSocket
+   * Connect to Bybit V5 Public Linear Futures WebSocket
    * Subscribes to tickers for tracked symbols
    */
   private connectWebSocket(): void {
@@ -182,7 +181,7 @@ export class DataEngine implements EngineModule {
         this.wsConnected = true;
         this.status = 'HEALTHY';
 
-        // Subscribe to tickers for all tracked symbols on Bybit V5 Spot
+        // Subscribe to tickers for all tracked symbols on Bybit V5 Linear Futures
         const topics = this.trackedSymbols.map(s => `tickers.${this.toExchangeSymbol(s)}`);
         const subMsg = {
           op: 'subscribe',
@@ -318,7 +317,7 @@ export class DataEngine implements EngineModule {
         try {
           const controller = new AbortController();
           const timer = setTimeout(() => controller.abort(), 2500);
-          const res = await fetch(`${endpoint}/v5/market/tickers?category=spot`, {
+          const res = await fetch(`${endpoint}/v5/market/tickers?category=linear`, {
             signal: controller.signal,
             headers: { 'Accept': 'application/json' }
           });
@@ -373,7 +372,7 @@ export class DataEngine implements EngineModule {
         let spreadBps = existing?.orderBook?.spreadBps || 0;
 
         try {
-          const depthRes = await fetch(`https://api.bybit.com/v5/market/orderbook?category=spot&symbol=${raw}&limit=15`, {
+          const depthRes = await fetch(`https://api.bybit.com/v5/market/orderbook?category=linear&symbol=${raw}&limit=15`, {
             headers: { 'Accept': 'application/json' }
           });
           if (depthRes.ok) {
@@ -412,7 +411,7 @@ export class DataEngine implements EngineModule {
         const candleCacheFresh = candles.length >= 5 && (Date.now() - lastCandleFetch) < 30000;
         if (!candleCacheFresh) {
           try {
-            const klineRes = await fetch(`https://api.bybit.com/v5/market/kline?category=spot&symbol=${raw}&interval=1&limit=30`, {
+            const klineRes = await fetch(`https://api.bybit.com/v5/market/kline?category=linear&symbol=${raw}&interval=1&limit=30`, {
               headers: { 'Accept': 'application/json' }
             });
             if (klineRes.ok) {
