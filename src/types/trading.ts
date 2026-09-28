@@ -579,6 +579,13 @@ export interface MasterTradingState {
   GLOBAL_KILL_SWITCH_ACTIVE?: boolean;
   botsDisabled?: boolean;
   activeBotsCount?: number;
+  futuresRisk?: {
+    maxLeverage: number;
+    maxExposureUsd: number;
+    maxDrawdownLimitPct: number;
+    maxCapitalAllocationPct: number;
+    minimumNetEdgeBps: number;
+  };
   autonomousBot?: {
     status: 'RUNNING' | 'PAUSED' | 'BLOCKED';
     allocatedCapitalUsd: number;
