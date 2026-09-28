@@ -666,6 +666,18 @@ export class BybitAdapter {
     }));
   }
 
+  /** Set the exchange leverage for a linear USDT perpetual before any autonomous entry. */
+  public async setFuturesLeverage(symbol: string, leverage: number): Promise<{ success: boolean; error?: string }> {
+    if (!this.apiKey || !this.apiSecret) return { success: false, error: 'Bybit credentials are not configured.' };
+    if (!Number.isFinite(leverage) || leverage < 1) return { success: false, error: 'Futures leverage must be at least 1x.' };
+    const payload = { category: 'linear', symbol: this.normalizeSymbol(symbol), buyLeverage: String(leverage), sellLeverage: String(leverage) };
+    const { headers, bodyStr } = this.signPost(payload);
+    const res = await fetch(this.getActiveBaseUrl() + '/v5/position/set-leverage', { method: 'POST', headers, body: bodyStr });
+    const json = await res.json() as any;
+    if (!res.ok || json?.retCode !== 0) return { success: false, error: json?.retMsg || ('Bybit leverage update failed: HTTP ' + res.status) };
+    return { success: true };
+  }
+
   /**
    * Private Signed: Real Bybit linear futures positions.
    * Position size is signed: positive=LONG, negative=SHORT.
