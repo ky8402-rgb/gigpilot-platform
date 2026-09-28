@@ -462,7 +462,8 @@ export class TradingStore {
           isGridOrder: true,
           gridLevelId: lvl.id,
           strategyId: this.learningLoop.getChampionStrategy().id,
-          expectedNetEdge: edge
+          expectedNetEdge: edge,
+          leverage: this.risk.getConfig().maxLeverage
         });
       }
     }
@@ -522,6 +523,10 @@ export class TradingStore {
     }
 
     const riskConfig = this.risk.getConfig();
+    const leverageReady = await this.exchangeExec.ensureFuturesLeverage(norm, riskConfig.maxLeverage);
+    if (!leverageReady.success) {
+      throw new Error(`FAIL-CLOSED: futures leverage could not be configured within the risk limit: ${leverageReady.error || 'exchange rejected leverage configuration'}`);
+    }
     const availableCash = Number(this.capital.availableCash || 0);
     const maxByPct = availableCash * (riskConfig.maxCapitalAllocationPct / 100);
     const maxAllowed = Math.max(0, Math.min(availableCash - riskConfig.minAccountReserveUsd, maxByPct));
