@@ -308,8 +308,11 @@ tradingRouter.get('/autonomy/status', requireOwnerAuth, async (req: Request, res
     if (store.GLOBAL_KILL_SWITCH_ACTIVE || store.killSwitch.getState().isActive) {
       blockers.push('GLOBAL_KILL_SWITCH_ACTIVE: automatic orders are disabled');
     }
+    let autonomyLevelBlocker: string | null = null;
     if (store.autonomyLevel < 2) {
-      blockers.push(`Autonomy level L${store.autonomyLevel}: automatic grid execution requires L2 or higher`);
+      // Reported separately: this precondition is satisfied BY starting, so it must not gate the
+      // pre-flight check that is displayed before the operator presses START.
+      autonomyLevelBlocker = `Autonomy level L${store.autonomyLevel}: automatic grid execution requires L2 or higher`;
     }
     if (!credentials?.isConfigured) {
       blockers.push('Bybit trade-only API credentials are not configured');
@@ -326,11 +329,68 @@ tradingRouter.get('/autonomy/status', requireOwnerAuth, async (req: Request, res
       blockers.push(`Insufficient live candle depth for ${store.activeSymbol}: ${pairData?.candles.length ?? 0}/5`);
     }
 
+    // Capital planning. The exchange's real minimum notional, the account reserve and the
+    // allocation cap decide whether a grid can exist at all — otherwise the operator only discovers
+    // this when START is rejected mid-flow.
+    const proposedAllocation = Number(req.query.capital);
+    const riskConfig = store.risk.getConfig();
+    const availableCashUsd = Number(store.capital.availableCash || 0);
+    const maxByPctUsd = availableCashUsd * (riskConfig.maxCapitalAllocationPct / 100);
+    const maxAllocatableUsd = Math.max(0, Math.min(availableCashUsd - riskConfig.minAccountReserveUsd, maxByPctUsd));
+    const gridLevelsCount = 16;
+
+    let exchangeMinNotionalUsd = 0;
+    try {
+      const instrument = await store.exchangeExec.getInstrumentSpec(store.activeSymbol);
+      exchangeMinNotionalUsd = Number(instrument?.minNotional) || 0;
+    } catch {
+      exchangeMinNotionalUsd = 0;
+    }
+    const minRequiredForGridUsd = exchangeMinNotionalUsd * gridLevelsCount;
+
+    if (maxAllocatableUsd <= 0) {
+      blockers.push(`No allocatable capital: available cash ${availableCashUsd.toFixed(2)} USDT must exceed the ${riskConfig.minAccountReserveUsd} USDT account reserve, and at most ${riskConfig.maxCapitalAllocationPct}% of cash may be deployed.`);
+    }
+    if (minRequiredForGridUsd > 0 && maxAllocatableUsd > 0 && maxAllocatableUsd < minRequiredForGridUsd) {
+      blockers.push(`Account funding is below the exchange minimum for a ${gridLevelsCount}-rung grid: ${maxAllocatableUsd.toFixed(2)} USDT allocatable vs ${minRequiredForGridUsd.toFixed(2)} USDT required (${exchangeMinNotionalUsd} USDT minimum notional per rung).`);
+    }
+    if (Number.isFinite(proposedAllocation) && proposedAllocation > 0) {
+      if (proposedAllocation > maxAllocatableUsd + 1e-9) {
+        blockers.push(`Requested allocation ${proposedAllocation.toFixed(2)} USDT exceeds the risk-approved maximum ${maxAllocatableUsd.toFixed(2)} USDT after reserve and allocation limits.`);
+      }
+      if (exchangeMinNotionalUsd > 0 && proposedAllocation / gridLevelsCount < exchangeMinNotionalUsd) {
+        blockers.push(`Requested allocation gives ${(proposedAllocation / gridLevelsCount).toFixed(2)} USDT per rung, below the exchange minimum notional of ${exchangeMinNotionalUsd} USDT.`);
+      }
+    }
+
+    // The measured cost stack decides whether ANY trade is currently worth taking.
+    const expectedEdge = store.profitOptimizer.getLatestAudit()?.expectedNetEdge ?? null;
+    if (expectedEdge && !expectedEdge.isTradeable) {
+      blockers.push(`Measured expected net edge ${expectedEdge.expectedNetEdgeBps} bps is at or below the ${expectedEdge.minHurdleRateBps} bps hurdle.`);
+    }
+
+    // Everything that must hold BEFORE START is pressed (kill switch, credentials, fail-closed,
+    // market data, capital viability and net edge) — excluding the autonomy level START grants.
+    const startPreflightBlockers = [...blockers];
+    if (autonomyLevelBlocker) blockers.push(autonomyLevelBlocker);
+
     return res.json({
       success: true,
       activeSymbol: store.activeSymbol,
       autonomyLevel: store.autonomyLevel,
       tradingMode: store.tradingMode,
+      startPreflightBlockers,
+      canStart: startPreflightBlockers.length === 0,
+      capitalPlan: {
+        availableCashUsd: Number(availableCashUsd.toFixed(4)),
+        minAccountReserveUsd: riskConfig.minAccountReserveUsd,
+        maxCapitalAllocationPct: riskConfig.maxCapitalAllocationPct,
+        maxAllocatableUsd: Number(maxAllocatableUsd.toFixed(4)),
+        gridLevelsCount,
+        exchangeMinNotionalUsd,
+        minRequiredForGridUsd: Number(minRequiredForGridUsd.toFixed(4))
+      },
+      expectedNetEdge: expectedEdge,
       globalKillSwitchActive: store.GLOBAL_KILL_SWITCH_ACTIVE || store.killSwitch.getState().isActive,
       botsDisabled: store.activeBotsDisabled,
       bybitCredentialStatus: credentials?.status ?? 'UNCONFIGURED',

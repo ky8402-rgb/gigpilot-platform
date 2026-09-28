@@ -1,7 +1,7 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { AlertTriangle, Bot, Play, ShieldCheck, Square, Wallet } from 'lucide-react';
 import { MasterTradingState } from '../../types/trading';
-import { startAutonomousTrading, stopAutonomousTrading } from '../../services/tradingService';
+import { fetchAutonomyStatus, startAutonomousTrading, stopAutonomousTrading } from '../../services/tradingService';
 import { deriveBotStatus, money, price, type Pair } from './autonomousBotLogic';
 
 type LiveTradingViewProps = {
@@ -38,8 +38,22 @@ export const LiveTradingView = ({
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState('');
   const [confirmStart, setConfirmStart] = useState(false);
+  const [preflight, setPreflight] = useState<any>(null);
 
   const allocation = Number(allocatedCapital);
+  const preflightBlocked = Boolean(preflight && !preflight.canStart);
+
+  // Pre-flight: show exactly why START would be rejected before the operator commits. Re-evaluated
+  // as the pair or the proposed allocation changes, with a short debounce so typing does not spam.
+  useEffect(() => {
+    let cancelled = false;
+    const timer = setTimeout(() => {
+      fetchAutonomyStatus(Number.isFinite(allocation) && allocation > 0 ? allocation : undefined)
+        .then((res) => { if (!cancelled) setPreflight(res); })
+        .catch(() => { if (!cancelled) setPreflight(null); });
+    }, 250);
+    return () => { cancelled = true; clearTimeout(timer); };
+  }, [state.activeSymbol, allocation]);
   const d = deriveBotStatus(state, { isLiveConnected, isOwnerAuthenticated, allocation, busy });
   const risk = state.futuresRisk;
   const position = d.position;
@@ -188,6 +202,32 @@ export const LiveTradingView = ({
           </div>
         </div>
 
+        {preflight && (
+          <div className={`mt-4 rounded-xl border p-3 text-xs leading-5 ${preflight.canStart ? 'border-emerald-800/60 bg-emerald-950/20 text-emerald-200' : 'border-amber-700/50 bg-amber-950/20 text-amber-200'}`}>
+            <div className="font-bold uppercase tracking-wider">3. Start Pre-Flight</div>
+            {preflight.canStart ? (
+              <div className="mt-1">All pre-START preconditions pass. Maximum allocatable: {money(preflight.capitalPlan?.maxAllocatableUsd)} USDT.</div>
+            ) : (
+              <ul className="mt-1 list-disc space-y-1 pl-4">
+                {(preflight.startPreflightBlockers || []).map((b: string, i: number) => <li key={i}>{b}</li>)}
+              </ul>
+            )}
+            {preflight.capitalPlan && (
+              <div className="mt-2 text-slate-400">
+                Reserve {money(preflight.capitalPlan.minAccountReserveUsd)} USDT · cap {preflight.capitalPlan.maxCapitalAllocationPct}% of {money(preflight.capitalPlan.availableCashUsd)} available ·
+                exchange minimum for a {preflight.capitalPlan.gridLevelsCount}-rung grid: {money(preflight.capitalPlan.minRequiredForGridUsd)} USDT
+                {preflight.capitalPlan.exchangeMinNotionalUsd ? ` (${preflight.capitalPlan.exchangeMinNotionalUsd} USDT per rung)` : ''}
+              </div>
+            )}
+            {preflight.expectedNetEdge && (
+              <div className="mt-1 text-slate-400">
+                Measured net edge {preflight.expectedNetEdge.expectedNetEdgeBps} bps vs {preflight.expectedNetEdge.minHurdleRateBps} bps hurdle
+                {preflight.expectedNetEdge.isTradeable ? ' — tradeable' : ' — currently sub-hurdle'}
+              </div>
+            )}
+          </div>
+        )}
+
         <div className="mt-5">
           {confirmStart ? (
             <div className="rounded-xl border border-emerald-500/40 bg-emerald-950/30 p-4">
@@ -217,7 +257,7 @@ export const LiveTradingView = ({
           ) : (
             <button
               onClick={() => setConfirmStart(true)}
-              disabled={!d.canStart}
+              disabled={!d.canStart || preflightBlocked}
               className="flex w-full items-center justify-center gap-2 rounded-xl bg-emerald-600 px-4 py-3.5 text-sm font-black uppercase tracking-widest text-white transition hover:bg-emerald-500 disabled:cursor-not-allowed disabled:opacity-40"
             >
               <Play className="h-5 w-5" />

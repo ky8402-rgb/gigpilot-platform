@@ -39,6 +39,26 @@ export class ExchangeExecutionEngine implements EngineModule {
   private halted: boolean = false;
   /** Cached Bybit instrument filters (qty step / tick size / minimums) for correct rounding. */
   private instrumentSpecs: Map<string, { qtyStep: number; tickSize: number; minOrderQty: number; minNotional: number }> = new Map();
+  /** Live quote captured at dispatch, keyed by exchange order id and orderLinkId. */
+  private orderQuoteRefs: Map<string, { mid: number; halfSpreadBps: number }> = new Map();
+
+  private recordQuoteSnapshot(key: string | undefined, snapshot: { mid: number; halfSpreadBps: number }): void {
+    if (!key) return;
+    // Refresh insertion order so the oldest references are evicted first.
+    if (this.orderQuoteRefs.has(key)) this.orderQuoteRefs.delete(key);
+    this.orderQuoteRefs.set(key, snapshot);
+    while (this.orderQuoteRefs.size > 2000) {
+      const oldest = this.orderQuoteRefs.keys().next().value as string | undefined;
+      if (!oldest) break;
+      this.orderQuoteRefs.delete(oldest);
+    }
+  }
+
+  /** Quote captured when the given order was dispatched, for real slippage attribution. */
+  public getQuoteSnapshot(orderIdOrLinkId: string): { mid: number; halfSpreadBps: number } | null {
+    if (!orderIdOrLinkId) return null;
+    return this.orderQuoteRefs.get(orderIdOrLinkId) || null;
+  }
 
   constructor() {
     this.initCredentials();
@@ -92,6 +112,7 @@ export class ExchangeExecutionEngine implements EngineModule {
         configuredExchangesCount: configuredCount,
         openOrdersCount: this.openOrders.size,
         fillsCount: this.fills.length,
+        halted: this.halted,
         securityPolicy: 'TRADE_ONLY_KEYS_STRICT (All withdrawal endpoints permanently blocked)'
       }
     };
@@ -220,16 +241,23 @@ export class ExchangeExecutionEngine implements EngineModule {
 
   /** Engage/release the hard halt driven by the global emergency kill switch. */
   public setHalted(halted: boolean): void {
+    // Deliberately independent of engine health. Forcing status to 'OFF' here made
+    // systemMonitor.isSystemFailClosed() permanently true, which blocked autonomous START
+    // (EXCHANGE_EXECUTION_ENGINE is a critical engine) for as long as the halt was engaged.
     this.halted = Boolean(halted);
-    if (this.halted) this.status = 'OFF';
   }
 
   public isHalted(): boolean {
     return this.halted;
   }
 
+  /** Synchronous view of an already-resolved instrument spec (null when not yet cached). */
+  public getCachedInstrumentSpec(symbol: string): { qtyStep: number; tickSize: number; minOrderQty: number; minNotional: number } | null {
+    return this.instrumentSpecs.get(symbol.replace(/[\/\-_]/g, '').toUpperCase()) || null;
+  }
+
   /** Resolve (and cache) the exchange's instrument filters so orders are sized to valid increments. */
-  private async getInstrumentSpec(symbol: string): Promise<{ qtyStep: number; tickSize: number; minOrderQty: number; minNotional: number } | null> {
+  public async getInstrumentSpec(symbol: string): Promise<{ qtyStep: number; tickSize: number; minOrderQty: number; minNotional: number } | null> {
     const key = symbol.replace(/[\/\-_]/g, '').toUpperCase();
     const cached = this.instrumentSpecs.get(key);
     if (cached) return cached;
@@ -279,6 +307,8 @@ export class ExchangeExecutionEngine implements EngineModule {
     leverage?: number;
     orderLinkId?: string;
     reduceOnly?: boolean;
+    /** Live quote captured at dispatch, enabling real execution-cost attribution on the fill. */
+    quoteSnapshot?: { mid: number; halfSpreadBps: number };
   }): Promise<{ success: boolean; order?: Order; error?: string }> {
     if (!this.enabled) {
       const err = 'EXCHANGE_EXECUTION_ENGINE_OFF: Real order execution disabled by operator.';
@@ -353,6 +383,14 @@ export class ExchangeExecutionEngine implements EngineModule {
         return { success: false, order, error: bybitResult.error };
       }
       if (bybitResult.orderId) order.id = bybitResult.orderId;
+
+      // Persist the live quote that existed when this order was dispatched. Without it, execution
+      // cost cannot be attributed to a specific fill and slippage is unknowable (it was previously
+      // reported as a hardcoded 0, which silently flattered every net-edge calculation).
+      if (spec.quoteSnapshot && Number.isFinite(spec.quoteSnapshot.mid) && spec.quoteSnapshot.mid > 0) {
+        this.recordQuoteSnapshot(bybitResult.orderId || order.id, spec.quoteSnapshot);
+        this.recordQuoteSnapshot(orderLinkId, spec.quoteSnapshot);
+      }
 
       order.latencyMs = Date.now() - start;
       this.openOrders.set(order.id, order);
@@ -692,8 +730,24 @@ export class ExchangeExecutionEngine implements EngineModule {
     if (!this.enabled) return { success: false, error: 'EXCHANGE_EXECUTION_ENGINE_OFF: Futures protection is disabled.' };
     const cred = this.credentials.get('BYBIT');
     if (!cred || cred.status !== 'CONNECTED' || !cred.canTrade) return { success: false, error: 'FAIL-CLOSED: Bybit credentials are not trade-ready.' };
+
+    // The exchange now reports the live TP/SL, so protection is only pushed when it is actually
+    // missing or stale. Blindly re-sending it every reconciliation cycle burned rate limit and
+    // momentarily widened protection while the update was in flight.
+    const position = this.getPosition(symbol);
+    const instrument = await this.getInstrumentSpec(symbol);
+    const tolerance = instrument ? instrument.tickSize / 2 : 0;
+    const alreadyProtected = Boolean(
+      position &&
+      Number.isFinite(position.takeProfit) && Number(position.takeProfit) > 0 &&
+      Number.isFinite(position.stopLoss) && Number(position.stopLoss) > 0 &&
+      Math.abs(Number(position.takeProfit) - takeProfit) <= tolerance &&
+      Math.abs(Number(position.stopLoss) - stopLoss) <= tolerance
+    );
+    if (alreadyProtected) return { success: true };
+
     const { bybitAdapter } = await import('./bybitAdapter.js');
-    return bybitAdapter.setFuturesTradingStop(symbol, takeProfit, stopLoss);
+    return bybitAdapter.setFuturesTradingStop(symbol, takeProfit, stopLoss, position?.positionIdx);
   }
 
   /** Place a live Spot protective exit on Bybit. This is a real exchange order; no simulated fill is created. */

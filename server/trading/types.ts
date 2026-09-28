@@ -1,5 +1,7 @@
 // GigPilot Live-Only Autonomous Cryptocurrency Grid Trading Platform - Core Types
 
+import type { CostEvidence } from './costModel.js';
+
 export type AutonomyLevel = 0 | 1 | 2 | 3 | 4;
 // 0: OBSERVE (Safety default - Live data only, all order execution disabled)
 // 1: ASSISTED (Manual confirmation required for every live order)
@@ -58,6 +60,8 @@ export interface RevenueAuditReport {
   spreadCaptureEfficiencyPct: number;
   effectiveNetMarginBps: number;
   expectedNetEdge?: ExpectedNetEdgeBreakdown;
+  /** The measured evidence behind the audit, so the ledger is inspectable rather than asserted. */
+  costEvidence?: CostEvidence;
   leaks: RevenueLeak[];
   vanityMetricsFiltered: {
     grossVolumeIgnoredUsd: number;
@@ -456,6 +460,10 @@ export interface Fill {
   slippageBps: number;
   realizedPnL: number;
   timestamp: string;
+  /** Mid price observed when the parent order was dispatched (enables cost attribution). */
+  referenceMid?: number;
+  /** Half of the quoted spread observed at dispatch, in bps. */
+  referenceHalfSpreadBps?: number;
 }
 
 export interface Position {
@@ -471,6 +479,12 @@ export interface Position {
   netPnL: number;
   liquidationPrice?: number;
   currentPositionCostUsd?: number;
+  /** Exchange-side protection, read back from /v5/position/list. */
+  takeProfit?: number;
+  stopLoss?: number;
+  /** 0 = one-way mode; 1 = long leg, 2 = short leg in hedge mode. */
+  positionIdx?: number;
+  leverage?: number;
 }
 
 export interface CapitalAccounting {

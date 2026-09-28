@@ -18,6 +18,7 @@ import {
   StrategyVersion
 } from './types.js';
 import { AutonomousStrategyBuilder } from './autonomousStrategyBuilder.js';
+import { CostEvidence } from './costModel.js';
 
 type ProfitOptimizerInput = {
   capital: CapitalAccounting;
@@ -28,7 +29,7 @@ type ProfitOptimizerInput = {
   systemHealthy: boolean;
   midPrice?: number;
   forceImmediate?: boolean;
-  costEvidence?: { realizedSpreadCostUsd: number; realizedSlippageCostUsd: number; realizedAdverseSelectionCostUsd: number; realizedFundingCostUsd: number; expectedMakerTakerFeesBps: number; expectedSpreadCostBps: number; expectedSlippageCostBps: number; expectedAdverseSelectionCostBps: number; expectedFundingCarryingCostBps: number; expectedExecutionUncertaintyBps: number; sampleCount: number; observedAt: string };
+  costEvidence?: CostEvidence;
 };
 
 export class AutonomousProfitOptimizer implements EngineModule {
@@ -93,6 +94,9 @@ export class AutonomousProfitOptimizer implements EngineModule {
     const totalFees = Number(input.capital.totalTradingFees || 0);
     const grossProfit = Number(input.capital.grossProfit || 0);
     const gridSpacing = Number(input.grid?.gridSpacingPct || 0);
+    // Gate only on the fields the DECISION actually consumes. The ledger/reporting additions
+    // (realizedTotalCostUsd, markoutSampleCount, feeRateSource) are deliberately not gating, and the
+    // real fail-closed gate is buildCostEvidence() returning null when cost cannot be measured.
     const evidenceValid = Boolean(evidence && evidence.sampleCount > 0 &&
       Number.isFinite(evidence.realizedSpreadCostUsd) && Number.isFinite(evidence.realizedSlippageCostUsd) &&
       Number.isFinite(evidence.realizedAdverseSelectionCostUsd) && Number.isFinite(evidence.realizedFundingCostUsd) &&
@@ -118,7 +122,7 @@ export class AutonomousProfitOptimizer implements EngineModule {
     const normalizedAtrPct = input.regime.atr > 0 && p > 0 ? (input.regime.atr / p) * 100 : 0;
     if (gridSpacing > 0 && p > 0 && Math.abs(gridSpacing - normalizedAtrPct) > 0.35) leaks.push({ id: 'leak_vol_mismatch_' + Date.now(), type: 'VOLATILITY_MISALIGNMENT', severity: 'MEDIUM', description: 'ATR diverges materially from grid spacing.', estimatedDailyDragUsd: 0, recommendedRemediation: 'Recalculate from fresh exchange data and remain fail-closed when stale.' });
     const score = !evidenceValid ? 0 : leaks.some(leak => leak.severity === 'HIGH') ? 35 : leaks.length > 0 ? 70 : 92;
-    const report: RevenueAuditReport = { timestamp: new Date().toISOString(), revenueEfficiencyScore: score, netRealizedProfitUsd: realizedNetAfterAllCosts ?? 0, totalTradingFeesUsd: totalFees, feeToProfitRatioPct, spreadCaptureEfficiencyPct, effectiveNetMarginBps, expectedNetEdge, leaks, vanityMetricsFiltered: { grossVolumeIgnoredUsd: 0, rawFillsCountIgnored: 0, cosmeticWinRateIgnoredPct: 0, statement: 'No profitability decision is made without verified realized post-cost evidence.' } };
+    const report: RevenueAuditReport = { timestamp: new Date().toISOString(), revenueEfficiencyScore: score, netRealizedProfitUsd: realizedNetAfterAllCosts ?? 0, totalTradingFeesUsd: totalFees, feeToProfitRatioPct, spreadCaptureEfficiencyPct, effectiveNetMarginBps, expectedNetEdge, costEvidence: evidenceValid ? evidence : undefined, leaks, vanityMetricsFiltered: { grossVolumeIgnoredUsd: 0, rawFillsCountIgnored: 0, cosmeticWinRateIgnoredPct: 0, statement: 'No profitability decision is made without verified realized post-cost evidence.' } };
     this.latestAuditReport = report;
     return report;
   }
@@ -134,13 +138,84 @@ export class AutonomousProfitOptimizer implements EngineModule {
     this.latestStrategyAllocation = strategyAllocation;
     const topCandidate = strategyAllocation.strategies[0];
     if (!topCandidate) return this.saveDecision('PAUSE_OPTIMIZATION', 1, 'No strategy has sufficient verified live evidence for autonomous capital routing.', 'Zero live parameter mutation.', false, auditReport, strategyAllocation);
+    // Cost-aware grid spacing selection, bounded to a ±25% neighbourhood of the active spacing and
+    // accepted only when it genuinely improves the MEASURED post-cost edge. Risk limits are not
+    // touched by this decision; every resulting rung is still re-validated by the risk engine.
+    const currentSpacingPct = Number(input.grid.gridSpacingPct);
+    const spacingPlan = this.optimiseGridSpacing({ currentSpacingPct, expectedNetEdge: auditReport.expectedNetEdge });
+    const relativeChange = currentSpacingPct > 0 ? Math.abs(spacingPlan.recommendedSpacingPct - currentSpacingPct) / currentSpacingPct : 0;
+
+    if (spacingPlan.improvementBps >= 0.5 && relativeChange >= 0.05) {
+      const widening = spacingPlan.recommendedSpacingPct > currentSpacingPct;
+      return this.saveDecision(
+        widening ? 'WIDEN_GRID' : 'TIGHTEN_GRID',
+        0.9,
+        `Measured post-cost edge improves from ${spacingPlan.currentNetEdgeBps} to ${spacingPlan.candidateNetEdgeBps} bps by moving grid spacing from ${currentSpacingPct}% to ${spacingPlan.recommendedSpacingPct}% (bounded to ±25%). Costs are the live measured stack: ${auditReport.expectedNetEdge.edgeFormula}.`,
+        `Grid spacing ${currentSpacingPct}% -> ${spacingPlan.recommendedSpacingPct}% (+${spacingPlan.improvementBps} bps measured net edge). Risk limits unchanged.`,
+        true,
+        auditReport,
+        strategyAllocation,
+        { previous: currentSpacingPct, next: spacingPlan.recommendedSpacingPct }
+      );
+    }
+
     const ai = this.getAiClient();
     void ai;
     return this.saveDecision('ALLOCATE_CAPITAL', 0.92, strategyAllocation.riskAdjustedRationale, 'Maintain only the verified champion allocation; no risk increase.', false, auditReport, strategyAllocation);
   }
 
-  private saveDecision(action: AutonomousOptimizationDecision['decision'], confidence: number, rationale: string, expectedEffect: string, applied: boolean, audit?: RevenueAuditReport, allocation?: StrategyAllocationDecision): AutonomousOptimizationDecision {
-    const result: AutonomousOptimizationDecision = { id: `opt_${Date.now()}`, timestamp: new Date().toISOString(), objective: 'NET_REALIZED_PROFIT_AFTER_FEES', decision: action, confidence, reason: rationale, expectedEffect, applied, auditReport: audit, strategyAllocation: allocation };
+  /**
+   * Selects the grid spacing that maximises measured expected net edge within a bounded
+   * neighbourhood of the current spacing.
+   *
+   * Gross capture per round-trip scales with spacing, while fees, spread, slippage and execution
+   * uncertainty are paid per round-trip and are therefore spacing-independent. Funding carry scales
+   * with how long inventory is held, which itself scales with spacing. The measured cost stack
+   * decides which effect dominates. The search is a fixed, deterministic sweep of six candidates —
+   * no randomness and no unbounded search.
+   */
+  public optimiseGridSpacing(input: {
+    currentSpacingPct: number;
+    expectedNetEdge: ExpectedNetEdgeBreakdown;
+    maxRelativeChangePct?: number;
+  }): { recommendedSpacingPct: number; currentNetEdgeBps: number; candidateNetEdgeBps: number; improvementBps: number } {
+    const current = Number(input.currentSpacingPct);
+    const edge = input.expectedNetEdge;
+    if (!Number.isFinite(current) || current <= 0 || !edge) {
+      return { recommendedSpacingPct: current, currentNetEdgeBps: 0, candidateNetEdgeBps: 0, improvementBps: 0 };
+    }
+
+    const maxChangePct = Number.isFinite(input.maxRelativeChangePct) ? Number(input.maxRelativeChangePct) : 25;
+    const perRoundTripCostsBps =
+      edge.makerTakerFeesBps + edge.expectedSpreadCostBps + edge.expectedSlippageBps +
+      edge.adverseSelectionCostBps + edge.executionUncertaintyBps;
+
+    const netEdgeFor = (spacingPct: number) => Number(
+      (spacingPct * 100 * 0.55 - perRoundTripCostsBps - edge.fundingCarryingCostBps * (spacingPct / current)).toFixed(4)
+    );
+
+    const currentNetEdgeBps = netEdgeFor(current);
+    let best = { spacing: current, netEdge: currentNetEdgeBps };
+
+    const lo = 1 - maxChangePct / 100;
+    const hi = 1 + maxChangePct / 100;
+    for (const factor of [lo, lo + (1 - lo) / 6, 1 - (1 - lo) / 6, 1 + (hi - 1) / 6, 1 + (hi - 1) / 3, hi]) {
+      const candidate = Number((current * factor).toPrecision(12));
+      if (!Number.isFinite(candidate) || candidate <= 0) continue;
+      const netEdge = netEdgeFor(candidate);
+      if (netEdge > best.netEdge + 1e-9) best = { spacing: candidate, netEdge };
+    }
+
+    return {
+      recommendedSpacingPct: Number(best.spacing.toFixed(6)),
+      currentNetEdgeBps,
+      candidateNetEdgeBps: Number(best.netEdge.toFixed(4)),
+      improvementBps: Number((best.netEdge - currentNetEdgeBps).toFixed(4))
+    };
+  }
+
+  private saveDecision(action: AutonomousOptimizationDecision['decision'], confidence: number, rationale: string, expectedEffect: string, applied: boolean, audit?: RevenueAuditReport, allocation?: StrategyAllocationDecision, spacing?: { previous: number; next: number }): AutonomousOptimizationDecision {
+    const result: AutonomousOptimizationDecision = { id: `opt_${Date.now()}`, timestamp: new Date().toISOString(), objective: 'NET_REALIZED_PROFIT_AFTER_FEES', decision: action, confidence, reason: rationale, expectedEffect, applied, auditReport: audit, strategyAllocation: allocation, previousGridSpacingPct: spacing?.previous, newGridSpacingPct: spacing?.next };
     this.decisions.unshift(result);
     if (this.decisions.length > 100) this.decisions.pop();
     this.lastHeartbeat = new Date().toISOString();

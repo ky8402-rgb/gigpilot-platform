@@ -174,16 +174,28 @@ console.log('\n[3] AutonomousOptimizationDecision conformance');
 {
   const opt = new AutonomousProfitOptimizer();
   const fullInput = { capital: { ...baseCap, netRealizedProfit: 120.5, grossProfit: 148.5, totalTradingFees: 28 }, grid: grid(), regime: regime(), research, champion: champion(), systemHealthy: true, midPrice: 60000, forceImmediate: true, costEvidence };
-  await ta('eligible cycle emits conformant ALLOCATE_CAPITAL decision', async () => {
+  await ta('eligible cycle emits a conformant, risk-bounded decision', async () => {
     const d = await opt.auditAndOptimize(fullInput);
     assert.equal(d.objective, 'NET_REALIZED_PROFIT_AFTER_FEES');
-    assert.equal(d.decision, 'ALLOCATE_CAPITAL');
+    // An eligible cycle must produce an ACTIONABLE decision. The optimizer may now improve grid
+    // spacing on measured evidence, so the contract is: either the verified champion allocation is
+    // maintained, or spacing moves within a bounded ±25% neighbourhood and is marked applied.
+    assert.ok(['ALLOCATE_CAPITAL', 'WIDEN_GRID', 'TIGHTEN_GRID'].includes(d.decision), `unexpected decision ${d.decision}`);
     assert.ok(typeof d.reason === 'string' && d.reason.length > 0);
     assert.ok(!('previousParams' in d));
     assert.ok(!('proposedParams' in d));
     assert.ok(!('builtStrategy' in d));
     assert.ok(d.auditReport && d.auditReport.expectedNetEdge);
-    assert.equal(d.applied, false);
+    if (d.decision === 'ALLOCATE_CAPITAL') {
+      assert.equal(d.applied, false);
+    } else {
+      assert.equal(d.applied, true, 'a spacing decision must be marked applied');
+      assert.ok(Number.isFinite(d.newGridSpacingPct) && d.newGridSpacingPct > 0, 'a spacing change must carry a numeric newGridSpacingPct');
+      assert.ok(Number.isFinite(d.previousGridSpacingPct) && d.previousGridSpacingPct > 0, 'a spacing change must carry previousGridSpacingPct');
+      const relative = Math.abs(d.newGridSpacingPct - d.previousGridSpacingPct) / d.previousGridSpacingPct;
+      assert.ok(relative > 0, 'a spacing decision must actually change the spacing');
+      assert.ok(relative <= 0.25 + 1e-9, `spacing change must stay within ±25%, got ${(relative * 100).toFixed(2)}%`);
+    }
   });
   await ta('missing validation pipeline pauses optimization without applying allocation', async () => {
     const d = await opt.auditAndOptimize({ ...fullInput, champion: champion({ validationPipeline: undefined }) });

@@ -373,10 +373,13 @@ export class BybitAdapter {
   }
 
   /** Set native TP/SL on a Bybit linear futures position. */
-  public async setFuturesTradingStop(symbol: string, takeProfit: number, stopLoss: number): Promise<{ success: boolean; error?: string }> {
+  public async setFuturesTradingStop(symbol: string, takeProfit: number, stopLoss: number, positionIdx?: number): Promise<{ success: boolean; error?: string }> {
     if (!this.apiKey || !this.apiSecret) return { success: false, error: 'Bybit credentials are not configured.' };
     if (!Number.isFinite(takeProfit) || takeProfit <= 0 || !Number.isFinite(stopLoss) || stopLoss <= 0) return { success: false, error: 'Futures TP/SL prices must be positive live values.' };
-    const payload = { category: 'linear', symbol: this.normalizeSymbol(symbol), tpslMode: 'Full', takeProfit: String(takeProfit), stopLoss: String(stopLoss), tpTriggerBy: 'MarkPrice', slTriggerBy: 'MarkPrice' };
+    const payload: Record<string, any> = { category: 'linear', symbol: this.normalizeSymbol(symbol), tpslMode: 'Full', takeProfit: String(takeProfit), stopLoss: String(stopLoss), tpTriggerBy: 'MarkPrice', slTriggerBy: 'MarkPrice' };
+    // Hedge-mode accounts address protection per leg (1 = long, 2 = short). Omitting positionIdx on
+    // such an account either rejects the request or applies it to the wrong leg.
+    if (Number.isFinite(positionIdx) && Number(positionIdx) !== 0) payload.positionIdx = Number(positionIdx);
     const { headers, bodyStr } = this.signPost(payload);
     const res = await fetch(this.getActiveBaseUrl() + '/v5/position/trading-stop', { method: 'POST', headers, body: bodyStr });
     const json = await res.json() as any;
@@ -678,6 +681,53 @@ export class BybitAdapter {
     }));
   }
 
+  /**
+   * Private Signed: the account's ACTUAL maker/taker fee rates for a linear symbol.
+   * Used in place of the hardcoded assumption so the net-edge gate prices real fees.
+   */
+  public async getRealFeeRate(symbol?: string): Promise<{ makerBps: number; takerBps: number; source: string } | null> {
+    if (!this.apiKey || !this.apiSecret) return null;
+    try {
+      const params: Record<string, any> = { category: 'linear' };
+      if (symbol) params.symbol = this.normalizeSymbol(symbol);
+      const { headers, queryString } = this.signGet(params);
+      const res = await fetch(`${this.getActiveBaseUrl()}/v5/account/fee-rate?${queryString}`, { headers });
+      if (!res.ok) return null;
+      const json = await res.json() as any;
+      if (json?.retCode !== 0) return null;
+      const row = json?.result?.list?.[0];
+      const maker = Number(row?.makerFeeRate);
+      const taker = Number(row?.takerFeeRate);
+      if (!Number.isFinite(maker) || !Number.isFinite(taker)) return null;
+      return { makerBps: maker * 1e4, takerBps: taker * 1e4, source: 'BYBIT_ACCOUNT_FEE_RATE' };
+    } catch {
+      return null;
+    }
+  }
+
+  /**
+   * Public: current funding rate for a linear perpetual, converted to an HOURLY fraction.
+   * Replaces the synthetic funding constant previously used in the cost equation.
+   */
+  public async getRealFundingRate(symbol: string): Promise<number | null> {
+    const raw = this.normalizeSymbol(symbol);
+    try {
+      const res = await fetch(`${this.getActiveBaseUrl()}/v5/market/tickers?category=linear&symbol=${raw}`, {
+        headers: { 'Accept': 'application/json' }
+      });
+      if (!res.ok) return null;
+      const json = await res.json() as any;
+      const item = json?.result?.list?.[0];
+      const rate = Number(item?.fundingRate);
+      if (!Number.isFinite(rate)) return null;
+      // Bybit quotes the rate per funding interval (8h on linear); normalise to per-hour.
+      const intervalHours = Number(item?.fundingIntervalHour) > 0 ? Number(item.fundingIntervalHour) : 8;
+      return rate / intervalHours;
+    } catch {
+      return null;
+    }
+  }
+
   /** Set the exchange leverage for a linear USDT perpetual before any autonomous entry. */
   public async setFuturesLeverage(symbol: string, leverage: number): Promise<{ success: boolean; error?: string }> {
     if (!this.apiKey || !this.apiSecret) return { success: false, error: 'Bybit credentials are not configured.' };
@@ -739,7 +789,12 @@ export class BybitAdapter {
         totalFeesPaid: 0,
         netPnL: unrealizedPnL + realizedPnL,
         liquidationPrice: Number(p.liqPrice || 0) || undefined,
-        leverage: Number(p.leverage || 0) || undefined
+        leverage: Number(p.leverage || 0) || undefined,
+        // Read back so protection can be verified instead of blindly re-sent every cycle, and so
+        // hedge-mode accounts can address the correct position leg (positionIdx 1=long, 2=short).
+        takeProfit: Number(p.takeProfit || 0) || undefined,
+        stopLoss: Number(p.stopLoss || 0) || undefined,
+        positionIdx: Number.isFinite(Number(p.positionIdx)) ? Number(p.positionIdx) : undefined
       };
     }).filter((p: any) => Math.abs(p.baseAmount) > 0);
   }

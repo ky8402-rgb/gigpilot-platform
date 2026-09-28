@@ -410,9 +410,57 @@ export async function fetchAutonomousOptimizer(): Promise<{
   decisions: any[];
   strategyBuilds: any[];
   engine: any;
+  latestAudit?: any;
+  latestStrategyAllocation?: any;
+  autoApplyEnabled?: boolean;
+  championStrategy?: any;
 }> {
-  const res = await fetchWithFailover<any>('/optimizer');
+  // The optimizer is exposed at /autonomous-optimizer/status. The previous '/optimizer' path did
+  // not exist, so this view failed on mount and then again every 5 seconds.
+  const res = await fetchWithFailover<any>('/autonomous-optimizer/status');
   if (!res?.success) throw new Error('Autonomous optimizer telemetry unavailable.');
+  return {
+    success: res.success,
+    objective: res.objective ?? 'NET_REALIZED_PROFIT_AFTER_FEES',
+    autonomousDecisioning: res?.health?.details?.autonomousDecisioning ?? true,
+    decisions: res.decisions ?? [],
+    strategyBuilds: res.builds ?? [],
+    engine: res.health,
+    latestAudit: res.latestAudit,
+    latestStrategyAllocation: res.latestStrategyAllocation,
+    autoApplyEnabled: res.autoApplyEnabled,
+    championStrategy: res.championStrategy
+  };
+}
+
+/**
+ * Pre-flight for the Select Pair -> Allocate Capital -> Confirm START flow, so blockers are shown
+ * before the operator commits rather than as a rejection afterwards.
+ */
+export async function fetchAutonomyStatus(capital?: number): Promise<{
+  success: boolean;
+  activeSymbol: string;
+  autonomyLevel: number;
+  automaticTradingReady: boolean;
+  blockers: string[];
+  systemFailClosed: boolean;
+  globalKillSwitchActive: boolean;
+  candleCount: number;
+  capitalPlan?: {
+    availableCashUsd: number;
+    minAccountReserveUsd: number;
+    maxCapitalAllocationPct: number;
+    maxAllocatableUsd: number;
+    gridLevelsCount: number;
+    exchangeMinNotionalUsd: number;
+    minRequiredForGridUsd: number;
+  };
+  expectedNetEdge?: any;
+  [key: string]: any;
+}> {
+  const suffix = Number.isFinite(capital) && Number(capital) > 0 ? `?capital=${encodeURIComponent(String(capital))}` : '';
+  const res = await fetchWithFailover<any>(`/autonomy/status${suffix}`);
+  if (!res?.success) throw new Error('Autonomy status unavailable.');
   return res;
 }
 
