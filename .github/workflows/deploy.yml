@@ -174,7 +174,18 @@ jobs:
           ASSETS_CODE="$(curl -sS -o /tmp/assets.json -w '%{http_code}' -H 'Accept: application/json' "$BACKEND/api/trading/assets" --max-time 10)"
           case "$ASSETS_CODE" in 401|403) echo "✔ Private asset data rejects unauthenticated access with HTTP $ASSETS_CODE.";; *) echo "ERROR: Private assets endpoint returned HTTP $ASSETS_CODE"; cat /tmp/assets.json; exit 1;; esac
           RISK_CODE="$(curl -sS -o /tmp/risk.json -w '%{http_code}' -H 'Accept: application/json' "$BACKEND/api/trading/risk" --max-time 10)"
-          [ "$RISK_CODE" = "200" ] || { echo "ERROR: Live risk endpoint returned HTTP $RISK_CODE"; cat /tmp/risk.json; exit 1; }
+          case "$RISK_CODE" in 401|403) echo "✔ Private risk configuration rejects unauthenticated access with HTTP $RISK_CODE.";; *) echo "ERROR: Private risk configuration returned HTTP $RISK_CODE"; cat /tmp/risk.json; exit 1;; esac
+
+          OPTIMIZER_CODE="$(curl -sS -o /tmp/optimizer.json -w '%{http_code}' -H 'Accept: application/json' "$BACKEND/api/trading/autonomous-optimizer/status" --max-time 10)"
+          case "$OPTIMIZER_CODE" in 401|403) echo "✔ Private optimizer telemetry rejects unauthenticated access with HTTP $OPTIMIZER_CODE.";; *) echo "ERROR: Private optimizer telemetry returned HTTP $OPTIMIZER_CODE"; cat /tmp/optimizer.json; exit 1;; esac
+
+          STRATEGIES_CODE="$(curl -sS -o /tmp/strategies.json -w '%{http_code}' -H 'Accept: application/json' "$BACKEND/api/trading/strategies" --max-time 10)"
+          case "$STRATEGIES_CODE" in 401|403) echo "✔ Private strategy registry rejects unauthenticated access with HTTP $STRATEGIES_CODE.";; *) echo "ERROR: Private strategy registry returned HTTP $STRATEGIES_CODE"; cat /tmp/strategies.json; exit 1;; esac
+
+          READY_CODE="$(curl -sS -o /tmp/ready.json -w '%{http_code}' -H 'Accept: application/json' "$BACKEND/api/health/ready" --max-time 10)"
+          [ "$READY_CODE" = "200" ] || { echo "ERROR: Readiness endpoint returned HTTP $READY_CODE"; cat /tmp/ready.json; exit 1; }
+          node -e 'const x=JSON.parse(process.argv[1]); if(!x.status) process.exit(1); if(x.checks?.persistence?.ok!==true) process.exit(2); console.log("✔ Readiness:", x.status, "| persistence:", x.checks.persistence.detail, "| marketData:", x.checks.marketData.detail);' "$(cat /tmp/ready.json)" || { echo "ERROR: Readiness probe reported an unhealthy instance."; cat /tmp/ready.json; exit 1; }
+
           AUTH_STATUS="$(curl -sS -o /tmp/auth-status.json -w '%{http_code}' -H "Origin: $FRONTEND" -H 'Accept: application/json' "$BACKEND/api/auth/status" --max-time 10)"
           [ "$AUTH_STATUS" = "200" ] || { echo "ERROR: Auth status endpoint returned HTTP $AUTH_STATUS"; cat /tmp/auth-status.json; exit 1; }
           ORDER_CODE="$(curl -sS -o /tmp/order.json -w '%{http_code}' -X POST -H "Origin: $FRONTEND" -H 'Content-Type: application/json' -d '{}' "$BACKEND/api/trading/order/place" --max-time 10)"
@@ -186,9 +197,30 @@ jobs:
     needs: wait-for-ci
     name: 🛡️ Deploy Backend (AWS EC2 - gigpilot-backend)
     runs-on: ubuntu-latest
+    outputs:
+      previous_sha: ${{ steps.capture_prev.outputs.previous_sha }}
     steps:
       - name: Checkout Source Code
         uses: actions/checkout@v4
+
+      - name: Capture currently-deployed commit (rollback target)
+        id: capture_prev
+        env:
+          EC2_HOST: ${{ secrets.EC2_HOST || '' }}
+        run: |
+          set -uo pipefail
+          if [ -z "$EC2_HOST" ] && [ -f deployment/backend-host.txt ]; then EC2_HOST="$(tr -d '\r\n' < deployment/backend-host.txt)"; fi
+          PREV=""
+          if [ -n "$EC2_HOST" ]; then
+            HEALTH_JSON="$(curl -k -sS "https://${EC2_HOST//./-}.sslip.io/api/health" --max-time 10 || true)"
+            PREV="$(node -e 'try{const x=JSON.parse(process.argv[1]);const c=x.deployedCommit||"";process.stdout.write(/^[0-9a-f]{40}$/i.test(c)?c:"")}catch{}' "$HEALTH_JSON" 2>/dev/null || true)"
+          fi
+          echo "previous_sha=$PREV" >> "$GITHUB_OUTPUT"
+          if [ -n "$PREV" ]; then
+            echo "✔ Rollback target captured: $PREV"
+          else
+            echo "Notice: no currently-deployed commit could be read; automatic rollback will have no target."
+          fi
 
       - name: Check AWS Secrets for EC2 Connect
         id: check_ec2_aws
@@ -440,4 +472,71 @@ jobs:
           echo "- **EC2 Host:** \`$EC2_HOST\`" >> $GITHUB_STEP_SUMMARY
           echo "- **Branch:** \`${GITHUB_REF_NAME}\`" >> $GITHUB_STEP_SUMMARY
           echo "- **Deployment Strategy:** SSH direct pull & PM2 restart + Signed Webhook fallback" >> $GITHUB_STEP_SUMMARY
-          echo "- **Health Endpoint:** [https://${EC2_HOST//./-}.sslip.io/api/health](https://${EC2_HOST//./-}.sslip.io/api/health)" >> $GITHUB_STEP_SUMMARY
+           echo "- **Health Endpoint:** [https://${EC2_HOST//./-}.sslip.io/api/health](https://${EC2_HOST//./-}.sslip.io/api/health)" >> $GITHUB_STEP_SUMMARY
+
+  rollback-on-failure:
+    needs: [deploy-ec2, live-compatibility]
+    if: failure()
+    name: 🚑 Auto-Rollback Backend to last verified commit
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Source Code
+        uses: actions/checkout@v4
+
+      - name: Roll back the EC2 backend
+        env:
+          SSH_KEY: ${{ secrets.EC2_SSH_KEY || secrets.GIGPILOT_MUMBAI_EC2 }}
+          EC2_HOST: ${{ secrets.EC2_HOST || '' }}
+          EC2_USER: ${{ secrets.EC2_USER || 'ubuntu' }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TARGET_SHA: ${{ needs.deploy-ec2.outputs.previous_sha }}
+        run: |
+          set -uo pipefail
+          if [ -z "$EC2_HOST" ] && [ -f deployment/backend-host.txt ]; then EC2_HOST="$(tr -d '\r\n' < deployment/backend-host.txt)"; fi
+          if [ -z "$EC2_HOST" ]; then echo "ERROR: No production EC2 host configured; cannot roll back."; exit 1; fi
+          if [ -z "$TARGET_SHA" ]; then
+            echo "ERROR: No last-known-good commit was captured before this deployment, so no automatic rollback target exists."
+            {
+              echo "### 🚑 Automatic rollback could not run"
+              echo "- No previously-deployed commit was readable from \`/api/health\` before this deployment."
+              echo "- Production may still be running the failed commit \`${GITHUB_SHA}\`; manual intervention required."
+            } >> $GITHUB_STEP_SUMMARY
+            exit 1
+          fi
+          echo "Rolling production back to $TARGET_SHA"
+          mkdir -p ~/.ssh
+          python3 scripts/prepare_ec2_key.py || true
+          test -s ~/.ssh/id_rsa
+          { printf 'export TARGET_SHA=%q\n' "$TARGET_SHA"; printf 'export GITHUB_TOKEN=%q\n' "$GITHUB_TOKEN"; cat scripts/rollback-ec2.sh; } | ssh -o StrictHostKeyChecking=no -o ConnectTimeout=20 -i ~/.ssh/id_rsa "$EC2_USER@$EC2_HOST" "bash -s"
+
+      - name: Verify the rolled-back backend serves the target commit
+        env:
+          EC2_HOST: ${{ secrets.EC2_HOST || '' }}
+          TARGET_SHA: ${{ needs.deploy-ec2.outputs.previous_sha }}
+        run: |
+          set -uo pipefail
+          if [ -z "$EC2_HOST" ] && [ -f deployment/backend-host.txt ]; then EC2_HOST="$(tr -d '\r\n' < deployment/backend-host.txt)"; fi
+          BACKEND="https://${EC2_HOST//./-}.sslip.io"
+          for i in $(seq 1 12); do
+            HEALTH_JSON="$(curl -k -sS "$BACKEND/api/health" --max-time 10 || true)"
+            RUNNING="$(node -e 'try{const x=JSON.parse(process.argv[1]);process.stdout.write(x.deployedCommit||"")}catch{}' "$HEALTH_JSON" 2>/dev/null || true)"
+            if [ "$RUNNING" = "$TARGET_SHA" ]; then
+              echo "✔ Rollback verified: production is serving $TARGET_SHA"
+              exit 0
+            fi
+            echo "Waiting for rollback to take effect: running=$RUNNING expected=$TARGET_SHA attempt=$i/12"
+            sleep 10
+          done
+          echo "ERROR: Rollback command ran but production is not serving $TARGET_SHA."
+          exit 1
+
+      - name: Record the incident
+        if: always()
+        run: |
+          {
+            echo "### 🚑 Rollback incident"
+            echo "- Failed commit: \`${{ github.sha }}\`"
+            echo "- Rollback target: \`${{ needs.deploy-ec2.outputs.previous_sha || 'none captured' }}\`"
+            echo "- Trigger: post-deploy live verification failure."
+            echo "- Run: [${{ github.run_id }}](https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }})"
+          } >> $GITHUB_STEP_SUMMARY

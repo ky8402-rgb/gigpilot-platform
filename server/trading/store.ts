@@ -494,9 +494,19 @@ export class TradingStore {
     const liveData = this.dataEngine.getPairData(this.activeSymbol);
     if (!liveData) return null;
 
-    const [feeRate, fundingRateHourly] = await Promise.all([
+    // Align the funding window with the fills window so the realized figure covers the same period
+    // the measured execution costs do.
+    const oldestFillMs = this.recentMeasuredFills.reduce((min, fill) => {
+      const ts = Date.parse(fill.timestamp);
+      return Number.isFinite(ts) ? Math.min(min, ts) : min;
+    }, Date.now());
+
+    const [feeRate, fundingRateHourly, fundingSummary] = await Promise.all([
       bybitAdapter.getRealFeeRate(this.activeSymbol).catch(() => null),
-      bybitAdapter.getRealFundingRate(this.activeSymbol).catch(() => null)
+      bybitAdapter.getRealFundingRate(this.activeSymbol).catch(() => null),
+      this.recentMeasuredFills.length > 0
+        ? bybitAdapter.getRealFundingSummary(oldestFillMs).catch(() => null)
+        : Promise.resolve(null)
     ]);
 
     // Expected horizon to complete one grid round-trip, derived from the live ATR and the
@@ -520,6 +530,8 @@ export class TradingStore {
       // With no defensible holding horizon the carrying cost cannot be attributed, so it is
       // reported as unavailable rather than as zero.
       fundingRateHourly: expectedHoldingHours > 0 ? fundingRateHourly : null,
+      // Actual settled funding over the window, when the transaction log answered.
+      observedFundingCostUsd: fundingSummary ? fundingSummary.fundingPaidUsd : null,
       expectedHoldingHours,
       openPositionNotionalUsd: position ? Math.abs(Number(position.baseAmount) || 0) * price : 0,
       volatilityPct: atrPctPerMinute,

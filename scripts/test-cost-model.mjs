@@ -153,6 +153,35 @@ t('funding is attributed from a real hourly rate and holding horizon', () => {
   assert.equal(ev.realizedFundingCostUsd.toFixed(4), '0.0300');
 });
 
+t('settled funding from the transaction log supersedes the rate x horizon estimate', () => {
+  const ev = buildCostEvidence({
+    fills: cleanFills(),
+    orderBook: book,
+    fundingRateHourly: 0.0001,
+    expectedHoldingHours: 2,
+    openPositionNotionalUsd: 100,
+    observedFundingCostUsd: 0.37
+  });
+  assert.equal(ev.fundingRateSource, 'LIVE_TRANSACTION_LOG');
+  assert.equal(ev.realizedFundingCostUsd.toFixed(4), '0.3700', 'the actual settled figure must win');
+  // The forward-looking term still comes from the live rate, which the log cannot answer.
+  assert.equal(ev.expectedFundingCarryingCostBps.toFixed(4), '2.0000');
+});
+
+t('funding received (or an unavailable log) never produces a negative cost', () => {
+  const received = buildCostEvidence({
+    fills: cleanFills(), orderBook: book,
+    fundingRateHourly: 0.0001, expectedHoldingHours: 2,
+    observedFundingCostUsd: -1.5
+  });
+  assert.equal(received.realizedFundingCostUsd, 0, 'funding received is not a cost');
+  assert.equal(received.fundingRateSource, 'LIVE_TRANSACTION_LOG', 'the window was still measured');
+
+  const noLog = buildCostEvidence({ fills: cleanFills(), orderBook: book, fundingRateHourly: 0.0001, expectedHoldingHours: 2, observedFundingCostUsd: null });
+  assert.equal(noLog.fundingRateSource, 'LIVE_TICKER', 'absent a log, the live rate estimate is used and labelled as such');
+  assert.ok(noLog.realizedFundingCostUsd >= 0);
+});
+
 t('live spread drives the forward-looking spread cost', () => {
   const ev = buildCostEvidence({ fills: cleanFills(), orderBook: book });
   assert.equal(ev.expectedSpreadCostBps.toFixed(4), '1.0000');

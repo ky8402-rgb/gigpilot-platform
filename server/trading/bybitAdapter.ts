@@ -728,6 +728,51 @@ export class BybitAdapter {
     }
   }
 
+  /**
+   * Private Signed: funding actually settled on futures positions since a timestamp, summed from
+   * the account transaction log. This is the authoritative funding cost — the rate x horizon figure
+   * used for forward-looking decisions is only an estimate.
+   */
+  public async getRealFundingSummary(sinceMs: number): Promise<{ netFundingUsd: number; fundingPaidUsd: number; fundingReceivedUsd: number; entries: number; source: string } | null> {
+    if (!this.apiKey || !this.apiSecret) return null;
+    try {
+      const params: Record<string, any> = {
+        accountType: 'UNIFIED',
+        category: 'linear',
+        type: 'SETTLEMENT',
+        startTime: Math.max(0, Math.floor(sinceMs)),
+        limit: 100
+      };
+      const { headers, queryString } = this.signGet(params);
+      const res = await fetch(`${this.getActiveBaseUrl()}/v5/account/transaction-log?${queryString}`, { headers });
+      if (!res.ok) return null;
+      const json = await res.json() as any;
+      if (json?.retCode !== 0) return null;
+      const list = json?.result?.list;
+      if (!Array.isArray(list)) return null;
+
+      // Gross paid and received are tracked separately: netting them would understate the cost of
+      // funding when a window happens to contain both payments and receipts.
+      let fundingPaidUsd = 0;
+      let fundingReceivedUsd = 0;
+      for (const row of list) {
+        const cashFlow = Number(row?.cashFlow);
+        if (!Number.isFinite(cashFlow)) continue;
+        if (cashFlow < 0) fundingPaidUsd += Math.abs(cashFlow);
+        else fundingReceivedUsd += cashFlow;
+      }
+      return {
+        netFundingUsd: Number((fundingReceivedUsd - fundingPaidUsd).toFixed(6)),
+        fundingPaidUsd: Number(fundingPaidUsd.toFixed(6)),
+        fundingReceivedUsd: Number(fundingReceivedUsd.toFixed(6)),
+        entries: list.length,
+        source: 'BYBIT_TRANSACTION_LOG'
+      };
+    } catch {
+      return null;
+    }
+  }
+
   /** Set the exchange leverage for a linear USDT perpetual before any autonomous entry. */
   public async setFuturesLeverage(symbol: string, leverage: number): Promise<{ success: boolean; error?: string }> {
     if (!this.apiKey || !this.apiSecret) return { success: false, error: 'Bybit credentials are not configured.' };

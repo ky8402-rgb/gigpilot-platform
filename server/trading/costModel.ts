@@ -36,6 +36,12 @@ export interface CostModelInputs {
   orderBook?: OrderBook | null;
   /** Real hourly funding rate as a fraction (0.0001 = 1 bps/hour). Null when unavailable. */
   fundingRateHourly?: number | null;
+  /**
+   * Funding ACTUALLY settled over the measurement window, from the exchange transaction log. When
+   * present it supersedes the rate x horizon estimate for the realized figure; the modelled figure
+   * is still kept for forward-looking decisions, which the log cannot answer.
+   */
+  observedFundingCostUsd?: number | null;
   expectedHoldingHours?: number;
   /** Notional currently held, used to scale realized funding cost. */
   openPositionNotionalUsd?: number;
@@ -62,7 +68,7 @@ export interface CostEvidence {
   sampleCount: number;
   markoutSampleCount: number;
   feeRateSource: string;
-  fundingRateSource: 'LIVE_TICKER' | 'UNAVAILABLE';
+  fundingRateSource: 'LIVE_TRANSACTION_LOG' | 'LIVE_TICKER' | 'UNAVAILABLE';
   observedAt: string;
 }
 
@@ -173,9 +179,18 @@ export function buildCostEvidence(inputs: CostModelInputs): CostEvidence | null 
   const fundingBasisNotionalUsd = Number(inputs.openPositionNotionalUsd) > 0
     ? Number(inputs.openPositionNotionalUsd)
     : realizedNotionalUsd / measured.length;
-  const realizedFundingCostUsd = fundingAvailable && Number.isFinite(holdingHours) && holdingHours > 0
+  // Prefer the funding that actually settled over the window; fall back to the rate x horizon
+  // estimate only when the transaction log is unavailable.
+  // Only a real number counts as an observation: Number(null) === 0, so coercing would turn an
+  // unavailable transaction log into a confident "funding was zero".
+  const observedFunding = typeof inputs.observedFundingCostUsd === 'number' ? inputs.observedFundingCostUsd : Number.NaN;
+  const observedFundingAvailable = Number.isFinite(observedFunding);
+  const modelledFundingCostUsd = fundingAvailable && Number.isFinite(holdingHours) && holdingHours > 0
     ? Math.max(0, fundingRateHourly) * fundingBasisNotionalUsd * holdingHours
     : 0;
+  const realizedFundingCostUsd = observedFundingAvailable
+    ? Math.max(0, observedFunding)
+    : modelledFundingCostUsd;
 
   // Forward-looking costs, every term sourced from live data.
   const realizedFeeBps = realizedNotionalUsd > 0 ? (realizedFeesUsd / realizedNotionalUsd) * BPS : 0;
@@ -212,7 +227,9 @@ export function buildCostEvidence(inputs: CostModelInputs): CostEvidence | null 
     sampleCount: measured.length,
     markoutSampleCount: matchedMarkouts.length,
     feeRateSource: inputs.feeRateBps?.source || 'MEASURED_FROM_FILLS',
-    fundingRateSource: fundingAvailable ? 'LIVE_TICKER' : 'UNAVAILABLE',
+    fundingRateSource: observedFundingAvailable
+      ? 'LIVE_TRANSACTION_LOG'
+      : (fundingAvailable ? 'LIVE_TICKER' : 'UNAVAILABLE'),
     observedAt: inputs.observedAt || new Date().toISOString()
   };
 }

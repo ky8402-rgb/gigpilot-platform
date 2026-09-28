@@ -132,6 +132,110 @@ app.get("/api/health", (req, res) => {
   });
 });
 
+/**
+ * Readiness probe. Complements /api/health (liveness) with a judgement about whether this instance
+ * could actually trade right now, and is the signal the deploy pipeline gates a rollback on.
+ *
+ * Deliberately reports only booleans, ages and counts — no balances, thresholds, symbols held or
+ * credentials — because it is intentionally reachable unauthenticated for monitoring.
+ *
+ * Always returns HTTP 200 with a `status` field. "not_ready" is a legitimate steady state for a
+ * platform whose kill switch, reserve and funding requirements are deliberately fail-closed;
+ * returning an HTTP error would make monitoring and the deploy gate report a false outage.
+ */
+app.get("/api/health/ready", (req, res) => {
+  const store = globalTradingStore;
+  const checks: Record<string, { ok: boolean; detail: string }> = {};
+
+  // 1. Market data freshness: a live price plus a recently closed candle.
+  let pairData: any = null;
+  try {
+    pairData = store.dataEngine.getPairData(store.activeSymbol);
+  } catch {
+    pairData = null;
+  }
+  const candles = Array.isArray(pairData?.candles) ? pairData.candles : [];
+  const latestCandleTs = candles.length > 0 ? Number(candles[candles.length - 1]?.timestamp) || 0 : 0;
+  const candleAgeMs = latestCandleTs > 0 ? Date.now() - (latestCandleTs + 60_000) : Number.POSITIVE_INFINITY;
+  const hasLivePrice = Number(pairData?.currentPrice) > 0;
+  checks.marketData = {
+    ok: hasLivePrice && candleAgeMs < 5 * 60_000,
+    detail: hasLivePrice
+      ? `live price present; latest closed candle ${Number.isFinite(candleAgeMs) ? `${Math.round(candleAgeMs / 1000)}s old` : "unavailable"}`
+      : "no live price yet"
+  };
+
+  // 2. Engine fleet health and the fail-closed gate.
+  let failClosed = { failClosed: true, downEngines: ["UNKNOWN"] as string[] };
+  let engineCount = 0;
+  let unhealthyEngines = 0;
+  try {
+    failClosed = store.monitor.isSystemFailClosed();
+    const engines = store.monitor.getAllEngineHealth();
+    engineCount = engines.length;
+    unhealthyEngines = engines.filter(e => e.status !== "HEALTHY").length;
+  } catch {
+    /* leave the fail-closed default above */
+  }
+  checks.engines = {
+    ok: !failClosed.failClosed,
+    detail: failClosed.failClosed
+      ? `fail-closed: ${failClosed.downEngines.join(", ")}`
+      : `${engineCount} engines registered, ${unhealthyEngines} not ONLINE`
+  };
+
+  // 3. Hard halt and kill-switch posture (reported as state, not as a failure: halting is healthy).
+  const halted = store.exchangeExec.isHalted();
+  const killSwitchActive = store.killSwitch.getState().isActive;
+  checks.safetyInterlocks = {
+    ok: true,
+    detail: `halt=${halted ? "engaged" : "released"} killSwitch=${killSwitchActive ? "active" : "inactive"}`
+  };
+
+  // 4. Capital availability for trading, without disclosing any figure.
+  let capitalAllocatable = false;
+  try {
+    const riskConfig = store.risk.getConfig();
+    const availableCash = Number(store.capital.availableCash || 0);
+    capitalAllocatable = Math.min(availableCash - riskConfig.minAccountReserveUsd, availableCash * (riskConfig.maxCapitalAllocationPct / 100)) > 0;
+  } catch {
+    capitalAllocatable = false;
+  }
+  checks.capital = {
+    // Reported for observability only: having no allocatable capital is a funding condition, not a
+    // service fault, so it must never make the instance look unready.
+    ok: true,
+    detail: capitalAllocatable
+      ? "allocatable capital available"
+      : "no allocatable capital (reserve or allocation cap); trading correctly blocked"
+  };
+
+  // 5. Durable state must be writable, or realized P&L would be lost on the next restart.
+  let persistenceOk = false;
+  try {
+    persistenceOk = store.flushTradingState();
+  } catch {
+    persistenceOk = false;
+  }
+  checks.persistence = {
+    ok: persistenceOk,
+    detail: persistenceOk ? "durable trading state writable" : "durable trading state could NOT be written"
+  };
+
+  // Ready = the process is live, market data is flowing and the engine fleet is not fail-closed.
+  // Safety interlocks and capital are intentionally excluded from this judgement.
+  const ready = checks.marketData.ok && checks.engines.ok && checks.persistence.ok;
+
+  res.json({
+    status: ready ? "ready" : "not_ready",
+    ready,
+    activelyTrading: !halted && !killSwitchActive,
+    checks,
+    uptimeSeconds: Math.floor(process.uptime()),
+    timestamp: new Date().toISOString()
+  });
+});
+
 // 2. Autonomous Crypto Grid Trading Platform Router
 app.use("/api/trading", tradingRouter);
 

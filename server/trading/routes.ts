@@ -86,7 +86,7 @@ tradingRouter.get('/state', requireOwnerAuth, (req: Request, res: Response) => {
 });
 
 // 2. Modular Engine Health Check (All 10 Subsystems)
-tradingRouter.get('/engines/health', (req: Request, res: Response) => {
+tradingRouter.get('/engines/health', requireOwnerAuth, (req: Request, res: Response) => {
   try {
     const store = globalTradingStore;
     const engines = store.monitor.getAllEngineHealth();
@@ -237,7 +237,7 @@ tradingRouter.post('/exchanges/keys', requireOwnerAuth, async (req: Request, res
 });
 
 // 6. All Pairs & Market Ticker
-tradingRouter.get('/pairs', (req: Request, res: Response) => {
+tradingRouter.get('/pairs', requireOwnerAuth, (req: Request, res: Response) => {
   try {
     const pairs = globalTradingStore.dataEngine.getAllPairs().map(p => ({
       symbol: p.symbol,
@@ -586,7 +586,7 @@ tradingRouter.post('/order/cancel', requireOwnerAuth, manualTradingDisabled);
 tradingRouter.post('/order/cancel-all', requireOwnerAuth, manualTradingDisabled);
 
 // 14. Self-Learn Optimizer (Champion / Challenger)
-tradingRouter.get('/strategies', (req: Request, res: Response) => {
+tradingRouter.get('/strategies', requireOwnerAuth, (req: Request, res: Response) => {
   const store = globalTradingStore;
   res.json({
     success: true,
@@ -619,7 +619,7 @@ tradingRouter.post('/strategy/promote', requireOwnerAuth, (req: Request, res: Re
 
 // 14B. 3-Way Trade Decision Architecture (BUY / SELL / DO NOTHING)
 // DO NOTHING is a legitimate optimized action: profitable automated systems trade selectively
-tradingRouter.get('/decisions', (req: Request, res: Response) => {
+tradingRouter.get('/decisions', requireOwnerAuth, (req: Request, res: Response) => {
   const store = globalTradingStore;
   res.json({
     success: true,
@@ -698,7 +698,7 @@ tradingRouter.post('/script/validate', requireOwnerAuth, (req: Request, res: Res
 });
 
 // 16. AI Research Agent
-tradingRouter.get('/research', (req: Request, res: Response) => {
+tradingRouter.get('/research', requireOwnerAuth, (req: Request, res: Response) => {
   res.json({
     success: true,
     items: globalTradingStore.research.getResearchItems()
@@ -780,7 +780,7 @@ tradingRouter.post('/sweep/auto', requireOwnerAuth, async (req: Request, res: Re
 
 
 // 18. Risk Configuration & Circuit Breaker
-tradingRouter.get('/risk', (req: Request, res: Response) => {
+tradingRouter.get('/risk', requireOwnerAuth, (req: Request, res: Response) => {
   res.json({
     success: true,
     config: globalTradingStore.risk.getConfig(),
@@ -842,7 +842,7 @@ tradingRouter.get('/audit-logs', requireOwnerAuth, (req: Request, res: Response)
   });
 });
 
-tradingRouter.get('/updates', (req: Request, res: Response) => {
+tradingRouter.get('/updates', requireOwnerAuth, (req: Request, res: Response) => {
   res.json({
     success: true,
     updates: globalTradingStore.monitor.getSystemUpdates()
@@ -960,7 +960,7 @@ tradingRouter.get('/assets', requireOwnerAuth, async (req: Request, res: Respons
 });
 
 // 22. Autonomous Revenue Optimizer & Strategy Allocator
-tradingRouter.get('/autonomous-optimizer/status', (_req: Request, res: Response) => {
+tradingRouter.get('/autonomous-optimizer/status', requireOwnerAuth, (_req: Request, res: Response) => {
   try {
     const store = globalTradingStore;
     return res.json({
@@ -978,7 +978,7 @@ tradingRouter.get('/autonomous-optimizer/status', (_req: Request, res: Response)
   }
 });
 
-tradingRouter.get('/strategy-allocator/current', (_req: Request, res: Response) => {
+tradingRouter.get('/strategy-allocator/current', requireOwnerAuth, (_req: Request, res: Response) => {
   try {
     const store = globalTradingStore;
     const allocation = store.profitOptimizer.getLatestStrategyAllocation();
@@ -1049,7 +1049,7 @@ tradingRouter.post('/autonomous-optimizer/toggle', requireOwnerAuth, (req: Reque
 });
 
 // 23. Quantitative Microstructure Expected Net Edge Decomposition
-tradingRouter.get('/quant/edge-breakdown', (req: Request, res: Response) => {
+tradingRouter.get('/quant/edge-breakdown', requireOwnerAuth, (req: Request, res: Response) => {
   try {
     const store = globalTradingStore;
     const symbol = (req.query.symbol as string) || store.activeSymbol || 'BTCUSDT';
@@ -1080,7 +1080,7 @@ tradingRouter.get('/quant/edge-breakdown', (req: Request, res: Response) => {
 });
 
 // 24. Explicit Regime Transition Detector & Protections
-tradingRouter.get('/regime-transition', (req: Request, res: Response) => {
+tradingRouter.get('/regime-transition', requireOwnerAuth, (req: Request, res: Response) => {
   try {
     const store = globalTradingStore;
     const symbol = store.activeSymbol;
@@ -1110,7 +1110,7 @@ tradingRouter.get('/regime-transition', (req: Request, res: Response) => {
 });
 
 // 31. Inventory-Aware Grid Metrics & Multi-Variable Equation Read
-tradingRouter.get('/inventory-awareness', async (req: Request, res: Response) => {
+tradingRouter.get('/inventory-awareness', requireOwnerAuth, async (req: Request, res: Response) => {
   try {
     const store = globalTradingStore;
     const symbol = store.activeSymbol;
