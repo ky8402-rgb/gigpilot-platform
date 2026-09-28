@@ -273,6 +273,34 @@ export class TradingStore {
         if (positionSync.error) {
           this.exchangeExec.setOffSwitch(false);
           this.triggerEmergencyKillSwitch('Bybit futures position reconciliation failed: ' + positionSync.error);
+          return;
+        }
+
+        // Every authoritative open futures position must have native exchange TP/SL.
+        // The active strategy grid supplies the live protection boundaries; if those
+        // boundaries are unavailable or invalid, fail closed instead of trading naked.
+        const position = this.exchangeExec.getPosition(this.activeSymbol);
+        if (position && Math.abs(position.baseAmount) > 0 && this.activeGrid) {
+          const isLong = position.baseAmount > 0;
+          const takeProfit = isLong ? this.activeGrid.upperBoundary : this.activeGrid.lowerBoundary;
+          const stopLoss = isLong ? this.activeGrid.lowerBoundary : this.activeGrid.upperBoundary;
+          const validProtection =
+            Number.isFinite(takeProfit) && takeProfit > 0 &&
+            Number.isFinite(stopLoss) && stopLoss > 0 &&
+            (isLong ? (takeProfit > position.entryPrice && stopLoss < position.entryPrice)
+                    : (takeProfit < position.entryPrice && stopLoss > position.entryPrice));
+
+          if (!validProtection) {
+            this.exchangeExec.setOffSwitch(false);
+            this.triggerEmergencyKillSwitch('FAIL-CLOSED: authoritative futures position exists without valid strategy-derived TP/SL boundaries.');
+            return;
+          }
+
+          const protection = await this.exchangeExec.applyFuturesProtection(this.activeSymbol, takeProfit, stopLoss);
+          if (!protection.success) {
+            this.exchangeExec.setOffSwitch(false);
+            this.triggerEmergencyKillSwitch('FAIL-CLOSED: Bybit futures TP/SL protection could not be applied: ' + (protection.error || 'unknown error'));
+          }
         }
         return;
       }

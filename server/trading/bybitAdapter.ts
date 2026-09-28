@@ -372,6 +372,18 @@ export class BybitAdapter {
     };
   }
 
+  /** Set native TP/SL on a Bybit linear futures position. */
+  public async setFuturesTradingStop(symbol: string, takeProfit: number, stopLoss: number): Promise<{ success: boolean; error?: string }> {
+    if (!this.apiKey || !this.apiSecret) return { success: false, error: 'Bybit credentials are not configured.' };
+    if (!Number.isFinite(takeProfit) || takeProfit <= 0 || !Number.isFinite(stopLoss) || stopLoss <= 0) return { success: false, error: 'Futures TP/SL prices must be positive live values.' };
+    const payload = { category: 'linear', symbol: this.normalizeSymbol(symbol), tpslMode: 'Full', takeProfit: String(takeProfit), stopLoss: String(stopLoss), tpTriggerBy: 'MarkPrice', slTriggerBy: 'MarkPrice' };
+    const { headers, bodyStr } = this.signPost(payload);
+    const res = await fetch(this.getActiveBaseUrl() + '/v5/position/trading-stop', { method: 'POST', headers, body: bodyStr });
+    const json = await res.json() as any;
+    if (!res.ok || json?.retCode !== 0) return { success: false, error: json?.retMsg || ('Bybit futures TP/SL update failed: HTTP ' + res.status) };
+    return { success: true };
+  }
+
   /**
    * Private Signed: Real Bybit Linear Futures Account balances and portfolio valuation
    * Supports both Unified Trading Account (UTA) and classic Spot wallets
