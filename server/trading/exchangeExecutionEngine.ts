@@ -214,6 +214,7 @@ export class ExchangeExecutionEngine implements EngineModule {
     gridLevelId?: string;
     strategyId?: string;
     expectedNetEdge?: ExpectedNetEdgeBreakdown;
+    leverage?: number;
   }): Promise<{ success: boolean; order?: Order; error?: string }> {
     if (!this.enabled) {
       const err = 'EXCHANGE_EXECUTION_ENGINE_OFF: Real order execution disabled by operator.';
@@ -238,7 +239,7 @@ export class ExchangeExecutionEngine implements EngineModule {
       return { success: false, error: err };
     }
 
-    const leverageLimit = 1;
+    const leverageLimit = Number(spec.leverage ?? 1);
     const leverageResult = await this.ensureFuturesLeverage(spec.symbol, leverageLimit);
     if (!leverageResult.success) {
       const err = `FAIL-CLOSED: Bybit futures leverage could not be set to the configured risk limit (${leverageLimit}x). ${leverageResult.error || ''}`.trim();
