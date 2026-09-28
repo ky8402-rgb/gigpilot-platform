@@ -4,20 +4,6 @@ import { MasterTradingState } from '../../types/trading';
 import { startAutonomousTrading, stopAutonomousTrading } from '../../services/tradingService';
 import { deriveBotStatus, money, price, type Pair } from './autonomousBotLogic';
 
-/**
- * FUTURES-ONLY AUTONOMOUS TRADING
- *
- * Owner workflow:
- * SELECT FUTURES PAIR -> ALLOCATE CAPITAL -> CONFIRM START.
- *
- * The server owns strategy selection, leverage, entries, TP/SL, position
- * management, exits, reconciliation, accounting and optimization.
- * Manual order entry/cancellation/protection is intentionally unavailable.
- *
- * This component renders only authoritative /state data. Missing live values
- * remain unavailable rather than being synthesized.
- */
-
 type LiveTradingViewProps = {
   state: MasterTradingState;
   pairs: Pair[];
@@ -28,6 +14,12 @@ type LiveTradingViewProps = {
   onRefresh: () => Promise<void> | void;
 };
 
+/**
+ * Futures-only autonomous trading surface.
+ * Owner action sequence: SELECT -> ALLOCATE -> CONFIRM START.
+ * Entries, strategy, leverage, TP/SL, position management, exits,
+ * reconciliation, accounting and optimization remain server-owned.
+ */
 function Metric({ label, value, tone }: { label: string; value: string; tone?: 'up' | 'down' }) {
   return (
     <div>
@@ -104,7 +96,7 @@ export const LiveTradingView = ({
           <div>
             <div className="text-[11px] font-black uppercase tracking-[0.22em] text-emerald-400">Futures-Only Autonomous</div>
             <h1 className="mt-1 text-2xl font-black tracking-tight text-slate-100">USDT Perpetual</h1>
-            <p className="mt-1 text-xs text-slate-500">The bot decides when to trade. You only allocate capital and start it.</p>
+            <p className="mt-1 text-xs text-slate-500">Select a futures pair, allocate capital, confirm START. The bot owns the lifecycle.</p>
           </div>
           <div className={`flex items-center gap-2 rounded-xl border px-3 py-2 ${d.statusClass}`}>
             <Bot className="h-4 w-4" />
@@ -142,12 +134,8 @@ export const LiveTradingView = ({
             <Metric label="Entry" value={price(position!.entryPrice)} />
             <Metric label="Mark" value={price(position!.currentPrice)} />
             <Metric label="Unrealized PnL" value={money(position!.unrealizedPnL)} tone={(position!.unrealizedPnL ?? 0) >= 0 ? 'up' : 'down'} />
-            {position!.liquidationPrice !== undefined && (
-              <Metric label="Liquidation Price" value={price(position!.liquidationPrice)} />
-            )}
-            {position!.leverage !== undefined && (
-              <Metric label="Exchange Leverage" value={`${position!.leverage}x`} />
-            )}
+            {position!.liquidationPrice !== undefined && <Metric label="Liquidation Price" value={price(position!.liquidationPrice)} />}
+            {position!.leverage !== undefined && <Metric label="Exchange Leverage" value={`${position!.leverage}x`} />}
           </div>
         ) : (
           <p className="mt-3 text-sm text-slate-500">FLAT — the autonomous engine waits for a verified trade opportunity.</p>
@@ -209,7 +197,7 @@ export const LiveTradingView = ({
                   <span className="font-black text-emerald-300">Confirm START.</span> GigPilot will autonomously
                   analyze the live futures market, select strategy, apply risk-bounded leverage, enter only when
                   verified net edge passes the gate, protect and manage the position, exit, reconcile, account for
-                  realized net PnL, and repeat. No manual orders are available.
+                  realized net PnL, and repeat. Manual order entry is disabled.
                 </div>
               </div>
               <div className="mt-3 flex gap-2">
@@ -255,9 +243,7 @@ export const LiveTradingView = ({
         <p className="mt-2 text-sm leading-6 text-slate-400">{d.reason}</p>
       </section>
 
-      {notice && (
-        <div className="rounded-xl border border-slate-700 bg-slate-900/80 px-4 py-3 text-sm text-slate-300">{notice}</div>
-      )}
+      {notice && <div className="rounded-xl border border-slate-700 bg-slate-900/80 px-4 py-3 text-sm text-slate-300">{notice}</div>}
     </div>
   );
 };
