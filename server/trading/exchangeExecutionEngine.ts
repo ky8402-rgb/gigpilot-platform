@@ -502,6 +502,7 @@ export class ExchangeExecutionEngine implements EngineModule {
       gridLevelId?: string;
       strategyId?: string;
       expectedNetEdge?: ExpectedNetEdgeBreakdown;
+      leverage?: number;
     }>
   ): Promise<{ success: boolean; executed: Order[]; failedCount: number }> {
     const executed: Order[] = [];
