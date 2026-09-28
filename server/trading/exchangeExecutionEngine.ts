@@ -584,6 +584,15 @@ export class ExchangeExecutionEngine implements EngineModule {
     return count;
   }
 
+  /** Apply native Bybit linear-futures TP/SL protection to the authoritative open position. */
+  public async applyFuturesProtection(symbol: string, takeProfit: number, stopLoss: number): Promise<{ success: boolean; error?: string }> {
+    if (!this.enabled) return { success: false, error: 'EXCHANGE_EXECUTION_ENGINE_OFF: Futures protection is disabled.' };
+    const cred = this.credentials.get('BYBIT');
+    if (!cred || cred.status !== 'CONNECTED' || !cred.canTrade) return { success: false, error: 'FAIL-CLOSED: Bybit credentials are not trade-ready.' };
+    const { bybitAdapter } = await import('./bybitAdapter.js');
+    return bybitAdapter.setFuturesTradingStop(symbol, takeProfit, stopLoss);
+  }
+
   /** Place a live Spot protective exit on Bybit. This is a real exchange order; no simulated fill is created. */
   public async executeProtectiveExit(spec: { symbol: string; amount: number; triggerPrice: number; kind: 'TAKE_PROFIT' | 'STOP_LOSS'; }): Promise<{ success: boolean; orderId?: string; error?: string }> {
     if (!this.enabled) return { success: false, error: 'EXCHANGE_EXECUTION_ENGINE_OFF: Protective exits are disabled.' };
