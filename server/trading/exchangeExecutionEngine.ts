@@ -197,6 +197,12 @@ export class ExchangeExecutionEngine implements EngineModule {
     }
   }
 
+  public async ensureFuturesLeverage(symbol: string, maxLeverage: number): Promise<{ success: boolean; error?: string }> {
+    if (!Number.isFinite(maxLeverage) || maxLeverage < 1) return { success: false, error: 'Invalid configured futures leverage limit.' };
+    const { bybitAdapter } = await import('./bybitAdapter.js');
+    return bybitAdapter.setFuturesLeverage(symbol, maxLeverage);
+  }
+
   public async executeOrder(spec: {
     symbol: string;
     side: 'BUY' | 'SELL';
@@ -208,6 +214,7 @@ export class ExchangeExecutionEngine implements EngineModule {
     gridLevelId?: string;
     strategyId?: string;
     expectedNetEdge?: ExpectedNetEdgeBreakdown;
+    leverage?: number;
   }): Promise<{ success: boolean; order?: Order; error?: string }> {
     if (!this.enabled) {
       const err = 'EXCHANGE_EXECUTION_ENGINE_OFF: Real order execution disabled by operator.';
@@ -228,6 +235,14 @@ export class ExchangeExecutionEngine implements EngineModule {
       const err = cred.errorMessage
         ? `FAIL-CLOSED: Bybit connection is not validated. ${cred.errorMessage}`
         : `FAIL-CLOSED: Bybit connection is ${cred.status}. Live order rejected until an authenticated connection check succeeds.`;
+      this.recordError('ERROR', err);
+      return { success: false, error: err };
+    }
+
+    const leverageLimit = Number(spec.leverage ?? 1);
+    const leverageResult = await this.ensureFuturesLeverage(spec.symbol, leverageLimit);
+    if (!leverageResult.success) {
+      const err = `FAIL-CLOSED: Bybit futures leverage could not be set to the configured risk limit (${leverageLimit}x). ${leverageResult.error || ''}`.trim();
       this.recordError('ERROR', err);
       return { success: false, error: err };
     }
@@ -487,6 +502,7 @@ export class ExchangeExecutionEngine implements EngineModule {
       gridLevelId?: string;
       strategyId?: string;
       expectedNetEdge?: ExpectedNetEdgeBreakdown;
+      leverage?: number;
     }>
   ): Promise<{ success: boolean; executed: Order[]; failedCount: number }> {
     const executed: Order[] = [];
