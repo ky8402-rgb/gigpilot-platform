@@ -667,6 +667,60 @@ export class BybitAdapter {
   }
 
   /**
+   * Private Signed: Real Bybit linear futures positions.
+   * Position size is signed: positive=LONG, negative=SHORT.
+   */
+  public async getRealPositions(symbol?: string): Promise<Array<{
+    symbol: string;
+    baseAmount: number;
+    quoteAmount: number;
+    entryPrice: number;
+    currentPrice: number;
+    unrealizedPnL: number;
+    unrealizedPnLPct: number;
+    realizedPnL: number;
+    totalFeesPaid: number;
+    netPnL: number;
+    liquidationPrice?: number;
+    leverage?: number;
+  }>> {
+    if (!this.apiKey || !this.apiSecret) return [];
+    const params: Record<string, any> = { category: 'linear', settleCoin: 'USDT' };
+    if (symbol) params.symbol = this.normalizeSymbol(symbol);
+    const { headers, queryString } = this.signGet(params);
+    const res = await fetch(this.getActiveBaseUrl() + '/v5/position/list?' + queryString, { headers });
+    const json = await res.json() as any;
+    if (!res.ok || json?.retCode !== 0) {
+      throw new Error(json?.retMsg || ('Bybit position query failed: HTTP ' + res.status));
+    }
+    return (json?.result?.list || []).map((p: any) => {
+      const size = Number(p.size || 0);
+      const entryPrice = Number(p.avgPrice || p.entryPrice || 0);
+      const markPrice = Number(p.markPrice || 0);
+      const unrealizedPnL = Number(p.unrealisedPnl || p.unrealizedPnl || 0);
+      const realizedPnL = Number(p.curRealisedPnl || p.cumRealisedPnl || 0);
+      const positionValue = Number(p.positionValue || (size * markPrice) || 0);
+      const signedSize = String(p.side || '').toUpperCase() === 'SHORT' ? -size : size;
+      const cost = Math.abs(positionValue);
+      const unrealizedPnLPct = cost > 0 ? (unrealizedPnL / cost) * 100 : 0;
+      return {
+        symbol: this.denormalizeSymbol(String(p.symbol || '')),
+        baseAmount: signedSize,
+        quoteAmount: positionValue,
+        entryPrice,
+        currentPrice: markPrice,
+        unrealizedPnL,
+        unrealizedPnLPct,
+        realizedPnL,
+        totalFeesPaid: 0,
+        netPnL: unrealizedPnL + realizedPnL,
+        liquidationPrice: Number(p.liqPrice || 0) || undefined,
+        leverage: Number(p.leverage || 0) || undefined
+      };
+    }).filter((p: any) => Math.abs(p.baseAmount) > 0);
+  }
+
+  /**
    * Symbol precision and step rules for Bybit Linear Futures
    */
   public getSymbolRules(symbol: string): { priceDecimals: number; qtyDecimals: number; minNotional: number } {
