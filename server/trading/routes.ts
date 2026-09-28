@@ -45,13 +45,6 @@ tradingRouter.get('/state', requireOwnerAuth, (req: Request, res: Response) => {
         maxCapitalAllocationPct: store.risk.getConfig().maxCapitalAllocationPct,
         minimumNetEdgeBps: store.risk.getConfig().minimum_edge_threshold ?? store.risk.getConfig().minExpectedNetEdgeBps ?? 4.0
       },
-      futuresRisk: {
-        maxLeverage: store.risk.getConfig().maxLeverage,
-        maxExposureUsd: store.risk.getConfig().maxExposureUsd,
-        maxDrawdownLimitPct: store.risk.getConfig().maxDrawdownLimitPct,
-        maxCapitalAllocationPct: store.risk.getConfig().maxCapitalAllocationPct,
-        minimumNetEdgeBps: store.risk.getConfig().minimum_edge_threshold ?? store.risk.getConfig().minExpectedNetEdgeBps ?? 4.0
-      },
       autonomousBot: {
         status: (!startupSafetyLatch && isKillActive) ? 'BLOCKED' : (store.autonomousBotRunning ? 'RUNNING' : 'PAUSED'),
         allocatedCapitalUsd: store.autonomousAllocatedCapitalUsd,
