@@ -5,6 +5,16 @@ interface FifoLot {
   unitCostUsd: number;
 }
 
+/** Durable subset of the engine's state. Excludes nothing secret by construction. */
+export interface PersistedAccountingState {
+  capital: CapitalAccounting;
+  fifoLots: Record<string, FifoLot[]>;
+  processedFillIds: string[];
+  equityHighWaterMarkUsd: number;
+  utcDayKey: string;
+  utcDayStartEquityUsd: number | null;
+}
+
 export class ProfitAccountingEngine implements EngineModule {
   public readonly id = 'PROFIT_ACCOUNTING';
   public readonly name = 'Profit Accounting & Capital Segregator';
@@ -124,6 +134,64 @@ export class ProfitAccountingEngine implements EngineModule {
     this.latencyMs = Date.now() - start;
     this.lastHeartbeat = new Date().toISOString();
     this.status = 'HEALTHY';
+  }
+
+  /**
+   * Snapshot of the durable counters so realized performance survives a restart. Without this the
+   * platform re-learned every fee, slippage and P&L figure from zero on each deploy.
+   */
+  public exportPersistedState(): PersistedAccountingState {
+    const lots: Record<string, FifoLot[]> = {};
+    for (const [symbol, entries] of this.fifoLots.entries()) {
+      lots[symbol] = entries.map(lot => ({ quantity: lot.quantity, unitCostUsd: lot.unitCostUsd }));
+    }
+    return {
+      capital: { ...this.capital },
+      fifoLots: lots,
+      processedFillIds: Array.from(this.processedFillIds),
+      equityHighWaterMarkUsd: this.equityHighWaterMarkUsd,
+      utcDayKey: this.utcDayKey,
+      utcDayStartEquityUsd: this.utcDayStartEquityUsd
+    };
+  }
+
+  /**
+   * Restores durable counters at boot. Deliberately does not restore exchange-derived fields
+   * (equity, available cash, position value): the live sync is authoritative for those and will
+   * overwrite them within one cycle.
+   */
+  public importPersistedState(state: Partial<PersistedAccountingState> | null | undefined): boolean {
+    if (!state || typeof state !== 'object') return false;
+    try {
+      if (state.capital && typeof state.capital === 'object') {
+        this.capital = { ...this.capital, ...state.capital };
+      }
+      if (state.fifoLots && typeof state.fifoLots === 'object') {
+        this.fifoLots = new Map(
+          Object.entries(state.fifoLots).map(([symbol, entries]) => [
+            symbol,
+            (entries || [])
+              .map(lot => ({ quantity: Number(lot?.quantity), unitCostUsd: Number(lot?.unitCostUsd) }))
+              .filter(lot => Number.isFinite(lot.quantity) && lot.quantity > 0 && Number.isFinite(lot.unitCostUsd) && lot.unitCostUsd >= 0)
+          ])
+        );
+      }
+      if (Array.isArray(state.processedFillIds)) {
+        this.processedFillIds = new Set(state.processedFillIds.filter(id => typeof id === 'string' && id.length > 0));
+      }
+      if (Number.isFinite(Number(state.equityHighWaterMarkUsd))) {
+        this.equityHighWaterMarkUsd = Number(state.equityHighWaterMarkUsd);
+      }
+      if (typeof state.utcDayKey === 'string') this.utcDayKey = state.utcDayKey;
+      if (state.utcDayStartEquityUsd === null || state.utcDayStartEquityUsd === undefined) {
+        this.utcDayStartEquityUsd = null;
+      } else if (Number.isFinite(Number(state.utcDayStartEquityUsd))) {
+        this.utcDayStartEquityUsd = Number(state.utcDayStartEquityUsd);
+      }
+      return true;
+    } catch {
+      return false;
+    }
   }
 
   public recordFill(fill: Fill): void {

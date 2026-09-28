@@ -200,16 +200,75 @@ export const TradingDashboard: React.FC<TradingDashboardProps> = ({ onLogout }) 
     }
   }, []);
 
+  // Auxiliary telemetry (pairs, strategies, research, sweeps, risk, updates, audit logs, pair
+  // details) is slow-moving relative to price, so it is refreshed far less often than the core
+  // state. Previously all nine endpoints were re-fetched every 3s (~180 requests/minute).
+  const loadAuxTelemetry = useCallback(async (activeSymbol?: string) => {
+    const [pairsRes, stratRes, researchRes, sweepRes, riskRes, updatesRes, logsRes, pairDetailsRes] = await Promise.allSettled([
+      fetchAllPairs(),
+      fetchStrategies(),
+      fetchWebResearch(),
+      fetchProfitSweepInfo(),
+      fetchRiskData(),
+      fetchUpdatesHistory(),
+      fetchAuditLogs(),
+      activeSymbol ? fetchPairDetails(activeSymbol) : Promise.resolve(null)
+    ]);
+
+    if (pairsRes.status === 'fulfilled') setPairs(pairsRes.value);
+    if (stratRes.status === 'fulfilled') setStrategies(stratRes.value);
+    if (researchRes.status === 'fulfilled') setResearchItems(researchRes.value.items);
+    if (sweepRes.status === 'fulfilled') setProfitSweepInfo(sweepRes.value);
+    if (riskRes.status === 'fulfilled') setRiskData(riskRes.value);
+    if (updatesRes.status === 'fulfilled') setUpdatesHistory(updatesRes.value.updates);
+    if (logsRes.status === 'fulfilled') setAuditLogs(logsRes.value.logs);
+    if (pairDetailsRes.status === 'fulfilled' && pairDetailsRes.value) setPairDetails(pairDetailsRes.value);
+  }, []);
+
+  const loadCoreState = useCallback(async () => {
+    try {
+      const masterState = await fetchTradingState();
+      setState(masterState);
+      setGlobalKillSwitchActive(Boolean(masterState.GLOBAL_KILL_SWITCH_ACTIVE ?? masterState.killSwitch?.isActive));
+      setIsLiveConnected(isEngineLiveConnected());
+      return masterState;
+    } catch (err: any) {
+      console.warn('[TradingDashboard] Telemetry notice:', err.message || err);
+      setIsLiveConnected(false);
+      return null;
+    }
+  }, []);
+
   useEffect(() => {
     loadFullState();
 
-    // 3s polling loop for live telemetry
-    const interval = setInterval(() => {
-      loadFullState();
+    // Poll only while the tab is actually visible: a backgrounded dashboard was generating the same
+    // request load with nobody reading it, and the live exchange API is rate limited.
+    const isVisible = () => typeof document === 'undefined' || document.visibilityState === 'visible';
+
+    const coreInterval = setInterval(async () => {
+      if (!isVisible()) return;
+      await loadCoreState();
     }, 3000);
 
-    return () => clearInterval(interval);
-  }, [loadFullState]);
+    const auxInterval = setInterval(async () => {
+      if (!isVisible()) return;
+      const masterState = await loadCoreState();
+      if (masterState) await loadAuxTelemetry(masterState.activeSymbol);
+    }, 15000);
+
+    // Catch up immediately when the operator returns to the tab.
+    const onVisibilityChange = () => {
+      if (document.visibilityState === 'visible') loadFullState();
+    };
+    document.addEventListener('visibilitychange', onVisibilityChange);
+
+    return () => {
+      clearInterval(coreInterval);
+      clearInterval(auxInterval);
+      document.removeEventListener('visibilitychange', onVisibilityChange);
+    };
+  }, [loadFullState, loadCoreState, loadAuxTelemetry]);
 
   // Check and sync Owner 2FA authentication state
   useEffect(() => {

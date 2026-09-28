@@ -235,9 +235,32 @@ async function startServer() {
 // Global Exception Handlers
 process.on("uncaughtException", (err) => {
   console.error("[Trading Platform Error] Uncaught Exception:", err);
+  try { flushDurableState(); } catch { /* best effort */ }
 });
 process.on("unhandledRejection", (reason) => {
   console.error("[Trading Platform Error] Unhandled Rejection:", reason);
+});
+
+/**
+ * Deploys and restarts deliver SIGTERM/SIGINT. Flushing here means realized P&L, FIFO lots and the
+ * measured fills gathered since the last debounced write are not lost on the way down.
+ */
+function flushDurableState(): void {
+  try {
+    const ok = globalTradingStore.flushTradingState();
+    console.log(`[shutdown] Durable trading state flush: ${ok ? "ok" : "skipped"}`);
+  } catch (err: any) {
+    console.error(`[shutdown] Durable trading state flush failed: ${err?.message || err}`);
+  }
+}
+
+process.on("SIGTERM", () => {
+  flushDurableState();
+  process.exit(0);
+});
+process.on("SIGINT", () => {
+  flushDurableState();
+  process.exit(0);
 });
 
 startServer().catch((err) => {

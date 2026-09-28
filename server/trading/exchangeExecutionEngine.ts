@@ -18,6 +18,35 @@ export interface ExchangeApiCredentials {
 
 const KEYS_FILE = path.join(process.cwd(), '.exchange-trade-only-keys.json');
 
+/**
+ * Orders placed this recently are never pruned, because a placement in flight may not be visible in
+ * the exchange's open-order list yet.
+ */
+export const PHANTOM_ORDER_GRACE_MS = 20_000;
+
+/**
+ * Local orders that the exchange no longer reports AND that are old enough to rule out an in-flight
+ * placement. A local order with an unparseable timestamp is treated as recent and kept, so a
+ * malformed record can never cause a live order to be forgotten.
+ */
+export function selectPhantomOrderIds(
+  localOpenOrders: Array<{ id: string; symbol: string; placedAt: string }>,
+  exchangeLiveOrderIds: string[],
+  nowMs: number,
+  graceMs: number = PHANTOM_ORDER_GRACE_MS
+): string[] {
+  const live = new Set(exchangeLiveOrderIds);
+  const phantom: string[] = [];
+  for (const order of localOpenOrders) {
+    if (!order?.id || live.has(order.id)) continue;
+    const placedMs = Date.parse(String(order.placedAt || ''));
+    if (!Number.isFinite(placedMs)) continue;
+    if (nowMs - placedMs < graceMs) continue;
+    phantom.push(order.id);
+  }
+  return phantom;
+}
+
 export class ExchangeExecutionEngine implements EngineModule {
   public readonly id = 'EXCHANGE_EXECUTION_ENGINE';
   public readonly name = 'Exchange Execution Engine (Bybit Linear Futures V5)';
@@ -555,7 +584,7 @@ export class ExchangeExecutionEngine implements EngineModule {
    * Reconcile in-memory state with Bybit live futures orders on startup and periodic sync
    * Prevents orphaned orders after container restart or network glitch
    */
-  public async reconcileOpenOrders(targetSymbol?: string): Promise<{ reconciledCount: number; error?: string }> {
+  public async reconcileOpenOrders(targetSymbol?: string): Promise<{ reconciledCount: number; prunedCount?: number; error?: string }> {
     const cred = this.credentials.get('BYBIT');
     if (!cred || !cred.isConfigured) {
       return { reconciledCount: 0 };
@@ -587,9 +616,11 @@ export class ExchangeExecutionEngine implements EngineModule {
 
       const bybitOrders = json.result?.list || [];
       let count = 0;
+      const exchangeLiveOrderIds: string[] = [];
       for (const bOrder of bybitOrders) {
         if (bOrder.orderStatus === 'New' || bOrder.orderStatus === 'PartiallyFilled') {
           const orderId = bOrder.orderId;
+          exchangeLiveOrderIds.push(orderId);
           if (!this.openOrders.has(orderId)) {
             const matchedOrder: Order = {
               id: orderId,
@@ -621,7 +652,24 @@ export class ExchangeExecutionEngine implements EngineModule {
         this.recordError('WARN', `State Reconciled: Imported ${count} live open order(s) from Bybit exchange.`);
       }
 
-      return { reconciledCount: count };
+      // Prune local orders the exchange no longer has. Reconciliation previously only ever ADDED,
+      // so anything filled/cancelled/liquidated exchange-side stayed OPEN locally forever and
+      // permanently consumed the maxOpenOrders budget.
+      const candidates = Array.from(this.openOrders.values())
+        .filter(order => !rawSymbol || order.symbol === rawSymbol)
+        .map(order => ({ id: order.id, symbol: order.symbol, placedAt: order.placedAt }));
+      const phantomIds = selectPhantomOrderIds(candidates, exchangeLiveOrderIds, Date.now(), PHANTOM_ORDER_GRACE_MS);
+
+      for (const phantomId of phantomIds) {
+        const order = this.openOrders.get(phantomId);
+        if (order) order.status = 'CANCELLED';
+        this.openOrders.delete(phantomId);
+      }
+      if (phantomIds.length > 0) {
+        this.recordError('WARN', `State Reconciled: pruned ${phantomIds.length} local order(s) absent from the exchange (filled, cancelled or liquidated exchange-side).`);
+      }
+
+      return { reconciledCount: count, prunedCount: phantomIds.length };
     } catch (err: any) {
       this.recordError('WARN', `Order reconciliation failed: ${err.message}`);
       return { reconciledCount: 0, error: err.message };

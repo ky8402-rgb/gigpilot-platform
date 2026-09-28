@@ -11,6 +11,17 @@ import {
   TradingMode
 } from './types.js';
 import { buildCostEvidence, computeMarkoutBps, CostEvidence, MeasuredFill } from './costModel.js';
+import {
+  isGridRestorable,
+  PersistedTradingState,
+  readTradingState,
+  TRADING_STATE_PATH,
+  TRADING_STATE_VERSION,
+  writeTradingState
+} from './statePersistence.js';
+
+/** Debounce for durable state writes: frequent syncs must not amplify disk writes. */
+const TRADING_STATE_PERSIST_DEBOUNCE_MS = 1500;
 import { DataEngine, LivePairMarketData } from './dataEngine.js';
 import { QuantEngine } from './quantEngine.js';
 import { GridEngine } from './gridEngine.js';
@@ -46,6 +57,9 @@ export class TradingStore {
   /** Real exchange fills paired with the quote captured at dispatch, used for cost evidence. */
   private recentMeasuredFills: MeasuredFill[] = [];
   private measuredFillIds = new Set<string>();
+  private persistTimer: ReturnType<typeof setTimeout> | null = null;
+  /** A persisted grid awaiting live price data before it can be judged still-valid. */
+  private persistedGridCandidate: PersistedTradingState['activeGrid'] = null;
 
   // Runtime State
   public activeSymbol: string = 'BTC/USDT';
@@ -79,6 +93,10 @@ export class TradingStore {
 
     // Fund sweeps must respect the same emergency halt as order placement.
     this.sweeper.setKillSwitchGuard(() => this.GLOBAL_KILL_SWITCH_ACTIVE || this.killSwitch.getState().isActive);
+
+    // Recover durable realized performance before anything syncs from the exchange, so accounting
+    // continues across restarts instead of resetting to zero on every deploy.
+    this.restoreTradingState();
 
     // 2. Register all engines with Central Continuous Monitor
     this.monitor.registerEngine(this.dataEngine);
@@ -274,6 +292,120 @@ export class TradingStore {
     return decision;
   }
 
+  /**
+   * Restores durable trading state at boot. Autonomy is deliberately NOT restored — an explicit
+   * START is still required — but a still-valid grid is recovered so an open position keeps its
+   * exchange-side protection instead of tripping the emergency halt on every restart.
+   */
+  private restoreTradingState(): void {
+    const persisted = readTradingState();
+    if (!persisted) {
+      this.monitor.logAudit({
+        category: 'CONFIG_CHANGE',
+        action: 'No usable persisted trading state found; starting with clean accounting.',
+        details: { path: TRADING_STATE_PATH }
+      });
+      return;
+    }
+
+    const accountingRestored = this.profitAccounting.importPersistedState({
+      capital: persisted.capital,
+      fifoLots: persisted.fifoLots,
+      processedFillIds: persisted.processedFillIds,
+      equityHighWaterMarkUsd: persisted.equityHighWaterMarkUsd,
+      utcDayKey: persisted.utcDayKey,
+      utcDayStartEquityUsd: persisted.utcDayStartEquityUsd
+    });
+
+    for (const fill of persisted.measuredFills) {
+      if (this.measuredFillIds.has(fill.id)) continue;
+      this.measuredFillIds.add(fill.id);
+      this.recentMeasuredFills.push({ ...fill });
+    }
+
+    if (persisted.activeSymbol) this.activeSymbol = persisted.activeSymbol;
+    this.persistedGridCandidate = persisted.activeGrid;
+
+    this.monitor.logAudit({
+      category: 'CONFIG_CHANGE',
+      action: `Restored persisted trading state (saved ${persisted.savedAt}).`,
+      details: {
+        accountingRestored,
+        measuredFillsRestored: this.recentMeasuredFills.length,
+        processedFillIdsRestored: persisted.processedFillIds.length,
+        realizedNetProfitUsd: Number(persisted.capital?.netRealizedProfit) || 0,
+        totalTradingFeesUsd: Number(persisted.capital?.totalTradingFees) || 0,
+        gridCandidatePending: Boolean(this.persistedGridCandidate),
+        autonomy: 'NOT restored - an explicit START is required after boot'
+      }
+    });
+  }
+
+  /**
+   * Promotes the persisted grid once live prices exist to judge it. Only adopted while no grid is
+   * active and autonomy is still 0, so this can never start trading on its own.
+   */
+  private maybeRestorePersistedGrid(): void {
+    if (!this.persistedGridCandidate || this.activeGrid || this.autonomyLevel !== 0) return;
+    const livePrice = Number(this.dataEngine.getPairData(this.activeSymbol)?.currentPrice);
+    if (!(livePrice > 0)) return;
+
+    const candidate = this.persistedGridCandidate;
+    this.persistedGridCandidate = null;
+
+    if (!isGridRestorable(candidate, livePrice, Date.now())) {
+      this.monitor.logAudit({
+        category: 'CONFIG_CHANGE',
+        action: 'Persisted grid not restored: it is stale, malformed, or the price has drifted beyond 20% of its bounds. Protection will be re-derived from a fresh grid.',
+        details: { symbol: candidate?.symbol, upperBoundary: candidate?.upperBoundary, lowerBoundary: candidate?.lowerBoundary, livePrice }
+      });
+      return;
+    }
+
+    this.activeGrid = candidate;
+    this.monitor.logAudit({
+      category: 'CONFIG_CHANGE',
+      action: 'Restored a still-valid grid from persisted state so an open position keeps its TP/SL boundaries. Autonomy remains L0 until START.',
+      details: { symbol: candidate?.symbol, upperBoundary: candidate?.upperBoundary, lowerBoundary: candidate?.lowerBoundary, livePrice }
+    });
+  }
+
+  private buildPersistedState(): PersistedTradingState {
+    const accounting = this.profitAccounting.exportPersistedState();
+    return {
+      version: TRADING_STATE_VERSION,
+      savedAt: new Date().toISOString(),
+      capital: accounting.capital,
+      fifoLots: accounting.fifoLots,
+      processedFillIds: accounting.processedFillIds,
+      measuredFills: this.recentMeasuredFills.map(fill => ({ ...fill })),
+      equityHighWaterMarkUsd: accounting.equityHighWaterMarkUsd,
+      utcDayKey: accounting.utcDayKey,
+      utcDayStartEquityUsd: accounting.utcDayStartEquityUsd,
+      activeGrid: this.activeGrid,
+      autonomyLevel: this.autonomyLevel,
+      activeSymbol: this.activeSymbol
+    };
+  }
+
+  private scheduleTradingStatePersist(): void {
+    if (this.persistTimer) return;
+    this.persistTimer = setTimeout(() => {
+      this.persistTimer = null;
+      writeTradingState(this.buildPersistedState());
+    }, TRADING_STATE_PERSIST_DEBOUNCE_MS);
+    if (typeof this.persistTimer.unref === 'function') this.persistTimer.unref();
+  }
+
+  /** Writes immediately, bypassing the debounce. Used on shutdown so a restart loses nothing. */
+  public flushTradingState(): boolean {
+    if (this.persistTimer) {
+      clearTimeout(this.persistTimer);
+      this.persistTimer = null;
+    }
+    return writeTradingState(this.buildPersistedState());
+  }
+
   /** Live mid and half-spread for the current book, or undefined when the book is unusable. */
   private getLiveQuoteSnapshot(pairData?: LivePairMarketData): { mid: number; halfSpreadBps: number } | undefined {
     const bestBid = Number(pairData?.orderBook?.bids?.[0]?.price);
@@ -397,6 +529,9 @@ export class TradingStore {
 
   public async syncCapitalFromRealExchange(): Promise<void> {
     try {
+      // Adopt a persisted grid first, if it is still a fair description of the market, so that any
+      // open position keeps its TP/SL boundaries rather than tripping the emergency halt.
+      this.maybeRestorePersistedGrid();
       const acct = await bybitAdapter.getRealAccountState();
       if (acct.status === 'CONNECTED') {
         this.profitAccounting.syncFromRealAccount({
@@ -462,6 +597,10 @@ export class TradingStore {
         this.exchangeExec.setOffSwitch(false);
         this.triggerEmergencyKillSwitch(`Bybit account reconciliation failed: ${err?.message || 'unknown error'}`);
       }
+    } finally {
+      // Durable write, debounced: realized P&L, FIFO lots and measured fills must outlive the
+      // process (every deploy restarts the service).
+      this.scheduleTradingStatePersist();
     }
   }
 
