@@ -197,6 +197,12 @@ export class ExchangeExecutionEngine implements EngineModule {
     }
   }
 
+  public async ensureFuturesLeverage(symbol: string, maxLeverage: number): Promise<{ success: boolean; error?: string }> {
+    if (!Number.isFinite(maxLeverage) || maxLeverage < 1) return { success: false, error: 'Invalid configured futures leverage limit.' };
+    const { bybitAdapter } = await import('./bybitAdapter.js');
+    return bybitAdapter.setFuturesLeverage(symbol, maxLeverage);
+  }
+
   public async executeOrder(spec: {
     symbol: string;
     side: 'BUY' | 'SELL';
