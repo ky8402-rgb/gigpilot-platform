@@ -82,6 +82,7 @@ interface OwnerConfig {
 class OwnerAuthManager {
   private config: OwnerConfig;
   private pendingTotpSecret: string | null = null;
+  private pendingTotpExpiresAt: number | null = null;
   private jwtSecret: string;
 
   constructor() {
@@ -140,9 +141,19 @@ class OwnerAuthManager {
     return { isAuthenticated, isConfigured: !!(this.config.passwordHash && this.config.totpEnabled), ownerEmail: this.config.ownerEmail, totpEnabled: this.config.totpEnabled, hasPassword: !!this.config.passwordHash };
   }
 
+  public isConfigured(): boolean {
+    return Boolean(this.config.passwordHash && this.config.totpEnabled);
+  }
+
   public async initiateTotpSetup(email?: string): Promise<{ secret: string; otpauthUrl: string; qrCodeDataUrl: string }> {
+    // Bootstrap-only. Once an owner account exists, handing out a fresh TOTP secret to an
+    // unauthenticated caller would allow complete owner takeover via completeSetup().
+    if (this.isConfigured()) {
+      throw new Error('Owner account is already configured. TOTP re-enrollment requires an authenticated owner session.');
+    }
     const targetEmail = email || this.config.ownerEmail;
     this.pendingTotpSecret = base32Encode(crypto.randomBytes(20));
+    this.pendingTotpExpiresAt = Date.now() + 10 * 60 * 1000;
     const issuer = 'GigPilot Bybit Quant';
     const otpauthUrl = `otpauth://totp/${encodeURIComponent(issuer)}:${encodeURIComponent(targetEmail)}?secret=${this.pendingTotpSecret}&issuer=${encodeURIComponent(issuer)}&algorithm=SHA1&digits=6&period=30`;
     const qrCodeDataUrl = await QRCode.toDataURL(otpauthUrl, { errorCorrectionLevel: 'M', margin: 2, color: { dark: '#0f172a', light: '#ffffff' } });
@@ -150,8 +161,18 @@ class OwnerAuthManager {
   }
 
   public completeSetup(password: string, totpCode: string, email?: string): { success: boolean; token?: string; error?: string } {
+    // Bootstrap-only, and only against a secret this process just issued (never the stored
+    // secret of an existing account), so an unauthenticated caller cannot overwrite owner creds.
+    if (this.isConfigured()) {
+      return { success: false, error: 'Owner account is already configured. Setup cannot be re-run without an authenticated session.' };
+    }
+    if (!this.pendingTotpSecret || !this.pendingTotpExpiresAt || Date.now() > this.pendingTotpExpiresAt) {
+      this.pendingTotpSecret = null;
+      this.pendingTotpExpiresAt = null;
+      return { success: false, error: 'No pending TOTP enrollment. Complete /auth/setup-init first (enrollments expire after 10 minutes).' };
+    }
     if (!password || password.length < 6) return { success: false, error: 'Password must be at least 6 characters long.' };
-    const secretToVerify = this.pendingTotpSecret || this.config.totpSecret;
+    const secretToVerify = this.pendingTotpSecret;
     if (!verifyTOTP(totpCode, secretToVerify)) return { success: false, error: 'Invalid Google Authenticator 6-digit code. Please check your phone time.' };
     const salt = crypto.randomBytes(16).toString('hex');
     this.config.ownerEmail = email || this.config.ownerEmail;
@@ -160,6 +181,7 @@ class OwnerAuthManager {
     this.config.totpSecret = secretToVerify;
     this.config.totpEnabled = true;
     this.pendingTotpSecret = null;
+    this.pendingTotpExpiresAt = null;
     this.saveConfig();
     return { success: true, token: this.generateToken(this.config.ownerEmail) };
   }

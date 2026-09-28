@@ -109,7 +109,15 @@ export async function fetchWithFailover<T>(
   if (token) mergedHeaders.Authorization = `Bearer ${token}`;
 
   const { timeoutMs: _timeout, ...fetchOptions } = options || {};
-  for (const baseUrl of candidates) {
+
+  // Non-idempotent requests must never be replayed against another host. A POST that succeeded
+  // server-side but whose response was lost (timeout / 5xx after apply) would otherwise be re-sent
+  // to the next candidate, double-executing a real order, sweep, or state change.
+  const method = (fetchOptions.method || 'GET').toString().toUpperCase();
+  const isIdempotent = method === 'GET' || method === 'HEAD' || method === 'OPTIONS';
+  const attemptUrls = isIdempotent ? candidates : candidates.slice(0, 1);
+
+  for (const baseUrl of attemptUrls) {
     const cleanEndpoint = endpointPath.startsWith('/') ? endpointPath : `/${endpointPath}`;
     const targetUrl = `${baseUrl}${cleanEndpoint}`;
     const controller = new AbortController();
@@ -409,7 +417,7 @@ export async function fetchAutonomousOptimizer(): Promise<{
 }
 
 export async function runAutonomousOptimizer() {
-  return await fetchWithFailover<any>('/optimizer/run', {
+  return await fetchWithFailover<any>('/autonomous-optimizer/run', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' }
   });
@@ -444,11 +452,11 @@ export async function createStrategyVariant(params: {
   parameters: Partial<StrategyVersion['parameters']>;
   expectedEffect: string;
 }) {
-  return await fetchWithFailover<{ success: boolean; challenger: StrategyVersion }>('/strategy/create-variant', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(params)
-  });
+  // No such route exists on the backend (`/strategy/create-variant` was never implemented); the
+  // previous path always returned a 404 through the catch-all handler. Fail with a clear, honest
+  // message instead of a misleading network error, and expose the parameters used.
+  void params;
+  throw new Error('Strategy variant creation is not exposed by the live backend API.');
 }
 
 export async function validateUserScript(code: string) {
@@ -494,22 +502,30 @@ export async function fetchProfitSweepInfo(): Promise<{
   };
   history: ProfitSweep[];
 }> {
-  return await fetchWithFailover('/profit-sweep');
+  return await fetchWithFailover('/sweep/info');
 }
 
-export async function updateDestinationWallet(wallet: { address: string; chain: string; label?: string }) {
-  return await fetchWithFailover<{ success: boolean; wallet: DestinationWallet }>('/profit-sweep/wallet', {
+export async function updateDestinationWallet(wallet: { address: string; chain: string; label?: string; isWhitelisted?: boolean }) {
+  // The server expects a DestinationWallet carrying `network`; the client previously sent only
+  // `chain`, so the destination could never be persisted ("Destination chain/network is required").
+  return await fetchWithFailover<{ success: boolean; wallet: DestinationWallet }>('/sweep/wallet', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(wallet)
+    body: JSON.stringify({
+      address: wallet.address,
+      network: wallet.chain,
+      label: wallet.label,
+      isWhitelisted: wallet.isWhitelisted !== false
+    })
   });
 }
 
 export async function executeProfitSweep(amount: number) {
-  return await fetchWithFailover<{ success: boolean; sweep?: ProfitSweep; updatedCapital?: CapitalAccounting; error?: string }>('/profit-sweep/execute', {
+  // The server contract is `amountUsd`, not `amount`.
+  return await fetchWithFailover<{ success: boolean; sweep?: ProfitSweep; updatedCapital?: CapitalAccounting; error?: string }>('/sweep/execute', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ amount })
+    body: JSON.stringify({ amountUsd: amount })
   });
 }
 
@@ -530,7 +546,7 @@ export async function updateRiskConfig(config: Partial<RiskRuleConfig>) {
 }
 
 export async function resetCircuitBreaker() {
-  return await fetchWithFailover<{ success: boolean; circuitBreakerActive: boolean }>('/risk/reset-circuit-breaker', {
+  return await fetchWithFailover<{ success: boolean; circuitBreakerActive: boolean }>('/risk/circuit-breaker/reset', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' }
   });
@@ -543,11 +559,12 @@ export async function fetchUpdatesHistory(): Promise<{ updates: SystemUpdate[] }
 }
 
 export async function triggerCanaryRollout(version?: string, notes?: string) {
-  return await fetchWithFailover<{ success: boolean; update: SystemUpdate }>('/updates/rollout', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ version, notes })
-  });
+  // No such route exists on the backend (`/updates/rollout` was never implemented); the previous
+  // path always returned a 404 through the catch-all handler. There is deliberately no fabricated
+  // "rollout" fallback: canary rollout requires a real deployment capability.
+  void version;
+  void notes;
+  throw new Error('Canary rollout is not exposed by the live backend API.');
 }
 
 export async function fetchAuditLogs(): Promise<{ logs: AuditLog[] }> {

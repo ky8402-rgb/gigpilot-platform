@@ -29,7 +29,7 @@ export const githubRoutes = express.Router();
  * GET /api/github/status
  * Fetches SSH key configuration and git repository status
  */
-githubRoutes.get('/status', async (req, res) => {
+githubRoutes.get('/status', requireOwnerAuth, async (req, res) => {
   try {
     const [sshStatus, repoStatus] = await Promise.all([
       getSSHStatus(),
@@ -214,7 +214,7 @@ githubRoutes.post('/git-op', requireOwnerAuth, async (req, res) => {
  * GET /api/github/webhook-info
  * Returns the exact GitHub Webhook URL, secret configuration status, and tracked repository
  */
-githubRoutes.get('/webhook-info', async (req, res) => {
+githubRoutes.get('/webhook-info', requireOwnerAuth, async (req, res) => {
   try {
     const info = getWebhookInfo();
     const repo = await getGitRepoStatus();
@@ -425,7 +425,7 @@ githubRoutes.post('/webhook', async (req: any, res) => {
  * Dispatches a simulated or test GitHub Webhook push event with real HMAC-SHA256 header,
  * enabling immediate end-to-end GitOps pipeline verification in development/testing.
  */
-githubRoutes.post('/simulate-webhook', async (req, res) => {
+githubRoutes.post('/simulate-webhook', requireOwnerAuth, async (req, res) => {
   try {
     const {
       branch = 'main',
@@ -562,7 +562,7 @@ githubRoutes.post('/simulate-webhook', async (req, res) => {
  * GET /api/github/gitops-events
  * Returns dedicated GitOps telemetry: combined webhook sync logs, deployments, and repo sync state.
  */
-githubRoutes.get('/gitops-events', async (req, res) => {
+githubRoutes.get('/gitops-events', requireOwnerAuth, async (req, res) => {
   try {
     const allLogs = getActivityLogs({ limit: 150 });
     const gitopsLogs = allLogs.logs.filter(
@@ -596,7 +596,7 @@ githubRoutes.get('/gitops-events', async (req, res) => {
  * GET /api/github/deployments
  * Returns history of automated push-to-deploy executions
  */
-githubRoutes.get('/deployments', (req, res) => {
+githubRoutes.get('/deployments', requireOwnerAuth, (req, res) => {
   return res.json({
     success: true,
     deployments: getDeploymentHistory(),
@@ -633,7 +633,7 @@ githubRoutes.post('/trigger-deploy', requireOwnerAuth, async (req, res) => {
  * GET /api/github/auth-status
  * Returns combined GitHub authentication state (Token + SSH + Repo)
  */
-githubRoutes.get('/auth-status', async (req, res) => {
+githubRoutes.get('/auth-status', requireOwnerAuth, async (req, res) => {
   try {
     const status = await getGitHubAuthStatus();
     return res.json({

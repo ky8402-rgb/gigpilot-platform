@@ -16,7 +16,13 @@ const PORT = 3000;
 
 // Security & Parsing Middlewares
 app.use(compression());
-app.use(express.json({ limit: "10mb" }));
+// Capture the exact received bytes in addition to the parsed body: GitHub HMAC-SHA256
+// signatures are computed over the raw payload, so re-serializing the parsed object
+// breaks verification (key order / escaping / unicode differences).
+app.use(express.json({
+  limit: "10mb",
+  verify: (req: any, _res: any, buf: Buffer) => { req.rawBody = buf; }
+}));
 app.use(express.urlencoded({ extended: true, limit: "10mb" }));
 app.use(cookieParser());
 

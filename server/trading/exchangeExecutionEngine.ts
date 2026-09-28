@@ -33,6 +33,12 @@ export class ExchangeExecutionEngine implements EngineModule {
   private orderHistory: Order[] = [];
   private fills: Fill[] = [];
   private positions: Map<string, Position> = new Map();
+  /** Last leverage successfully asserted per symbol, so every grid rung does not re-send it. */
+  private leverageAsserted: Map<string, number> = new Map();
+  /** Hard halt engaged by the global emergency kill switch; blocks new live order dispatch. */
+  private halted: boolean = false;
+  /** Cached Bybit instrument filters (qty step / tick size / minimums) for correct rounding. */
+  private instrumentSpecs: Map<string, { qtyStep: number; tickSize: number; minOrderQty: number; minNotional: number }> = new Map();
 
   constructor() {
     this.initCredentials();
@@ -199,8 +205,64 @@ export class ExchangeExecutionEngine implements EngineModule {
 
   public async ensureFuturesLeverage(symbol: string, maxLeverage: number): Promise<{ success: boolean; error?: string }> {
     if (!Number.isFinite(maxLeverage) || maxLeverage < 1) return { success: false, error: 'Invalid configured futures leverage limit.' };
+    const normalized = symbol.replace(/[\/\-_]/g, '').toUpperCase();
+
+    // Leverage only needs asserting when it changes. Re-sending it for every rung of a grid was
+    // pure overhead and surfaced Bybit's benign "leverage not modified" (110043) as a failure.
+    if (this.leverageAsserted.get(normalized) === maxLeverage) return { success: true };
+
     const { bybitAdapter } = await import('./bybitAdapter.js');
-    return bybitAdapter.setFuturesLeverage(symbol, maxLeverage);
+    const result = await bybitAdapter.setFuturesLeverage(symbol, maxLeverage);
+    if (result.success) this.leverageAsserted.set(normalized, maxLeverage);
+    else this.leverageAsserted.delete(normalized);
+    return result;
+  }
+
+  /** Engage/release the hard halt driven by the global emergency kill switch. */
+  public setHalted(halted: boolean): void {
+    this.halted = Boolean(halted);
+    if (this.halted) this.status = 'OFF';
+  }
+
+  public isHalted(): boolean {
+    return this.halted;
+  }
+
+  /** Resolve (and cache) the exchange's instrument filters so orders are sized to valid increments. */
+  private async getInstrumentSpec(symbol: string): Promise<{ qtyStep: number; tickSize: number; minOrderQty: number; minNotional: number } | null> {
+    const key = symbol.replace(/[\/\-_]/g, '').toUpperCase();
+    const cached = this.instrumentSpecs.get(key);
+    if (cached) return cached;
+    try {
+      const res = await fetch(`https://api.bybit.com/v5/market/instruments-info?category=linear&symbol=${encodeURIComponent(key)}`);
+      const json = await res.json() as any;
+      const row = json?.result?.list?.[0];
+      if (!row) return null;
+      const qtyStep = Number(row.lotSizeFilter?.qtyStep ?? 0);
+      const tickSize = Number(row.priceFilter?.tickSize ?? 0);
+      const minOrderQty = Number(row.lotSizeFilter?.minOrderQty ?? 0);
+      const minNotional = Number(row.lotSizeFilter?.minNotionalValue ?? row.lotSizeFilter?.minOrderAmt ?? 0);
+      if (!Number.isFinite(qtyStep) || qtyStep <= 0 || !Number.isFinite(tickSize) || tickSize <= 0) return null;
+      const spec = {
+        qtyStep,
+        tickSize,
+        minOrderQty: Number.isFinite(minOrderQty) ? minOrderQty : 0,
+        minNotional: Number.isFinite(minNotional) ? minNotional : 0
+      };
+      this.instrumentSpecs.set(key, spec);
+      return spec;
+    } catch {
+      return null;
+    }
+  }
+
+  /** Snap a value to an instrument increment, avoiding binary floating-point drift. */
+  private static snapToStep(value: number, step: number, mode: 'floor' | 'nearest'): number {
+    if (!Number.isFinite(value) || !Number.isFinite(step) || step <= 0) return value;
+    const factor = 1 / step;
+    const scaled = value * factor;
+    const snapped = mode === 'floor' ? Math.floor(scaled + 1e-9) : Math.round(scaled);
+    return Number((snapped / factor).toPrecision(15));
   }
 
   public async executeOrder(spec: {
@@ -215,9 +277,16 @@ export class ExchangeExecutionEngine implements EngineModule {
     strategyId?: string;
     expectedNetEdge?: ExpectedNetEdgeBreakdown;
     leverage?: number;
+    orderLinkId?: string;
+    reduceOnly?: boolean;
   }): Promise<{ success: boolean; order?: Order; error?: string }> {
     if (!this.enabled) {
       const err = 'EXCHANGE_EXECUTION_ENGINE_OFF: Real order execution disabled by operator.';
+      this.recordError('ERROR', err);
+      return { success: false, error: err };
+    }
+    if (this.halted) {
+      const err = 'FAIL-CLOSED: Global emergency kill switch is engaged. New live order dispatch is halted.';
       this.recordError('ERROR', err);
       return { success: false, error: err };
     }
@@ -272,9 +341,11 @@ export class ExchangeExecutionEngine implements EngineModule {
       placedAt: new Date().toISOString()
     };
 
-    // Dispatch directly to Bybit using signed HMAC-SHA256
+    // Dispatch directly to Bybit using signed HMAC-SHA256.
+    // A deterministic orderLinkId lets Bybit deduplicate retries instead of double-executing.
     try {
-      const bybitResult = await this.dispatchBybitOrder(cred, spec);
+      const orderLinkId = spec.orderLinkId || `gp-${id}`.slice(0, 36);
+      const bybitResult = await this.dispatchBybitOrder(cred, { ...spec, orderLinkId });
       if (!bybitResult.success) {
         order.status = 'REJECTED';
         order.rejectionReason = bybitResult.error;
@@ -304,15 +375,47 @@ export class ExchangeExecutionEngine implements EngineModule {
     const timestamp = Date.now().toString();
     const endpoint = 'https://api.bybit.com/v5/order/create';
 
+    // Snap to the exchange's real increments before dispatch: raw float sizing derived from the
+    // grid budget and price is otherwise rejected for precision, or silently mis-sized.
+    const instrument = await this.getInstrumentSpec(rawSymbol);
+    if (!instrument) {
+      return { success: false, error: `FAIL-CLOSED: Could not resolve the Bybit instrument specification for ${rawSymbol}; refusing to submit an unvalidated order.` };
+    }
+
+    const isMarket = spec.type === 'MARKET';
+    const rawQty = Number(spec.amount);
+    const qty = ExchangeExecutionEngine.snapToStep(rawQty, instrument.qtyStep, 'floor');
+    const refPrice = Number(spec.price);
+    const price = isMarket ? 0 : ExchangeExecutionEngine.snapToStep(refPrice, instrument.tickSize, 'nearest');
+    const triggerPrice = spec.triggerPrice
+      ? ExchangeExecutionEngine.snapToStep(Number(spec.triggerPrice), instrument.tickSize, 'nearest')
+      : undefined;
+
+    if (!Number.isFinite(qty) || qty <= 0) {
+      return { success: false, error: `FAIL-CLOSED: Quantity ${rawQty} rounds below the minimum tradable increment (${instrument.qtyStep}) for ${rawSymbol}.` };
+    }
+    if (instrument.minOrderQty > 0 && qty < instrument.minOrderQty) {
+      return { success: false, error: `FAIL-CLOSED: Quantity ${qty} is below the Bybit minimum order quantity ${instrument.minOrderQty} for ${rawSymbol}.` };
+    }
+    const notionalUsd = qty * (isMarket ? refPrice : price);
+    if (instrument.minNotional > 0 && Number.isFinite(notionalUsd) && notionalUsd < instrument.minNotional) {
+      return { success: false, error: `FAIL-CLOSED: Order notional ${notionalUsd.toFixed(4)} is below the Bybit minimum ${instrument.minNotional} for ${rawSymbol}.` };
+    }
+    if (!isMarket && (!Number.isFinite(price) || price <= 0)) {
+      return { success: false, error: `FAIL-CLOSED: Limit price ${spec.price} is not a valid tick-aligned price for ${rawSymbol}.` };
+    }
+
     const body: Record<string, any> = {
       category: 'linear', symbol: rawSymbol, side: spec.side === 'BUY' ? 'Buy' : 'Sell',
-      orderType: spec.type === 'MARKET' ? 'Market' : 'Limit', qty: spec.amount.toString(),
-      price: spec.type === 'LIMIT' ? spec.price.toString() : undefined,
-      timeInForce: spec.type === 'MARKET' ? 'IOC' : 'GTC'
+      orderType: isMarket ? 'Market' : 'Limit', qty: String(qty),
+      price: isMarket ? undefined : String(price),
+      timeInForce: isMarket ? 'IOC' : 'GTC'
     };
-    if (spec.triggerPrice) body.triggerPrice = spec.triggerPrice.toString();
+    if (triggerPrice) body.triggerPrice = String(triggerPrice);
     if (spec.orderFilter) body.orderFilter = spec.orderFilter;
     if (spec.orderLinkId) body.orderLinkId = spec.orderLinkId;
+    // Close-only semantics: without reduceOnly, a protective stop can flip into a NEW position.
+    if (spec.reduceOnly) body.reduceOnly = true;
 
     const bodyStr = JSON.stringify(body);
     const signPayload = `${timestamp}${cred.apiKey}5000${bodyStr}`;
@@ -600,7 +703,22 @@ export class ExchangeExecutionEngine implements EngineModule {
     if (!cred || !cred.isConfigured) return { success: false, error: 'FAIL-CLOSED: Bybit trade-only API keys are not configured.' };
     if (!Number.isFinite(spec.amount) || spec.amount <= 0 || !Number.isFinite(spec.triggerPrice) || spec.triggerPrice <= 0) return { success: false, error: 'Protective exit amount and trigger price must be positive live values.' };
     try {
-      const result = await this.dispatchBybitOrder(cred, { symbol: spec.symbol, side: 'SELL', type: 'MARKET', amount: spec.amount, triggerPrice: spec.triggerPrice, orderFilter: 'StopOrder', orderLinkId: ('gp-' + spec.kind.toLowerCase() + '-' + Date.now()).slice(0, 36) });
+      // Derive the closing side from the authoritative position: a hardcoded SELL would open a
+      // NEW short when closing a short position, or when the position is already flat.
+      const position = this.getPosition(spec.symbol);
+      const baseAmount = Number(position?.baseAmount ?? 0);
+      const closeSide: 'BUY' | 'SELL' = baseAmount < 0 ? 'BUY' : 'SELL';
+      const result = await this.dispatchBybitOrder(cred, {
+        symbol: spec.symbol,
+        side: closeSide,
+        type: 'MARKET',
+        amount: spec.amount,
+        price: spec.triggerPrice,
+        triggerPrice: spec.triggerPrice,
+        orderFilter: 'StopOrder',
+        reduceOnly: true,
+        orderLinkId: ('gp-' + spec.kind.toLowerCase() + '-' + Date.now()).slice(0, 36)
+      });
       if (!result.success) return { success: false, error: result.error };
       this.lastHeartbeat = new Date().toISOString();
       return { success: true, orderId: result.orderId };

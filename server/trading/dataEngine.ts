@@ -418,6 +418,8 @@ export class DataEngine implements EngineModule {
               const klineJson = (await klineRes.json()) as any;
               const list = klineJson?.result?.list;
               if (Array.isArray(list) && list.length >= 5) {
+                const now = Date.now();
+                const CANDLE_INTERVAL_MS = 60_000; // interval=1 on this endpoint
                 const parsed = list.slice().reverse().map((k: any[]) => ({
                   timestamp: Number(k[0]),
                   open: parseFloat(k[1]),
@@ -425,7 +427,12 @@ export class DataEngine implements EngineModule {
                   low: parseFloat(k[3]),
                   close: parseFloat(k[4]),
                   volume: parseFloat(k[5])
-                })).filter((k: Candle) => Number.isFinite(k.timestamp) && k.close > 0);
+                }))
+                  .filter((k: Candle) => Number.isFinite(k.timestamp) && k.close > 0)
+                  // Exclude the still-forming candle: Bybit returns the current interval too, and
+                  // its OHLC repaints until the bar closes, which makes derivative signals
+                  // (breakout channels, regime, same-bar execution decisions) lookahead-biased.
+                  .filter((k: Candle) => k.timestamp + CANDLE_INTERVAL_MS <= now);
                 if (parsed.length >= 5) {
                   candles = parsed;
                   this.lastCandleFetchAt.set(sym, Date.now());

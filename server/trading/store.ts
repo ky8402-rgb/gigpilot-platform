@@ -70,6 +70,9 @@ export class TradingStore {
     this.killSwitch = new EmergencyKillSwitch();
     this.profitOptimizer = new AutonomousProfitOptimizer();
 
+    // Fund sweeps must respect the same emergency halt as order placement.
+    this.sweeper.setKillSwitchGuard(() => this.GLOBAL_KILL_SWITCH_ACTIVE || this.killSwitch.getState().isActive);
+
     // 2. Register all engines with Central Continuous Monitor
     this.monitor.registerEngine(this.dataEngine);
     this.monitor.registerEngine(this.quantEngine);
@@ -90,6 +93,8 @@ export class TradingStore {
       0,
       false
     );
+    // Halt the execution engine itself so restart state also blocks direct order dispatch.
+    this.exchangeExec.setHalted(true);
 
     // 4. No fabricated startup market regime. The system stays UNKNOWN until live evidence arrives.
     this.currentRegime = {
@@ -232,7 +237,9 @@ export class TradingStore {
         if (newGridRes.grid) {
           newGridRes.grid.gridSpacingPct = decision.newGridSpacingPct;
           this.activeGrid = newGridRes.grid;
-          this.exchangeExec.cancelAllOrders(this.activeSymbol);
+          // Await the cancel before re-placing: an in-flight cancel-all would otherwise race the
+          // new order/create calls and cancel freshly placed rungs.
+          await this.exchangeExec.cancelAllOrders(this.activeSymbol);
           this.placeGridOrdersInExchange(this.activeGrid, midPrice);
         }
       }
@@ -280,6 +287,13 @@ export class TradingStore {
         // The active strategy grid supplies the live protection boundaries; if those
         // boundaries are unavailable or invalid, fail closed instead of trading naked.
         const position = this.exchangeExec.getPosition(this.activeSymbol);
+        // A live position with no grid (e.g. restart before grid regeneration) previously skipped
+        // this whole protection block, leaving the position running with no exchange-side stop.
+        if (position && Math.abs(position.baseAmount) > 0 && !this.activeGrid) {
+          this.exchangeExec.setOffSwitch(false);
+          this.triggerEmergencyKillSwitch('FAIL-CLOSED: authoritative futures position exists but no active grid is available to derive TP/SL boundaries.');
+          return;
+        }
         if (position && Math.abs(position.baseAmount) > 0 && this.activeGrid) {
           const isLong = position.baseAmount > 0;
           const takeProfit = isLong ? this.activeGrid.upperBoundary : this.activeGrid.lowerBoundary;
@@ -337,7 +351,7 @@ export class TradingStore {
 
       const check = this.gridEngine.checkRebalanceNeeded(currentPrice, this.activeGrid);
       if (check.needed) {
-        this.exchangeExec.cancelAllOrders(symbol);
+        const previousGrid = this.activeGrid;
 
         const newGridRes = this.gridEngine.generateGrid({
           symbol,
@@ -356,7 +370,19 @@ export class TradingStore {
 
         if (newGridRes.grid) {
           this.activeGrid = newGridRes.grid;
-          this.placeGridOrdersInExchange(this.activeGrid, currentPrice);
+          // Serialize cancel -> place on the promise chain (handleLiveTick is synchronous). An
+          // in-flight cancel-all would otherwise race the new order/create calls and cancel
+          // freshly placed rungs, or leave stale rungs working.
+          this.exchangeExec
+            .cancelAllOrders(symbol)
+            .then(() => {
+              if (this.activeGrid && this.activeGrid !== previousGrid) {
+                this.placeGridOrdersInExchange(this.activeGrid, currentPrice);
+              }
+            })
+            .catch((err: any) => {
+              console.error('Grid rebalance cancel failed; skipping re-placement to avoid duplicate live orders:', err?.message || err);
+            });
 
           this.monitor.logAudit({
             category: 'AUTONOMOUS_REBALANCE',
@@ -647,7 +673,7 @@ export class TradingStore {
     });
   }
 
-  public setActiveSymbol(symbol: string) {
+  public async setActiveSymbol(symbol: string): Promise<void> {
     const norm = this.dataEngine.normalizeSymbol(symbol);
     this.activeSymbol = norm;
 
@@ -674,7 +700,8 @@ export class TradingStore {
       if (gRes.grid) {
         this.activeGrid = gRes.grid;
         if (!this.GLOBAL_KILL_SWITCH_ACTIVE && this.autonomyLevel >= 2) {
-          this.exchangeExec.cancelAllOrders(norm);
+          // Await the cancel so the replacement grid is not raced by the in-flight cancel-all.
+          await this.exchangeExec.cancelAllOrders(norm);
           this.placeGridOrdersInExchange(this.activeGrid, liveData.currentPrice);
         }
       }
@@ -686,6 +713,9 @@ export class TradingStore {
     this.activeBotsDisabled = true;
     this.previousAutonomyLevel = this.autonomyLevel;
     this.autonomyLevel = 0;
+    // Halt the execution engine itself: the kill switch must gate order dispatch directly, not
+    // only the pre-trade gate in placeGridOrdersInExchange.
+    this.exchangeExec.setHalted(true);
     const cancelledCount = await this.exchangeExec.cancelAllOrders();
     this.killSwitch.activate('OWNER', reason, cancelledCount, false);
 
@@ -699,6 +729,7 @@ export class TradingStore {
   public deactivateKillSwitch(): void {
     this.GLOBAL_KILL_SWITCH_ACTIVE = false;
     this.activeBotsDisabled = false;
+    this.exchangeExec.setHalted(false);
     this.killSwitch.deactivate();
     this.autonomyLevel = this.previousAutonomyLevel > 0 ? this.previousAutonomyLevel : 1;
 

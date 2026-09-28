@@ -164,113 +164,158 @@ export class LearningLoopEngine implements EngineModule {
       case 'TRAINING':
       case 'CANDIDATE':
       case 'WALK_FORWARD': {
-        // Run Stage 3: Walk-Forward Test across 5 rolling regimes
-        pipeline.walkForward.status = 'PASSED';
-        pipeline.walkForward.windows = [
-          { windowIndex: 1, regimeName: 'Ranging Mean-Reverting', inSampleSharpe: 2.65, outOfSampleSharpe: 2.48, wfeRatio: 0.72, isProfitable: true },
-          { windowIndex: 2, regimeName: 'Bullish Momentum Expansion', inSampleSharpe: 2.58, outOfSampleSharpe: 2.39, wfeRatio: 0.67, isProfitable: true },
-          { windowIndex: 3, regimeName: 'Low Volatility Compression', inSampleSharpe: 2.70, outOfSampleSharpe: 2.35, wfeRatio: 0.63, isProfitable: true },
-          { windowIndex: 4, regimeName: 'Bearish Pullback Drift', inSampleSharpe: 2.60, outOfSampleSharpe: 2.44, wfeRatio: 0.70, isProfitable: true },
-          { windowIndex: 5, regimeName: 'Liquidity Absorption Churn', inSampleSharpe: 2.54, outOfSampleSharpe: 2.41, wfeRatio: 0.68, isProfitable: true }
-        ];
-        pipeline.walkForward.averageWfeRatio = 0.68;
-        pipeline.walkForward.passedWindowsCount = 5;
-        pipeline.walkForward.totalWindowsCount = 5;
-        pipeline.walkForward.parameterStabilityScore = 86;
+        // FAIL-CLOSED. This stage previously stamped 'PASSED' with hardcoded demo metrics
+        // (in-sample Sharpe 2.65, WFE 0.68, parameter stability 86), so every candidate cleared the
+        // anti-overfitting gate with zero evidence. It now requires measured per-window results.
+        const measuredWindows = (pipeline.walkForward.windows || []).filter(w =>
+          Number.isFinite(w?.inSampleSharpe) && w.inSampleSharpe > 0 &&
+          Number.isFinite(w?.outOfSampleSharpe) && w.outOfSampleSharpe > 0 &&
+          Number.isFinite(w?.wfeRatio) && w.wfeRatio > 0
+        );
+
+        if (measuredWindows.length < 5) {
+          pipeline.walkForward.status = 'FAILED';
+          pipeline.canPromote = false;
+          pipeline.promotionBlockReason = `BLOCKED: Walk-Forward requires at least 5 windows of measured in-sample/out-of-sample evidence; ${measuredWindows.length} available. No synthetic metrics are substituted.`;
+          this.recordError('ERROR', `Candidate '${challenger.name}' blocked at Stage 3 Walk-Forward: ${pipeline.promotionBlockReason}`);
+          return { success: false, message: pipeline.promotionBlockReason, challenger, tenureStatus: this.getChampionTenureStatus() };
+        }
+
+        const averageWfeRatio = Number((measuredWindows.reduce((sum, w) => sum + w.wfeRatio, 0) / measuredWindows.length).toFixed(4));
+        const passedWindowsCount = measuredWindows.filter(w => w.wfeRatio >= 0.60 && w.isProfitable).length;
+        pipeline.walkForward.averageWfeRatio = averageWfeRatio;
+        pipeline.walkForward.passedWindowsCount = passedWindowsCount;
+        pipeline.walkForward.totalWindowsCount = measuredWindows.length;
         pipeline.walkForward.evaluatedAt = new Date().toISOString();
 
-        pipeline.currentStage = 'OUT_OF_SAMPLE';
-        pipeline.overallScore = 74;
-        pipeline.overfittingRiskPct = 28;
-        pipeline.promotionBlockReason = 'Walk-Forward passed (Avg WFE: 0.68). Ready for held-out Out-of-Sample verification.';
+        if (averageWfeRatio < 0.60 || passedWindowsCount < Math.ceil(measuredWindows.length * 0.8)) {
+          pipeline.walkForward.status = 'FAILED';
+          pipeline.canPromote = false;
+          pipeline.promotionBlockReason = `BLOCKED: measured average WFE ${averageWfeRatio} is below the 0.60 hurdle (profitable windows ${passedWindowsCount}/${measuredWindows.length}).`;
+          this.recordError('ERROR', `Candidate '${challenger.name}' failed Stage 3 Walk-Forward: ${pipeline.promotionBlockReason}`);
+          return { success: false, message: pipeline.promotionBlockReason, challenger, tenureStatus: this.getChampionTenureStatus() };
+        }
 
-        this.recordError('WARN', `Candidate '${challenger.name}' cleared Stage 3 Walk-Forward analysis. Progressed to Stage 4 (Out-of-Sample).`);
+        pipeline.walkForward.status = 'PASSED';
+        pipeline.currentStage = 'OUT_OF_SAMPLE';
+        pipeline.canPromote = false;
+        pipeline.promotionBlockReason = `Walk-Forward passed on measured evidence (Avg WFE: ${averageWfeRatio}). Ready for held-out Out-of-Sample verification.`;
+        this.recordError('WARN', `Candidate '${challenger.name}' cleared Stage 3 Walk-Forward on measured evidence. Progressed to Stage 4 (Out-of-Sample).`);
         return {
           success: true,
-          message: `Walk-Forward analysis completed across 5 rolling windows. Average WFE: 0.68 (Target >= 0.60). Progressed to Stage 4: Out-of-Sample testing.`,
+          message: `Walk-Forward verified across ${measuredWindows.length} measured windows. Average WFE: ${averageWfeRatio} (target >= 0.60). Progressed to Stage 4: Out-of-Sample testing.`,
           challenger,
           tenureStatus: this.getChampionTenureStatus()
         };
       }
 
       case 'OUT_OF_SAMPLE': {
-        // Run Stage 4: Out-of-Sample Held-Out Test
-        const isSharpe = pipeline.trainingData.inSampleSharpe || challenger.backtestResults.sharpeRatio;
-        const oosSharpe = Number((isSharpe * 0.88).toFixed(2));
-        const degradationPct = Number(((1 - oosSharpe / isSharpe) * 100).toFixed(1));
+        // FAIL-CLOSED. The previous implementation derived the held-out result by multiplying the
+        // in-sample Sharpe by an arbitrary 0.88 factor and stamping fixed ROI/drawdown figures.
+        const measuredOosSharpe = Number(pipeline.outOfSample.oosSharpe);
+        const heldOutDays = Number(pipeline.outOfSample.heldOutDays);
+        const inSampleSharpe = Number(pipeline.trainingData?.inSampleSharpe ?? challenger.backtestResults?.sharpeRatio);
 
-        pipeline.outOfSample.status = 'PASSED';
-        pipeline.outOfSample.heldOutDays = 30;
-        pipeline.outOfSample.oosSharpe = oosSharpe;
-        pipeline.outOfSample.oosRoiPct = 12.8;
-        pipeline.outOfSample.oosMaxDrawdownPct = 4.2;
+        if (!Number.isFinite(measuredOosSharpe) || measuredOosSharpe <= 0 || !Number.isFinite(heldOutDays) || heldOutDays <= 0) {
+          pipeline.outOfSample.status = 'FAILED';
+          pipeline.canPromote = false;
+          pipeline.promotionBlockReason = 'BLOCKED: Out-of-Sample requires a measured held-out Sharpe and a positive held-out window. No synthesized metrics are substituted.';
+          this.recordError('ERROR', `Candidate '${challenger.name}' blocked at Stage 4 Out-of-Sample: ${pipeline.promotionBlockReason}`);
+          return { success: false, message: pipeline.promotionBlockReason, challenger, tenureStatus: this.getChampionTenureStatus() };
+        }
+
+        const degradationPct = Number.isFinite(inSampleSharpe) && inSampleSharpe > 0
+          ? Number(((1 - measuredOosSharpe / inSampleSharpe) * 100).toFixed(1))
+          : 0;
         pipeline.outOfSample.sharpeDegradationPct = degradationPct;
-        pipeline.outOfSample.maxDdDegradationPct = 2.5;
-        pipeline.outOfSample.passedOverfitHurdle = true;
+        pipeline.outOfSample.passedOverfitHurdle = degradationPct < 30;
         pipeline.outOfSample.evaluatedAt = new Date().toISOString();
 
+        if (!pipeline.outOfSample.passedOverfitHurdle) {
+          pipeline.outOfSample.status = 'FAILED';
+          pipeline.canPromote = false;
+          pipeline.promotionBlockReason = `BLOCKED: Out-of-Sample Sharpe degradation ${degradationPct}% breaches the 30% overfitting hurdle.`;
+          this.recordError('ERROR', `Candidate '${challenger.name}' failed Stage 4 Out-of-Sample: ${pipeline.promotionBlockReason}`);
+          return { success: false, message: pipeline.promotionBlockReason, challenger, tenureStatus: this.getChampionTenureStatus() };
+        }
+
+        pipeline.outOfSample.status = 'PASSED';
         pipeline.currentStage = 'PAPER_SHADOW';
-        pipeline.overallScore = 82;
-        pipeline.overfittingRiskPct = 20;
+        pipeline.canPromote = false;
         pipeline.paperShadow.status = 'RUNNING';
         pipeline.paperShadow.startedAt = new Date().toISOString();
-        pipeline.promotionBlockReason = 'Out-of-sample verified (degradation 12.0% < 30% hurdle). Currently accumulating paper/shadow fills.';
-
-        this.recordError('WARN', `Candidate '${challenger.name}' passed Stage 4 Out-of-Sample verification (Degradation: ${degradationPct}%). Deployed to Paper/Shadow trading.`);
+        pipeline.promotionBlockReason = `Out-of-sample verified (measured degradation ${degradationPct}% < 30% hurdle). Currently accumulating paper/shadow fills.`;
+        this.recordError('WARN', `Candidate '${challenger.name}' passed Stage 4 Out-of-Sample on measured evidence (degradation ${degradationPct}%).`);
         return {
           success: true,
-          message: `Out-of-sample held-out verification passed! OOS Sharpe: ${oosSharpe} (Degradation: ${degradationPct}%, well below the 30% hurdle). Deployed to Stage 5: Paper/Shadow trading.`,
+          message: `Out-of-sample held-out verification passed: OOS Sharpe ${measuredOosSharpe} over ${heldOutDays} days (degradation ${degradationPct}%, below the 30% hurdle). Advanced to Stage 5: Paper/Shadow trading.`,
           challenger,
           tenureStatus: this.getChampionTenureStatus()
         };
       }
 
       case 'PAPER_SHADOW': {
-        // Advance Stage 5: Paper/Shadow -> Stage 6: Small Capital Canary
+        // FAIL-CLOSED. Previously stamped 'PASSED' with fixed figures (24h, 38 fills, +$72.40).
+        const simulatedFills = Number(pipeline.paperShadow.simulatedFillsCount);
+        const hoursObserved = Number(pipeline.paperShadow.hoursObserved);
+        const requiredHours = Number(pipeline.paperShadow.requiredHours) || 12;
+        const requiredFills = Number(pipeline.paperShadow.requiredFills) || 25;
+
+        if (!Number.isFinite(simulatedFills) || simulatedFills < requiredFills ||
+            !Number.isFinite(hoursObserved) || hoursObserved < requiredHours) {
+          pipeline.paperShadow.status = 'FAILED';
+          pipeline.canPromote = false;
+          pipeline.promotionBlockReason = `BLOCKED: Paper/Shadow requires at least ${requiredHours}h observed and ${requiredFills} measured simulated fills; observed ${hoursObserved || 0}h and ${simulatedFills || 0} fills.`;
+          this.recordError('ERROR', `Candidate '${challenger.name}' blocked at Stage 5 Paper/Shadow: ${pipeline.promotionBlockReason}`);
+          return { success: false, message: pipeline.promotionBlockReason, challenger, tenureStatus: this.getChampionTenureStatus() };
+        }
+
         pipeline.paperShadow.status = 'PASSED';
-        pipeline.paperShadow.hoursObserved = 24;
-        pipeline.paperShadow.simulatedFillsCount = 38;
-        pipeline.paperShadow.shadowNetProfitUsd = 72.40;
-        pipeline.paperShadow.shadowFillRatePct = 94.2;
-        pipeline.paperShadow.shadowSharpe = 2.44;
-        pipeline.paperShadow.slippageVarianceBps = 1.4;
-
         pipeline.currentStage = 'SMALL_CAPITAL';
-        pipeline.overallScore = 88;
-        pipeline.overfittingRiskPct = 15;
+        pipeline.canPromote = false;
         pipeline.smallCapital.status = 'RUNNING';
-        pipeline.smallCapital.canaryAllocationPct = 8.0;
-        pipeline.smallCapital.canaryExposureUsd = 450;
         pipeline.smallCapital.startedAt = new Date().toISOString();
-        pipeline.promotionBlockReason = 'Paper/shadow trading completed. Live with 8% canary small capital allocation.';
-
-        this.recordError('WARN', `Candidate '${challenger.name}' passed Stage 5 Paper/Shadow verification. Allocated 8% Small Capital canary trial.`);
+        pipeline.promotionBlockReason = `Paper/shadow verified (${simulatedFills} measured fills over ${hoursObserved}h). Live with ${pipeline.smallCapital.canaryAllocationPct}% canary small-capital allocation.`;
+        this.recordError('WARN', `Candidate '${challenger.name}' passed Stage 5 Paper/Shadow on measured evidence. Allocated ${pipeline.smallCapital.canaryAllocationPct}% Small Capital canary trial.`);
         return {
           success: true,
-          message: `Paper/shadow trading verified! 38 simulated order book fills with 94.2% fill rate and +$72.40 net PnL. Advanced to Stage 6: Small Capital canary allocation (8% max exposure).`,
+          message: `Paper/shadow trading verified: ${simulatedFills} measured order-book fills over ${hoursObserved}h. Advanced to Stage 6: Small Capital canary allocation (${pipeline.smallCapital.canaryAllocationPct}% max exposure).`,
           challenger,
           tenureStatus: this.getChampionTenureStatus()
         };
       }
 
       case 'SMALL_CAPITAL': {
-        // Complete Stage 6: Small Capital -> Stage 7: Eligible for Promotion
-        pipeline.smallCapital.status = 'PASSED';
-        pipeline.smallCapital.realFillsCount = 12;
-        pipeline.smallCapital.realizedNetProfitUsd = 18.20;
-        pipeline.smallCapital.feeDragBps = 5.6;
-        pipeline.smallCapital.riskRuleBreaches = 0;
+        // FAIL-CLOSED. Previously stamped 'PASSED' with fixed figures (12 fills, +$18.20).
+        const realFillsCount = Number(pipeline.smallCapital.realFillsCount);
+        const requiredFills = Number(pipeline.smallCapital.requiredFills) || 10;
+        const realizedNetProfitUsd = Number(pipeline.smallCapital.realizedNetProfitUsd);
+        const riskRuleBreaches = Number(pipeline.smallCapital.riskRuleBreaches) || 0;
 
+        if (!Number.isFinite(realFillsCount) || realFillsCount < requiredFills) {
+          pipeline.smallCapital.status = 'FAILED';
+          pipeline.canPromote = false;
+          pipeline.promotionBlockReason = `BLOCKED: Small Capital requires ${requiredFills} measured live fills; ${realFillsCount || 0} recorded.`;
+          this.recordError('ERROR', `Candidate '${challenger.name}' blocked at Stage 6 Small Capital: ${pipeline.promotionBlockReason}`);
+          return { success: false, message: pipeline.promotionBlockReason, challenger, tenureStatus: this.getChampionTenureStatus() };
+        }
+
+        if (!Number.isFinite(realizedNetProfitUsd) || realizedNetProfitUsd <= 0 || riskRuleBreaches > 0) {
+          pipeline.smallCapital.status = 'FAILED';
+          pipeline.canPromote = false;
+          pipeline.promotionBlockReason = `BLOCKED: Small Capital requires positive measured net profit after fees and zero risk-rule breaches; recorded $${realizedNetProfitUsd || 0} net with ${riskRuleBreaches} breach(es).`;
+          this.recordError('ERROR', `Candidate '${challenger.name}' failed Stage 6 Small Capital: ${pipeline.promotionBlockReason}`);
+          return { success: false, message: pipeline.promotionBlockReason, challenger, tenureStatus: this.getChampionTenureStatus() };
+        }
+
+        pipeline.smallCapital.status = 'PASSED';
         pipeline.currentStage = 'ELIGIBLE_FOR_PROMOTION';
-        pipeline.overallScore = 94;
-        pipeline.overfittingRiskPct = 10;
         pipeline.canPromote = true;
         pipeline.promotionBlockReason = undefined;
-
-        this.recordError('WARN', `Candidate '${challenger.name}' successfully completed all 6 Anti-Overfitting validation gates! Now ELIGIBLE FOR PROMOTION.`);
+        this.recordError('WARN', `Candidate '${challenger.name}' cleared all 6 gates on measured evidence and is now ELIGIBLE FOR PROMOTION (subject to the champion tenure lock).`);
         return {
           success: true,
-          message: `Candidate has successfully cleared all 6 stages (Training -> Candidate -> Walk-Forward -> Out-of-Sample -> Paper/Shadow -> Small Capital)! Now ELIGIBLE FOR PROMOTION (subject to Champion Freeze tenure lock).`,
+          message: `Candidate has cleared all 6 stages on measured evidence (Training -> Candidate -> Walk-Forward -> Out-of-Sample -> Paper/Shadow -> Small Capital) and is now ELIGIBLE FOR PROMOTION (subject to Champion Freeze tenure lock).`,
           challenger,
           tenureStatus: this.getChampionTenureStatus()
         };
@@ -473,9 +518,12 @@ export class LearningLoopEngine implements EngineModule {
   }): StrategyVersion {
     const tenureStatus = this.getChampionTenureStatus();
 
-    // Check if champion is currently frozen
-    if (tenureStatus.isFrozen) {
-      this.rapidReplacementAttemptsBlocked++;
+    // Every autonomous build is registered as a challenger and must clear the anti-overfitting
+    // pipeline before it can replace the live champion. This routing used to happen only while the
+    // tenure freeze was active; once it expired, a raw AI build was promoted straight to CHAMPION
+    // with invented performance figures, bypassing all six validation gates.
+    this.rapidReplacementAttemptsBlocked++;
+    {
       // PROTECT PRODUCTION: Do not overwrite champion immediately after 45 seconds!
       // Instead, register it as a challenger candidate and start it in the anti-overfitting pipeline!
       const candidateId = `STRAT-CANDIDATE-${Date.now().toString(36).toUpperCase()}`;
@@ -565,48 +613,6 @@ export class LearningLoopEngine implements EngineModule {
       return this.championStrategy;
     }
 
-    // Freeze has expired: Normal promotion
-    const previous = { ...this.championStrategy, status: 'RETIRED' as const };
-    this.strategyHistory.unshift(previous);
-
-    const prevVerNum = parseFloat(this.championStrategy.version.replace(/[^0-9.]/g, '')) || 2.0;
-    const versionNum = (prevVerNum + 0.1).toFixed(1);
-    this.championStrategy = {
-      id: `STRAT-REV-${Date.now().toString(36).toUpperCase()}`,
-      name: build.strategyName,
-      version: `v${versionNum}-rev`,
-      type: this.championStrategy.type || 'ADAPTIVE_GRID',
-      status: 'CHAMPION',
-      createdAt: new Date().toISOString(),
-      deployedAt: new Date().toISOString(),
-      reasonForChange: `Autonomous Optimization: ${build.rationale} (${build.expectedEffect})`,
-      parameters: {
-        ...this.championStrategy.parameters,
-        ...build.parameters
-      },
-      backtestResults: {
-        ...this.championStrategy.backtestResults
-      },
-      liveTradingResults: {
-        netProfit: this.championStrategy.liveTradingResults?.netProfit || 0,
-        grossProfit: this.championStrategy.liveTradingResults?.grossProfit || 0,
-        totalFees: this.championStrategy.liveTradingResults?.totalFees || 0,
-        roiPct: this.championStrategy.liveTradingResults?.roiPct || 0,
-        sharpeRatio: 2.85,
-        sortinoRatio: 3.65,
-        maxDrawdownPct: this.championStrategy.liveTradingResults?.maxDrawdownPct || 0.4,
-        winRatePct: 82.5,
-        profitFactor: 2.45,
-        tradesCount: this.championStrategy.liveTradingResults?.tradesCount || 0,
-        avgTradeProfitUsd: 8.20,
-        avgHoldingTimeMinutes: 28,
-        orderFillRatePct: 96.0,
-        capitalUtilizationPct: 75.0
-      }
-    };
-
-    this.recordError('WARN', `Autonomously deployed new champion strategy: ${this.championStrategy.name} (${this.championStrategy.version})`);
-    return this.championStrategy;
   }
 
   public createStrategyVariantWithPipeline(params: {
@@ -825,10 +831,17 @@ export class LearningLoopEngine implements EngineModule {
       if (f.realizedPnL > 0) wins++;
     }
 
-    results.tradesCount += fills.length;
+    // tradeCount is cumulative, so the previously recorded win rate recovers the cumulative win
+    // count. Computing the rate from this batch alone made a single winning fill report 100%.
+    const priorTrades = Number(results.tradesCount) || 0;
+    const priorWins = Math.round(((Number(results.winRatePct) || 0) / 100) * priorTrades);
+    const cumulativeTrades = priorTrades + fills.length;
+    const cumulativeWins = priorWins + wins;
+
+    results.tradesCount = cumulativeTrades;
     results.netProfit += net;
     results.totalFees += fees;
-    results.winRatePct = Number(((wins / (fills.length || 1)) * 100).toFixed(2));
+    results.winRatePct = cumulativeTrades > 0 ? Number(((cumulativeWins / cumulativeTrades) * 100).toFixed(2)) : 0;
 
     this.championStrategy.liveTradingResults = results;
     this.latencyMs = Date.now() - start;

@@ -17,6 +17,10 @@ export class ProfitAccountingEngine implements EngineModule {
   private capital: CapitalAccounting;
   private fifoLots = new Map<string, FifoLot[]>();
   private processedFillIds = new Set<string>();
+  /** Equity high-water mark used to derive realized drawdown. */
+  private equityHighWaterMarkUsd = 0;
+  private utcDayKey = '';
+  private utcDayStartEquityUsd: number | null = null;
 
   constructor() {
     this.capital = {
@@ -90,6 +94,29 @@ export class ProfitAccountingEngine implements EngineModule {
     this.capital.lockedInOrders = Math.max(0, balances.lockedInOrdersUsd);
     this.capital.tradingCapital = this.capital.totalEquity;
     if (this.capital.initialCapital === 0 && this.capital.totalEquity > 0) this.capital.initialCapital = this.capital.totalEquity;
+
+    // Drawdown and daily loss were previously declared but never computed, so the max-drawdown
+    // circuit breaker and the daily-loss gate always compared against a hardcoded 0 and could
+    // never trip. Both are now derived from the live equity high-water mark.
+    if (this.capital.totalEquity > this.equityHighWaterMarkUsd) {
+      this.equityHighWaterMarkUsd = this.capital.totalEquity;
+    }
+    this.capital.currentDrawdownPct = this.equityHighWaterMarkUsd > 0
+      ? Number((((this.equityHighWaterMarkUsd - this.capital.totalEquity) / this.equityHighWaterMarkUsd) * 100).toFixed(4))
+      : 0;
+    if (this.capital.currentDrawdownPct > this.capital.maxDrawdownPct) {
+      this.capital.maxDrawdownPct = this.capital.currentDrawdownPct;
+    }
+
+    const utcDayKey = new Date().toISOString().slice(0, 10);
+    if (this.utcDayKey !== utcDayKey || this.utcDayStartEquityUsd === null || this.utcDayStartEquityUsd <= 0) {
+      this.utcDayKey = utcDayKey;
+      this.utcDayStartEquityUsd = this.capital.totalEquity;
+    }
+    this.capital.currentDailyLossPct = this.utcDayStartEquityUsd > 0
+      ? Number((Math.max(0, ((this.utcDayStartEquityUsd - this.capital.totalEquity) / this.utcDayStartEquityUsd) * 100)).toFixed(4))
+      : 0;
+
     this.capital.roiPct = this.capital.initialCapital > 0
       ? Number(((this.capital.netRealizedProfit / this.capital.initialCapital) * 100).toFixed(2))
       : 0;

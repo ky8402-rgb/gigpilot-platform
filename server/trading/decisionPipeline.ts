@@ -270,10 +270,21 @@ export class DecisionPipelineEngine {
 
   private evaluateEdgeVsCosts(input: DecisionPipelineInput): DecisionGateResult {
     const edge = input.expectedNetEdge;
-    const minHurdleBps = edge?.minHurdleRateBps ?? (input.inventory ? (input.side === 'BUY' ? input.inventory.asymmetricEdgeHurdles.requiredBuyEdgeHurdleBps : input.inventory.asymmetricEdgeHurdles.requiredSellEdgeHurdleBps) : 4.0);
+    // The base hurdle is populated on every quantEngine return path, so the inventory-risk hurdle
+    // was previously dead code. The stricter of the two must gate the trade.
+    const baseHurdleBps = edge?.minHurdleRateBps ?? 4.0;
+    const rawInventoryHurdleBps = input.inventory
+      ? (input.side === 'BUY'
+        ? input.inventory.asymmetricEdgeHurdles.requiredBuyEdgeHurdleBps
+        : input.inventory.asymmetricEdgeHurdles.requiredSellEdgeHurdleBps)
+      : 0;
+    const inventoryHurdleBps = Number.isFinite(rawInventoryHurdleBps) ? rawInventoryHurdleBps : 0;
+    const minHurdleBps = Math.max(baseHurdleBps, inventoryHurdleBps);
 
     if (edge) {
-      if (!edge.isTradeable || edge.expectedNetEdgeBps < minHurdleBps) {
+      // Strict inequality: an edge exactly at the hurdle must not be admitted, matching
+      // riskEngine.validateOrder which rejects on `<=`.
+      if (!edge.isTradeable || edge.expectedNetEdgeBps <= minHurdleBps) {
         return {
           gate: 'EDGE_EXCEEDS_COSTS',
           name: 'Microstructure Edge vs Costs',

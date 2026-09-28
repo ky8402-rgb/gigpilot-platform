@@ -255,6 +255,20 @@ export const TradingDashboard: React.FC<TradingDashboardProps> = ({ onLogout }) 
       await loadFullState();
     } catch (err: any) {
       console.error('Failed to toggle Global Kill Switch:', err);
+      // Revert the optimistic update and re-sync with the server. Leaving the header showing the
+      // wrong kill-switch state could make the operator believe bots are halted when they are not.
+      setGlobalKillSwitchActive(!nextActive);
+      setState(prev => ({
+        ...prev,
+        GLOBAL_KILL_SWITCH_ACTIVE: !nextActive,
+        botsDisabled: !nextActive,
+        killSwitch: { ...prev.killSwitch, isActive: !nextActive }
+      }));
+      try {
+        await loadFullState();
+      } catch {
+        // Keep the reverted local state; the next poll will reconcile.
+      }
     }
   };
 

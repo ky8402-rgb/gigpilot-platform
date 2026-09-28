@@ -876,6 +876,36 @@ export async function getGitHubAuthStatus(): Promise<GitHubAuthStatus> {
 }
 
 /**
+ * Git branch/remote names reach this service from HTTP request bodies and are interpolated
+ * into shell commands, so they must be constrained to a safe ref charset first.
+ */
+const SAFE_GIT_REF = /^[A-Za-z0-9][A-Za-z0-9._/-]*$/;
+
+export function assertSafeGitRef(value: string, label: string): string {
+  const ref = (value ?? '').trim();
+  const invalid =
+    !ref ||
+    ref.length > 200 ||
+    !SAFE_GIT_REF.test(ref) ||
+    ref.includes('..') ||
+    ref.includes('//') ||
+    ref.endsWith('.lock') ||
+    ref.endsWith('/');
+  if (invalid) {
+    throw new Error(
+      `Invalid git ${label}: ${JSON.stringify(value)}. Only names matching ${SAFE_GIT_REF.source} are accepted.`
+    );
+  }
+  return ref;
+}
+
+/** Removes a secret from any captured command output (avoids regex-escaping pitfalls). */
+export function redactSecret(text: string, secret: string): string {
+  if (!text || !secret) return text;
+  return text.split(secret).join('***TOKEN***');
+}
+
+/**
  * Runs an authenticated Git operation (status, fetch, pull, push)
  * Uses GitHub Token (HTTPS) or SSH credentials depending on configuration
  */
@@ -885,13 +915,14 @@ export async function executeGitOperation(
   remote: string = 'origin'
 ): Promise<GitOperationResult> {
   const start = Date.now();
-  const targetBranch = branch || 'main';
+  const targetBranch = assertSafeGitRef(branch || 'main', 'branch');
+  const safeRemote = assertSafeGitRef(remote || 'origin', 'remote');
   const token = getStoredGitHubToken();
 
   let cmd = '';
   let env: Record<string, any> = { ...process.env };
 
-  if (token && remote === 'origin') {
+  if (token && safeRemote === 'origin') {
     // Authenticated HTTPS remote with token
     const tokenRemote = `https://${token}@github.com/ky8402-rgb/gigpilot-platform.git`;
     env.GIT_TERMINAL_PROMPT = '0';
@@ -919,13 +950,13 @@ export async function executeGitOperation(
         cmd = 'git status';
         break;
       case 'fetch':
-        cmd = `git fetch ${remote} ${targetBranch}`;
+        cmd = `git fetch ${safeRemote} ${targetBranch}`;
         break;
       case 'pull':
-        cmd = `git pull ${remote} ${targetBranch} --rebase`;
+        cmd = `git pull ${safeRemote} ${targetBranch} --rebase`;
         break;
       case 'push':
-        cmd = `git push ${remote} ${targetBranch}`;
+        cmd = `git push ${safeRemote} ${targetBranch}`;
         break;
       default:
         throw new Error(`Unsupported git operation: ${operation}`);
@@ -938,7 +969,7 @@ export async function executeGitOperation(
     const { stdout, stderr } = await execPromise(cmd, { env });
     let output = [stdout, stderr].filter(Boolean).join('\n').trim();
     if (token) {
-      output = output.replace(new RegExp(token, 'g'), '***TOKEN***');
+      output = redactSecret(output, token);
     }
     return {
       success: true,
@@ -1012,11 +1043,12 @@ export function verifyGitHubSignature(
 ): { valid: boolean; reason?: string } {
   const secret = (process.env.GITHUB_WEBHOOK_SECRET || process.env.WEBHOOK_SECRET || '').trim();
 
-  // If no secret configured on server, warn and allow (or alert for setup)
+  // FAIL-CLOSED: with no configured secret the origin of a delivery cannot be verified, so no
+  // unauthenticated delivery may be accepted (it would otherwise trigger a real deployment).
   if (!secret) {
     return {
-      valid: true,
-      reason: 'No GITHUB_WEBHOOK_SECRET configured on server. Verification bypassed.',
+      valid: false,
+      reason: 'No GITHUB_WEBHOOK_SECRET configured on server. Webhook verification is fail-closed.',
     };
   }
 
@@ -1082,6 +1114,8 @@ export async function executePushToDeploy(options: {
   trigger: 'webhook_push' | 'manual';
 }): Promise<DeploymentRecord> {
   const start = Date.now();
+  // Validated here because this value is interpolated into shell commands below.
+  options.branch = assertSafeGitRef(options.branch, 'branch');
   const id = `dep-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`;
   const logs: string[] = [];
 
@@ -1382,10 +1416,13 @@ export async function pushAndDeployAll(options: {
       });
       pushOutput = [stdout, stderr].filter(Boolean).join('\n').trim();
       pushSuccess = true;
+      // `git push` echoes the remote URL, which embeds the PAT. Redact on the success path too,
+      // otherwise the token is returned to API clients (git.output) and written to logs.
+      pushOutput = redactSecret(pushOutput, token);
       addLog(`GitHub push succeeded: ${pushOutput || 'Branch up-to-date.'}`);
     } catch (err: any) {
       pushOutput = [err.stdout, err.stderr, err.message].filter(Boolean).join('\n').trim();
-      pushOutput = pushOutput.replace(new RegExp(token, 'g'), '***TOKEN***');
+      pushOutput = redactSecret(pushOutput, token);
       addLog(`GitHub push failed with token: ${pushOutput}`);
     }
   } else {

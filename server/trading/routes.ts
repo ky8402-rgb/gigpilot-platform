@@ -284,12 +284,16 @@ tradingRouter.get(['/pair/:symbol', '/pair/:base/:quote'], (req: Request, res: R
 });
 
 // 8. Select Active Pair
-tradingRouter.post('/pair/select', (req: Request, res: Response) => {
+tradingRouter.post('/pair/select', requireOwnerAuth, async (req: Request, res: Response) => {
   const { symbol } = req.body;
   if (!symbol) return res.status(400).json({ success: false, error: 'Symbol required' });
 
-  globalTradingStore.setActiveSymbol(symbol);
-  res.json({ success: true, activeSymbol: globalTradingStore.activeSymbol });
+  try {
+    await globalTradingStore.setActiveSymbol(symbol);
+    return res.json({ success: true, activeSymbol: globalTradingStore.activeSymbol });
+  } catch (err: any) {
+    return res.status(500).json({ success: false, error: err?.message || 'Unable to switch the active pair.' });
+  }
 });
 
 // 9. Autonomy / automatic-trading status diagnostics
@@ -396,7 +400,7 @@ tradingRouter.post('/autonomy', requireOwnerAuth, (req: Request, res: Response) 
 });
 
 // 10. Global Kill Switch
-tradingRouter.post('/kill-switch/trigger', (req: Request, res: Response) => {
+tradingRouter.post('/kill-switch/trigger', requireOwnerAuth, (req: Request, res: Response) => {
   const { reason } = req.body;
   globalTradingStore.triggerEmergencyKillSwitch(reason || 'Manual emergency halt: Disabling all active trading bots');
   res.json({
@@ -454,14 +458,25 @@ tradingRouter.post('/grid/configure', requireOwnerAuth, async (req: Request, res
   const liveData = store.dataEngine.getPairData(store.activeSymbol);
   if (!liveData) return res.status(400).json({ success: false, error: 'No active pair live data from Data Engine' });
 
+  // Validate before mutating live state: `Number(x) || default` only substitutes for 0/NaN, so
+  // negative and absurd values (e.g. -5000 or 1e18) previously flowed into grid sizing and orders.
+  const parsedLevels = levelsCount === undefined || levelsCount === null || levelsCount === '' ? 16 : Number(levelsCount);
+  const parsedAllocation = totalAllocatedUsd === undefined || totalAllocatedUsd === null || totalAllocatedUsd === '' ? 3500 : Number(totalAllocatedUsd);
+  if (!Number.isInteger(parsedLevels) || parsedLevels < 4 || parsedLevels > 64) {
+    return res.status(400).json({ success: false, error: 'levelsCount must be an integer between 4 and 64.' });
+  }
+  if (!Number.isFinite(parsedAllocation) || parsedAllocation <= 0 || parsedAllocation > 10000000) {
+    return res.status(400).json({ success: false, error: 'totalAllocatedUsd must be a positive finite amount not exceeding 10,000,000.' });
+  }
+
   await store.exchangeExec.cancelAllOrders(store.activeSymbol);
 
   const newGridRes = store.gridEngine.generateGrid({
     symbol: store.activeSymbol,
     currentPrice: liveData.currentPrice,
-    levelsCount: Number(levelsCount) || 16,
+    levelsCount: parsedLevels,
     spacingType: spacingType || 'GEOMETRIC',
-    totalAllocatedUsd: Number(totalAllocatedUsd) || 3500,
+    totalAllocatedUsd: parsedAllocation,
     volatilityAdjustment: volatilityAdjustment !== false,
     trendProtection: trendProtection !== false,
     regime: store.currentRegime,
@@ -630,32 +645,40 @@ tradingRouter.get('/research', (req: Request, res: Response) => {
   });
 });
 
-tradingRouter.post('/research/analyze', async (req: Request, res: Response) => {
-  const store = globalTradingStore;
-  const liveData = store.dataEngine.getPairData(store.activeSymbol);
-  if (!liveData) return res.status(400).json({ success: false, error: 'No live market data for research analysis' });
+tradingRouter.post('/research/analyze', requireOwnerAuth, async (req: Request, res: Response) => {
+  try {
+    const store = globalTradingStore;
+    const liveData = store.dataEngine.getPairData(store.activeSymbol);
+    if (!liveData) return res.status(400).json({ success: false, error: 'No live market data for research analysis' });
 
-  const result = await store.research.evaluateLiveMarketIntelligence(
-    store.activeSymbol,
-    liveData.currentPrice,
-    liveData.priceChangePct
-  );
+    const result = await store.research.evaluateLiveMarketIntelligence(
+      store.activeSymbol,
+      liveData.currentPrice,
+      liveData.priceChangePct
+    );
 
-  res.json(result);
+    return res.json(result);
+  } catch (err: any) {
+    return res.status(500).json({ success: false, error: err?.message || 'Research analysis failed.' });
+  }
 });
 
 // 17. Profit Sweep Subsystem
 tradingRouter.get('/sweep/info', requireOwnerAuth, async (req: Request, res: Response) => {
-  const store = globalTradingStore;
-  const confirmed = await store.sweeper.reconcilePendingSweeps();
-  for (const sweep of confirmed) store.profitAccounting.recordSweepExecuted(sweep.amountUsd || sweep.grossSweepAmount || 0, sweep.feePaidUsd || sweep.networkFeeUsd || 0);
-  res.json({
-    success: true,
-    destinationWallet: store.sweeper.getDestinationWallet(),
-    sweeps: store.sweeper.getSweeps(),
-    eligibleProfitUsd: store.capital.eligibleRealizedProfit,
-    totalSweptUsd: store.capital.totalSweptProfit
-  });
+  try {
+    const store = globalTradingStore;
+    const confirmed = await store.sweeper.reconcilePendingSweeps();
+    for (const sweep of confirmed) store.profitAccounting.recordSweepExecuted(sweep.amountUsd || sweep.grossSweepAmount || 0, sweep.feePaidUsd || sweep.networkFeeUsd || 0);
+    return res.json({
+      success: true,
+      destinationWallet: store.sweeper.getDestinationWallet(),
+      sweeps: store.sweeper.getSweeps(),
+      eligibleProfitUsd: store.capital.eligibleRealizedProfit,
+      totalSweptUsd: store.capital.totalSweptProfit
+    });
+  } catch (err: any) {
+    return res.status(500).json({ success: false, error: err?.message || 'Unable to reconcile profit sweeps.' });
+  }
 });
 
 tradingRouter.post('/sweep/wallet', requireOwnerAuth, (req: Request, res: Response) => {
@@ -711,6 +734,46 @@ tradingRouter.post('/risk/circuit-breaker/reset', requireOwnerAuth, (req: Reques
   res.json({ success: true, circuitBreakerActive: false });
 });
 
+// Risk configuration update. `RiskEngine.updateConfig` already existed but had no route bound to it,
+// so the client's /risk/config call always 404'd.
+tradingRouter.post('/risk/config', requireOwnerAuth, (req: Request, res: Response) => {
+  const body = req.body || {};
+  const numericFields = ['maxPositionSizePct', 'maxExposureUsd', 'maxOpenOrders', 'maxDrawdownLimitPct', 'maxDailyLossPct', 'minAccountReserveUsd'];
+  const update: Record<string, number> = {};
+
+  for (const key of numericFields) {
+    const raw = body[key];
+    if (raw === undefined || raw === null || raw === '') continue;
+    const value = Number(raw);
+    if (!Number.isFinite(value) || value < 0) {
+      return res.status(400).json({ success: false, error: `${key} must be a finite non-negative number.` });
+    }
+    update[key] = value;
+  }
+
+  if (Object.keys(update).length === 0) {
+    return res.status(400).json({ success: false, error: 'No valid risk configuration fields supplied.' });
+  }
+
+  const config = globalTradingStore.risk.updateConfig(update as any);
+  globalTradingStore.monitor.logAudit({
+    category: 'CONFIG_CHANGE',
+    action: 'Risk configuration updated',
+    details: update
+  });
+  return res.json({ success: true, config });
+});
+
+// The platform is live-only; this endpoint exists so the client's mode call resolves explicitly
+// instead of 404-ing through the API catch-all.
+tradingRouter.post('/mode', requireOwnerAuth, (req: Request, res: Response) => {
+  const requested = String(req.body?.mode || 'LIVE').toUpperCase();
+  if (requested !== 'LIVE') {
+    return res.status(422).json({ success: false, error: 'GigPilot is live-only; no alternate trading modes are permitted.' });
+  }
+  return res.json({ success: true, mode: globalTradingStore.tradingMode });
+});
+
 // 19. Audit Logs & System Updates
 tradingRouter.get('/audit-logs', requireOwnerAuth, (req: Request, res: Response) => {
   res.json({
@@ -758,6 +821,11 @@ tradingRouter.all(['/auth/setup-init', '/auth/setup-init/', '/setup-init', '/set
     return res.status(405).json({ success: false, error: 'Method Not Allowed. POST is required.' });
   }
   try {
+    // Bootstrap only: never hand a fresh TOTP secret to an unauthenticated caller once the owner
+    // account exists, otherwise setup-complete can be used to overwrite owner credentials.
+    if (ownerAuth.isConfigured()) {
+      return res.status(409).json({ success: false, error: 'Owner account is already configured. TOTP re-enrollment requires an authenticated owner session.' });
+    }
     const { email } = parseBody(req);
     const setupData = await ownerAuth.initiateTotpSetup(email);
     return res.json({ success: true, ...setupData });
@@ -773,6 +841,9 @@ tradingRouter.all(['/auth/setup-complete', '/auth/setup-complete/', '/setup-comp
     return res.status(405).json({ success: false, error: 'Method Not Allowed. POST is required.' });
   }
   try {
+    if (ownerAuth.isConfigured()) {
+      return res.status(409).json({ success: false, error: 'Owner account is already configured. Setup cannot be re-run without an authenticated session.' });
+    }
     const { password, totpCode, email } = parseBody(req);
     const result = ownerAuth.completeSetup(password, totpCode, email);
     if (!result.success) return res.status(400).json(result);
