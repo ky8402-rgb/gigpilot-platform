@@ -582,6 +582,30 @@ export class ExchangeExecutionEngine implements EngineModule {
     } catch (err: any) { this.recordError('ERROR', 'Protective exit dispatch failed: ' + err.message); return { success: false, error: err.message || 'Protective exit dispatch failed' }; }
   }
 
+  /** Synchronize the authoritative Bybit linear futures position set. */
+  public async syncLiveFuturesPositions(symbol?: string): Promise<{ count: number; error?: string }> {
+    const cred = this.credentials.get('BYBIT');
+    if (!cred || !cred.isConfigured) return { count: 0 };
+    try {
+      const { bybitAdapter } = await import('./bybitAdapter.js');
+      const livePositions = await bybitAdapter.getRealPositions(symbol);
+      const targetSymbols = symbol ? new Set([bybitAdapter.normalizeSymbol(symbol)]) : null;
+      if (targetSymbols) {
+        for (const key of Array.from(this.positions.keys())) {
+          if (targetSymbols.has(bybitAdapter.normalizeSymbol(key))) this.positions.delete(key);
+        }
+      } else {
+        this.positions.clear();
+      }
+      for (const p of livePositions) this.positions.set(p.symbol, p as Position);
+      this.lastHeartbeat = new Date().toISOString();
+      return { count: livePositions.length };
+    } catch (err: any) {
+      this.recordError('ERROR', 'Live futures position reconciliation failed: ' + (err?.message || 'unknown error'));
+      return { count: 0, error: err?.message || 'Live futures position reconciliation failed' };
+    }
+  }
+
   public getOpenOrders(symbol?: string): Order[] {
     const all = Array.from(this.openOrders.values());
     if (!symbol) return all;
