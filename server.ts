@@ -69,8 +69,8 @@ app.use((req, res, next) => {
 
 // -------------------- CORE API ROUTES --------------------
 
-// 1a. Lightweight Liveness Ping (used by healthcheck.js, Docker HEALTHCHECK, and EC2 diagnostics)
-// Ke intentionally minimal so health monitors never depend on store I/O.
+// 1a. Lightweight liveness ping (used by healthcheck.js, Docker HEALTHCHECK, and EC2 diagnostics).
+// Kept intentionally minimal so health monitors never depend on store I/O.
 app.get("/api/health/ping", (req, res) => {
   res.json({ success: true, status: "ok", timestamp: new Date().toISOString() });
 });
