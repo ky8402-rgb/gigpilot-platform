@@ -69,7 +69,13 @@ app.use((req, res, next) => {
 
 // -------------------- CORE API ROUTES --------------------
 
-// 1. Healthcheck Endpoint (for AWS EC2, Amplify, Load Balancer, and Health Monitors)
+// 1a. Lightweight Liveness Ping (used by healthcheck.js, Docker HEALTHCHECK, and EC2 diagnostics)
+// Ke intentionally minimal so health monitors never depend on store I/O.
+app.get("/api/health/ping", (req, res) => {
+  res.json({ success: true, status: "ok", timestamp: new Date().toISOString() });
+});
+
+// 1b. Healthcheck Endpoint (for AWS EC2, Amplify, Load Balancer, and Health Monitors)
 app.get("/api/health", (req, res) => {
   const store = globalTradingStore;
   const mem = process.memoryUsage();
