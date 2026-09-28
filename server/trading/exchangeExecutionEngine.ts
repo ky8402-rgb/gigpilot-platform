@@ -20,7 +20,7 @@ const KEYS_FILE = path.join(process.cwd(), '.exchange-trade-only-keys.json');
 
 export class ExchangeExecutionEngine implements EngineModule {
   public readonly id = 'EXCHANGE_EXECUTION_ENGINE';
-  public readonly name = 'Exchange Execution Engine (Bybit Spot V5)';
+  public readonly name = 'Exchange Execution Engine (Bybit Linear Futures V5)';
 
   private enabled: boolean = true; // Off-switch
   private status: 'HEALTHY' | 'DEGRADED' | 'DOWN' | 'OFF' = 'HEALTHY';
@@ -48,7 +48,7 @@ export class ExchangeExecutionEngine implements EngineModule {
       }
     }
 
-    // Bybit (PRIMARY LIVE SPOT EXCHANGE)
+    // Bybit (PRIMARY LIVE FUTURES EXCHANGE)
     const bybitKey = saved.bybit?.apiKey || process.env.BYBIT_API_KEY || '';
     const bybitSecret = saved.bybit?.apiSecret || process.env.BYBIT_API_SECRET || '';
     this.credentials.set('BYBIT', {
@@ -290,7 +290,7 @@ export class ExchangeExecutionEngine implements EngineModule {
     const endpoint = 'https://api.bybit.com/v5/order/create';
 
     const body: Record<string, any> = {
-      category: 'spot', symbol: rawSymbol, side: spec.side === 'BUY' ? 'Buy' : 'Sell',
+      category: 'linear', symbol: rawSymbol, side: spec.side === 'BUY' ? 'Buy' : 'Sell',
       orderType: spec.type === 'MARKET' ? 'Market' : 'Limit', qty: spec.amount.toString(),
       price: spec.type === 'LIMIT' ? spec.price.toString() : undefined,
       timeInForce: spec.type === 'MARKET' ? 'IOC' : 'GTC'
@@ -330,7 +330,7 @@ export class ExchangeExecutionEngine implements EngineModule {
       const endpoint = 'https://api.bybit.com/v5/order/cancel';
 
       const body = {
-        category: 'spot',
+        category: 'linear',
         symbol: rawSymbol,
         orderId
       };
@@ -365,7 +365,7 @@ export class ExchangeExecutionEngine implements EngineModule {
     try {
       const timestamp = Date.now().toString();
       const endpoint = 'https://api.bybit.com/v5/order/cancel-all';
-      const body: any = { category: 'spot' };
+      const body: any = { category: 'linear' };
       if (symbol) {
         body.symbol = symbol.replace(/[\/\-_]/g, '').toUpperCase();
       }
@@ -396,7 +396,7 @@ export class ExchangeExecutionEngine implements EngineModule {
   }
 
   /**
-   * Reconcile in-memory state with Bybit live spot orders on startup and periodic sync
+   * Reconcile in-memory state with Bybit live futures orders on startup and periodic sync
    * Prevents orphaned orders after container restart or network glitch
    */
   public async reconcileOpenOrders(targetSymbol?: string): Promise<{ reconciledCount: number; error?: string }> {
@@ -408,7 +408,7 @@ export class ExchangeExecutionEngine implements EngineModule {
     try {
       const timestamp = Date.now().toString();
       const rawSymbol = targetSymbol ? targetSymbol.replace(/[\/\-_]/g, '').toUpperCase() : '';
-      const query = new URLSearchParams({ category: 'spot' });
+      const query = new URLSearchParams({ category: 'linear' });
       if (rawSymbol) query.append('symbol', rawSymbol);
 
       const signPayload = `${timestamp}${cred.apiKey}5000${query.toString()}`;

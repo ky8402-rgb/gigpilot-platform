@@ -196,7 +196,7 @@ export class BybitAdapter {
   }
 
   /**
-   * Public: Real live ticker price from Bybit V5 Spot
+   * Public: Real live ticker price from Bybit V5 Linear Futures
    */
   public async getRealPrice(symbol = 'BTCUSDT'): Promise<number> {
     const raw = this.normalizeSymbol(symbol);
@@ -206,7 +206,7 @@ export class BybitAdapter {
     }
 
     try {
-      const res = await fetch(`${this.getActiveBaseUrl()}/v5/market/tickers?category=spot&symbol=${raw}`, {
+      const res = await fetch(`${this.getActiveBaseUrl()}/v5/market/tickers?category=linear&symbol=${raw}`, {
         headers: { 'Accept': 'application/json' }
       });
       if (res.ok) {
@@ -226,7 +226,7 @@ export class BybitAdapter {
   }
 
   /**
-   * Public: Real 24h ticker statistics from Bybit V5 Spot
+   * Public: Real 24h ticker statistics from Bybit V5 Linear Futures
    */
   public async getReal24hStats(symbol = 'BTCUSDT'): Promise<{
     symbol: string;
@@ -239,7 +239,7 @@ export class BybitAdapter {
   }> {
     const raw = this.normalizeSymbol(symbol);
     try {
-      const res = await fetch(`${this.getActiveBaseUrl()}/v5/market/tickers?category=spot&symbol=${raw}`, {
+      const res = await fetch(`${this.getActiveBaseUrl()}/v5/market/tickers?category=linear&symbol=${raw}`, {
         headers: { 'Accept': 'application/json' }
       });
       if (res.ok) {
@@ -271,7 +271,7 @@ export class BybitAdapter {
   }
 
   /**
-   * Public: Real Candlesticks from Bybit V5 Spot
+   * Public: Real Candlesticks from Bybit V5 Linear Futures
    */
   public async getRealCandles(symbol = 'BTCUSDT', interval = '1m', limit = 50): Promise<Candle[]> {
     const raw = this.normalizeSymbol(symbol);
@@ -285,7 +285,7 @@ export class BybitAdapter {
     else if (interval === '1d') intervalParam = 'D';
 
     try {
-      const res = await fetch(`${this.getActiveBaseUrl()}/v5/market/kline?category=spot&symbol=${raw}&interval=${intervalParam}&limit=${limit}`, {
+      const res = await fetch(`${this.getActiveBaseUrl()}/v5/market/kline?category=linear&symbol=${raw}&interval=${intervalParam}&limit=${limit}`, {
         headers: { 'Accept': 'application/json' }
       });
       if (res.ok) {
@@ -311,14 +311,14 @@ export class BybitAdapter {
   }
 
   /**
-   * Public: Real Order Book (Depth) from Bybit V5 Spot
+   * Public: Real Order Book (Depth) from Bybit V5 Linear Futures
    */
   public async getRealOrderBook(symbol = 'BTCUSDT', limit = 15): Promise<OrderBook> {
     const raw = this.normalizeSymbol(symbol);
     const denorm = this.denormalizeSymbol(raw);
 
     try {
-      const res = await fetch(`${this.getActiveBaseUrl()}/v5/market/orderbook?category=spot&symbol=${raw}&limit=${limit}`, {
+      const res = await fetch(`${this.getActiveBaseUrl()}/v5/market/orderbook?category=linear&symbol=${raw}&limit=${limit}`, {
         headers: { 'Accept': 'application/json' }
       });
       if (res.ok) {
@@ -373,7 +373,7 @@ export class BybitAdapter {
   }
 
   /**
-   * Private Signed: Real Bybit Spot Account balances and portfolio valuation
+   * Private Signed: Real Bybit Linear Futures Account balances and portfolio valuation
    * Supports both Unified Trading Account (UTA) and classic Spot wallets
    */
   public async getRealAccountState(forceRefresh = false): Promise<BybitAccountState> {
@@ -400,7 +400,7 @@ export class BybitAdapter {
         canTrade: false,
         canWithdraw: false,
         canDeposit: false,
-        accountType: 'SPOT / UTA',
+        accountType: 'LINEAR FUTURES / UTA',
         apiKeyConfigured: false,
         keyMask: 'NOT_CONFIGURED',
       };
@@ -530,7 +530,7 @@ export class BybitAdapter {
 
       const state: BybitAccountState = {
         status: 'CONNECTED',
-        message: 'Connected to Bybit Live Spot/UTA. Real-time balances synchronized.',
+        message: 'Connected to Bybit Live Linear Futures/UTA. Real-time balances synchronized.',
         serverIp: this.serverIp,
         timestamp: new Date().toISOString(),
         totalEquityUsd: Number(totalEquityUsd.toFixed(2)),
@@ -573,7 +573,7 @@ export class BybitAdapter {
         canTrade: false,
         canWithdraw: false,
         canDeposit: false,
-        accountType: 'SPOT / UTA',
+        accountType: 'LINEAR FUTURES / UTA',
         apiKeyConfigured: true,
         keyMask: this.getKeyMask(),
       };
@@ -586,7 +586,7 @@ export class BybitAdapter {
   public async getRealOpenOrders(symbol?: string): Promise<Order[]> {
     if (!this.apiKey || !this.apiSecret) return [];
 
-    const params: Record<string, any> = { category: 'spot' };
+    const params: Record<string, any> = { category: 'linear' };
     if (symbol) {
       params.symbol = this.normalizeSymbol(symbol);
     }
@@ -631,7 +631,7 @@ export class BybitAdapter {
   public async getRealTrades(symbol?: string, limit = 50): Promise<Fill[]> {
     if (!this.apiKey || !this.apiSecret) return [];
 
-    const params: Record<string, any> = { category: 'spot', limit };
+    const params: Record<string, any> = { category: 'linear', limit };
     if (symbol) params.symbol = this.normalizeSymbol(symbol);
     const { headers, queryString } = this.signGet(params);
     const res = await fetch(`${this.getActiveBaseUrl()}/v5/execution/list?${queryString}`, {
@@ -667,7 +667,7 @@ export class BybitAdapter {
   }
 
   /**
-   * Symbol precision and step rules for Bybit Spot
+   * Symbol precision and step rules for Bybit Linear Futures
    */
   public getSymbolRules(symbol: string): { priceDecimals: number; qtyDecimals: number; minNotional: number } {
     const norm = this.normalizeSymbol(symbol);
@@ -707,7 +707,7 @@ export class BybitAdapter {
     const orderLinkId = params.orderLinkId || `gp_${Date.now()}_${Math.random().toString(36).substring(2, 8)}`;
 
     const payload: Record<string, any> = {
-      category: 'spot',
+      category: 'linear',
       symbol: this.normalizeSymbol(params.symbol),
       side: params.side === 'BUY' ? 'Buy' : 'Sell',
       orderType: params.type === 'MARKET' ? 'Market' : 'Limit',
@@ -768,7 +768,7 @@ export class BybitAdapter {
 
     try {
       const payload: Record<string, any> = {
-        category: 'spot',
+        category: 'linear',
         symbol: this.normalizeSymbol(symbol)
       };
       if (orderId.startsWith('gp_')) {
