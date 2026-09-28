@@ -586,13 +586,6 @@ export interface MasterTradingState {
     maxCapitalAllocationPct: number;
     minimumNetEdgeBps: number;
   };
-  futuresRisk?: {
-    maxLeverage: number;
-    maxExposureUsd: number;
-    maxDrawdownLimitPct: number;
-    maxCapitalAllocationPct: number;
-    minimumNetEdgeBps: number;
-  };
   autonomousBot?: {
     status: 'RUNNING' | 'PAUSED' | 'BLOCKED';
     allocatedCapitalUsd: number;
