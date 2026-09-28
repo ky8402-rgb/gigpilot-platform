@@ -265,15 +265,32 @@ export async function selectActivePair(symbol: string) {
 }
 
 export async function startAutonomousTrading(symbol: string, allocatedCapitalUsd: number) {
-  return await fetchWithFailover<{ success: boolean; status: 'RUNNING' | 'PAUSED' | 'BLOCKED'; activeSymbol?: string; allocatedCapitalUsd?: number; autonomyLevel?: AutonomyLevel; error?: string }>('/autonomous/start', {
-    method: 'POST', headers: { 'Content-Type': 'application/json' },
+  return await fetchWithFailover<{
+    success: boolean;
+    status: 'RUNNING' | 'PAUSED' | 'BLOCKED';
+    activeSymbol?: string;
+    allocatedCapitalUsd?: number;
+    autonomyLevel?: AutonomyLevel;
+    error?: string;
+  }>('/autonomous/start', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ symbol, allocatedCapitalUsd })
   });
 }
 
 export async function stopAutonomousTrading() {
-  return await fetchWithFailover<{ success: boolean; status: 'PAUSED' | 'BLOCKED'; autonomyLevel?: AutonomyLevel; cancelledEntryOrders?: number; reconciledCount?: number; message?: string; error?: string }>('/autonomous/stop', {
-    method: 'POST', headers: { 'Content-Type': 'application/json' }
+  return await fetchWithFailover<{
+    success: boolean;
+    status: 'PAUSED' | 'BLOCKED';
+    autonomyLevel?: AutonomyLevel;
+    cancelledEntryOrders?: number;
+    reconciledCount?: number;
+    message?: string;
+    error?: string;
+  }>('/autonomous/stop', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' }
   });
 }
 

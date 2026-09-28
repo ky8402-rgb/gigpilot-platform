@@ -492,7 +492,9 @@ export class TradingStore {
 
     const norm = this.dataEngine.normalizeSymbol(symbol);
     const allocation = Number(allocatedCapitalUsd);
-    if (!Number.isFinite(allocation) || allocation <= 0) throw new Error('Trading capital must be a positive live amount.');
+    if (!Number.isFinite(allocation) || allocation <= 0) {
+      throw new Error('Trading capital must be a positive live amount.');
+    }
 
     const liveData = this.dataEngine.getPairData(norm);
     if (!liveData || !Number.isFinite(liveData.currentPrice) || liveData.currentPrice <= 0 ||
@@ -502,8 +504,12 @@ export class TradingStore {
     }
 
     const failStatus = this.monitor.isSystemFailClosed();
-    if (failStatus.failClosed) throw new Error(`FAIL-CLOSED: critical engine(s) are degraded or offline: ${failStatus.downEngines.join(', ')}`);
-    if (this.risk.isCircuitBreakerActive()) throw new Error('Risk circuit breaker is active. Autonomous trading cannot start.');
+    if (failStatus.failClosed) {
+      throw new Error(`FAIL-CLOSED: critical engine(s) are degraded or offline: ${failStatus.downEngines.join(', ')}`);
+    }
+    if (this.risk.isCircuitBreakerActive()) {
+      throw new Error('Risk circuit breaker is active. Autonomous trading cannot start.');
+    }
 
     const cred = this.exchangeExec.getExchangeCredentials().find(c => c.exchange === 'BYBIT');
     if (!cred?.isConfigured || cred.status !== 'CONNECTED' || !cred.canTrade) {
@@ -522,13 +528,22 @@ export class TradingStore {
     if (qResult.regime) this.currentRegime = qResult.regime;
 
     const gridResult = this.gridEngine.generateGrid({
-      symbol: norm, currentPrice: liveData.currentPrice, totalAllocatedUsd: allocation,
-      levelsCount: 16, spacingType: 'GEOMETRIC', volatilityAdjustment: true, trendProtection: true,
-      regime: this.currentRegime, positions: this.exchangeExec.getPositions(),
-      orderBook: liveData.orderBook, candles: liveData.candles,
+      symbol: norm,
+      currentPrice: liveData.currentPrice,
+      totalAllocatedUsd: allocation,
+      levelsCount: 16,
+      spacingType: 'GEOMETRIC',
+      volatilityAdjustment: true,
+      trendProtection: true,
+      regime: this.currentRegime,
+      positions: this.exchangeExec.getPositions(),
+      orderBook: liveData.orderBook,
+      candles: liveData.candles,
       totalEquityUsd: this.capital.totalEquity || this.capital.tradingCapital
     });
-    if (!gridResult.grid) throw new Error(gridResult.error || 'Autonomous strategy could not produce a risk-valid grid from live market evidence.');
+    if (!gridResult.grid) {
+      throw new Error(gridResult.error || 'Autonomous strategy could not produce a risk-valid grid from live market evidence.');
+    }
 
     if (startupSafetyLatch) {
       this.GLOBAL_KILL_SWITCH_ACTIVE = false;
@@ -544,10 +559,16 @@ export class TradingStore {
     this.activeBotsDisabled = false;
 
     this.monitor.logAudit({
-      category: 'CONFIG_CHANGE', action: 'AUTONOMOUS_TRADING_STARTED',
-      details: { symbol: norm, allocatedCapitalUsd: allocation, autonomyLevel: this.autonomyLevel,
-        requiredNetEdgeBps: riskConfig.minimum_edge_threshold ?? riskConfig.minExpectedNetEdgeBps ?? 4.0 }
+      category: 'CONFIG_CHANGE',
+      action: 'AUTONOMOUS_TRADING_STARTED',
+      details: {
+        symbol: norm,
+        allocatedCapitalUsd: allocation,
+        autonomyLevel: this.autonomyLevel,
+        requiredNetEdgeBps: riskConfig.minimum_edge_threshold ?? riskConfig.minExpectedNetEdgeBps ?? 4.0
+      }
     });
+
     this.placeGridOrdersInExchange(this.activeGrid, liveData.currentPrice);
   }
 
@@ -555,14 +576,22 @@ export class TradingStore {
     this.autonomousBotRunning = false;
     this.autonomyLevel = 0;
     this.activeBotsDisabled = true;
+
     const cancelledEntryOrders = await this.exchangeExec.cancelNewEntryOrders(this.activeSymbol);
     const reconciliation = await this.exchangeExec.reconcileOpenOrders(this.activeSymbol);
     await this.syncCapitalFromRealExchange();
+
     this.monitor.logAudit({
-      category: 'EMERGENCY_SHUTDOWN', action: 'AUTONOMOUS_TRADING_STOPPED',
-      details: { symbol: this.activeSymbol, cancelledEntryOrders, reconciledCount: reconciliation.reconciledCount,
-        existingPositionsRemainUnderExchangeRiskControls: true }
+      category: 'EMERGENCY_SHUTDOWN',
+      action: 'AUTONOMOUS_TRADING_STOPPED',
+      details: {
+        symbol: this.activeSymbol,
+        cancelledEntryOrders,
+        reconciledCount: reconciliation.reconciledCount,
+        existingPositionsRemainUnderExchangeRiskControls: true
+      }
     });
+
     return { cancelledEntryOrders, reconciledCount: reconciliation.reconciledCount };
   }
 
