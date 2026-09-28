@@ -238,6 +238,14 @@ export class ExchangeExecutionEngine implements EngineModule {
       return { success: false, error: err };
     }
 
+    const leverageLimit = 1;
+    const leverageResult = await this.ensureFuturesLeverage(spec.symbol, leverageLimit);
+    if (!leverageResult.success) {
+      const err = `FAIL-CLOSED: Bybit futures leverage could not be set to the configured risk limit (${leverageLimit}x). ${leverageResult.error || ''}`.trim();
+      this.recordError('ERROR', err);
+      return { success: false, error: err };
+    }
+
     const id = `ord_${targetExchange.toLowerCase()}_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
     const costUsd = Number((spec.price * spec.amount).toFixed(2));
 
