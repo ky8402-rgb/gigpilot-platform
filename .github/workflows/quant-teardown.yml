@@ -1,0 +1,88 @@
+# One-off, manually-dispatched teardown of the Python engine on EC2.
+#
+# TEMPORARY: deleted by the cleanup commit that removes the rest of the engine's wiring, so it
+# does not linger as a live "delete the engine" button.
+#
+# Touches NOTHING belonging to the Node service: no gigpilot PM2 app, no /home/ubuntu/gigpilot,
+# no nginx, no database. The trader's PM2 app list is captured before the change and asserted
+# afterwards, so "we did not disturb the trader" is evidence rather than assumption.
+#
+# Deliberately contains no shell heredocs: a heredoc body sits at column 0, which terminates a
+# YAML block scalar and produces an unreadable "could not find expected ':'" error. Plain
+# single-line commands cannot be misindented.
+
+name: Teardown quant-engine (EC2, one-off)
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  teardown:
+    name: Remove the engine from EC2
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Check out
+        uses: actions/checkout@v4
+
+      - name: Prepare SSH
+        env:
+          SSH_KEY: ${{ secrets.EC2_SSH_KEY || secrets.GIGPILOT_MUMBAI_EC2 }}
+          EC2_HOST: ${{ secrets.EC2_HOST || '' }}
+        run: |
+          set -euo pipefail
+          if [ -z "$EC2_HOST" ] && [ -f deployment/backend-host.txt ]; then
+            EC2_HOST="$(tr -d '\r\n' < deployment/backend-host.txt)"
+          fi
+          [ -n "$EC2_HOST" ] || { echo "ERROR: no EC2 host configured."; exit 1; }
+          [ -n "$SSH_KEY" ] || { echo "ERROR: EC2_SSH_KEY not configured."; exit 1; }
+          mkdir -p ~/.ssh
+          python3 scripts/prepare_ec2_key.py || true
+          [ -s ~/.ssh/id_rsa ] || { echo "ERROR: SSH key unavailable."; exit 1; }
+          echo "EC2_HOST=$EC2_HOST" >> "$GITHUB_ENV"
+          echo "SSH_OPTS=-o StrictHostKeyChecking=no -o ConnectTimeout=20 -i $HOME/.ssh/id_rsa" >> "$GITHUB_ENV"
+          echo "REMOTE=ubuntu@$EC2_HOST" >> "$GITHUB_ENV"
+          echo "✔ key prepared for ubuntu@$EC2_HOST"
+
+      - name: Capture the trader state BEFORE any change
+        run: |
+          ssh $SSH_OPTS "$REMOTE" 'pm2 jlist' > /tmp/pre-pm2.json 2>/dev/null || echo '[]' > /tmp/pre-pm2.json
+          echo "PM2 apps BEFORE: $(grep -o '"name":"[a-zA-Z0-9_-]*"' /tmp/pre-pm2.json | sort -u | tr '\n' ' ')"
+
+      - name: Stop the engine and remove its directory
+        run: |
+          ssh $SSH_OPTS "$REMOTE" 'pm2 delete quant-engine' || echo "  (quant-engine was not registered)"
+          ssh $SSH_OPTS "$REMOTE" 'rm -rf /home/ubuntu/quant-engine'
+          ssh $SSH_OPTS "$REMOTE" 'pm2 save' >/dev/null 2>&1 || true
+          ssh $SSH_OPTS "$REMOTE" 'pm2 jlist' > /tmp/post-pm2.json 2>/dev/null || echo '[]' > /tmp/post-pm2.json
+          echo "PM2 apps AFTER : $(grep -o '"name":"[a-zA-Z0-9_-]*"' /tmp/post-pm2.json | sort -u | tr '\n' ' ')"
+
+      - name: Assert the engine is gone and the trader survived
+        run: |
+          set -uo pipefail
+          fail=0
+
+          if grep -q '"name":"quant-engine"' /tmp/post-pm2.json; then
+            echo "ERROR: quant-engine is still registered with PM2"; fail=1
+          else
+            echo "✔ quant-engine no longer registered with PM2"
+          fi
+
+          if grep -q '"name":"gigpilot"' /tmp/post-pm2.json; then
+            echo "✔ the Node grid trader is still registered with PM2"
+          else
+            echo "ERROR: gigpilot is missing from PM2 after the teardown"; fail=1
+          fi
+
+          if ssh $SSH_OPTS "$REMOTE" 'test -e /home/ubuntu/quant-engine'; then
+            echo "ERROR: /home/ubuntu/quant-engine still exists"; fail=1
+          else
+            echo "✔ /home/ubuntu/quant-engine removed"
+          fi
+
+          [ "$fail" -eq 0 ] || exit 1
+          echo "TEARDOWN VERIFIED"
