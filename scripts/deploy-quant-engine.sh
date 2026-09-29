@@ -249,22 +249,43 @@ echo "✔ /api/health responding"
 curl -sS -m 10 "http://${BIND_HOST}:${BIND_PORT}/api/health" -o /tmp/quant-health.json 2>/dev/null || true
 curl -sS -m 10 "http://${BIND_HOST}:${BIND_PORT}/api/version" -o /tmp/quant-version.json 2>/dev/null || true
 
+# Resolve the engine's operational mode from its AUTHENTICATED state endpoint, not from
+# /api/health. The health payload does not carry `mode`, and an assertion of the form
+# `if (health.mode && health.mode !== 'paper')` therefore passes silently when the field is
+# absent — reporting "paper mode confirmed" on the strength of nothing. Absence of a veto is
+# not evidence, so the mode must be read from where it actually lives, and a missing answer
+# must FAIL the deploy rather than be treated as consent.
+TOKEN="$(grep -E '^QUANT__API__TOKEN=' "$ENV_FILE" 2>/dev/null | head -1 | cut -d= -f2- | tr -d '"' || true)"
+curl -sS -m 10 -H "Authorization: Bearer ${TOKEN}" \
+  "http://${BIND_HOST}:${BIND_PORT}/api/state" -o /tmp/quant-state.json 2>/dev/null || true
+
 node - <<'PY'
 const fs = require('fs');
 const health = JSON.parse(fs.readFileSync('/tmp/quant-health.json', 'utf8'));
 console.log(`  engine status : ${health.status}`);
-console.log(`  venue         : ${health.venue ?? 'n/a'}`);
+console.log(`  venue         : ${health.venue ?? '(not in health payload)'}`);
 const feed = health.feed || {};
-console.log(`  feed          : connected=${feed.connected} symbols=${feed.symbols ?? 'n/a'}`);
-if (health.mode && health.mode !== 'paper') {
-  console.error(`ERROR: engine is booted in mode '${health.mode}', expected 'paper'.`);
+console.log(`  feed          : ${Object.keys(feed).length ? JSON.stringify(feed) : '(not in health payload)'}`);
+
+let state = null;
+try { state = JSON.parse(fs.readFileSync('/tmp/quant-state.json', 'utf8')); } catch { state = null; }
+
+if (!state || typeof state.mode !== 'string') {
+  console.error('ERROR: could not read the engine mode from /api/state, so paper mode is UNVERIFIED.');
+  console.error('       Refusing to report a safety interlock as confirmed when it was not read.');
   process.exit(1);
 }
-if (health.live_armed === true) {
+console.log(`  execution mode: ${state.mode}`);
+console.log(`  live_armed    : ${state.live_armed}`);
+if (state.mode !== 'paper') {
+  console.error(`ERROR: engine is booted in mode '${state.mode}', expected 'paper'.`);
+  process.exit(1);
+}
+if (state.live_armed === true) {
   console.error('ERROR: engine reports live_armed=true after a deployment. That must never happen here.');
   process.exit(1);
 }
-console.log('  ✔ paper mode confirmed, live routing NOT armed');
+console.log('  ✔ paper mode confirmed from /api/state, live routing NOT armed');
 PY
 
 echo "Verifying the engine can reach Bybit with the configured credentials..."

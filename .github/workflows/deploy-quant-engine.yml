@@ -99,10 +99,14 @@ jobs:
           fi
           # The engine runs beside the grid trader, so a migration that broke the trader would
           # otherwise be discovered by the trader failing rather than by this workflow.
-          echo "Checking the Node service is still healthy..."
+          # The TLS certificate is issued for the sslip.io name, not the bare IP, so requesting
+          # https://<ip> fails certificate validation and this step could never pass. Derive the
+          # name the way the rest of the pipeline does: 35.154.110.156 -> 35-154-110-156.sslip.io.
+          HEALTH_URL="${NODE_HEALTH_URL:-https://$(printf '%s' "$EC2_HOST" | tr '.' '-').sslip.io/api/health}"
+          echo "Checking the Node service is still healthy at $HEALTH_URL..."
           for i in $(seq 1 10); do
             code="$(curl -sS -m 15 -o /tmp/gigpilot-health.json -w '%{http_code}' \
-              "https://${EC2_HOST}/api/health" 2>/dev/null || echo 000)"
+              "$HEALTH_URL" 2>/dev/null || echo 000)"
             if [ "$code" = "200" ]; then
               echo "✔ Node /api/health still 200"
               cat /tmp/gigpilot-health.json | head -c 200; echo
