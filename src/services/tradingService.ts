@@ -3,6 +3,7 @@ import {
   AutonomyLevel,
   BybitAccountState,
   CapitalAccounting,
+  CapitalPlan,
   DestinationWallet,
   GridConfiguration,
   MasterTradingState,
@@ -272,18 +273,21 @@ export async function selectActivePair(symbol: string) {
   });
 }
 
-export async function startAutonomousTrading(symbol: string, allocatedCapitalUsd: number) {
+export async function startAutonomousTrading(symbol: string, allocatedCapitalUsd: number, leverage?: number) {
+  const body: Record<string, unknown> = { symbol, allocatedCapitalUsd };
+  if (typeof leverage === 'number' && Number.isFinite(leverage)) body.leverage = leverage;
   return await fetchWithFailover<{
     success: boolean;
     status: 'RUNNING' | 'PAUSED' | 'BLOCKED';
     activeSymbol?: string;
     allocatedCapitalUsd?: number;
+    leverage?: number;
     autonomyLevel?: AutonomyLevel;
     error?: string;
   }>('/autonomous/start', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ symbol, allocatedCapitalUsd })
+    body: JSON.stringify(body)
   });
 }
 
@@ -437,7 +441,7 @@ export async function fetchAutonomousOptimizer(): Promise<{
  * Pre-flight for the Select Pair -> Allocate Capital -> Confirm START flow, so blockers are shown
  * before the operator commits rather than as a rejection afterwards.
  */
-export async function fetchAutonomyStatus(capital?: number): Promise<{
+export async function fetchAutonomyStatus(capital?: number, levels?: number, leverage?: number): Promise<{
   success: boolean;
   activeSymbol: string;
   autonomyLevel: number;
@@ -446,19 +450,16 @@ export async function fetchAutonomyStatus(capital?: number): Promise<{
   systemFailClosed: boolean;
   globalKillSwitchActive: boolean;
   candleCount: number;
-  capitalPlan?: {
-    availableCashUsd: number;
-    minAccountReserveUsd: number;
-    maxCapitalAllocationPct: number;
-    maxAllocatableUsd: number;
-    gridLevelsCount: number;
-    exchangeMinNotionalUsd: number;
-    minRequiredForGridUsd: number;
-  };
+  capitalPlan?: CapitalPlan;
   expectedNetEdge?: any;
   [key: string]: any;
 }> {
-  const suffix = Number.isFinite(capital) && Number(capital) > 0 ? `?capital=${encodeURIComponent(String(capital))}` : '';
+  const params = new URLSearchParams();
+  if (typeof capital === 'number' && Number.isFinite(capital) && capital > 0) params.set('capital', String(capital));
+  if (typeof levels === 'number' && Number.isFinite(levels) && levels > 0) params.set('levels', String(levels));
+  if (typeof leverage === 'number' && Number.isFinite(leverage) && leverage > 0) params.set('leverage', String(leverage));
+  const query = params.toString();
+  const suffix = query ? `?${query}` : '';
   const res = await fetchWithFailover<any>(`/autonomy/status${suffix}`);
   if (!res?.success) throw new Error('Autonomy status unavailable.');
   return res;

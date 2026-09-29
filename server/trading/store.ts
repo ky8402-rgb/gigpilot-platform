@@ -37,6 +37,7 @@ import { EmergencyKillSwitch } from './killSwitch.js';
 import { bybitAdapter } from './bybitAdapter.js';
 import { AutonomousProfitOptimizer } from './autonomousProfitOptimizer.js';
 import { AutonomousOptimizationDecision } from './types.js';
+import { buildCapitalPlan, resolveLeverage } from './capitalPlan.js';
 
 export class TradingStore {
   // Modular Subsystems
@@ -73,6 +74,8 @@ export class TradingStore {
   public ownerAuthenticated: boolean = false;
   public autonomousBotRunning: boolean = false;
   public autonomousAllocatedCapitalUsd: number = 0;
+  /** Leverage the running strategy was armed at, as accepted by the risk engine. */
+  public autonomousLeverage: number = 1;
   public autonomousStartedAt?: string;
 
   constructor() {
@@ -854,7 +857,7 @@ export class TradingStore {
     }
   }
 
-  public async startAutonomousTrading(symbol: string, allocatedCapitalUsd: number): Promise<void> {
+  public async startAutonomousTrading(symbol: string, allocatedCapitalUsd: number, leverage?: number): Promise<void> {
     const killState = this.killSwitch.getState();
     const startupSafetyLatch = killState.isActive &&
       killState.triggeredBy === 'RISK_ENGINE' &&
@@ -891,10 +894,7 @@ export class TradingStore {
     }
 
     const riskConfig = this.risk.getConfig();
-    const leverageReady = await this.exchangeExec.ensureFuturesLeverage(norm, riskConfig.maxLeverage);
-    if (!leverageReady.success) {
-      throw new Error(`FAIL-CLOSED: futures leverage could not be configured within the risk limit: ${leverageReady.error || 'exchange rejected leverage configuration'}`);
-    }
+
     // Resolve the exchange's real increments up front. Without them a grid cannot be sized to
     // valid prices/quantities, and the rungs would be rejected one by one after START.
     const instrument = await this.exchangeExec.getInstrumentSpec(norm);
@@ -902,16 +902,43 @@ export class TradingStore {
       throw new Error('FAIL-CLOSED: Bybit instrument specification could not be resolved, so a valid grid cannot be sized.');
     }
 
-    const availableCash = Number(this.capital.availableCash || 0);
-    const maxByPct = availableCash * (riskConfig.maxCapitalAllocationPct / 100);
-    const maxAllowed = Math.max(0, Math.min(availableCash - riskConfig.minAccountReserveUsd, maxByPct));
-    if (allocation > maxAllowed + 1e-9) {
-      throw new Error(`Allocated capital ${allocation.toFixed(2)} USDT exceeds the current risk-approved maximum ${maxAllowed.toFixed(2)} USDT after reserve and allocation limits.`);
+    // Leverage is the operator's choice within the backend-enforced range, and it is re-validated
+    // here rather than trusted from the request, so a direct API call cannot bypass the pre-flight.
+    // Out-of-range is REFUSED, never silently clamped: running at a different leverage than the
+    // operator selected is exactly the surprise the risk limit exists to prevent.
+    const acceptedLeverage = resolveLeverage(
+      leverage === undefined || leverage === null || (leverage as any) === '' ? null : Number(leverage),
+      riskConfig.maxLeverage,
+      instrument.maxLeverage > 0 ? instrument.maxLeverage : null,
+      instrument.leverageStep
+    );
+    if (acceptedLeverage.rejected) {
+      throw new Error(`Leverage rejected: ${acceptedLeverage.rejected}`);
+    }
+    const leverageReady = await this.exchangeExec.ensureFuturesLeverage(norm, acceptedLeverage.effective);
+    if (!leverageReady.success) {
+      throw new Error(`FAIL-CLOSED: futures leverage could not be configured within the risk limit: ${leverageReady.error || 'exchange rejected leverage configuration'}`);
+    }
+
+    // Capital viability and grid geometry come from the SAME plan the pre-flight displayed, so
+    // START can never disagree with the figures the operator was shown.
+    const capitalPlan = buildCapitalPlan({
+      availableCashUsd: Number(this.capital.availableCash || 0),
+      minAccountReserveUsd: riskConfig.minAccountReserveUsd,
+      maxCapitalAllocationPct: riskConfig.maxCapitalAllocationPct,
+      minNotionalUsd: instrument.minNotional,
+      leverage: acceptedLeverage
+    });
+    if (!capitalPlan.canTrade) {
+      throw new Error(capitalPlan.reason);
+    }
+    if (allocation > capitalPlan.maxAllocatableUsd + 1e-9) {
+      throw new Error(`Allocated capital ${allocation.toFixed(2)} USDT exceeds the current risk-approved maximum ${capitalPlan.maxAllocatableUsd.toFixed(2)} USDT after reserve and allocation limits.`);
     }
 
     // Every rung must clear the exchange minimum notional, otherwise START would build a grid that
     // silently submits nothing. Surfaced up front rather than failing rung-by-rung.
-    const gridLevelsCount = 16;
+    const gridLevelsCount = capitalPlan.effectiveLevels;
     const perRungUsd = allocation / gridLevelsCount;
     if (instrument.minNotional > 0 && perRungUsd < instrument.minNotional) {
       throw new Error(`Allocated capital ${allocation.toFixed(2)} USDT is insufficient: ${perRungUsd.toFixed(2)} USDT per rung is below the Bybit minimum notional of ${instrument.minNotional} USDT for ${norm}. At least ${(instrument.minNotional * gridLevelsCount).toFixed(2)} USDT is required for a ${gridLevelsCount}-rung grid.`);
@@ -949,6 +976,7 @@ export class TradingStore {
     this.activeSymbol = norm;
     this.activeGrid = gridResult.grid;
     this.autonomousAllocatedCapitalUsd = allocation;
+    this.autonomousLeverage = acceptedLeverage.effective;
     this.autonomousBotRunning = true;
     this.autonomousStartedAt = new Date().toISOString();
     this.autonomyLevel = 2;

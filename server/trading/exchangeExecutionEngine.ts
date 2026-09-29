@@ -67,7 +67,7 @@ export class ExchangeExecutionEngine implements EngineModule {
   /** Hard halt engaged by the global emergency kill switch; blocks new live order dispatch. */
   private halted: boolean = false;
   /** Cached Bybit instrument filters (qty step / tick size / minimums) for correct rounding. */
-  private instrumentSpecs: Map<string, { qtyStep: number; tickSize: number; minOrderQty: number; minNotional: number }> = new Map();
+  private instrumentSpecs: Map<string, { qtyStep: number; tickSize: number; minOrderQty: number; minNotional: number; maxLeverage: number; leverageStep: number }> = new Map();
   /** Live quote captured at dispatch, keyed by exchange order id and orderLinkId. */
   private orderQuoteRefs: Map<string, { mid: number; halfSpreadBps: number }> = new Map();
 
@@ -286,7 +286,7 @@ export class ExchangeExecutionEngine implements EngineModule {
   }
 
   /** Resolve (and cache) the exchange's instrument filters so orders are sized to valid increments. */
-  public async getInstrumentSpec(symbol: string): Promise<{ qtyStep: number; tickSize: number; minOrderQty: number; minNotional: number } | null> {
+  public async getInstrumentSpec(symbol: string): Promise<{ qtyStep: number; tickSize: number; minOrderQty: number; minNotional: number; maxLeverage: number; leverageStep: number } | null> {
     const key = symbol.replace(/[\/\-_]/g, '').toUpperCase();
     const cached = this.instrumentSpecs.get(key);
     if (cached) return cached;
@@ -299,12 +299,18 @@ export class ExchangeExecutionEngine implements EngineModule {
       const tickSize = Number(row.priceFilter?.tickSize ?? 0);
       const minOrderQty = Number(row.lotSizeFilter?.minOrderQty ?? 0);
       const minNotional = Number(row.lotSizeFilter?.minNotionalValue ?? row.lotSizeFilter?.minOrderAmt ?? 0);
+      // The exchange's own leverage ceiling for this instrument. Reported so leverage can be
+      // validated against the exchange AND the configured risk limit, not just one of them.
+      const maxLeverage = Number(row.leverageFilter?.maxLeverage ?? 0);
+      const leverageStep = Number(row.leverageFilter?.leverageStep ?? 0);
       if (!Number.isFinite(qtyStep) || qtyStep <= 0 || !Number.isFinite(tickSize) || tickSize <= 0) return null;
       const spec = {
         qtyStep,
         tickSize,
         minOrderQty: Number.isFinite(minOrderQty) ? minOrderQty : 0,
-        minNotional: Number.isFinite(minNotional) ? minNotional : 0
+        minNotional: Number.isFinite(minNotional) ? minNotional : 0,
+        maxLeverage: Number.isFinite(maxLeverage) && maxLeverage > 0 ? maxLeverage : 0,
+        leverageStep: Number.isFinite(leverageStep) && leverageStep > 0 ? leverageStep : 1
       };
       this.instrumentSpecs.set(key, spec);
       return spec;

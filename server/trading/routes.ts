@@ -4,8 +4,19 @@ import { ownerAuth, requireOwnerAuth, isOwner, extractToken } from './ownerAuth.
 import { bybitAdapter } from './bybitAdapter.js';
 import { authThrottle } from './authThrottle.js';
 import { EngineId, SupportedExchange } from './types.js';
+import { buildCapitalPlan, HARD_MAX_GRID_LEVELS, HARD_MIN_GRID_LEVELS, resolveLeverage } from './capitalPlan.js';
+import { CredentialProbe, mapAccountProbeToCredentialStatus } from './credentialProbe.js';
 
 export const tradingRouter = Router();
+
+/**
+ * Single-flight resolver for the Bybit credential state.
+ *
+ * Shared by the credentials panel and the START pre-flight so that a key set which has simply
+ * not been checked yet resolves to a real answer instead of blocking the operator with a
+ * permanent "VALIDATING". Bounded to one in-flight probe, one definitive result per process.
+ */
+const bybitCredentialProbe = new CredentialProbe(() => bybitAdapter.getRealAccountState(true));
 
 // 1. Master System State
 tradingRouter.get('/state', requireOwnerAuth, (req: Request, res: Response) => {
@@ -144,24 +155,12 @@ tradingRouter.get('/exchanges/credentials', requireOwnerAuth, async (req: Reques
     const current = globalTradingStore.exchangeExec.getExchangeCredentials();
     const bybit = current.find(c => c.exchange === 'BYBIT');
 
-    // Keys loaded from disk/environment start in VALIDATING state. Perform exactly one
-    // authenticated live check before exposing a definitive connection state.
-    if (bybit?.status === 'VALIDATING') {
-      const accountState = await bybitAdapter.getRealAccountState(true);
-      const validationStatus =
-        accountState.status === 'CONNECTED'
-          ? 'CONNECTED'
-          : accountState.status === 'RESTRICTED'
-            ? 'RESTRICTED'
-            : accountState.status === 'DISCONNECTED'
-              ? 'DISCONNECTED'
-              : 'ERROR';
-
-      globalTradingStore.exchangeExec.setCredentialValidation('BYBIT', {
-        status: validationStatus,
-        lastChecked: accountState.timestamp,
-        errorMessage: validationStatus === 'CONNECTED' ? undefined : accountState.message
-      });
+    // Keys loaded from disk/environment start in VALIDATING state. Resolve that to a definitive
+    // answer through the shared probe, so the credentials panel and the START pre-flight can
+    // never disagree, and a failed probe surfaces as ERROR instead of permanent limbo.
+    const validation = await bybitCredentialProbe.resolve(bybit?.status === 'VALIDATING');
+    if (validation) {
+      globalTradingStore.exchangeExec.setCredentialValidation('BYBIT', validation);
     }
 
     return res.json({
@@ -194,20 +193,11 @@ tradingRouter.post('/exchanges/keys', requireOwnerAuth, async (req: Request, res
     bybitAdapter.updateCredentials(apiKey, apiSecret);
 
     const accountState = await bybitAdapter.getRealAccountState(true);
-    const validationStatus =
-      accountState.status === 'CONNECTED'
-        ? 'CONNECTED'
-        : accountState.status === 'RESTRICTED'
-          ? 'RESTRICTED'
-          : accountState.status === 'DISCONNECTED'
-            ? 'DISCONNECTED'
-            : 'ERROR';
-
-    globalTradingStore.exchangeExec.setCredentialValidation('BYBIT', {
-      status: validationStatus,
-      lastChecked: accountState.timestamp,
-      errorMessage: validationStatus === 'CONNECTED' ? undefined : accountState.message
-    });
+    // Same mapping the shared probe uses, so a key change and the background validation can never
+    // reach different verdicts for the same account state.
+    const keyValidation = mapAccountProbeToCredentialStatus(accountState);
+    globalTradingStore.exchangeExec.setCredentialValidation('BYBIT', keyValidation);
+    const validationStatus = keyValidation.status;
 
     globalTradingStore.monitor.logAudit({
       category: 'CONFIG_CHANGE',
@@ -302,7 +292,18 @@ tradingRouter.get('/autonomy/status', requireOwnerAuth, async (req: Request, res
   try {
     const store = globalTradingStore;
     const failStatus = store.monitor.isSystemFailClosed();
-    const credentials = store.exchangeExec.getExchangeCredentials().find(c => c.exchange === 'BYBIT');
+    let credentials = store.exchangeExec.getExchangeCredentials().find(c => c.exchange === 'BYBIT');
+    // Actively resolve a key set that has never been checked, so the pre-flight reports a real
+    // verdict instead of blocking START on a transient VALIDATING state. Single-flight and
+    // once-per-process, so this is safe to call on every pre-flight evaluation (the UI debounces
+    // this request as the allocation field is typed).
+    if (credentials?.status === 'VALIDATING') {
+      const resolved = await bybitCredentialProbe.resolve(true);
+      if (resolved) {
+        store.exchangeExec.setCredentialValidation('BYBIT', resolved);
+        credentials = store.exchangeExec.getExchangeCredentials().find(c => c.exchange === 'BYBIT');
+      }
+    }
     const pairData = store.dataEngine.getPairData(store.activeSymbol);
     const blockers: string[] = [];
 
@@ -336,24 +337,47 @@ tradingRouter.get('/autonomy/status', requireOwnerAuth, async (req: Request, res
     const proposedAllocation = Number(req.query.capital);
     const riskConfig = store.risk.getConfig();
     const availableCashUsd = Number(store.capital.availableCash || 0);
-    const maxByPctUsd = availableCashUsd * (riskConfig.maxCapitalAllocationPct / 100);
-    const maxAllocatableUsd = Math.max(0, Math.min(availableCashUsd - riskConfig.minAccountReserveUsd, maxByPctUsd));
-    const gridLevelsCount = 16;
 
-    let exchangeMinNotionalUsd = 0;
+    // Live exchange instrument spec: the real minimum notional and the exchange's own leverage
+    // ceiling. Nothing about the requirement is hardcoded any more.
+    let instrument: { maxLeverage: number; leverageStep: number; minNotional: number } | null = null;
     try {
-      const instrument = await store.exchangeExec.getInstrumentSpec(store.activeSymbol);
-      exchangeMinNotionalUsd = Number(instrument?.minNotional) || 0;
+      instrument = await store.exchangeExec.getInstrumentSpec(store.activeSymbol);
     } catch {
-      exchangeMinNotionalUsd = 0;
+      instrument = null;
     }
-    const minRequiredForGridUsd = exchangeMinNotionalUsd * gridLevelsCount;
+    const exchangeMinNotionalUsd = Number(instrument?.minNotional) || 0;
 
-    if (maxAllocatableUsd <= 0) {
-      blockers.push(`No allocatable capital: available cash ${availableCashUsd.toFixed(2)} USDT must exceed the ${riskConfig.minAccountReserveUsd} USDT account reserve, and at most ${riskConfig.maxCapitalAllocationPct}% of cash may be deployed.`);
+    // The leverage the engine will actually run at: the LOWER of the configured risk limit and
+    // the exchange limit, with an out-of-range request refused rather than silently clamped.
+    const requestedLeverage = req.query.leverage === undefined || req.query.leverage === '' ? null : Number(req.query.leverage);
+    const leverage = resolveLeverage(
+      requestedLeverage,
+      riskConfig.maxLeverage,
+      instrument?.maxLeverage ?? null,
+      instrument?.leverageStep ?? null
+    );
+
+    const requestedLevels = req.query.levels === undefined || req.query.levels === '' ? null : Number(req.query.levels);
+    const capitalPlan = buildCapitalPlan({
+      availableCashUsd,
+      minAccountReserveUsd: riskConfig.minAccountReserveUsd,
+      maxCapitalAllocationPct: riskConfig.maxCapitalAllocationPct,
+      minNotionalUsd: exchangeMinNotionalUsd,
+      leverage,
+      requestedLevels
+    });
+    const maxAllocatableUsd = capitalPlan.maxAllocatableUsd;
+    const gridLevelsCount = capitalPlan.effectiveLevels;
+    const minRequiredForGridUsd = capitalPlan.minRequiredForGridUsd;
+
+    if (leverage.rejected) {
+      blockers.push(`Leverage rejected: ${leverage.rejected}`);
     }
-    if (minRequiredForGridUsd > 0 && maxAllocatableUsd > 0 && maxAllocatableUsd < minRequiredForGridUsd) {
-      blockers.push(`Account funding is below the exchange minimum for a ${gridLevelsCount}-rung grid: ${maxAllocatableUsd.toFixed(2)} USDT allocatable vs ${minRequiredForGridUsd.toFixed(2)} USDT required (${exchangeMinNotionalUsd} USDT minimum notional per rung).`);
+    // The plan's own reason already names the exact shortfall and the exact required balance,
+    // so the operator is never left guessing what "not enough capital" means.
+    if (!capitalPlan.canTrade) {
+      blockers.push(capitalPlan.reason);
     }
     if (Number.isFinite(proposedAllocation) && proposedAllocation > 0) {
       if (proposedAllocation > maxAllocatableUsd + 1e-9) {
@@ -382,14 +406,34 @@ tradingRouter.get('/autonomy/status', requireOwnerAuth, async (req: Request, res
       tradingMode: store.tradingMode,
       startPreflightBlockers,
       canStart: startPreflightBlockers.length === 0,
+      leverage: capitalPlan.leverage.effective,
       capitalPlan: {
         availableCashUsd: Number(availableCashUsd.toFixed(4)),
         minAccountReserveUsd: riskConfig.minAccountReserveUsd,
         maxCapitalAllocationPct: riskConfig.maxCapitalAllocationPct,
         maxAllocatableUsd: Number(maxAllocatableUsd.toFixed(4)),
+        // Leverage used for sizing, plus the backend-enforced range the UI must respect.
+        leverage: capitalPlan.leverage.effective,
+        minLeverage: capitalPlan.leverage.min,
+        maxLeverage: capitalPlan.leverage.max,
+        leverageStep: capitalPlan.leverage.step,
+        leverageCeilingSource: capitalPlan.leverage.ceilingSource,
+        leverageRejected: capitalPlan.leverage.rejected,
+        // Grid geometry derived from the live exchange spec rather than a fixed 16 rungs.
+        minimumViableLevels: capitalPlan.minimumViableLevels,
+        requestedLevels: capitalPlan.requestedLevels,
+        effectiveLevels: capitalPlan.effectiveLevels,
+        maxAffordableLevels: capitalPlan.maxAffordableLevels,
+        perRungUsd: capitalPlan.perRungUsd,
         gridLevelsCount,
         exchangeMinNotionalUsd,
-        minRequiredForGridUsd: Number(minRequiredForGridUsd.toFixed(4))
+        minRequiredForGridUsd: Number(minRequiredForGridUsd.toFixed(4)),
+        // The exact account balance that would make this tradeable, and how far off it is.
+        requiredMinCashUsd:
+          capitalPlan.requiredMinCashUsd === null ? null : Number(capitalPlan.requiredMinCashUsd.toFixed(4)),
+        shortfallUsd: capitalPlan.shortfallUsd === null ? null : Number(capitalPlan.shortfallUsd.toFixed(4)),
+        canTrade: capitalPlan.canTrade,
+        reason: capitalPlan.reason
       },
       expectedNetEdge: expectedEdge,
       globalKillSwitchActive: store.GLOBAL_KILL_SWITCH_ACTIVE || store.killSwitch.getState().isActive,
@@ -409,14 +453,19 @@ tradingRouter.get('/autonomy/status', requireOwnerAuth, async (req: Request, res
 
 // 9. Autonomous Trading Lifecycle
 tradingRouter.post('/autonomous/start', requireOwnerAuth, async (req: Request, res: Response) => {
-  const { symbol, allocatedCapitalUsd } = req.body || {};
+  const { symbol, allocatedCapitalUsd, leverage } = req.body || {};
   try {
-    await globalTradingStore.startAutonomousTrading(String(symbol || globalTradingStore.activeSymbol), Number(allocatedCapitalUsd));
+    await globalTradingStore.startAutonomousTrading(
+      String(symbol || globalTradingStore.activeSymbol),
+      Number(allocatedCapitalUsd),
+      leverage === undefined || leverage === null ? undefined : Number(leverage)
+    );
     return res.json({
       success: true,
       status: 'RUNNING',
       activeSymbol: globalTradingStore.activeSymbol,
       allocatedCapitalUsd: globalTradingStore.autonomousAllocatedCapitalUsd,
+      leverage: globalTradingStore.autonomousLeverage,
       autonomyLevel: globalTradingStore.autonomyLevel,
       serverTime: new Date().toISOString()
     });
@@ -513,7 +562,8 @@ tradingRouter.post('/grid/configure', requireOwnerAuth, async (req: Request, res
     spacingType,
     totalAllocatedUsd,
     volatilityAdjustment,
-    trendProtection
+    trendProtection,
+    leverage: gridLeverage
   } = req.body;
 
   const liveData = store.dataEngine.getPairData(store.activeSymbol);
@@ -528,6 +578,34 @@ tradingRouter.post('/grid/configure', requireOwnerAuth, async (req: Request, res
   }
   if (!Number.isFinite(parsedAllocation) || parsedAllocation <= 0 || parsedAllocation > 10000000) {
     return res.status(400).json({ success: false, error: 'totalAllocatedUsd must be a positive finite amount not exceeding 10,000,000.' });
+  }
+
+  // When the caller supplies a leverage, it must sit inside the backend-enforced range and the
+  // exchange must accept it BEFORE any grid is sized against it. Refused, never clamped.
+  if (gridLeverage !== undefined && gridLeverage !== null && gridLeverage !== '') {
+    const riskConfig = store.risk.getConfig();
+    let gridInstrument: { maxLeverage: number; leverageStep: number } | null = null;
+    try {
+      gridInstrument = await store.exchangeExec.getInstrumentSpec(store.activeSymbol);
+    } catch {
+      gridInstrument = null;
+    }
+    const resolvedLeverage = resolveLeverage(
+      Number(gridLeverage),
+      riskConfig.maxLeverage,
+      gridInstrument?.maxLeverage ?? null,
+      gridInstrument?.leverageStep ?? null
+    );
+    if (resolvedLeverage.rejected) {
+      return res.status(400).json({ success: false, error: `Leverage rejected: ${resolvedLeverage.rejected}` });
+    }
+    const leverageReady = await store.exchangeExec.ensureFuturesLeverage(store.activeSymbol, resolvedLeverage.effective);
+    if (!leverageReady.success) {
+      return res.status(422).json({
+        success: false,
+        error: `FAIL-CLOSED: futures leverage could not be configured: ${leverageReady.error || 'exchange rejected leverage configuration'}`
+      });
+    }
   }
 
   await store.exchangeExec.cancelAllOrders(store.activeSymbol);

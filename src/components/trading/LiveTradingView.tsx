@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { AlertTriangle, Bot, Play, ShieldCheck, Square, Wallet } from 'lucide-react';
-import { MasterTradingState } from '../../types/trading';
+import { CapitalPlan, MasterTradingState } from '../../types/trading';
 import { fetchAutonomyStatus, startAutonomousTrading, stopAutonomousTrading } from '../../services/tradingService';
 import { deriveBotStatus, money, price, type Pair } from './autonomousBotLogic';
 
@@ -20,6 +20,15 @@ type LiveTradingViewProps = {
  * Entries, strategy, leverage, TP/SL, position management, exits,
  * reconciliation, accounting and optimization remain server-owned.
  */
+function PlanRow({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="flex items-center justify-between gap-4 border-b border-slate-800/60 py-1.5 last:border-0">
+      <span className="text-[11px] uppercase tracking-wider text-slate-500">{label}</span>
+      <span className="text-right font-mono text-xs font-bold text-slate-200">{value}</span>
+    </div>
+  );
+}
+
 function Metric({ label, value, tone }: { label: string; value: string; tone?: 'up' | 'down' }) {
   return (
     <div>
@@ -39,23 +48,43 @@ export const LiveTradingView = ({
   const [notice, setNotice] = useState('');
   const [confirmStart, setConfirmStart] = useState(false);
   const [preflight, setPreflight] = useState<any>(null);
+  // Operator selections, seeded once from the backend plan. `null` means "not yet chosen".
+  const [leverage, setLeverage] = useState<number | null>(null);
+  const [levels, setLevels] = useState<number | null>(null);
 
   const allocation = Number(allocatedCapital);
   const preflightBlocked = Boolean(preflight && !preflight.canStart);
 
   // Pre-flight: show exactly why START would be rejected before the operator commits. Re-evaluated
-  // as the pair or the proposed allocation changes, with a short debounce so typing does not spam.
+  // as the pair, proposed allocation, rung count or chosen leverage changes, with a short debounce
+  // so typing does not spam. The plan reflects the operator's selection via ?capital=&levels=&leverage=.
   useEffect(() => {
     let cancelled = false;
     const timer = setTimeout(() => {
-      fetchAutonomyStatus(Number.isFinite(allocation) && allocation > 0 ? allocation : undefined)
-        .then((res) => { if (!cancelled) setPreflight(res); })
+      fetchAutonomyStatus(
+        Number.isFinite(allocation) && allocation > 0 ? allocation : undefined,
+        levels ?? undefined,
+        leverage ?? undefined
+      )
+        .then((res) => {
+          if (cancelled) return;
+          setPreflight(res);
+          const plan = res?.capitalPlan;
+          if (leverage === null && typeof plan?.leverage === 'number') setLeverage(plan.leverage);
+          if (levels === null) {
+            const planLevels = plan?.requestedLevels ?? plan?.effectiveLevels;
+            if (typeof planLevels === 'number') setLevels(planLevels);
+          }
+        })
         .catch(() => { if (!cancelled) setPreflight(null); });
     }, 250);
     return () => { cancelled = true; clearTimeout(timer); };
-  }, [state.activeSymbol, allocation]);
+  }, [state.activeSymbol, allocation, levels, leverage]);
   const d = deriveBotStatus(state, { isLiveConnected, isOwnerAuthenticated, allocation, busy });
   const risk = state.futuresRisk;
+  const plan = preflight?.capitalPlan as CapitalPlan | undefined;
+  const leverageStep = plan && typeof plan.leverageStep === 'number' && plan.leverageStep > 0 ? plan.leverageStep : 1;
+  const leverageRangeValid = typeof plan?.minLeverage === 'number' && typeof plan?.maxLeverage === 'number';
   const position = d.position;
   const positionOpen = Boolean(position && Math.abs(position.baseAmount) > 0);
   const positionSide = positionOpen ? (position!.baseAmount > 0 ? 'LONG' : 'SHORT') : 'FLAT';
@@ -64,10 +93,11 @@ export const LiveTradingView = ({
     setBusy(true);
     setNotice('');
     try {
-      const result = await startAutonomousTrading(d.activeSymbol, allocation);
+      const result = await startAutonomousTrading(d.activeSymbol, allocation, leverage ?? undefined);
       if (!result.success) throw new Error(result.error || 'Autonomous futures trading could not start.');
       setConfirmStart(false);
-      setNotice(`Futures bot started for ${result.activeSymbol || d.activeSymbol} with ${money(result.allocatedCapitalUsd)} allocated capital.`);
+      const startedLeverage = result.leverage ?? leverage;
+      setNotice(`Futures bot started for ${result.activeSymbol || d.activeSymbol} with ${money(result.allocatedCapitalUsd)} allocated capital${startedLeverage ? ` at ${startedLeverage}x leverage` : ''}.`);
       await onRefresh();
     } catch (e: any) {
       setNotice(e?.message || 'Autonomous futures trading start failed.');
@@ -192,6 +222,48 @@ export const LiveTradingView = ({
           </div>
         </div>
 
+        {plan && leverageRangeValid && (
+          <div className="mt-4">
+            <label className="text-[10px] font-bold uppercase tracking-widest text-slate-500">3. Leverage (backend-enforced range)</label>
+            {plan.maxLeverage === plan.minLeverage ? (
+              <>
+                <div className="mt-2 w-full rounded-xl border border-slate-800 bg-slate-900/60 px-3 py-3 font-mono text-sm font-bold text-slate-400">
+                  {price(plan.minLeverage)}x — fixed
+                </div>
+                <div className="mt-1.5 text-[11px] leading-5 text-slate-500">
+                  Leverage is fixed at {price(plan.minLeverage)}x. The ceiling comes from the configured risk limit, so it cannot be raised here.
+                </div>
+              </>
+            ) : (
+              <>
+                <input
+                  type="number"
+                  min={plan.minLeverage}
+                  max={plan.maxLeverage}
+                  step={leverageStep}
+                  className="mt-2 w-full rounded-xl border border-slate-700 bg-slate-900 px-3 py-3 font-mono text-sm text-slate-100 outline-none focus:border-emerald-500/60 disabled:opacity-50"
+                  value={leverage ?? plan.leverage ?? plan.minLeverage}
+                  onChange={(e) => {
+                    setConfirmStart(false);
+                    const raw = Number(e.target.value);
+                    if (!Number.isFinite(raw)) { setLeverage(null); return; }
+                    const min = plan.minLeverage as number;
+                    const max = plan.maxLeverage as number;
+                    const clamped = Math.min(max, Math.max(min, raw));
+                    const snapped = min + Math.round((clamped - min) / leverageStep) * leverageStep;
+                    setLeverage(Number(snapped.toFixed(6)));
+                  }}
+                  disabled={busy || d.botStatus === 'RUNNING'}
+                />
+                <div className="mt-1.5 flex items-center justify-between gap-2 text-[11px] text-slate-500">
+                  <span>Allowed {price(plan.minLeverage)}x–{price(plan.maxLeverage)}x, step {leverageStep}</span>
+                  {plan.leverageCeilingSource && <span className="text-right">Ceiling: {plan.leverageCeilingSource}</span>}
+                </div>
+              </>
+            )}
+          </div>
+        )}
+
         <div className="mt-4 rounded-xl border border-slate-800 bg-slate-900/60 p-3 text-xs leading-5 text-slate-400">
           <div className="font-bold uppercase tracking-wider text-slate-500">Risk Guard</div>
           <div className="mt-1">
@@ -204,7 +276,7 @@ export const LiveTradingView = ({
 
         {preflight && (
           <div className={`mt-4 rounded-xl border p-3 text-xs leading-5 ${preflight.canStart ? 'border-emerald-800/60 bg-emerald-950/20 text-emerald-200' : 'border-amber-700/50 bg-amber-950/20 text-amber-200'}`}>
-            <div className="font-bold uppercase tracking-wider">3. Start Pre-Flight</div>
+            <div className="font-bold uppercase tracking-wider">4. Start Pre-Flight</div>
             {preflight.canStart ? (
               <div className="mt-1">All pre-START preconditions pass. Maximum allocatable: {money(preflight.capitalPlan?.maxAllocatableUsd)} USDT.</div>
             ) : (
@@ -212,11 +284,37 @@ export const LiveTradingView = ({
                 {(preflight.startPreflightBlockers || []).map((b: string, i: number) => <li key={i}>{b}</li>)}
               </ul>
             )}
-            {preflight.capitalPlan && (
-              <div className="mt-2 text-slate-400">
-                Reserve {money(preflight.capitalPlan.minAccountReserveUsd)} USDT · cap {preflight.capitalPlan.maxCapitalAllocationPct}% of {money(preflight.capitalPlan.availableCashUsd)} available ·
-                exchange minimum for a {preflight.capitalPlan.gridLevelsCount}-rung grid: {money(preflight.capitalPlan.minRequiredForGridUsd)} USDT
-                {preflight.capitalPlan.exchangeMinNotionalUsd ? ` (${preflight.capitalPlan.exchangeMinNotionalUsd} USDT per rung)` : ''}
+            {plan && (
+              <div className="mt-3">
+                <div className="text-[10px] font-bold uppercase tracking-widest text-slate-500">Capital Plan</div>
+                <div className="mt-1">
+                  <PlanRow label="Available cash" value={`${money(plan.availableCashUsd)} USDT`} />
+                  <PlanRow label="Allocatable (after reserve & cap)" value={`${money(plan.maxAllocatableUsd)} USDT`} />
+                  <PlanRow label="Rungs (effective / requested)" value={`${price(plan.effectiveLevels)} / ${price(plan.requestedLevels)}`} />
+                  <PlanRow label="Per-rung notional" value={`${money(plan.perRungUsd)} USDT`} />
+                  <PlanRow label="Exchange min notional" value={`${money(plan.exchangeMinNotionalUsd)} USDT`} />
+                  <PlanRow label="Leverage range" value={leverageRangeValid ? `${price(plan.minLeverage)}x – ${price(plan.maxLeverage)}x` : '—'} />
+                </div>
+                <div className="mt-1 text-[11px] text-slate-500">
+                  Reserve {money(plan.minAccountReserveUsd)} USDT · cap {price(plan.maxCapitalAllocationPct)}% · minimum grid {money(plan.minRequiredForGridUsd)} USDT
+                  {plan.maxAffordableLevels !== undefined ? ` · max affordable rungs ${price(plan.maxAffordableLevels)}` : ''}
+                </div>
+              </div>
+            )}
+            {plan && plan.canTrade === false && (
+              <div className="mt-3 rounded-lg border border-rose-500/40 bg-rose-950/30 p-3">
+                <div className="text-[10px] font-bold uppercase tracking-widest text-rose-300">Cash required to trade</div>
+                {typeof plan.requiredMinCashUsd === 'number' ? (
+                  <div className="mt-1 font-mono text-sm font-black text-rose-200">
+                    Requires {money(plan.requiredMinCashUsd)} USDT — {typeof plan.shortfallUsd === 'number' ? `${money(plan.shortfallUsd)} USDT short` : 'shortfall amount unavailable'}
+                  </div>
+                ) : (
+                  <div className="mt-1 text-xs leading-5 text-rose-200">
+                    The exact minimum cash requirement is unknown — the backend did not return <code>requiredMinCashUsd</code>.
+                    GigPilot will not guess an amount: this normally means live price or account-cash data was unavailable at evaluation time.
+                    Retry once market and account data are available.
+                  </div>
+                )}
               </div>
             )}
             {preflight.expectedNetEdge && (
