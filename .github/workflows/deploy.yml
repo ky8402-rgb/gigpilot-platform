@@ -6,6 +6,22 @@ on:
       - main
       - master
   workflow_dispatch:
+    inputs:
+      # Explicit, auditable escape hatch for the revoked-credential guard in
+      # scripts/check-revoked-credentials.cjs. Default false, so every push and every ordinary
+      # manual run keeps enforcing rotation. Set true ONLY to ship a fix while a known-compromised
+      # credential is still installed; the deploy log records the override loudly.
+      #
+      # It is a parameter rather than a hardcoded environment variable on purpose: a permanent
+      # override in the workflow would be a silent bypass, and nobody would ever notice it had
+      # become the normal path.
+      #
+      # NOTE: this does NOT rotate anything. The credential stays compromised until it is
+      # replaced at the exchange and in the authoritative secret store.
+      allow_revoked_credentials:
+        description: 'Deploy even though a revoked credential is still configured (loudly logged)'
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -267,6 +283,9 @@ jobs:
           EC2_USER: ${{ secrets.EC2_USER || 'ubuntu' }}
           DATABASE_URL: ${{ secrets.DATABASE_URL || secrets.NEON_DATABASE_URL || '' }}
           EC2_INSTANCE_ID: ${{ secrets.EC2_INSTANCE_ID }}
+          # '1' only when the operator explicitly asked for it on a manual run. On a push,
+          # `inputs` is empty, so this is always '0' and the guard keeps enforcing.
+          ALLOW_REVOKED_CREDENTIALS: ${{ inputs.allow_revoked_credentials == true && '1' || '0' }}
         run: |
           if [ -z "$EC2_HOST" ] && [ -f deployment/backend-host.txt ]; then
             EC2_HOST="$(tr -d '\r\n' < deployment/backend-host.txt)"
@@ -328,7 +347,7 @@ jobs:
            # "Notice: SSM had no …"), after which this line is deleted and secrets stop travelling
            # over the SSH command string entirely. It is kept deliberately loud rather than
            # silently removed, because removing it before SSM is populated would fail the deploy.
-           { printf 'export SECRETS_SOURCE=ssm\n'; printf 'export DATABASE_URL=%q\n' "$DATABASE_URL"; printf 'export GEMINI_API_KEY=%q\n' "${{ secrets.GEMINI_API_KEY }}"; printf 'export BYBIT_API_KEY=%q\n' "${{ secrets.BYBIT_API_KEY }}"; printf 'export BYBIT_API_SECRET=%q\n' "${{ secrets.BYBIT_API_SECRET }}"; printf 'export GITHUB_TOKEN=%q\n' "${{ secrets.GITHUB_TOKEN }}"; cat scripts/deploy-ec2.sh; } | ssh -o StrictHostKeyChecking=no -o ConnectTimeout=20 -i "$SSH_KEY_FILE" "$EC2_USER@$EC2_HOST" "bash -s"
+           { printf 'export SECRETS_SOURCE=ssm\n'; printf 'export ALLOW_REVOKED_CREDENTIALS=%q\n' "$ALLOW_REVOKED_CREDENTIALS"; printf 'export DATABASE_URL=%q\n' "$DATABASE_URL"; printf 'export GEMINI_API_KEY=%q\n' "${{ secrets.GEMINI_API_KEY }}"; printf 'export BYBIT_API_KEY=%q\n' "${{ secrets.BYBIT_API_KEY }}"; printf 'export BYBIT_API_SECRET=%q\n' "${{ secrets.BYBIT_API_SECRET }}"; printf 'export GITHUB_TOKEN=%q\n' "${{ secrets.GITHUB_TOKEN }}"; cat scripts/deploy-ec2.sh; } | ssh -o StrictHostKeyChecking=no -o ConnectTimeout=20 -i "$SSH_KEY_FILE" "$EC2_USER@$EC2_HOST" "bash -s"
             echo "✔ SSH deployment command finished successfully."
             # No DEPLOYMENT_DELIVERY marker: there is a single delivery path now, so recording
             # which one ran would only imply an alternative that no longer exists.
