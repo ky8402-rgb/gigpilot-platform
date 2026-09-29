@@ -401,3 +401,28 @@ QUANT__LEARNING__ENABLED=false
 Secrets are **never** read from YAML. The env prefix is
 `QUANT__EXCHANGE__API_KEY` / `QUANT__EXCHANGE__API_SECRET` (note the double
 underscore after `QUANT`, not a single one) — these are the only sources.
+
+---
+
+## Monorepo layout
+
+This engine now lives inside `gigpilot-platform` as the `quant-engine/` workspace member,
+alongside the Node service at the repository root.
+
+The two are **separate builds with separate CI**:
+
+| Path | Workflow | Runs on |
+|---|---|---|
+| `quant-engine/**` | `.github/workflows/quant-ci.yml` | ruff, mypy, pytest |
+| everything else | `.github/workflows/deploy.yml` | AWS Amplify + EC2 deploy |
+
+`deploy.yml` carries `paths-ignore: ['quant-engine/**']`, so editing this engine cannot
+rebuild the Node backend or redeploy the frontend. Note the standard `paths-ignore`
+semantics: the filter applies only when *every* changed file matches the pattern, so a
+commit that touches both trees will still run both workflows — which is correct, because
+such a commit genuinely affects both.
+
+Configuration is not shared. This engine reads its own `.env` through its own loader and
+its own `config/config.yaml`; nothing is shared with the Node service's environment. See
+`.env.example` for every key, and note that the Node service's `BYBIT_API_KEY` naming is
+**not** read here.
