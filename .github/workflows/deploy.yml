@@ -255,9 +255,12 @@ jobs:
           echo "✔ Production database secret is configured."
           echo "::add-mask::$DATABASE_URL"
 
+      # This is the ONLY authorised path that mutates the production host. It used to carry
+      # `continue-on-error: true`, which meant a failed deployment never failed the run — it just
+      # fell through to a second, different deployment mechanism. A failure here must stop the
+      # pipeline.
       - name: Deploy via SSH (Direct EC2 Execution)
         id: ec2_ssh
-        continue-on-error: true
         env:
           SSH_KEY: ${{ secrets.EC2_SSH_KEY || secrets.GIGPILOT_MUMBAI_EC2 }}
           EC2_HOST: ${{ secrets.EC2_HOST || '' }}
@@ -316,92 +319,27 @@ jobs:
           if [ "$SSH_CONNECTED" -eq 1 ]; then
             echo "Executing remote production deployment on EC2 via scripts/deploy-ec2.sh..."
             printf '%s\n' "$DATABASE_URL" | grep -Eq '^postgres(ql)?://' || { echo "ERROR: DATABASE_URL/NEON_DATABASE_URL GitHub secret is required for production deployment."; exit 1; }
-          { printf 'export DATABASE_URL=%q\n' "$DATABASE_URL"; printf 'export GEMINI_API_KEY=%q\n' "${{ secrets.GEMINI_API_KEY }}"; printf 'export BYBIT_API_KEY=%q\n' "${{ secrets.BYBIT_API_KEY }}"; printf 'export BYBIT_API_SECRET=%q\n' "${{ secrets.BYBIT_API_SECRET }}"; printf 'export GITHUB_TOKEN=%q\n' "${{ secrets.GITHUB_TOKEN }}"; cat scripts/deploy-ec2.sh; } | ssh -o StrictHostKeyChecking=no -o ConnectTimeout=20 -i "$SSH_KEY_FILE" "$EC2_USER@$EC2_HOST" "bash -s"
+           # SECRETS_SOURCE=ssm makes AWS SSM Parameter Store the source of truth. deploy-ec2.sh
+           # reads the parameters on the host with its own IAM instance role, so the values never
+           # need to appear here.
+           #
+           # TRANSITIONAL: the secret exports below are a one-release bridge only. They stay until
+           # a deploy log confirms SSM supplied every value ("✔ … from SSM" rather than
+           # "Notice: SSM had no …"), after which this line is deleted and secrets stop travelling
+           # over the SSH command string entirely. It is kept deliberately loud rather than
+           # silently removed, because removing it before SSM is populated would fail the deploy.
+           { printf 'export SECRETS_SOURCE=ssm\n'; printf 'export DATABASE_URL=%q\n' "$DATABASE_URL"; printf 'export GEMINI_API_KEY=%q\n' "${{ secrets.GEMINI_API_KEY }}"; printf 'export BYBIT_API_KEY=%q\n' "${{ secrets.BYBIT_API_KEY }}"; printf 'export BYBIT_API_SECRET=%q\n' "${{ secrets.BYBIT_API_SECRET }}"; printf 'export GITHUB_TOKEN=%q\n' "${{ secrets.GITHUB_TOKEN }}"; cat scripts/deploy-ec2.sh; } | ssh -o StrictHostKeyChecking=no -o ConnectTimeout=20 -i "$SSH_KEY_FILE" "$EC2_USER@$EC2_HOST" "bash -s"
             echo "✔ SSH deployment command finished successfully."
-            echo "DEPLOYMENT_DELIVERY=SSH" >> "$GITHUB_ENV"
+            # No DEPLOYMENT_DELIVERY marker: there is a single delivery path now, so recording
+            # which one ran would only imply an alternative that no longer exists.
             echo "delivery=SSH" >> "$GITHUB_OUTPUT"
-          else
-            echo "SSH direct connection could not be established. Falling back to signed push webhook."
-          fi
-
-      - name: Trigger EC2 Push-to-Deploy Webhook (Fallback)
-        if: steps.ec2_ssh.outcome == 'failure'
-        env:
-          EC2_HOST: ${{ secrets.EC2_HOST || '' }}
-          WEBHOOK_SECRET: ${{ secrets.GITHUB_WEBHOOK_SECRET || secrets.WEBHOOK_SECRET }}
-          COMMIT_MSG: ${{ github.event.head_commit.message }}
-        run: |
-          if [ -z "$EC2_HOST" ] && [ -f deployment/backend-host.txt ]; then
-            EC2_HOST="$(tr -d '\r\n' < deployment/backend-host.txt)"
-          fi
-          if [ -z "$EC2_HOST" ]; then
-            echo "ERROR: No production EC2 host configured."
-            exit 1
-          fi
-          WEBHOOK_URL="https://${EC2_HOST//./-}.sslip.io/api/github/webhook"
-          echo "Target Webhook: $WEBHOOK_URL"
-          
-          export PAYLOAD=$(node -e "
-            const p = {
-              ref: 'refs/heads/' + (process.env.GITHUB_REF_NAME || 'main'),
-              after: process.env.GITHUB_SHA || '',
-              head_commit: {
-                id: process.env.GITHUB_SHA || '',
-                message: process.env.COMMIT_MSG || 'Automated CI/CD deployment',
-                author: { name: process.env.GITHUB_ACTOR || 'github-actions' }
-              }
-            };
-            console.log(JSON.stringify(p));
-          ")
-          
-          SIG_HEADER=()
-          if [ -n "$WEBHOOK_SECRET" ]; then
-            SIG=$(node -e "
-              const crypto = require('crypto');
-              const hmac = crypto.createHmac('sha256', process.env.WEBHOOK_SECRET);
-              hmac.update(Buffer.from(process.env.PAYLOAD || '{}'));
-              console.log('sha256=' + hmac.digest('hex'));
-            ")
-            SIG_HEADER=(-H "X-Hub-Signature-256: $SIG")
-          fi
-          
-          echo "Dispatching deployment webhook..."
-          HTTP_CODE=$(curl -k -sS -o /tmp/resp.json -w "%{http_code}" \
-            -X POST "$WEBHOOK_URL" \
-            -H "Content-Type: application/json" \
-            -H "X-GitHub-Event: push" \
-            -H "X-GitHub-Delivery: gha-${GITHUB_RUN_ID}" \
-            "${SIG_HEADER[@]}" \
-            -d "$PAYLOAD" \
-            --max-time 15 || echo "000")
-            
-          echo "HTTPS Response: $HTTP_CODE"
-          cat /tmp/resp.json 2>/dev/null || true
-          
-          if [ "$HTTP_CODE" != "200" ] && [ "$HTTP_CODE" != "202" ]; then
-            echo "Trying HTTP port 3000..."
-            HTTP_CODE=$(curl -sS -o /tmp/resp.json -w "%{http_code}" \
-              -X POST "http://${EC2_HOST}:3000/api/github/webhook" \
-              -H "Content-Type: application/json" \
-              -H "X-GitHub-Event: push" \
-              -H "X-GitHub-Delivery: gha-${GITHUB_RUN_ID}" \
-              "${SIG_HEADER[@]}" \
-              -d "$PAYLOAD" \
-              --max-time 15 || echo "000")
-            echo "HTTP 3000 Response: $HTTP_CODE"
-            cat /tmp/resp.json 2>/dev/null || true
-          fi
-
-          if [ "$HTTP_CODE" = "200" ] || [ "$HTTP_CODE" = "202" ]; then
-            echo "✔ EC2 backend webhook delivery succeeded (HTTP $HTTP_CODE)."
-            echo "DEPLOYMENT_DELIVERY=WEBHOOK" >> "$GITHUB_ENV"
-          else
-            echo "EC2 webhook delivery failed with HTTP $HTTP_CODE."
-            if [ "${DEPLOYMENT_DELIVERY:-NONE}" = "NONE" ]; then
-              echo "ERROR: Neither SSH nor webhook delivered this commit to EC2."
-              exit 1
-            fi
-          fi
+           else
+             echo "ERROR: no SSH path to the production host could be established."
+             echo "There is deliberately no fallback. The webhook deploy path was removed because two"
+             echo "concurrent mechanisms race on the same checkout, build directory and PM2 process,"
+             echo "which can leave the host running a half-built release."
+             exit 1
+           fi
 
       - name: Verify EC2 Backend Health
         env:

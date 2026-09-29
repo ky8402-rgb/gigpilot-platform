@@ -1,24 +1,41 @@
 #!/usr/bin/env bash
-set -e
+set -euo pipefail
 
 echo "=========================================================="
 echo "🛡️ GigPilot EC2 Automated Production Deployment"
 echo "=========================================================="
 
 APP_DIR="/home/ubuntu/gigpilot"
+ENV_FILE="$APP_DIR/.env"
+WRITER="$APP_DIR/scripts/write-env-secret.cjs"
+
+# Where credentials come from. `ssm` is the authoritative source: the values are read on THIS
+# host with its own IAM instance role, so no secret is ever carried across an SSH command
+# string, a shell argument list, or the GitHub Actions log.
+#
+#   SECRETS_SOURCE=ssm  (default) read from AWS SSM Parameter Store
+#   SECRETS_SOURCE=env            use values already present in the environment (legacy, and a
+#                                 deliberate opt-in rather than a silent fallback)
+SECRETS_SOURCE="${SECRETS_SOURCE:-ssm}"
+SSM_PREFIX="${SSM_PREFIX:-/gigpilot/prod}"
+SSM_REGION="${AWS_REGION:-ap-south-1}"
+
+# Bybit keys are IP-restricted. Verify the address the exchange will actually see, so a key
+# bound to the wrong address is caught here rather than at the first order.
+EXPECTED_OUTBOUND_IP="${EXPECTED_OUTBOUND_IP:-35.154.110.156}"
 
 # Check for GitHub token for authenticated git access
 REPO_URL="https://github.com/ky8402-rgb/gigpilot-platform.git"
-if [ -n "$GITHUB_TOKEN" ]; then
+if [ -n "${GITHUB_TOKEN:-}" ]; then
   REPO_URL="https://x-access-token:${GITHUB_TOKEN}@github.com/ky8402-rgb/gigpilot-platform.git"
-elif [ -n "$GH_TOKEN" ]; then
+elif [ -n "${GH_TOKEN:-}" ]; then
   REPO_URL="https://x-access-token:${GH_TOKEN}@github.com/ky8402-rgb/gigpilot-platform.git"
 fi
 
 if [ -f "/home/ubuntu/.env" ]; then
   cp -f /home/ubuntu/.env /tmp/gigpilot.env.bak 2>/dev/null || true
-elif [ -f "$APP_DIR/.env" ]; then
-  cp -f "$APP_DIR/.env" /tmp/gigpilot.env.bak 2>/dev/null || true
+elif [ -f "$ENV_FILE" ]; then
+  cp -f "$ENV_FILE" /tmp/gigpilot.env.bak 2>/dev/null || true
 fi
 
 if [ ! -d "$APP_DIR" ] || [ ! -f "$APP_DIR/package.json" ]; then
@@ -51,60 +68,116 @@ echo "Deployed commit recorded: $DEPLOYED_COMMIT"
 
 # Restore .env
 if [ -f "/tmp/gigpilot.env.bak" ]; then
-  cp -f /tmp/gigpilot.env.bak "$APP_DIR/.env" 2>/dev/null || true
+  cp -f /tmp/gigpilot.env.bak "$ENV_FILE" 2>/dev/null || true
 fi
 
-# Configure BYBIT_API_KEY & BYBIT_API_SECRET if supplied
-if [ -n "${BYBIT_API_KEY:-}" ]; then
-  umask 077
-  touch "$APP_DIR/.env"
-  if grep -q '^BYBIT_API_KEY=' "$APP_DIR/.env"; then
-    sed -i "s|^BYBIT_API_KEY=.*|BYBIT_API_KEY=\"$BYBIT_API_KEY\"|" "$APP_DIR/.env"
-  else
-    printf '%s\n' "BYBIT_API_KEY=\"$BYBIT_API_KEY\"" >> "$APP_DIR/.env"
-  fi
-  echo "✔ BYBIT_API_KEY updated in $APP_DIR/.env"
+# ---------------------------------------------------------------------------
+# Credentials
+#
+# Every write goes through scripts/write-env-secret.cjs. The previous implementation used
+#   sed -i "s|^BYBIT_API_SECRET=.*|...|" .env
+# which is a shell-injection bug keyed on the secret's own contents: `|` broke the expression
+# ("unterminated `s' command" — the production failure that prompted this), `&` silently
+# expanded to the whole matched line and wrote the OLD secret back into the new value, and a
+# backslash or quote mangled the result. None of that can happen now: the value is opaque,
+# never parsed by a shell or the regex engine.
+#
+# A failure here aborts before `npm install`/`build` and before PM2 is touched, so the host
+# keeps serving the previous release instead of being left half-updated.
+# ---------------------------------------------------------------------------
+umask 077
+touch "$ENV_FILE"
+chmod 600 "$ENV_FILE" 2>/dev/null || true
+
+if [ ! -f "$WRITER" ]; then
+  echo "ERROR: $WRITER is missing — cannot write credentials safely. Refusing to deploy."
+  exit 1
 fi
 
-if [ -n "${BYBIT_API_SECRET:-}" ]; then
-  umask 077
-  touch "$APP_DIR/.env"
-  if grep -q '^BYBIT_API_SECRET=' "$APP_DIR/.env"; then
-    sed -i "s|^BYBIT_API_SECRET=.*|BYBIT_API_SECRET=\"$BYBIT_API_SECRET\"|" "$APP_DIR/.env"
-  else
-    printf '%s\n' "BYBIT_API_SECRET=\"$BYBIT_API_SECRET\"" >> "$APP_DIR/.env"
+set_secret() {
+  # $1 = parameter/env name, $2 = value
+  printf '%s' "$2" | node "$WRITER" "$1" --file "$ENV_FILE"
+}
+
+fetch_ssm_secret() {
+  # Echoes the parameter value, or nothing when unavailable. Never fails the shell.
+  local name="$1" value=""
+  if command -v aws >/dev/null 2>&1; then
+    value="$(aws ssm get-parameter \
+      --name "${SSM_PREFIX}/${name}" \
+      --with-decryption \
+      --region "$SSM_REGION" \
+      --query 'Parameter.Value' \
+      --output text 2>/dev/null || true)"
+    if [ "$value" = "None" ]; then value=""; fi
   fi
-  echo "✔ BYBIT_API_SECRET updated in $APP_DIR/.env"
+  printf '%s' "$value"
+}
+
+resolve_secret() {
+  # $1 = name. Echoes the resolved value, preferring the authoritative source.
+  local name="$1"
+  if [ "$SECRETS_SOURCE" = "env" ]; then
+    printf '%s' "$(printenv "$name" 2>/dev/null || true)"
+  else
+    fetch_ssm_secret "$name"
+  fi
+}
+
+echo "Resolving credentials (source: $SECRETS_SOURCE${SECRETS_SOURCE:+", prefix: $SSM_PREFIX" })..."
+
+# DATABASE_URL is mandatory: live persistence without it is not a supported state.
+DATABASE_URL_RESOLVED="$(resolve_secret DATABASE_URL)"
+if [ -z "$DATABASE_URL_RESOLVED" ] && [ -n "${DATABASE_URL:-}" ] && [ "$SECRETS_SOURCE" = "ssm" ]; then
+  echo "  Notice: SSM had no DATABASE_URL; using the value supplied by the pipeline."
+  DATABASE_URL_RESOLVED="$DATABASE_URL"
+fi
+case "$DATABASE_URL_RESOLVED" in
+  postgres://*|postgresql://*) ;;
+  *) echo "ERROR: DATABASE_URL is not a PostgreSQL URL (source: $SECRETS_SOURCE)."
+     echo "       Create it with: aws ssm put-parameter --name ${SSM_PREFIX}/DATABASE_URL --type SecureString --value 'postgres://...'"
+     exit 1 ;;
+esac
+set_secret DATABASE_URL "$DATABASE_URL_RESOLVED"
+
+# Exchange and research keys are best-effort: the service boots without them and reports the
+# gap itself, so a missing one is a loud warning rather than a failed deploy.
+for NAME in BYBIT_API_KEY BYBIT_API_SECRET GEMINI_API_KEY; do
+  VALUE="$(resolve_secret "$NAME")"
+  if [ -z "$VALUE" ]; then
+    if [ "$SECRETS_SOURCE" = "ssm" ] && [ -n "$(printenv "$NAME" 2>/dev/null || true)" ]; then
+      VALUE="$(printenv "$NAME")"
+      echo "  Notice: SSM had no $NAME; using the value supplied by the pipeline."
+    fi
+  fi
+  if [ -z "$VALUE" ]; then
+    echo "  WARNING: $NAME is not available. Expected it at SSM ${SSM_PREFIX}/${NAME}."
+    echo "           Create it with: aws ssm put-parameter --name ${SSM_PREFIX}/${NAME} --type SecureString --value '<value>'"
+  else
+    set_secret "$NAME" "$VALUE"
+  fi
+  unset VALUE
+done
+unset DATABASE_URL_RESOLVED
+
+# Refuse to run with a credential that is known to be revoked or compromised. The list holds
+# SHA-256 fingerprints, never the secrets themselves, so it is safe to keep in the repository.
+if [ -f "$APP_DIR/security/revoked-credential-fingerprints.txt" ]; then
+  echo "Checking credentials against the revoked-fingerprint list..."
+  node "$APP_DIR/scripts/check-revoked-credentials.cjs" --env "$ENV_FILE" --list "$APP_DIR/security/revoked-credential-fingerprints.txt"
 fi
 
-# Configure GEMINI_API_KEY if supplied
-if [ -n "${GEMINI_API_KEY:-}" ]; then
-  umask 077
-  touch "$APP_DIR/.env"
-  if grep -q '^GEMINI_API_KEY=' "$APP_DIR/.env"; then
-    sed -i "s|^GEMINI_API_KEY=.*|GEMINI_API_KEY=\"$GEMINI_API_KEY\"|" "$APP_DIR/.env"
+# IP binding: warn (do not fail) if the address Bybit sees is not the allowlisted one. Failing
+# hard here could block a legitimate deploy for a NAT/egress change that the operator has
+# already allowlisted, but silence would hide a key that cannot authenticate at all.
+OBSERVED_IP="$(curl -sS -m 8 https://api.ipify.org 2>/dev/null || true)"
+if [ -n "$OBSERVED_IP" ]; then
+  if [ "$OBSERVED_IP" = "$EXPECTED_OUTBOUND_IP" ]; then
+    echo "✔ Outbound IP matches the Bybit allowlist address ($OBSERVED_IP)."
   else
-    printf '%s\n' "GEMINI_API_KEY=\"$GEMINI_API_KEY\"" >> "$APP_DIR/.env"
+    echo "  WARNING: outbound IP $OBSERVED_IP differs from the expected bound address $EXPECTED_OUTBOUND_IP."
+    echo "           Authenticated Bybit calls will be rejected unless $OBSERVED_IP is allowlisted."
   fi
-  echo "✔ GEMINI_API_KEY updated in $APP_DIR/.env"
-fi
-
-# Require a production database connection for live persistence. The value is supplied
-# by the deployment workflow from GitHub Secrets and is never committed to source.
-if [ -n "${DATABASE_URL:-}" ]; then
-  case "$DATABASE_URL" in
-    postgres://*|postgresql://*) ;;
-    *) echo "ERROR: DATABASE_URL is not a PostgreSQL URL."; exit 1 ;;
-  esac
-  umask 077
-  touch "$APP_DIR/.env"
-  if grep -q '^DATABASE_URL=' "$APP_DIR/.env"; then
-    sed -i "s|^DATABASE_URL=.*|DATABASE_URL=\"$DATABASE_URL\"" "$APP_DIR/.env"
-  else
-    printf '%s\n' "DATABASE_URL=\"$DATABASE_URL\"" >> "$APP_DIR/.env"
-  fi
-elif ! grep -qE '^DATABASE_URL=(postgres://|postgresql://)' "$APP_DIR/.env" 2>/dev/null; then
-  echo "ERROR: No production DATABASE_URL is configured. Refusing live deployment."; exit 1
 fi
 
 echo "Installing production build dependencies..."
@@ -126,14 +199,37 @@ fi
 
 pm2 save
 
-echo "Waiting for process to initialize on port 3000..."
-sleep 3
+echo "Waiting for the backend to become healthy on port 3000..."
+HEALTH_OK=0
+for _ in $(seq 1 12); do
+  if curl -sS -m 5 http://127.0.0.1:3000/api/health >/dev/null 2>&1; then
+    HEALTH_OK=1
+    break
+  fi
+  sleep 5
+done
 
-# Local health verification
-if curl -sS -m 5 http://127.0.0.1:3000/api/health >/dev/null 2>&1; then
-  echo "✔ Local health check passed (http://127.0.0.1:3000/api/health: OK)"
+# This used to print "Notice: Service starting up or warming cache." and then reload nginx and
+# declare success — so a release that never came up reported a green deployment. A failed
+# health check must fail the deployment.
+if [ "$HEALTH_OK" -ne 1 ]; then
+  echo "ERROR: backend did not become healthy after deployment. Refusing to declare success."
+  pm2 logs gigpilot --lines 40 --nostream 2>/dev/null || true
+  exit 1
+fi
+echo "✔ Local health check passed (http://127.0.0.1:3000/api/health)"
+
+# Prove the process that answers is the revision we just checked out, not a stale one.
+LIVE_COMMIT="$(curl -sS -m 5 http://127.0.0.1:3000/api/health 2>/dev/null \
+  | node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>{try{process.stdout.write(String(JSON.parse(s).deployedCommit||""))}catch{process.stdout.write("")}})' \
+  || true)"
+if [ -z "$LIVE_COMMIT" ]; then
+  echo "  WARNING: the health payload did not report a deployedCommit, so the running revision could not be confirmed."
+elif [ "$LIVE_COMMIT" != "$DEPLOYED_COMMIT" ]; then
+  echo "ERROR: live process reports $LIVE_COMMIT but $DEPLOYED_COMMIT was checked out. Refusing to declare success."
+  exit 1
 else
-  echo "Notice: Service starting up or warming cache."
+  echo "✔ Live process reports the deployed revision ($LIVE_COMMIT)."
 fi
 
 echo "Reloading Nginx reverse proxy..."

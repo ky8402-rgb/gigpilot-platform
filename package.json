@@ -22,7 +22,7 @@
     "update-cloudflare-dns": "tsx scripts/update-cloudflare-dns.ts",
     "push": "bash ./scripts/push-and-deploy.sh",
     "lint": "tsc --noEmit",
-    "test": "tsc --noEmit && npm run test:profit && npm run test:cost && npm run test:state && npm run test:research && npm run test:strategy && npm run test:security && npm run test:capital",
+    "test": "tsc --noEmit && npm run test:profit && npm run test:cost && npm run test:state && npm run test:research && npm run test:strategy && npm run test:security && npm run test:capital && npm run test:env",
     "test:profit": "node scripts/test-profit-gate.mjs",
     "test:cost": "node scripts/test-cost-model.mjs",
     "test:state": "node scripts/test-state-durability.mjs",
@@ -30,6 +30,7 @@
     "test:strategy": "node scripts/test-strategy-builder-safety.mjs",
     "test:security": "tsx scripts/test-auth-throttle.ts",
     "test:capital": "tsx scripts/test-capital-plan.ts",
+    "test:env": "node scripts/test-env-writer.mjs",
     "test:loop": "tsx scripts/test-autonomous-loop.ts",
     "postinstall": "node scripts/postinstall.js"
   },
