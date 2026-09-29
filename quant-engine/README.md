@@ -426,3 +426,5 @@ Configuration is not shared. This engine reads its own `.env` through its own lo
 its own `config/config.yaml`; nothing is shared with the Node service's environment. See
 `.env.example` for every key, and note that the Node service's `BYBIT_API_KEY` naming is
 **not** read here.
+
+<!-- archive check 131918 -->
