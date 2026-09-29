@@ -3,18 +3,8 @@ name: CI
 on:
   pull_request:
     branches: [main, master]
-    # The Python engine has its own CI (.github/workflows/quant-ci.yml). Without this filter a
-    # change under quant-engine/ would run a Node typecheck and production build that cannot be
-    # affected by it — measured: it fired on the engine-only commit c5d2bcf.
-    paths-ignore:
-      - 'quant-engine/**'
   push:
     branches: [main, master]
-    # Same filter as the pull_request trigger above. Standard paths-ignore semantics apply: the
-    # filter skips the run only when EVERY changed file matches, so a commit touching both trees
-    # still runs both workflows — which is correct, because it genuinely affects both.
-    paths-ignore:
-      - 'quant-engine/**'
 
 concurrency:
   group: ci-${{ github.ref }}
