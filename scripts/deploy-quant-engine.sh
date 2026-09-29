@@ -104,6 +104,27 @@ if [ ! -x "$VENV_DIR/bin/python" ]; then
     fi
   fi
 fi
+# Ensure pip is present. Checked separately from the interpreter's existence because an
+# earlier attempt on this host produced a venv that had python but no pip — and a
+# `[ -x .venv/bin/python ]` guard would then skip recreating it forever, leaving every
+# subsequent deploy failing with the same "No module named pip".
+if ! "$VENV_DIR/bin/python" -m pip --version >/dev/null 2>&1; then
+  echo "  bootstrapping pip into the virtual environment..."
+  "$VENV_DIR/bin/python" -m ensurepip --upgrade >/dev/null 2>&1 || true
+  if ! "$VENV_DIR/bin/python" -m pip --version >/dev/null 2>&1; then
+    # python3-venv is installed by now, so rebuilding the environment will produce pip.
+    echo "  rebuild required: recreating the virtual environment"
+    rm -rf "$VENV_DIR"
+    "$PYTHON_BIN" -m venv "$VENV_DIR"
+    "$VENV_DIR/bin/python" -m ensurepip --upgrade >/dev/null 2>&1 || true
+  fi
+fi
+if ! "$VENV_DIR/bin/python" -m pip --version >/dev/null 2>&1; then
+  echo "ERROR: pip is unavailable inside $VENV_DIR, so dependencies cannot be installed in isolation."
+  echo "       Refusing to fall back to the system interpreter."
+  exit 1
+fi
+
 "$VENV_DIR/bin/python" -m pip install --quiet --upgrade pip
 echo "Installing engine dependencies..."
 "$VENV_DIR/bin/python" -m pip install --quiet -r "$ENGINE_DIR/requirements.txt"
