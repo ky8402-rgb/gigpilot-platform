@@ -138,7 +138,17 @@ class OwnerAuthManager {
   }
 
   public getStatus(isAuthenticated: boolean) {
-    return { isAuthenticated, isConfigured: !!(this.config.passwordHash && this.config.totpEnabled), ownerEmail: this.config.ownerEmail, totpEnabled: this.config.totpEnabled, hasPassword: !!this.config.passwordHash };
+    // The owner's email is disclosed only to an authenticated session. Every client already carries
+    // a local default and the field stays editable (OwnerLoginScreen.tsx:38, OwnerAuthModal.tsx), so
+    // withholding it here cannot lock the owner out — it only stops anonymous callers from being
+    // handed the owner's address along with the account's security posture.
+    const status = {
+      isAuthenticated,
+      isConfigured: !!(this.config.passwordHash && this.config.totpEnabled),
+      totpEnabled: this.config.totpEnabled,
+      hasPassword: !!this.config.passwordHash,
+    };
+    return isAuthenticated ? { ...status, ownerEmail: this.config.ownerEmail } : status;
   }
 
   public isConfigured(): boolean {

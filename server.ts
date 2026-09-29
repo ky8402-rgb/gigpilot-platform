@@ -34,16 +34,26 @@ function isAllowedOrigin(origin: string | undefined): boolean {
     const host = url.hostname;
     // Allow local development ports
     if (host === 'localhost' || host === '127.0.0.1' || host === '::1') return true;
+
+    // Explicit allowlist always applies, and is the ONLY thing that applies in strict mode.
+    const customList = (process.env.CORS_ALLOWED_ORIGINS || '').split(',').map(s => s.trim().toLowerCase()).filter(Boolean);
+    if (customList.includes(origin.toLowerCase()) || customList.includes(host.toLowerCase())) return true;
+
+    // CORS_STRICT=true confines CORS to CORS_ALLOWED_ORIGINS above. Off by default, because the
+    // suffix domains below are shared: any AWS customer can create an Amplify app, any GCP project
+    // can run on *.run.app, and sslip.io hands out subdomains on request, so "trusted origin" is
+    // effectively "anyone with a cloud account". Severity stays bounded because the owner token is
+    // header-only (never sent automatically by a browser), so a foreign origin still cannot make an
+    // authenticated call without already holding the token. Turn strict mode on once the real
+    // production origins are known and listed.
+    if (process.env.CORS_STRICT === 'true') return false;
+
     // Allow AWS Amplify production and branch domains
     if (host.endsWith('.amplifyapp.com')) return true;
     // Allow Google Cloud Run and Google preview domains
     if (host.endsWith('.run.app') || host.endsWith('.googleusercontent.com')) return true;
     // Allow dynamic EC2 IP DNS domains
     if (host.endsWith('.sslip.io')) return true;
-
-    // Check optional custom environment list
-    const customList = (process.env.CORS_ALLOWED_ORIGINS || '').split(',').map(s => s.trim().toLowerCase());
-    if (customList.includes(origin.toLowerCase()) || customList.includes(host.toLowerCase())) return true;
 
     return false;
   } catch {
@@ -294,14 +304,19 @@ async function startServer() {
     });
   });
 
-  // Global API error handler ensuring JSON is always returned
-  app.use("/api", (err: any, req: any, res: any, next: any) => {
-    console.error(`[API Error] ${req.method} ${req.url}:`, err);
-    res.status(err.status || 500).json({
-      success: false,
-      error: err.message || "Internal Server Error"
+  // Global API error handler ensuring JSON is always returned.
+  // tradingRouter is mounted on three prefixes ("/api/trading", "/api/auth", "/auth"), so scoping
+  // this to "/api" alone left any error raised on the "/auth" aliases to fall through to Express's
+  // default HTML error page. Register it on every mount prefix so the JSON contract holds everywhere.
+  for (const prefix of ["/api", "/auth"]) {
+    app.use(prefix, (err: any, req: any, res: any, next: any) => {
+      console.error(`[API Error] ${req.method} ${req.url}:`, err);
+      res.status(err.status || 500).json({
+        success: false,
+        error: err.message || "Internal Server Error"
+      });
     });
-  });
+  }
 
   if (!isProduction) {
     try {

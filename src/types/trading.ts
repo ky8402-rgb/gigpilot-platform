@@ -675,7 +675,8 @@ export type BybitAccountState = ExchangeAccountState;
 export interface OwnerAuthStatus {
   isAuthenticated: boolean;
   isConfigured: boolean;
-  ownerEmail: string;
+  /** Only present on an authenticated response; the server withholds it from anonymous callers. */
+  ownerEmail?: string;
   totpEnabled: boolean;
   hasPassword: boolean;
   GLOBAL_KILL_SWITCH_ACTIVE?: boolean;

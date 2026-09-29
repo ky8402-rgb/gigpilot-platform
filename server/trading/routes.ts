@@ -2,6 +2,7 @@ import { Router, Request, Response } from 'express';
 import { globalTradingStore } from './store.js';
 import { ownerAuth, requireOwnerAuth, isOwner, extractToken } from './ownerAuth.js';
 import { bybitAdapter } from './bybitAdapter.js';
+import { authThrottle } from './authThrottle.js';
 import { EngineId, SupportedExchange } from './types.js';
 
 export const tradingRouter = Router();
@@ -874,7 +875,7 @@ tradingRouter.all(['/auth/status', '/auth/status/', '/status', '/status/'], (req
   });
 });
 
-tradingRouter.all(['/auth/setup-init', '/auth/setup-init/', '/setup-init', '/setup-init/'], async (req: Request, res: Response) => {
+tradingRouter.all(['/auth/setup-init', '/auth/setup-init/', '/setup-init', '/setup-init/'], authThrottle, async (req: Request, res: Response) => {
   res.setHeader('Content-Type', 'application/json; charset=utf-8');
   if (req.method === 'OPTIONS') return res.sendStatus(200);
   if (req.method !== 'POST') {
@@ -894,7 +895,7 @@ tradingRouter.all(['/auth/setup-init', '/auth/setup-init/', '/setup-init', '/set
   }
 });
 
-tradingRouter.all(['/auth/setup-complete', '/auth/setup-complete/', '/setup-complete', '/setup-complete/'], (req: Request, res: Response) => {
+tradingRouter.all(['/auth/setup-complete', '/auth/setup-complete/', '/setup-complete', '/setup-complete/'], authThrottle, (req: Request, res: Response) => {
   res.setHeader('Content-Type', 'application/json; charset=utf-8');
   if (req.method === 'OPTIONS') return res.sendStatus(200);
   if (req.method !== 'POST') {
@@ -913,7 +914,7 @@ tradingRouter.all(['/auth/setup-complete', '/auth/setup-complete/', '/setup-comp
   }
 });
 
-tradingRouter.all(['/auth/login', '/auth/login/', '/login', '/login/'], (req: Request, res: Response) => {
+tradingRouter.all(['/auth/login', '/auth/login/', '/login', '/login/'], authThrottle, (req: Request, res: Response) => {
   res.setHeader('Content-Type', 'application/json; charset=utf-8');
   if (req.method === 'OPTIONS') return res.sendStatus(200);
   if (req.method !== 'POST') {
