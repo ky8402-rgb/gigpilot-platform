@@ -1,0 +1,47 @@
+# Install to /etc/systemd/system/quant.service
+#   sudo systemctl daemon-reload
+#   sudo systemctl enable --now quant
+#
+# Hardening: runs unprivileged, ProtectSystem=strict confines writes to the
+# project data dir, and credentials come from an EnvironmentFile with 0600 perms.
+[Unit]
+Description=Futures Quant Trading Platform
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=quant
+Group=quant
+
+WorkingDirectory=/opt/quant
+EnvironmentFile=/etc/quant/quant.env
+Environment=PYTHONUNBUFFERED=1
+
+ExecStart=/usr/bin/python3 -m app.main --host 0.0.0.0 --port 8080
+Restart=always
+RestartSec=5
+StartLimitIntervalSec=0
+
+StandardOutput=append:/var/log/quant/stdout.log
+StandardError=append:/var/log/quant/stderr.log
+
+# --- hardening ---
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/opt/quant/data /var/log/quant
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+RestrictNamespaces=true
+LockPersonality=true
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+SystemCallFilter=@system-service
+CapabilityBoundingSet=
+AmbientCapabilities=
+
+[Install]
+WantedBy=multi-user.target

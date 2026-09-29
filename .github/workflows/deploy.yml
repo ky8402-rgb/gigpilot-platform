@@ -5,6 +5,11 @@ on:
     branches:
       - main
       - master
+    # The Python engine is a separate build with its own CI (.github/workflows/quant-ci.yml).
+    # Without this, editing a file under quant-engine/ would rebuild the Node backend and
+    # redeploy the frontend for a change that cannot affect either.
+    paths-ignore:
+      - 'quant-engine/**'
   workflow_dispatch:
     inputs:
       # Explicit, auditable escape hatch for the revoked-credential guard in

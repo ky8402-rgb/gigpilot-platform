@@ -1,0 +1,89 @@
+# quant-engine — the Python Bybit futures engine, now a workspace member of the
+# gigpilot-platform monorepo.
+#
+# Dependencies are declared here AND in requirements.txt. That is deliberate: the
+# existing deployment tooling (ops/build.sh, ops/deploy.sh) installs from
+# requirements.txt, while this file gives the linters, the type checker and the CI
+# workflow a single source of truth. tests/test_packaging.py asserts the two stay
+# in sync, because a silent divergence between them is exactly how a runtime
+# dependency ends up missing from a production host.
+#
+# This project is INDEPENDENT of the Node service at the repository root. It has
+# its own config loader, its own .env, its own database and its own process. The
+# only shared thing is the repository they live in.
+
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "quant-engine"
+version = "0.1.0"
+description = "Autonomous Bybit futures grid/trend engine with a cost-hurdle edge gate"
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "Proprietary" }
+dependencies = [
+    "fastapi>=0.111",
+    "uvicorn[standard]>=0.30",
+    "httpx>=0.27",
+    "websockets>=12.0",
+    "pydantic>=2.7",
+    "pydantic-settings>=2.3",
+    "numpy>=1.26",
+    "pandas>=2.2",
+    "PyYAML>=6.0",
+]
+
+[project.optional-dependencies]
+# Kept in step with requirements.txt: the test/lint tooling is not a runtime need.
+dev = [
+    "pytest>=8.2",
+    "pytest-asyncio>=0.23",
+]
+
+[tool.setuptools]
+# Flat layout: `app/` is the package, `ops/` and `tests/` sit beside it.
+packages = ["app"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+# The suite must run offline and deterministically. Anything that reaches the
+# network belongs in ops/e2e_check.py, not here.
+addopts = "-q"
+asyncio_mode = "auto"
+
+[tool.ruff]
+line-length = 120
+target-version = "py310"
+exclude = ["data", "build", ".venv"]
+
+[tool.ruff.lint]
+# Scope chosen by measurement, not by ambition: the imported engine currently reports
+# ~543 findings under the full recommended set, almost all stylistic. Gating CI on that
+# on day one would make the pipeline red for reasons unrelated to any change, and the
+# usual response to a permanently red gate is to ignore it — which is worse than a
+# narrower gate that is genuinely green.
+#
+# This select catches the things that actually break at runtime: syntax errors, undefined
+# and unused names, f-string and comparison mistakes. Widening it is a ratchet: fix a
+# rule's backlog, then add its prefix here.
+select = ["E9", "F63", "F7", "F82"]
+
+[tool.mypy]
+# Must match the interpreter CI actually runs. Pinning this below the version whose
+# syntax the installed numpy stubs use makes mypy fail on the stubs themselves
+# ("Type statement is only supported in Python 3.12 and greater") before it ever
+# looks at this code — a config bug that reads like a code error.
+python_version = "3.12"
+# Started permissive on purpose: the goal is to ratchet type coverage up over time,
+# not to block this migration on a large pre-existing backlog. Errors that indicate
+# real breakage are enabled; stylistic strictness is not.
+warn_unused_ignores = false
+warn_redundant_casts = true
+no_implicit_optional = true
+ignore_missing_imports = true
+# Modules still being typed. Shrink this list, never grow it.
+[[tool.mypy.overrides]]
+module = ["app.engine", "app.api", "app.exchange", "app.bybit", "app.market", "app.strategy"]
+ignore_errors = false

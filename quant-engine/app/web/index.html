@@ -1,0 +1,140 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Futures Quant Platform</title>
+<link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+
+<div id="token-gate">
+  <div class="card">
+    <h1>Operator authentication</h1>
+    <p>Paste the dashboard token. It is in <span class="mono">data/dashboard_token.txt</span> on the host,
+       or in the <span class="mono">QUANT_API__TOKEN</span> environment variable.</p>
+    <input id="token-input" type="password" placeholder="dashboard token" autocomplete="off">
+    <div class="toolbar">
+      <button class="primary" id="token-save">Unlock</button>
+      <span class="small muted" id="token-msg"></span>
+    </div>
+  </div>
+</div>
+
+<header>
+  <div class="brand">Futures Quant<small id="hd-sub">connecting…</small></div>
+  <span class="pill" id="hd-mode">–</span>
+  <span class="pill" id="hd-trading">–</span>
+  <span class="pill" id="hd-feed">–</span>
+  <span class="pill" id="hd-ws">ws: –</span>
+  <div class="kpis">
+    <div class="kpi"><div class="label">Equity</div><div class="value" id="k-equity">–</div></div>
+    <div class="kpi"><div class="label">Net PnL</div><div class="value" id="k-net">–</div></div>
+    <div class="kpi"><div class="label">Unrealized</div><div class="value" id="k-unreal">–</div></div>
+    <div class="kpi"><div class="label">Open</div><div class="value" id="k-open">–</div></div>
+    <div class="kpi"><div class="label">Drawdown</div><div class="value" id="k-dd">–</div></div>
+    <div class="kpi"><div class="label">Fees</div><div class="value" id="k-fees">–</div></div>
+  </div>
+</header>
+
+<main>
+  <div id="banners" class="grid"></div>
+
+  <section class="panel">
+    <h2>
+      Control
+      <span class="right">
+        <span class="small muted" id="ctrl-note"></span>
+        <span class="sep"></span>
+        <button id="btn-halt" class="danger">Halt</button>
+        <button id="btn-resume" class="primary">Resume</button>
+        <button id="btn-flatten" class="danger">Flatten all</button>
+        <span class="sep"></span>
+        <button id="btn-learn">Run optimisation</button>
+      </span>
+    </h2>
+    <div class="body toolbar">
+      <span class="small muted">Mode:</span><span class="mono small" id="ctrl-mode">–</span>
+      <span class="sep"></span>
+      <span class="small muted">Interval:</span><span class="mono small" id="ctrl-interval">–</span>
+      <span class="sep"></span>
+      <span class="small muted">Orders today:</span><span class="mono small" id="ctrl-orders">–</span>
+      <span class="sep"></span>
+      <span class="small muted">Params v:</span><span class="mono small" id="ctrl-params">–</span>
+      <span class="sep"></span>
+      <span class="small muted">Uptime:</span><span class="mono small" id="ctrl-uptime">–</span>
+    </div>
+  </section>
+
+  <section class="panel">
+    <h2>
+      Price &amp; Candles <span class="right small muted" id="chart-sym-label">–</span>
+    </h2>
+    <div class="body tight">
+      <canvas id="chart" height="360"></canvas>
+    </div>
+    <div class="body">
+      <div class="kv" id="chart-meta"></div>
+    </div>
+  </section>
+
+  <section class="panel">
+    <h2>Open Positions <span class="right small muted" id="pos-count">0</span></h2>
+    <div class="body tight"><div id="positions"></div></div>
+  </section>
+
+  <div class="grid cols-2">
+    <section class="panel">
+      <h2>Equity Curve</h2>
+      <div class="body tight"><canvas id="equity-chart" height="200"></canvas></div>
+    </section>
+    <section class="panel">
+      <h2>Cost &amp; Performance Breakdown</h2>
+      <div class="body"><div class="kv" id="costs"></div></div>
+    </section>
+  </div>
+
+  <section class="panel">
+    <h2>Market Scanner &amp; Decisions <span class="right small muted">click a row to chart it</span></h2>
+    <div class="body tight"><div id="symbols"></div></div>
+  </section>
+
+  <div class="grid cols-2">
+    <section class="panel">
+      <h2>Order History <span class="right small muted" id="orders-count">0</span></h2>
+      <div class="body tight"><div id="orders"></div></div>
+    </section>
+    <section class="panel">
+      <h2>Closed Trades <span class="right small muted" id="trades-count">0</span></h2>
+      <div class="body tight"><div id="trades"></div></div>
+    </section>
+  </div>
+
+  <div class="grid cols-2">
+    <section class="panel">
+      <h2>System Health &amp; Self-Healing</h2>
+      <div class="body"><div class="kv" id="health"></div></div>
+    </section>
+    <section class="panel">
+      <h2>Strategy Parameters &amp; Learning</h2>
+      <div class="body"><div class="kv" id="params"></div><div id="params-history"></div></div>
+    </section>
+  </div>
+
+  <section class="panel">
+    <h2>
+      Live Logs
+      <span class="right">
+        <span class="small muted" id="logs-note"></span>
+        <span class="sep"></span>
+        <button id="btn-logs-warn">Warnings+</button>
+        <button id="btn-logs-clear">Clear</button>
+      </span>
+    </h2>
+    <div id="logbox"></div>
+  </section>
+</main>
+
+<script src="/app.js"></script>
+</body>
+</html>
