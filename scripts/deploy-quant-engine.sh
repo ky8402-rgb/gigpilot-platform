@@ -87,7 +87,22 @@ echo "Engine synced to $SOURCE_COMMIT"
 PYTHON_BIN="$(command -v python3)"
 if [ ! -x "$VENV_DIR/bin/python" ]; then
   echo "Creating virtual environment..."
-  "$PYTHON_BIN" -m venv "$VENV_DIR"
+  if ! "$PYTHON_BIN" -m venv "$VENV_DIR" 2>/tmp/quant-venv.err; then
+    # Debian/Ubuntu split ensurepip into its own package, so `python3 -m venv` fails on a
+    # minimal EC2 image with "ensurepip is not available". Install it rather than falling back
+    # to the system interpreter: an engine running on shared site-packages is precisely the
+    # coupling the virtual environment exists to prevent, and a pandas bump for the Node
+    # service must not be able to reach across and change the engine's numerics.
+    PY_VER="$("$PYTHON_BIN" -c 'import sys; print(f"{sys.version_info.major}.{sys.version_info.minor}")')"
+    echo "  ensurepip unavailable; installing python${PY_VER}-venv via apt..."
+    sudo apt-get update -qq >/dev/null 2>&1 || true
+    sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq "python${PY_VER}-venv" python3-pip >/dev/null 2>&1 || true
+    if ! "$PYTHON_BIN" -m venv "$VENV_DIR" 2>>/tmp/quant-venv.err; then
+      echo "ERROR: could not create the virtual environment even after installing python${PY_VER}-venv."
+      cat /tmp/quant-venv.err
+      exit 1
+    fi
+  fi
 fi
 "$VENV_DIR/bin/python" -m pip install --quiet --upgrade pip
 echo "Installing engine dependencies..."
