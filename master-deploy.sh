@@ -17,6 +17,34 @@
 #   ./master-deploy.sh --skip-ssh (for webhook-only triggers)
 # ==============================================================================
 
+# ==============================================================================
+# DEPRECATED — disabled by default.
+#
+# This is a SECOND end-to-end pipeline: it pushes to GitHub, rewrites the EC2 .env and restarts
+# PM2 by itself. That duplicates .github/workflows/deploy.yml, and the two race on the same
+# checkout, the same build directory and the same PM2 process — this script's `git reset --hard`
+# can land half-way through the workflow's `npm run build`. Its credential writes are also the
+# same `sed -i "s|^DATABASE_URL=.*|..."` pattern that crashed with "unterminated `s' command"
+# when a value contained the delimiter, and that silently corrupts on `&`.
+#
+# Deployment is owned solely by .github/workflows/deploy.yml: one path, `set -euo pipefail`,
+# fails closed, and verifies the live process reports the deployed SHA. Use:
+#
+#     git push origin main
+#
+# ALLOW_LEGACY_MASTER_DEPLOY=1 is an emergency escape hatch for a manual deployment when the
+# pipeline is unavailable. Never run it while the pipeline is running, and note that its .env
+# handling has NOT been migrated to scripts/update-env.js.
+# ==============================================================================
+if [ "${ALLOW_LEGACY_MASTER_DEPLOY:-0}" != "1" ]; then
+  echo "REFUSING TO RUN: master-deploy.sh is deprecated and disabled."
+  echo "It duplicates the GitHub Actions deployment path and races with it."
+  echo
+  echo "  Deploy normally:     git push origin main"
+  echo "  Emergency override:  ALLOW_LEGACY_MASTER_DEPLOY=1 ./master-deploy.sh"
+  exit 1
+fi
+
 set -uo pipefail
 
 # Visual formatting

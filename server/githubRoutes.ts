@@ -26,6 +26,25 @@ import { requireOwnerAuth } from './trading/ownerAuth.js';
 export const githubRoutes = express.Router();
 
 /**
+ * Push-to-deploy from the inbound webhook is DISABLED.
+ *
+ * This route used to run a second, independent deployment on the same host as
+ * `.github/workflows/deploy.yml`. Two mechanisms mutating the same checkout, build directory and
+ * PM2 process race each other: this webhook's `git reset --hard` can land half-way through the
+ * workflow's `npm run build`, leaving a partially built release in place, and whichever finishes
+ * last silently wins. That is a correctness bug, not just untidiness.
+ *
+ * Deployment is now owned by exactly one path — the Actions workflow, which runs with
+ * `set -euo pipefail`, fails closed, and verifies the live process reports the deployed SHA.
+ *
+ * The route still authenticates the HMAC-SHA256 signature and records the delivery for audit,
+ * then acknowledges WITHOUT deploying, so GitHub sees a clean 2xx and does not retry-storm.
+ *
+ * Re-enable only after deleting the Actions EC2 deploy step. Never run both.
+ */
+const PUSH_TO_DEPLOY_DISABLED = true;
+
+/**
  * GET /api/github/status
  * Fetches SSH key configuration and git repository status
  */
@@ -399,6 +418,16 @@ githubRoutes.post('/webhook', async (req: any, res) => {
       timestamp: new Date().toISOString(),
     });
 
+    if (PUSH_TO_DEPLOY_DISABLED) {
+      // Acknowledged and audited above, but no deployment: see PUSH_TO_DEPLOY_DISABLED.
+      console.warn(
+        '[GitHub Webhook] push-to-deploy is disabled; delivery acknowledged without deploying. ' +
+          'Deployment is owned by .github/workflows/deploy.yml.',
+        { branch, commitHash },
+      );
+      return;
+    }
+
     // Execute push-to-deploy asynchronously
     executePushToDeploy({
       branch,
@@ -535,7 +564,7 @@ githubRoutes.post('/simulate-webhook', requireOwnerAuth, async (req, res) => {
       tags: ['github', 'webhook', 'gitops', 'push', branch, isValid ? 'sync' : 'rejected'],
     });
 
-    if (isValid) {
+    if (isValid && !PUSH_TO_DEPLOY_DISABLED) {
       executePushToDeploy({
         branch,
         commitHash,
@@ -545,6 +574,11 @@ githubRoutes.post('/simulate-webhook', requireOwnerAuth, async (req, res) => {
       }).catch((err) => {
         console.error('[Simulated Webhook] Deployment error:', err);
       });
+    } else if (isValid) {
+      console.warn(
+        '[Simulated Webhook] push-to-deploy is disabled; delivery acknowledged without deploying.',
+        { branch, commitHash },
+      );
     }
 
     return res.status(statusCode).json({

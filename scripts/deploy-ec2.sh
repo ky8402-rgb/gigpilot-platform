@@ -7,7 +7,7 @@ echo "=========================================================="
 
 APP_DIR="/home/ubuntu/gigpilot"
 ENV_FILE="$APP_DIR/.env"
-WRITER="$APP_DIR/scripts/write-env-secret.cjs"
+ENV_UTIL="$APP_DIR/scripts/update-env.js"
 
 # Where credentials come from. `ssm` is the authoritative source: the values are read on THIS
 # host with its own IAM instance role, so no secret is ever carried across an SSH command
@@ -74,7 +74,7 @@ fi
 # ---------------------------------------------------------------------------
 # Credentials
 #
-# Every write goes through scripts/write-env-secret.cjs. The previous implementation used
+# Every write goes through scripts/update-env.js. The previous implementation used
 #   sed -i "s|^BYBIT_API_SECRET=.*|...|" .env
 # which is a shell-injection bug keyed on the secret's own contents: `|` broke the expression
 # ("unterminated `s' command" — the production failure that prompted this), `&` silently
@@ -89,14 +89,20 @@ umask 077
 touch "$ENV_FILE"
 chmod 600 "$ENV_FILE" 2>/dev/null || true
 
-if [ ! -f "$WRITER" ]; then
-  echo "ERROR: $WRITER is missing — cannot write credentials safely. Refusing to deploy."
+if [ ! -f "$ENV_UTIL" ]; then
+  echo "ERROR: $ENV_UTIL is missing — cannot write credentials safely. Refusing to deploy."
   exit 1
 fi
 
 set_secret() {
   # $1 = parameter/env name, $2 = value
-  printf '%s' "$2" | node "$WRITER" "$1" --file "$ENV_FILE"
+  #
+  # The value goes in on stdin rather than as a KEY=VALUE argument. scripts/update-env.js
+  # supports both (the argument form is convenient and is what the unit tests exercise), but
+  # arguments are readable by every user on the host through `ps`, and a credential that is
+  # already compromised is not one to keep widening the blast radius of. Same utility, same
+  # JSON escaping, one less place the plaintext exists.
+  printf '%s' "$2" | node "$ENV_UTIL" --file "$ENV_FILE" --stdin "$1"
 }
 
 fetch_ssm_secret() {
@@ -189,12 +195,17 @@ npm run build
 echo "Configuring and restarting PM2 backend daemon..."
 pm2 delete gigpilot 2>/dev/null || true
 
+# `--update-env` makes PM2 rebuild the process environment from the invoking shell instead of
+# reusing the one captured when the process was first registered. `delete` + `start` already
+# guarantees a fresh environment here, but the flag is kept explicit so that dropping the delete
+# later cannot silently reintroduce a stale-environment bug — which is exactly how a rotated
+# credential appears to "not take effect" after a deployment.
 if [ -f "ecosystem.config.cjs" ]; then
   echo "Starting PM2 via ecosystem.config.cjs..."
-  pm2 start ecosystem.config.cjs --env production
+  pm2 start ecosystem.config.cjs --env production --update-env
 else
   echo "Starting PM2 via dist/server.cjs..."
-  NODE_ENV=production PORT=3000 pm2 start dist/server.cjs --name gigpilot --time --max-memory-restart 500M
+  NODE_ENV=production PORT=3000 pm2 start dist/server.cjs --name gigpilot --update-env --time --max-memory-restart 500M
 fi
 
 pm2 save

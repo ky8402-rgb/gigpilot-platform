@@ -30,7 +30,7 @@
     "test:strategy": "node scripts/test-strategy-builder-safety.mjs",
     "test:security": "tsx scripts/test-auth-throttle.ts",
     "test:capital": "tsx scripts/test-capital-plan.ts",
-    "test:env": "node scripts/test-env-writer.mjs",
+    "test:env": "node scripts/test-update-env.mjs",
     "test:loop": "tsx scripts/test-autonomous-loop.ts",
     "postinstall": "node scripts/postinstall.js"
   },
