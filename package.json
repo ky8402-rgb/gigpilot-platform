@@ -31,6 +31,7 @@
     "test:env": "node scripts/test-update-env.mjs",
     "test:observability": "node scripts/test-observability-endpoints.mjs",
     "test:reliability": "tsx scripts/test-reliability-loop.ts",
+    "monitor:platform": "node scripts/monitor-platform.mjs",
     "postinstall": "node scripts/postinstall.js"
   },
   "dependencies": {
