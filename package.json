@@ -32,6 +32,7 @@
     "test:observability": "node scripts/test-observability-endpoints.mjs",
     "test:reliability": "tsx scripts/test-reliability-loop.ts",
     "monitor:platform": "node scripts/monitor-platform.mjs",
+    "readiness": "node scripts/readiness-check.mjs",
     "postinstall": "node scripts/postinstall.js"
   },
   "dependencies": {
