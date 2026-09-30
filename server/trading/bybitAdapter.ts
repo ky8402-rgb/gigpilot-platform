@@ -3,6 +3,8 @@ import fs from 'fs';
 import path from 'path';
 import { Candle, Fill, Order, OrderBook, OrderBookLevel } from './types.js';
 import { formatBybitError } from './bybitErrors.js';
+import { withRetry, TimeoutError } from '../util/retry.js';
+import { log, rid } from '../util/requestId.js';
 
 export interface BybitBalanceItem {
   asset: string;
@@ -81,15 +83,32 @@ export class BybitAdapter {
 
 
   public async syncServerTime(): Promise<number> {
+    // Time-sync drives HMAC signatures; a wrong offset here causes 401s on every signed
+    // call. Retry transient failures but DO NOT retry permanent ones (non-JSON, 4xx),
+    // and surface them in the log instead of silently snapping the offset to zero —
+    // the previous behaviour could leave every signed request 4xx'd for an hour.
     try {
-      const res = await fetch(`${this.getActiveBaseUrl()}/v5/market/time`);
-      if (res.ok) {
-        const data = (await res.json()) as any;
-        const serverTime = Number(data?.time || (data?.result?.timeSecond ? data.result.timeSecond * 1000 : Date.now()));
-        this.timeOffset = serverTime - Date.now();
+      const res = await withRetry(
+        () => fetch(`${this.getActiveBaseUrl()}/v5/market/time`),
+        { op: 'bybit.syncServerTime', maxAttempts: 3, baseDelayMs: 400, timeoutMs: 4000 }
+      );
+      if (!res.ok) {
+        log.warn(rid(undefined), 'bybit.syncServerTime.nonOk', { status: res.status });
+        return this.timeOffset;
       }
-    } catch {
-      this.timeOffset = 0;
+      const data = (await res.json()) as any;
+      const serverTime = Number(
+        data?.time || (data?.result?.timeSecond ? data.result.timeSecond * 1000 : Date.now())
+      );
+      this.timeOffset = serverTime - Date.now();
+    } catch (err) {
+      log.error(rid(undefined), 'bybit.syncServerTime.failed', {
+        error: err instanceof Error ? err.message : String(err),
+        isTimeout: err instanceof TimeoutError
+      });
+      // Keep the previously-known offset rather than snapping to zero. A wrong-but-stable
+      // offset is far less damaging than an unknown one — the next successful sync will
+      // heal it.
     }
     return this.timeOffset;
   }
@@ -206,9 +225,12 @@ export class BybitAdapter {
     }
 
     try {
-      const res = await fetch(`${this.getActiveBaseUrl()}/v5/market/tickers?category=linear&symbol=${raw}`, {
-        headers: { 'Accept': 'application/json' }
-      });
+      const res = await withRetry(
+        () => fetch(`${this.getActiveBaseUrl()}/v5/market/tickers?category=linear&symbol=${raw}`, {
+          headers: { 'Accept': 'application/json' }
+        }),
+        { op: 'bybit.getRealPrice', maxAttempts: 3, baseDelayMs: 200, timeoutMs: 4000 }
+      );
       if (res.ok) {
         const json = (await res.json()) as any;
         const item = json?.result?.list?.[0];
@@ -217,11 +239,19 @@ export class BybitAdapter {
           this.priceCache.set(raw, { price: p, time: Date.now() });
           return p;
         }
+      } else {
+        log.warn(rid(undefined), 'bybit.getRealPrice.nonOk', { symbol: raw, status: res.status });
       }
-    } catch {
-      // ignore
+    } catch (err) {
+      log.warn(rid(undefined), 'bybit.getRealPrice.failed', {
+        symbol: raw,
+        error: err instanceof Error ? err.message : String(err),
+        isTimeout: err instanceof TimeoutError
+      });
     }
 
+    // Always serve the cache rather than 0 — a stale-but-real price is more honest
+    // than no price, and the readiness probe already gates trades on candle freshness.
     return cached?.price || 0;
   }
 
@@ -239,9 +269,12 @@ export class BybitAdapter {
   }> {
     const raw = this.normalizeSymbol(symbol);
     try {
-      const res = await fetch(`${this.getActiveBaseUrl()}/v5/market/tickers?category=linear&symbol=${raw}`, {
-        headers: { 'Accept': 'application/json' }
-      });
+      const res = await withRetry(
+        () => fetch(`${this.getActiveBaseUrl()}/v5/market/tickers?category=linear&symbol=${raw}`, {
+          headers: { 'Accept': 'application/json' }
+        }),
+        { op: 'bybit.getReal24hStats', maxAttempts: 3, baseDelayMs: 200, timeoutMs: 4000 }
+      );
       if (res.ok) {
         const json = (await res.json()) as any;
         const item = json?.result?.list?.[0];
@@ -254,9 +287,15 @@ export class BybitAdapter {
           const change24hPct = parseFloat(item.price24hPcnt) * 100 || 0;
           return { symbol: this.denormalizeSymbol(raw), price, open24h, high24h, low24h, volume, change24hPct };
         }
+      } else {
+        log.warn(rid(undefined), 'bybit.getReal24hStats.nonOk', { symbol: raw, status: res.status });
       }
-    } catch {
-      // ignore
+    } catch (err) {
+      log.warn(rid(undefined), 'bybit.getReal24hStats.failed', {
+        symbol: raw,
+        error: err instanceof Error ? err.message : String(err),
+        isTimeout: err instanceof TimeoutError
+      });
     }
 
     return {

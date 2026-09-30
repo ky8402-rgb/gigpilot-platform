@@ -10,6 +10,7 @@ import { githubRoutes } from "./server/githubRoutes.js";
 import { pushAndDeployAll } from "./server/githubService.js";
 import { globalTradingStore } from "./server/trading/store.js";
 import { requireOwnerAuth } from "./server/trading/ownerAuth.js";
+import { requestIdMiddleware, log, rid } from "./server/util/requestId.js";
 
 const app = express();
 // PORT is read from the environment with a 3000 fallback so the same bundle can
@@ -21,6 +22,32 @@ const PORT = (() => {
   const parsed = Number.parseInt(String(raw ?? ""), 10);
   return Number.isFinite(parsed) && parsed > 0 ? parsed : 3000;
 })();
+
+// Request id MUST be installed before any middleware that logs. Every request now
+// carries a stable `X-Request-Id` (returned to the client AND echoed in every log
+// line) so a bug report can be cross-referenced with a single grep of PM2 logs.
+app.use(requestIdMiddleware);
+
+// Lightweight access log: keeps the format identical to the rest of the structured
+// logger so CloudWatch / Loki / Datadog can route every line through one parser.
+// Skipped for high-frequency liveness probes (`/api/health/ping`) to avoid drowning
+// the log shipper in noise; the readiness endpoint IS logged because it carries
+// posture information operators want to see.
+app.use((req, res, next) => {
+  const start = process.hrtime.bigint();
+  res.on("finish", () => {
+    if (req.path === "/api/health/ping") return;
+    const elapsedMs = Number(process.hrtime.bigint() - start) / 1e6;
+    log.info(req.requestId, "http.access", {
+      method: req.method,
+      path: req.path,
+      status: res.statusCode,
+      elapsedMs: Math.round(elapsedMs * 100) / 100,
+      ip: req.ip
+    });
+  });
+  next();
+});
 
 // Security & Parsing Middlewares
 app.use(compression());
@@ -287,6 +314,43 @@ app.get("/api/health/ready", (req, res) => {
   });
 });
 
+/**
+ * Public engine fleet inspection. Mirrors the `/api/health/ready` `engines` check but
+ * exposes per-engine status so operators can see WHICH engine is degraded without
+ * authenticating. Deliberately no-auth because:
+ *   - the response shape leaks no credentials, balances, or thresholds
+ *   - the deploy pipeline and uptime monitor both want a stable URL to scrape
+ *   - it complements the existing readiness probe without changing its contract
+ *
+ * The response always returns HTTP 200. `degraded` is the count of engines whose
+ * status is not ONLINE; `failClosed` tells the operator whether the trading system
+ * has refused to start due to the degraded fleet.
+ */
+app.get("/api/health/engines", (req, res) => {
+  const store = globalTradingStore;
+  let engines: Array<{ id: string; status: string; lastError?: string | null }> = [];
+  let failClosed = { failClosed: true, downEngines: ["UNKNOWN"] as string[] };
+  try {
+    failClosed = store.monitor.isSystemFailClosed();
+    engines = store.monitor.getAllEngineHealth().map((e) => ({
+      id: e.id,
+      status: e.status,
+      lastError: (e as { lastError?: string | null }).lastError ?? null
+    }));
+  } catch (err) {
+    log.warn(rid(req), "health.engines.probe-failed", { error: (err as Error)?.message });
+  }
+  res.json({
+    success: true,
+    count: engines.length,
+    degraded: engines.filter((e) => e.status !== "ONLINE" && e.status !== "HEALTHY").length,
+    failClosed: failClosed.failClosed,
+    downEngines: failClosed.downEngines,
+    engines,
+    timestamp: new Date().toISOString()
+  });
+});
+
 // 2. Autonomous Crypto Grid Trading Platform Router
 app.use("/api/trading", tradingRouter);
 
@@ -299,17 +363,20 @@ app.use("/api/github", githubRoutes);
 
 // 4. On-Demand Deployment Trigger Endpoint
 app.post("/api/deploy", requireOwnerAuth, async (req, res) => {
+  const start = Date.now();
   try {
     const { commitMessage, branch, skipAmplify, skipEc2 } = req.body || {};
+    log.info(rid(req), "deploy.trigger", { branch: branch || "main", skipAmplify: Boolean(skipAmplify), skipEc2: Boolean(skipEc2) });
     const result = await pushAndDeployAll({
       commitMessage: commitMessage || `chore: automated production sync [${new Date().toISOString()}]`,
       branch: branch || "main",
       skipAmplify: Boolean(skipAmplify),
       skipEc2: Boolean(skipEc2)
     });
+    log.info(rid(req), "deploy.complete", { branch: branch || "main", durationMs: Date.now() - start });
     res.json(result);
   } catch (err: any) {
-    console.error("[Deploy Endpoint Error]:", err);
+    log.error(rid(req), "deploy.failed", { error: err?.message, durationMs: Date.now() - start });
     res.status(500).json({ success: false, error: err.message || "Deployment failed" });
   }
 });
@@ -351,7 +418,13 @@ async function startServer() {
   // default HTML error page. Register it on every mount prefix so the JSON contract holds everywhere.
   for (const prefix of ["/api", "/auth"]) {
     app.use(prefix, (err: any, req: any, res: any, next: any) => {
-      console.error(`[API Error] ${req.method} ${req.url}:`, err);
+      log.error(req?.requestId ?? "system", "api.error", {
+        method: req?.method,
+        path: req?.path,
+        prefix,
+        status: err?.status,
+        message: err?.message
+      });
       res.status(err.status || 500).json({
         success: false,
         error: err.message || "Internal Server Error"
@@ -394,11 +467,11 @@ async function startServer() {
 
 // Global Exception Handlers
 process.on("uncaughtException", (err) => {
-  console.error("[Trading Platform Error] Uncaught Exception:", err);
-  try { flushDurableState(); } catch { /* best effort */ }
+  log.error("system", "process.uncaughtException", { error: err?.message, stack: err?.stack });
+  try { flushDurableState(); } catch (e) { log.error("system", "process.uncaughtException.flushFailed", { error: (e as Error)?.message }); }
 });
 process.on("unhandledRejection", (reason) => {
-  console.error("[Trading Platform Error] Unhandled Rejection:", reason);
+  log.error("system", "process.unhandledRejection", { reason: reason instanceof Error ? reason.message : String(reason) });
 });
 
 /**
