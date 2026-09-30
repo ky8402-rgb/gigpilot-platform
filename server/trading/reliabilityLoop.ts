@@ -331,7 +331,7 @@ export class ReliabilityLoop implements EngineModule {
    *  - retry a flapping probe by re-running the suite once
    *  - clear error surface on a DEGRADED engine
    *  Never touches risk config, kill switch, credentials, or the exchange. */
-  public remediate(diag: ReliabilityDiagnosisReport, suite: ReliabilityProbeSuite, mode: 'autonomous' | 'observe' | 'dry_run'): { status: 'success' | 'failed'; remediation: ReliabilityRemediation } {
+  public async remediate(diag: ReliabilityDiagnosisReport, suite: ReliabilityProbeSuite, mode: 'autonomous' | 'observe' | 'dry_run'): Promise<{ status: 'success' | 'failed'; remediation: ReliabilityRemediation }> {
     try {
       if (mode === 'observe') {
         return {
@@ -373,10 +373,17 @@ export class ReliabilityLoop implements EngineModule {
           detail = `flush threw: ${e?.message ?? String(e)}`;
         }
       } else if (action === 'retry_flapping_probes') {
-        const retrySuite = awaitPromise(this.runCanaryProbes());
-        const stillFailing = retrySuite.probes.filter((p) => p.status === 'failed').map((p) => p.name);
-        detail = `re-ran probes; still failing: ${stillFailing.length ? stillFailing.join(',') : 'none'}`;
-        success = true; // the retry itself succeeded even if probes still fail
+        try {
+          // Properly await — a flapping probe retry needs the real probe results,
+          // not the placeholder an earlier synchronous helper would have returned.
+          const retrySuite = await this.runCanaryProbes();
+          const stillFailing = retrySuite.probes.filter((p) => p.status === 'failed').map((p) => p.name);
+          detail = `re-ran probes; still failing: ${stillFailing.length ? stillFailing.join(',') : 'none'}`;
+          success = true; // the retry itself succeeded even if probes still fail
+        } catch (e: any) {
+          success = false;
+          detail = `retry threw: ${e?.message ?? String(e)}`;
+        }
       }
       this.lastActionAt.set(action, Date.now());
       return { status: 'success', remediation: { status: 'executed', action, success, detail } };
@@ -580,7 +587,7 @@ export class ReliabilityLoop implements EngineModule {
     const diagnosis = this.diagnose(telemetry.snapshot);
     const prediction = this.predict(telemetry.snapshot);
     const suite = await this.runCanaryProbes();
-    const remediation = this.remediate(diagnosis.report, suite, effectiveMode);
+    const remediation = await this.remediate(diagnosis.report, suite, effectiveMode);
     const optimization = this.optimize(telemetry.snapshot, this.history);
     const selfUpdating = this.selfUpdate();
 
@@ -650,15 +657,4 @@ export class ReliabilityLoop implements EngineModule {
     }
     return Array.from(tally.entries()).filter(([, n]) => n >= 2).map(([name]) => name);
   }
-}
-
-/** Tiny helper so the remediate method can fire-and-forget an async suite
- *  without an `await` chain inside a synchronous try/catch. */
-function awaitPromise<T>(p: Promise<T>): T {
-  // This helper exists only to be used in `remediate` when we deliberately
-  // do not want to await. We capture the result via .then to keep the
-  // promise live even if the caller ignores it.
-  let resolved: T | undefined;
-  p.then((v) => { resolved = v; }).catch(() => { /* ignored */ });
-  return resolved as unknown as T;
 }
