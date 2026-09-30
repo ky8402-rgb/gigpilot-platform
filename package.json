@@ -30,6 +30,7 @@
     "test:capital": "tsx scripts/test-capital-plan.ts",
     "test:env": "node scripts/test-update-env.mjs",
     "test:observability": "node scripts/test-observability-endpoints.mjs",
+    "test:reliability": "tsx scripts/test-reliability-loop.ts",
     "postinstall": "node scripts/postinstall.js"
   },
   "dependencies": {

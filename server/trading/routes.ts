@@ -114,6 +114,43 @@ tradingRouter.get('/engines/health', requireOwnerAuth, (req: Request, res: Respo
   }
 });
 
+// 2a. Reliability Loop status — the most recent cycle, history, and score.
+//     Auth-gated (operational endpoint). Safe to call frequently.
+tradingRouter.get('/reliability/status', requireOwnerAuth, (req: Request, res: Response) => {
+  try {
+    const store = globalTradingStore;
+    const limitRaw = req.query.limit;
+    const limit = Math.max(0, Math.min(20, Number.parseInt(String(limitRaw ?? '5'), 10) || 5));
+    const last = store.reliabilityLoop.getLastCycle();
+    const history = store.reliabilityLoop.getHistory(limit);
+    const score = store.reliabilityLoop.getReliabilityScore();
+    return res.json({
+      success: true,
+      score,
+      engineHealth: store.reliabilityLoop.healthCheck(),
+      lastCycle: last,
+      history,
+      timestamp: new Date().toISOString(),
+    });
+  } catch (err: any) {
+    return res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// 2b. Trigger one reliability cycle on demand. Useful for ops dashboards
+//     and for the test harness to drive the loop deterministically.
+tradingRouter.post('/reliability/run', requireOwnerAuth, async (req: Request, res: Response) => {
+  try {
+    const store = globalTradingStore;
+    const modeRaw = String((req.body ?? {}).mode ?? 'autonomous');
+    const mode = (['autonomous', 'observe', 'dry_run'].includes(modeRaw) ? modeRaw : 'autonomous') as 'autonomous' | 'observe' | 'dry_run';
+    const result = await store.reliabilityLoop.executeCycle(mode);
+    return res.json({ success: true, cycle: result });
+  } catch (err: any) {
+    return res.status(500).json({ success: false, error: err.message });
+  }
+});
+
 // 3. Engine Off-Switch Toggle
 tradingRouter.post('/engines/:id/off-switch', requireOwnerAuth, (req: Request, res: Response) => {
   try {

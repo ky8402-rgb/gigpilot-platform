@@ -48,3 +48,8 @@ jobs:
       # second fresh build whose output may differ.
       - name: Observability contract test (against built bundle)
         run: npm run test:observability
+
+      # Reliability loop test is hermetic (its own fake server) and runs after
+      # tsc so it picks up type errors in the loop source first.
+      - name: Reliability loop test
+        run: npm run test:reliability

@@ -33,6 +33,7 @@ import { AutonomousResearchAgent } from './researchAgent.js';
 import { LearningLoopEngine } from './learningLoop.js';
 import { StrategyValidatorEngine } from './scriptingEngine.js';
 import { SystemMonitorSecurity } from './systemMonitor.js';
+import { ReliabilityLoop } from './reliabilityLoop.js';
 import { EmergencyKillSwitch } from './killSwitch.js';
 import { bybitAdapter } from './bybitAdapter.js';
 import { AutonomousProfitOptimizer } from './autonomousProfitOptimizer.js';
@@ -52,6 +53,7 @@ export class TradingStore {
   public learningLoop: LearningLoopEngine;
   public scripting: StrategyValidatorEngine;
   public monitor: SystemMonitorSecurity;
+  public reliabilityLoop: ReliabilityLoop;
   public killSwitch: EmergencyKillSwitch;
   public profitOptimizer: AutonomousProfitOptimizer;
 
@@ -91,6 +93,10 @@ export class TradingStore {
     this.learningLoop = new LearningLoopEngine();
     this.scripting = new StrategyValidatorEngine();
     this.monitor = new SystemMonitorSecurity();
+    this.reliabilityLoop = new ReliabilityLoop({
+      monitor: this.monitor,
+      flushTradingState: () => this.flushTradingState(),
+    });
     this.killSwitch = new EmergencyKillSwitch();
     this.profitOptimizer = new AutonomousProfitOptimizer();
 
@@ -113,6 +119,7 @@ export class TradingStore {
     this.monitor.registerEngine(this.profitAccounting);
     this.monitor.registerEngine(this.sweeper);
     this.monitor.registerEngine(this.profitOptimizer);
+    this.monitor.registerEngine(this.reliabilityLoop);
 
     // 3. Default safe kill switch engaged per live safety mandate
     this.killSwitch.activate(
@@ -176,6 +183,21 @@ export class TradingStore {
       this.runAutonomousProfitOptimizationCycle().catch(() => {});
     }, 45000);
 
+    // 8. Continuous Reliability Loop — telemetry, diagnosis, prediction,
+    // bounded self-healing, synthetic canary probes, optimization, and a
+    // never-auto-updating recommendation. Cycle every 60s. Only safe
+    // actions (flush state, retry probes, clear error surfaces) ever run;
+    // risk config, kill switch, and credentials are never touched.
+    setInterval(() => {
+      this.reliabilityLoop.executeCycle('autonomous').catch(() => { /* swallow: loop records its own errors */ });
+    }, 60_000);
+
+    // Kick off a first cycle shortly after boot so the loop has data
+    // available to the very next /api/health/ready check.
+    setTimeout(() => {
+      this.reliabilityLoop.executeCycle('observe').catch(() => {});
+    }, 5_000);
+
     this.monitor.logAudit({
       category: 'SYSTEM_BOOT',
       action: 'GigPilot Modular Engine Architecture Booted',
@@ -183,8 +205,9 @@ export class TradingStore {
         mode: 'LIVE',
         failClosedPolicy: true,
         killSwitchActive: true,
-        modulesCount: 11,
-        autonomousRevenueOptimizer: 'ACTIVE'
+        modulesCount: 12,
+        autonomousRevenueOptimizer: 'ACTIVE',
+        reliabilityLoop: 'ACTIVE (safe-remediation-only policy)'
       }
     });
   }
