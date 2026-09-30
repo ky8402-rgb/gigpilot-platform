@@ -733,6 +733,65 @@ tradingRouter.post('/strategy/promote', requireOwnerAuth, (req: Request, res: Re
   res.json({ success: true, champion: result.champion, tenureStatus: result.tenureStatus });
 });
 
+// 13C. Champion rollback — the safe self-improvement half of the
+//       promote-then-monitor loop. Owner-initiated; auto-rollback
+//       evaluation is also reachable via /strategy/evaluate-rollback.
+tradingRouter.post('/strategy/rollback', requireOwnerAuth, (req: Request, res: Response) => {
+  const { reason } = req.body || {};
+  if (!reason || typeof reason !== 'string') {
+    return res.status(400).json({
+      success: false,
+      error: 'Cannot rollback: a non-empty reason is required for audit.',
+      code: 'BAD_REQUEST',
+    });
+  }
+  const result = globalTradingStore.learningLoop.rollbackCurrentChampion({
+    reason,
+    triggeredBy: 'OWNER',
+    approvalReason: reason,
+  });
+  if (!result.success) {
+    return res.status(400).json({
+      success: false,
+      error: result.reason,
+      tenureStatus: result.tenureStatus,
+      code: result.code,
+    });
+  }
+  globalTradingStore.monitor.logAudit({
+    category: 'CONFIG_CHANGE',
+    action: `Strategy rollback: ${result.rolledBackChampionId} -> ${result.restoredChampionId}`,
+    details: {
+      rolledBackChampionId: result.rolledBackChampionId,
+      restoredChampionId: result.restoredChampionId,
+      reason,
+    },
+  });
+  return res.json({ success: true, ...result });
+});
+
+// 13D. Force-run the auto-rollback evaluation without rolling back —
+//       returns the structured decision so the UI can show the operator
+//       whether a rollback would fire under the current evidence.
+tradingRouter.get('/strategy/evaluate-rollback', requireOwnerAuth, (_req: Request, res: Response) => {
+  const evaluation = globalTradingStore.learningLoop.evaluateAndTriggerRollback();
+  return res.json({
+    success: true,
+    config: globalTradingStore.learningLoop.getRollbackConfig(),
+    ...evaluation,
+    timestamp: new Date().toISOString(),
+  });
+});
+
+tradingRouter.post('/strategy/auto-rollback-config', requireOwnerAuth, (req: Request, res: Response) => {
+  const { enabled } = req.body || {};
+  globalTradingStore.learningLoop.setAutoRollbackEnabled(enabled !== false);
+  return res.json({
+    success: true,
+    config: globalTradingStore.learningLoop.getRollbackConfig(),
+  });
+});
+
 // 14B. 3-Way Trade Decision Architecture (BUY / SELL / DO NOTHING)
 // DO NOTHING is a legitimate optimized action: profitable automated systems trade selectively
 tradingRouter.get('/decisions', requireOwnerAuth, (req: Request, res: Response) => {

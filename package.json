@@ -32,6 +32,7 @@
     "test:observability": "node scripts/test-observability-endpoints.mjs",
     "test:reliability": "tsx scripts/test-reliability-loop.ts",
     "test:architecture": "tsx scripts/test-exchange-and-auth-architecture.ts",
+    "test:rollback": "tsx scripts/test-promote-and-rollback.ts",
     "monitor:platform": "node scripts/monitor-platform.mjs",
     "readiness": "node scripts/readiness-check.mjs",
     "postinstall": "node scripts/postinstall.js"

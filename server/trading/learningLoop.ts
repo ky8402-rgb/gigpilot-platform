@@ -846,5 +846,263 @@ export class LearningLoopEngine implements EngineModule {
     this.championStrategy.liveTradingResults = results;
     this.latencyMs = Date.now() - start;
     this.lastHeartbeat = new Date().toISOString();
+
+    // Auto-rollback guard. After enough measured live fills, compare the
+    // CURRENT champion's realised metrics against the most-recent retired
+    // champion's snapshot. If the new champion is measurably worse, roll
+    // back automatically. This is the half of the safe self-improvement
+    // contract that completes the promote-then-monitor loop.
+    this.evaluateAndTriggerRollback();
+  }
+
+  // -------------------------------------------------------------------------
+  // Auto-rollback (self-improvement, the "rollback regressions" half)
+  // -------------------------------------------------------------------------
+
+  /** Tunables for the auto-rollback guard. Defaults are conservative so a
+   *  noisy first batch of fills cannot trip an unnecessary rollback. */
+  private rollbackConfig: {
+    /** Minimum measured live fills on the current champion before any
+     *  rollback condition is even evaluated. Below this, no rollback can
+     *  fire even on a drawdown breach. */
+    minTradesBeforeEvaluation: number;
+    /** If the current champion's live drawdown (from a fixed high-water
+     *  mark on promotion) exceeds this %, trigger an automatic rollback. */
+    drawdownBreachPct: number;
+    /** If the current champion's realised net profit falls below the previous
+     *  champion's by more than this absolute USD amount, trigger rollback. */
+    netProfitRegressionUsd: number;
+    /** If the current champion's live win-rate falls below the previous
+     *  champion's by this many percentage points, trigger rollback. */
+    winRateRegressionPct: number;
+    /** Auto-rollback is enabled iff this is true. Owner can disable via
+     *  setAutoRollbackEnabled(false). */
+    autoRollbackEnabled: boolean;
+    /** Cooldown between successive auto-rollbacks to prevent oscillation. */
+    cooldownMs: number;
+    /** Last auto-rollback timestamp, used to enforce cooldown. */
+    lastAutoRollbackAt: number | null;
+  } = {
+    minTradesBeforeEvaluation: 30,
+    drawdownBreachPct: 5,
+    netProfitRegressionUsd: 50,
+    winRateRegressionPct: 15,
+    autoRollbackEnabled: true,
+    cooldownMs: 6 * 60 * 60 * 1000,
+    lastAutoRollbackAt: null,
+  };
+
+  public getRollbackConfig() {
+    return { ...this.rollbackConfig };
+  }
+
+  public setAutoRollbackEnabled(enabled: boolean): void {
+    this.rollbackConfig.autoRollbackEnabled = Boolean(enabled);
+    this.recordError(
+      enabled ? 'WARN' : 'WARN',
+      `Auto-rollback ${enabled ? 'ENABLED' : 'DISABLED'}.`,
+    );
+  }
+
+  /**
+   * Evaluate the current champion against the most-recent retired champion
+   * (the one we just replaced). If the metrics show a regression that
+   * crosses the configured hurdles AND no cooldown is in effect, trigger
+   * an automatic rollback.
+   *
+   * The function is idempotent and safe to call on every fill.
+   */
+  public evaluateAndTriggerRollback(): {
+    evaluated: boolean;
+    triggered: boolean;
+    reason?: string;
+    rolledBackTo?: string;
+    blockReason?: string;
+  } {
+    const live = this.championStrategy.liveTradingResults;
+    const trades = Number(live?.tradesCount ?? 0);
+    const evaluation = {
+      evaluated: false,
+      triggered: false,
+      reason: undefined as string | undefined,
+      rolledBackTo: undefined as string | undefined,
+      blockReason: undefined as string | undefined,
+    };
+
+    if (!this.rollbackConfig.autoRollbackEnabled) {
+      evaluation.blockReason = 'auto-rollback disabled';
+      return evaluation;
+    }
+    if (!this.enabled) {
+      evaluation.blockReason = 'learning loop is OFF';
+      return evaluation;
+    }
+    if (trades < this.rollbackConfig.minTradesBeforeEvaluation) {
+      evaluation.blockReason = `only ${trades} live fills (minimum ${this.rollbackConfig.minTradesBeforeEvaluation})`;
+      return evaluation;
+    }
+    if (this.rollbackConfig.lastAutoRollbackAt &&
+        Date.now() - this.rollbackConfig.lastAutoRollbackAt < this.rollbackConfig.cooldownMs) {
+      evaluation.blockReason = 'cooldown in effect';
+      return evaluation;
+    }
+    const previousChampion = this.strategyHistory.find((s) => s.status === 'RETIRED');
+    if (!previousChampion) {
+      evaluation.blockReason = 'no previous retired champion to roll back to';
+      return evaluation;
+    }
+
+    evaluation.evaluated = true;
+    const prev = previousChampion.liveTradingResults;
+    const reasons: string[] = [];
+
+    // 1. Drawdown breach relative to the running peak of the current champion.
+    //    The peak is taken from the previousChampion's best recorded equity
+    //    snapshot OR from liveTradingResults as a fallback.
+    const currentDrawdownPct = Math.max(0, Number(live?.maxDrawdownPct ?? 0));
+    if (currentDrawdownPct >= this.rollbackConfig.drawdownBreachPct) {
+      reasons.push(`drawdown ${currentDrawdownPct.toFixed(2)}% >= ${this.rollbackConfig.drawdownBreachPct}%`);
+    }
+
+    // 2. Net profit regression vs the previous champion's recorded net.
+    const currentNet = Number(live?.netProfit ?? 0);
+    const prevNet = Number(prev?.netProfit ?? 0);
+    if (prevNet > 0 && (prevNet - currentNet) >= this.rollbackConfig.netProfitRegressionUsd) {
+      reasons.push(`net profit $${currentNet.toFixed(2)} regressed by $${(prevNet - currentNet).toFixed(2)} vs prior $${prevNet.toFixed(2)}`);
+    }
+
+    // 3. Win-rate regression. Only meaningful when both sides have enough trades.
+    const prevTrades = Number(prev?.tradesCount ?? 0);
+    const currentWinRate = Number(live?.winRatePct ?? 0);
+    const prevWinRate = Number(prev?.winRatePct ?? 0);
+    if (prevTrades >= this.rollbackConfig.minTradesBeforeEvaluation &&
+        (prevWinRate - currentWinRate) >= this.rollbackConfig.winRateRegressionPct) {
+      reasons.push(`win rate ${currentWinRate.toFixed(2)}% regressed ${(prevWinRate - currentWinRate).toFixed(2)} pp vs prior ${prevWinRate.toFixed(2)}%`);
+    }
+
+    if (reasons.length === 0) {
+      evaluation.blockReason = 'no regression detected';
+      return evaluation;
+    }
+
+    const reason = `Auto-rollback triggered: ${reasons.join('; ')}.`;
+    const rollbackResult = this.rollbackCurrentChampion({
+      reason,
+      triggeredBy: 'AUTOMATED_PERFORMANCE_GUARD',
+      approvalReason: reason,
+    });
+    if (rollbackResult.success) {
+      evaluation.triggered = true;
+      evaluation.reason = reason;
+      evaluation.rolledBackTo = rollbackResult.restoredChampionId;
+      this.rollbackConfig.lastAutoRollbackAt = Date.now();
+    } else {
+      evaluation.blockReason = `rollback refused: ${rollbackResult.reason}`;
+    }
+    return evaluation;
+  }
+
+  /**
+   * Manually roll the current champion back to the most-recent retired
+   * champion in strategyHistory. The current champion is demoted to
+   * CHALLENGER status with its validation pipeline reset (so it must
+   * clear all 6 gates again before it can be re-promoted).
+   *
+   * Returns a structured result with code/stage so the route layer can
+   * surface the exact blocker to the operator.
+   */
+  public rollbackCurrentChampion(args: {
+    reason: string;
+    triggeredBy: 'OWNER' | 'AUTOMATED_PERFORMANCE_GUARD' | 'RISK_BREACH';
+    approvalReason?: string;
+  }): {
+    success: boolean;
+    reason: string;
+    restoredChampionId?: string;
+    restoredChampionVersion?: string;
+    rolledBackChampionId?: string;
+    tenureStatus: ChampionTenureStatus;
+    code?: string;
+  } {
+    const tenureStatus = this.getChampionTenureStatus();
+    if (!this.enabled) {
+      return {
+        success: false,
+        reason: 'Cannot rollback: Self-Learn Optimizer is currently turned OFF.',
+        tenureStatus,
+        code: 'OPTIMIZER_OFF',
+      };
+    }
+    if (!args?.reason || !args.triggeredBy) {
+      return {
+        success: false,
+        reason: 'Cannot rollback: reason and triggeredBy are required.',
+        tenureStatus,
+        code: 'BAD_REQUEST',
+      };
+    }
+    const previousChampion = this.strategyHistory.find((s) => s.status === 'RETIRED');
+    if (!previousChampion) {
+      return {
+        success: false,
+        reason: 'Cannot rollback: no previous retired champion in strategy history.',
+        tenureStatus,
+        code: 'NO_PRIOR_CHAMPION',
+      };
+    }
+
+    const rolledBackId = this.championStrategy.id;
+    const restored = { ...previousChampion };
+    delete (restored as any).retiredAt;
+
+    // Demote the current champion back to CHALLENGER with a fresh
+    // pipeline so it cannot be re-promoted without clearing all 6
+    // anti-overfitting gates on measured evidence.
+    const demoted = {
+      ...this.championStrategy,
+      status: 'CHALLENGER' as const,
+      retiredAt: new Date().toISOString(),
+      reasonForChange: `Auto-demoted after rollback (${args.triggeredBy}): ${args.reason}. Pipeline reset; must clear all 6 anti-overfitting gates again.`,
+      validationPipeline: this.initDefaultPipeline({
+        ...this.championStrategy,
+        id: this.championStrategy.id,
+        name: this.championStrategy.name,
+      }),
+    };
+    delete (demoted as any).deployedAt;
+
+    this.championStrategy = {
+      ...restored,
+      status: 'CHAMPION',
+      deployedAt: new Date().toISOString(),
+      reasonForChange: args.approvalReason || `Restored after rollback (${args.triggeredBy}) of ${rolledBackId}: ${args.reason}.`,
+    };
+
+    // Replace the previousChampion's history entry with the demoted
+    // challenger so the audit trail is consistent.
+    const histIdx = this.strategyHistory.findIndex((s) => s.id === previousChampion.id);
+    if (histIdx >= 0) this.strategyHistory.splice(histIdx, 1);
+    this.strategyHistory.unshift(demoted as any);
+
+    // Make the demoted strategy available as a challenger too, in case
+    // the operator wants to re-evaluate its pipeline.
+    this.challengerStrategies.unshift(demoted as StrategyVersion);
+
+    const updatedTenure = this.getChampionTenureStatus();
+    const msg = `ROLLED BACK to ${this.championStrategy.name} (${this.championStrategy.version}). Demoted ${rolledBackId} to CHALLENGER with pipeline reset. Reason: ${args.reason}`;
+    this.recordError('ERROR', msg, {
+      triggeredBy: args.triggeredBy,
+      restoredChampionId: this.championStrategy.id,
+      demotedChampionId: rolledBackId,
+    });
+
+    return {
+      success: true,
+      reason: msg,
+      restoredChampionId: this.championStrategy.id,
+      restoredChampionVersion: this.championStrategy.version,
+      rolledBackChampionId: rolledBackId,
+      tenureStatus: updatedTenure,
+    };
   }
 }

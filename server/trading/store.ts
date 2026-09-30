@@ -578,7 +578,11 @@ export class TradingStore {
           lockedInOrdersUsd: acct.lockedInOrdersUsd
         });
         for (const fill of acct.recentTrades || []) {
-          this.profitAccounting.recordFill(this.enrichFillWithExecutionCost(fill));
+          const enriched = this.enrichFillWithExecutionCost(fill);
+          this.profitAccounting.recordFill(enriched);
+          // Also feed the learning loop so champion liveTradingResults
+          // and the auto-rollback guard see the same evidence.
+          this.learningLoop.recordRealFills([enriched]);
         }
         const positionSync = await this.exchangeExec.syncLiveFuturesPositions(this.activeSymbol);
         if (positionSync.error) {
