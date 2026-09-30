@@ -324,9 +324,12 @@ export class BybitAdapter {
     else if (interval === '1d') intervalParam = 'D';
 
     try {
-      const res = await fetch(`${this.getActiveBaseUrl()}/v5/market/kline?category=linear&symbol=${raw}&interval=${intervalParam}&limit=${limit}`, {
-        headers: { 'Accept': 'application/json' }
-      });
+      const res = await withRetry(
+        () => fetch(`${this.getActiveBaseUrl()}/v5/market/kline?category=linear&symbol=${raw}&interval=${intervalParam}&limit=${limit}`, {
+          headers: { 'Accept': 'application/json' }
+        }),
+        { op: 'bybit.getRealCandles', maxAttempts: 3, baseDelayMs: 200, timeoutMs: 6000 }
+      );
       if (res.ok) {
         const json = (await res.json()) as any;
         const list = json?.result?.list;
@@ -341,9 +344,15 @@ export class BybitAdapter {
             volume: parseFloat(k[5])
           }));
         }
+      } else {
+        log.warn(rid(undefined), 'bybit.getRealCandles.nonOk', { symbol: raw, status: res.status });
       }
-    } catch {
-      // ignore
+    } catch (err) {
+      log.warn(rid(undefined), 'bybit.getRealCandles.failed', {
+        symbol: raw,
+        error: err instanceof Error ? err.message : String(err),
+        isTimeout: err instanceof TimeoutError
+      });
     }
 
     return [];

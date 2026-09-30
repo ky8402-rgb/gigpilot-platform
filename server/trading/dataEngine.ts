@@ -1,5 +1,7 @@
 import WebSocket from 'ws';
 import { Candle, EngineErrorRecord, EngineHealth, EngineModule, OrderBook, OrderBookLevel } from './types.js';
+import { withRetry, TimeoutError } from '../util/retry.js';
+import { log, rid } from '../util/requestId.js';
 
 export interface LivePairMarketData {
   symbol: string;
@@ -242,9 +244,16 @@ export class DataEngine implements EngineModule {
     }
   }
 
-  /**
-   * Process live streaming ticker update from WebSocket
-   */
+/**
+ * Process live streaming ticker update from WebSocket
+ *
+ * IMPORTANT: do NOT touch `candles` or `orderBook` here. The candle fetch lives on the
+ * polling path (`fetchLiveTick`), which is the slower but authoritative source. If this
+ * handler resets candles from `existing?.candles || []`, it can race against the poll
+ * path and blank the freshly-fetched candle array back to `[]` — which then makes
+ * QuantEngine / AI research degrade with "Insufficient candle depth (0 candles)".
+ * Preserve the full previous record and only refresh what WS actually delivers.
+ */
   private handleWsTickerUpdate(data: any): void {
     const rawSymbol = data.symbol;
     if (!rawSymbol) return;
@@ -273,8 +282,10 @@ export class DataEngine implements EngineModule {
       low24h,
       volume24h,
       priceChangePct,
-      candles: existing?.candles || [],
-      orderBook: existing?.orderBook || {
+      // Preserve the previous candle + orderbook records untouched. The polling
+      // path owns these fields and is the only place they should ever be mutated.
+      candles: existing?.candles ?? [],
+      orderBook: existing?.orderBook ?? {
         symbol: matchedSym,
         bids: [],
         asks: [],
@@ -411,9 +422,12 @@ export class DataEngine implements EngineModule {
         const candleCacheFresh = candles.length >= 5 && (Date.now() - lastCandleFetch) < 30000;
         if (!candleCacheFresh) {
           try {
-            const klineRes = await fetch(`https://api.bybit.com/v5/market/kline?category=linear&symbol=${raw}&interval=1&limit=30`, {
-              headers: { 'Accept': 'application/json' }
-            });
+            const klineRes = await withRetry(
+              () => fetch(`https://api.bybit.com/v5/market/kline?category=linear&symbol=${raw}&interval=1&limit=30`, {
+                headers: { 'Accept': 'application/json' }
+              }),
+              { op: 'dataEngine.fetchCandles', maxAttempts: 3, baseDelayMs: 200, timeoutMs: 6000 }
+            );
             if (klineRes.ok) {
               const klineJson = (await klineRes.json()) as any;
               const list = klineJson?.result?.list;
@@ -436,10 +450,19 @@ export class DataEngine implements EngineModule {
                 if (parsed.length >= 5) {
                   candles = parsed;
                   this.lastCandleFetchAt.set(sym, Date.now());
+                } else {
+                  log.warn(rid(undefined), 'dataEngine.candles.short', { sym, parsed: parsed.length, raw: list.length });
                 }
               }
+            } else {
+              log.warn(rid(undefined), 'dataEngine.candles.nonOk', { sym, status: klineRes.status });
             }
-          } catch {
+          } catch (err) {
+            log.warn(rid(undefined), 'dataEngine.candles.failed', {
+              sym,
+              error: err instanceof Error ? err.message : String(err),
+              isTimeout: err instanceof TimeoutError
+            });
             // Keep only previously fetched authoritative exchange candles.
           }
         }
