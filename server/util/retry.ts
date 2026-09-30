@@ -77,33 +77,39 @@ export function withTimeout<T>(
   label: string
 ): Promise<T> {
   if (!(ms > 0)) return Promise.reject(new Error(`withTimeout(${label}): ms must be > 0, got ${ms}`));
-  const ac = new AbortController();
-  let settled = false;
-  const timer = setTimeout(() => {
-    if (settled) return;
-    settled = true;
-    ac.abort();
-  }, ms);
-  return Promise.race([
-    fn(ac.signal).then((v) => {
+
+  return new Promise<T>((resolve, reject) => {
+    const ac = new AbortController();
+    let settled = false;
+
+    const timer = setTimeout(() => {
+      if (settled) return;
       settled = true;
-      clearTimeout(timer);
-      return v;
-    }),
-    new Promise<T>((_, reject) => {
-      // If the inner call is racing-and-slow we still want to reject on time, regardless
-      // of whether the underlying fn uses the AbortSignal. The timer's abort is the
-      // observable cancellation hint; the reject is the authoritative timeout signal.
-      const check = () => {
-        if (settled) return;
-        settled = true;
-        clearTimeout(timer);
-        reject(new TimeoutError(ms));
-      };
-      // Yield once so the fastest path (sync throw / instant resolve) can win.
-      setImmediate(check);
-    })
-  ]);
+      ac.abort();
+      reject(new TimeoutError(ms));
+    }, ms);
+
+    // Invoke through a microtask so a synchronous throw is handled exactly like a
+    // rejected Promise. Both handlers remain attached after a timeout, preventing a
+    // late completion from becoming an unhandled rejection; the settled guard makes
+    // it a no-op after the authoritative TimeoutError has been delivered.
+    Promise.resolve()
+      .then(() => fn(ac.signal))
+      .then(
+        (value) => {
+          if (settled) return;
+          settled = true;
+          clearTimeout(timer);
+          resolve(value);
+        },
+        (err) => {
+          if (settled) return;
+          settled = true;
+          clearTimeout(timer);
+          reject(err);
+        }
+      );
+  });
 }
 
 function sleep(ms: number): Promise<void> {

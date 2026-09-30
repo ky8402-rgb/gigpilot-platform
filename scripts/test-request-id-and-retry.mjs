@@ -156,16 +156,36 @@ section("withRetry gives up after maxAttempts");
   check("threw the final error", lastErr && lastErr.message === "still down");
 }
 
-section("withTimeout rejects on expiry");
+section("withTimeout allows work to finish before the deadline");
+{
+  const start = performance.now();
+  const result = await withTimeout(
+    () => new Promise((resolve) => setTimeout(() => resolve("completed"), 30)),
+    150,
+    "test.delayed-success"
+  );
+  const elapsed = performance.now() - start;
+  check("returns a delayed success", result === "completed");
+  check("does not reject on the next event-loop turn", elapsed >= 20, `elapsed=${elapsed.toFixed(1)}ms`);
+  check("finishes before the configured deadline", elapsed < 140, `elapsed=${elapsed.toFixed(1)}ms`);
+}
+
+section("withTimeout rejects only when the deadline expires");
 {
   const start = performance.now();
   let lastErr;
+  let aborted = false;
   try {
-    await withTimeout(() => new Promise(() => {}), 50, "test.timeout");
+    await withTimeout((signal) => {
+      signal.addEventListener("abort", () => { aborted = true; }, { once: true });
+      return new Promise(() => {});
+    }, 50, "test.timeout");
   } catch (err) { lastErr = err; }
   const elapsed = performance.now() - start;
   check("threw a TimeoutError", lastErr instanceof TimeoutError);
-  check("rejected within budget (50ms + slack)", elapsed < 250, `elapsed=${elapsed.toFixed(1)}ms`);
+  check("aborts the underlying operation", aborted === true);
+  check("does not reject before the 50ms deadline", elapsed >= 40, `elapsed=${elapsed.toFixed(1)}ms`);
+  check("rejects within deadline plus scheduler slack", elapsed < 250, `elapsed=${elapsed.toFixed(1)}ms`);
 }
 
 section("defaultIsRetryable classifies correctly");
