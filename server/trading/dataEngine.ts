@@ -32,6 +32,10 @@ export class DataEngine implements EngineModule {
   private isPolling: boolean = false;
   private consecutiveFailures: number = 0;
   private lastCandleFetchAt: Map<string, number> = new Map();
+  // Diagnostic: timestamp + list length of the most recent Bybit kline response,
+  // regardless of whether the candles made it into the cache. Lets the /api/_diag
+  // endpoint surface why the candle array is empty when the fetch is "succeeding".
+  private lastKlineResponseAt: Map<string, { ts: number; listLen: number }> = new Map();
 
   // Real-time WebSocket connection to Bybit V5 public linear futures stream
   private ws: WebSocket | null = null;
@@ -431,6 +435,7 @@ export class DataEngine implements EngineModule {
             if (klineRes.ok) {
               const klineJson = (await klineRes.json()) as any;
               const list = klineJson?.result?.list;
+              this.lastKlineResponseAt.set(sym, { ts: Date.now(), listLen: Array.isArray(list) ? list.length : -1 });
               if (Array.isArray(list) && list.length >= 5) {
                 const now = Date.now();
                 const CANDLE_INTERVAL_MS = 60_000; // interval=1 on this endpoint
@@ -453,6 +458,14 @@ export class DataEngine implements EngineModule {
                 } else {
                   log.warn(rid(undefined), 'dataEngine.candles.short', { sym, parsed: parsed.length, raw: list.length });
                 }
+              } else {
+                log.warn(rid(undefined), 'dataEngine.candles.listInvalid', {
+                  sym,
+                  listType: Array.isArray(list) ? 'array' : typeof list,
+                  listLen: Array.isArray(list) ? list.length : -1,
+                  retCode: klineJson?.retCode,
+                  retMsg: klineJson?.retMsg
+                });
               }
             } else {
               log.warn(rid(undefined), 'dataEngine.candles.nonOk', { sym, status: klineRes.status });

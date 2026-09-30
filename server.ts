@@ -382,7 +382,15 @@ app.get("/api/_diag/market-data", (req, res) => {
     activeCandleCount: raw?.candles?.length ?? 0,
     pairCount: diag.length,
     pairs: diag,
-    dataEngineStatus: store.dataEngine.healthCheck()
+    dataEngineStatus: store.dataEngine.healthCheck(),
+    lastKlineResponses: (store.dataEngine as any).lastKlineResponseAt
+      ? Array.from((store.dataEngine as any).lastKlineResponseAt.entries()).map(([k, v]) => ({
+          symbol: k,
+          ts: new Date(v.ts).toISOString(),
+          ageMs: Date.now() - v.ts,
+          listLen: v.listLen
+        }))
+      : null
   });
 });
 
