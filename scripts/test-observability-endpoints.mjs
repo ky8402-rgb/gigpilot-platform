@@ -18,6 +18,8 @@ import { spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
 import http from 'node:http';
+import fs from 'node:fs';
+import os from 'node:os';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(__dirname, '..');
@@ -25,6 +27,11 @@ const bundle = path.join(repoRoot, 'dist', 'server.cjs');
 
 const TEST_PORT = 38911;
 const BASE = `http://127.0.0.1:${TEST_PORT}`;
+
+// Use a per-run temp data dir so the test can't read or clobber a real
+// .gigpilot-data/owner-auth-config.json that the operator may have left
+// behind. The bundle is told to use this directory via GIGPILOT_DATA_DIR.
+const TEST_DATA_DIR = fs.mkdtempSync(path.join(os.tmpdir(), 'gigpilot-observability-'));
 
 let passed = 0;
 let failed = 0;
@@ -82,8 +89,18 @@ async function main() {
     ...process.env,
     NODE_ENV: 'production',
     PORT: String(TEST_PORT),
+    GIGPILOT_DATA_DIR: TEST_DATA_DIR,
     GLOBAL_KILL_SWITCH_ACTIVE: 'true',
-    OWNER_SESSION_SECRET: 'observability-test-only-not-a-real-secret',
+    // The refactored TotpPasswordAuthProvider is fail-closed: it refuses to
+    // start without an explicit operator-supplied secret. The observability
+    // test boots the bundle only to exercise the unauthenticated endpoints,
+    // not to perform any login — so the PIN is enough to satisfy the
+    // constructor's env-validation, and the resulting skeleton config
+    // remains unbootable for login (no TOTP enrollment) until the operator
+    // runs the setup flow. JWT_SECRET replaces the legacy OWNER_SESSION_SECRET
+    // path with a deterministic 32+ char secret so the bundle can boot.
+    OWNER_AUTH_PIN: '123456',
+    JWT_SECRET: 'observability-test-only-not-a-real-secret-32chars',
   };
 
   const child = spawn('node', [bundle], {
@@ -194,6 +211,9 @@ async function main() {
   child.kill('SIGTERM');
   // Give it a moment to flush
   await new Promise((res) => setTimeout(res, 250));
+
+  // Best-effort cleanup of the per-run data dir.
+  try { fs.rmSync(TEST_DATA_DIR, { recursive: true, force: true }); } catch { /* ignore */ }
 
   process.exit(failed === 0 ? 0 : 1);
 }

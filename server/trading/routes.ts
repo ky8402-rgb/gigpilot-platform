@@ -1010,7 +1010,7 @@ tradingRouter.all(['/auth/setup-init', '/auth/setup-init/', '/setup-init', '/set
   }
 });
 
-tradingRouter.all(['/auth/setup-complete', '/auth/setup-complete/', '/setup-complete', '/setup-complete/'], authThrottle, (req: Request, res: Response) => {
+tradingRouter.all(['/auth/setup-complete', '/auth/setup-complete/', '/setup-complete', '/setup-complete/'], authThrottle, async (req: Request, res: Response) => {
   res.setHeader('Content-Type', 'application/json; charset=utf-8');
   if (req.method === 'OPTIONS') return res.sendStatus(200);
   if (req.method !== 'POST') {
@@ -1021,7 +1021,7 @@ tradingRouter.all(['/auth/setup-complete', '/auth/setup-complete/', '/setup-comp
       return res.status(409).json({ success: false, error: 'Owner account is already configured. Setup cannot be re-run without an authenticated session.' });
     }
     const { password, totpCode, email } = parseBody(req);
-    const result = ownerAuth.completeSetup(password, totpCode, email);
+    const result = await ownerAuth.completeSetup({ password, totpCode, email });
     if (!result.success) return res.status(400).json(result);
     return res.json(result);
   } catch (err: any) {
@@ -1029,7 +1029,7 @@ tradingRouter.all(['/auth/setup-complete', '/auth/setup-complete/', '/setup-comp
   }
 });
 
-tradingRouter.all(['/auth/login', '/auth/login/', '/login', '/login/'], authThrottle, (req: Request, res: Response) => {
+tradingRouter.all(['/auth/login', '/auth/login/', '/login', '/login/'], authThrottle, async (req: Request, res: Response) => {
   res.setHeader('Content-Type', 'application/json; charset=utf-8');
   if (req.method === 'OPTIONS') return res.sendStatus(200);
   if (req.method !== 'POST') {
@@ -1040,7 +1040,7 @@ tradingRouter.all(['/auth/login', '/auth/login/', '/login', '/login/'], authThro
     if (!email) {
       return res.status(400).json({ success: false, error: 'Owner email is required.' });
     }
-    const result = ownerAuth.login({ email, password, totpCode, emergencyPin });
+    const result = await ownerAuth.login({ email, password, totpCode, emergencyPin });
     if (!result.success) {
       return res.status(401).json(result);
     }
