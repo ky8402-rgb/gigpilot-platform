@@ -143,6 +143,20 @@ export class DataEngine implements EngineModule {
     this.tickCallbacks.push(cb);
   }
 
+  /**
+   * Diagnostic accessor. Returns the last Bybit kline response per tracked symbol so
+   * the /api/_diag endpoint can show whether the candle fetch is running. Format:
+   *   { [symbol]: { ts: ISO date, ageMs: number, listLen: number } }
+   * `listLen = -1` indicates the response was not an array (likely retCode != 0).
+   */
+  public getLastKlineResponses(): Record<string, { ts: string; ageMs: number; listLen: number }> {
+    const out: Record<string, { ts: string; ageMs: number; listLen: number }> = {};
+    for (const [sym, v] of this.lastKlineResponseAt.entries()) {
+      out[sym] = { ts: new Date(v.ts).toISOString(), ageMs: Date.now() - v.ts, listLen: v.listLen };
+    }
+    return out;
+  }
+
   public getPairData(symbol: string): LivePairMarketData | undefined {
     if (!this.enabled) return undefined;
     const norm = this.normalizeSymbol(symbol);
