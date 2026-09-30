@@ -15,7 +15,6 @@
     "clean": "rm -rf dist server.js",
     "health": "node healthcheck.js",
     "deploy:all": "bash ./scripts/push-and-deploy.sh",
-    "deploy:master": "bash ./master-deploy.sh",
     "setup:ec2": "bash ./setup-ec2.sh",
     "verify:prod": "bash ./verify-production.sh",
     "push": "bash ./scripts/push-and-deploy.sh",
