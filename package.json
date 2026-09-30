@@ -18,8 +18,6 @@
     "deploy:master": "bash ./master-deploy.sh",
     "setup:ec2": "bash ./setup-ec2.sh",
     "verify:prod": "bash ./verify-production.sh",
-    "update-godaddy-dns": "tsx scripts/update-godaddy-dns.ts",
-    "update-cloudflare-dns": "tsx scripts/update-cloudflare-dns.ts",
     "push": "bash ./scripts/push-and-deploy.sh",
     "lint": "tsc --noEmit",
     "test": "tsc --noEmit && npm run test:profit && npm run test:cost && npm run test:state && npm run test:research && npm run test:strategy && npm run test:security && npm run test:capital && npm run test:env",
@@ -31,7 +29,7 @@
     "test:security": "tsx scripts/test-auth-throttle.ts",
     "test:capital": "tsx scripts/test-capital-plan.ts",
     "test:env": "node scripts/test-update-env.mjs",
-    "test:loop": "tsx scripts/test-autonomous-loop.ts",
+    "test:observability": "node scripts/test-observability-endpoints.mjs",
     "postinstall": "node scripts/postinstall.js"
   },
   "dependencies": {
@@ -91,6 +89,7 @@
     "vite": "^6.2.3"
   },
   "overrides": {
-    "deepmerge-ts": "^8.0.0"
+    "deepmerge-ts": "^8.0.0",
+    "ip-address": "^10.7.2"
   }
 }

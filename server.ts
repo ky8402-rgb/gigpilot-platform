@@ -12,7 +12,15 @@ import { globalTradingStore } from "./server/trading/store.js";
 import { requireOwnerAuth } from "./server/trading/ownerAuth.js";
 
 const app = express();
-const PORT = 3000;
+// PORT is read from the environment with a 3000 fallback so the same bundle can
+// be moved between the default Amplify/EC2 3000 binding and a reverse-proxy or
+// test harness that exposes a different port. Any non-integer or non-positive
+// value falls back to the documented default rather than crashing the boot.
+const PORT = (() => {
+  const raw = process.env.PORT;
+  const parsed = Number.parseInt(String(raw ?? ""), 10);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : 3000;
+})();
 
 // Security & Parsing Middlewares
 app.use(compression());

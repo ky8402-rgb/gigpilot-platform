@@ -27,7 +27,8 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Typecheck
+      - name: Typecheck + unit/integration tests
+        # Excludes test:observability, which needs dist/server.cjs and runs below.
         run: npm run test
 
       - name: Secret scan
@@ -41,3 +42,9 @@ jobs:
 
       - name: Production build
         run: npm run build
+
+      # Observability contract test depends on dist/server.cjs. Running it after the build
+      # step means the contract is pinned against the exact bundle that ships, not a
+      # second fresh build whose output may differ.
+      - name: Observability contract test (against built bundle)
+        run: npm run test:observability
