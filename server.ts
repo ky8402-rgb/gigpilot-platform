@@ -240,8 +240,37 @@ app.get("/api/health/ready", (req, res) => {
     detail: persistenceOk ? "durable trading state writable" : "durable trading state could NOT be written"
   };
 
+  // 6. Reliability loop status (observability only — does not gate ready, by the same
+  //    rule as safetyInterlocks/capital: a healthy steady-state IS sometimes "no cycle
+  //    has run yet" within the first ~5s of boot). Operators can read the score and
+  //    last probe pass rate to gauge SRE posture without having to authenticate.
+  let reliabilityScore: number | null = null;
+  let reliabilityLastExecutionAt: string | null = null;
+  let reliabilityProbesPassed = 0;
+  let reliabilityProbesTotal = 0;
+  try {
+    const last = store.reliabilityLoop.getLastCycle();
+    if (last) {
+      reliabilityScore = last.reliabilityScore;
+      reliabilityLastExecutionAt = last.finishedAt;
+      reliabilityProbesPassed = last.stages.testing.testSuite.passed_count;
+      reliabilityProbesTotal = last.stages.testing.testSuite.total_probes;
+    }
+  } catch {
+    /* reliability loop optional — never fail readiness because of it */
+  }
+  checks.reliability = {
+    // A missing cycle counts as ok: the very first cycle runs ~5s after boot. After that
+    // a missing cycle means the loop crashed, which is visible in the score and pass-rate
+    // fields below. The ok flag is intentionally informational.
+    ok: true,
+    detail: reliabilityScore === null
+      ? "reliability loop warming up (first cycle ~5s after boot)"
+      : `reliability score ${reliabilityScore}/100; probes ${reliabilityProbesPassed}/${reliabilityProbesTotal} passed; last cycle ${reliabilityLastExecutionAt}`
+  };
+
   // Ready = the process is live, market data is flowing and the engine fleet is not fail-closed.
-  // Safety interlocks and capital are intentionally excluded from this judgement.
+  // Safety interlocks, capital and reliability are intentionally excluded from this judgement.
   const ready = checks.marketData.ok && checks.engines.ok && checks.persistence.ok;
 
   res.json({

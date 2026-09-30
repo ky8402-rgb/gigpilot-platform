@@ -144,13 +144,23 @@ async function main() {
     assert(r.json && typeof r.json.activelyTrading === 'boolean', 'activelyTrading boolean');
     assert(r.json && r.json.checks && typeof r.json.checks === 'object', 'checks is an object');
     // Each documented probe must be present
-    for (const key of ['marketData', 'engines', 'safetyInterlocks', 'capital', 'persistence']) {
+    for (const key of ['marketData', 'engines', 'safetyInterlocks', 'capital', 'persistence', 'reliability']) {
       assert(r.json && r.json.checks[key] && typeof r.json.checks[key].ok === 'boolean', `checks.${key}.ok boolean`);
       assert(r.json && r.json.checks[key] && typeof r.json.checks[key].detail === 'string', `checks.${key}.detail string`);
     }
-    // Safety interlocks MUST always be ok: halting is a healthy steady state.
+    // Safety interlocks, capital, and reliability MUST always be ok (informational only).
     assert(r.json && r.json.checks.safetyInterlocks.ok === true, 'safetyInterlocks always ok');
     assert(r.json && r.json.checks.capital.ok === true, 'capital ok is observed (not a gate)');
+    assert(r.json && r.json.checks.reliability.ok === true, 'reliability ok is observed (not a gate)');
+    // Reliability detail must be either "warming up" or score+probes+timestamp.
+    const reliabilityDetail = r.json && r.json.checks.reliability && r.json.checks.reliability.detail;
+    assert(
+      typeof reliabilityDetail === 'string' && (
+        reliabilityDetail.startsWith('reliability loop warming up') ||
+        /reliability score \d+\/100; probes \d+\/\d+ passed; last cycle /.test(reliabilityDetail)
+      ),
+      'reliability.detail has expected format',
+    );
     // In a fail-closed sandbox with GLOBAL_KILL_SWITCH_ACTIVE=true, engines must report as not-healthy
     // and ready must be false — but the endpoint MUST respond, not 5xx.
     if (process.env.GLOBAL_KILL_SWITCH_ACTIVE === 'true') {
