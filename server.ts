@@ -351,6 +351,41 @@ app.get("/api/health/engines", (req, res) => {
   });
 });
 
+/**
+ * Temporary diagnostic endpoint. Surfaces the raw dataEngine marketData for the active
+ * symbol so on-call engineers can see whether the candle array is genuinely empty or
+ * whether some downstream consumer is being handed stale data. Includes WS/poll state
+ * (connected, lastHeartbeat, lastCandleFetchAt) so a misbehaving ingest can be ruled in
+ * or out at a glance. Will be removed once the candle starvation is fixed.
+ */
+app.get("/api/_diag/market-data", (req, res) => {
+  const store = globalTradingStore;
+  const sym = store.activeSymbol;
+  const norm = store.dataEngine.normalizeSymbol(sym);
+  const raw = store.dataEngine.getPairData(norm);
+  // Reach into the unexposed map via the public getAllPairs() since marketData is private.
+  const all = store.dataEngine.getAllPairs();
+  const diag = all.map((p) => ({
+    symbol: p.symbol,
+    currentPrice: p.currentPrice,
+    candles: p.candles?.length ?? 0,
+    lastUpdated: p.lastUpdated,
+    source: p.source,
+    firstCandleTs: p.candles?.[0]?.timestamp,
+    lastCandleTs: p.candles?.[p.candles.length - 1]?.timestamp
+  }));
+  res.json({
+    success: true,
+    activeSymbol: sym,
+    activeSymbolNormalized: norm,
+    activeHasEntry: Boolean(raw),
+    activeCandleCount: raw?.candles?.length ?? 0,
+    pairCount: diag.length,
+    pairs: diag,
+    dataEngineStatus: store.dataEngine.healthCheck()
+  });
+});
+
 // 2. Autonomous Crypto Grid Trading Platform Router
 app.use("/api/trading", tradingRouter);
 
