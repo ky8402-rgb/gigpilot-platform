@@ -186,12 +186,14 @@ app.get("/api/health/ready", (req, res) => {
   // 2. Engine fleet health and the fail-closed gate.
   let failClosed = { failClosed: true, downEngines: ["UNKNOWN"] as string[] };
   let engineCount = 0;
-  let unhealthyEngines = 0;
+  let unhealthyEngines: string[] = [];
   try {
     failClosed = store.monitor.isSystemFailClosed();
     const engines = store.monitor.getAllEngineHealth();
     engineCount = engines.length;
-    unhealthyEngines = engines.filter(e => e.status !== "HEALTHY").length;
+    unhealthyEngines = engines
+      .filter(e => e.status !== "HEALTHY")
+      .map(e => `${e.id}(${e.status})`);
   } catch {
     /* leave the fail-closed default above */
   }
@@ -199,7 +201,9 @@ app.get("/api/health/ready", (req, res) => {
     ok: !failClosed.failClosed,
     detail: failClosed.failClosed
       ? `fail-closed: ${failClosed.downEngines.join(", ")}`
-      : `${engineCount} engines registered, ${unhealthyEngines} not ONLINE`
+      : unhealthyEngines.length === 0
+        ? `${engineCount} engines registered, all HEALTHY`
+        : `${engineCount} engines registered, ${unhealthyEngines.length} not ONLINE: ${unhealthyEngines.join(", ")}`
   };
 
   // 3. Hard halt and kill-switch posture (reported as state, not as a failure: halting is healthy).

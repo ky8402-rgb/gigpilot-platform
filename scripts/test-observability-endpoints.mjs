@@ -178,6 +178,17 @@ async function main() {
       ),
       'reliability.detail has expected format',
     );
+
+    // Engines detail must surface a list of unhealthy engines when any are
+    // not HEALTHY, so operators can see WHICH subsystem is degraded.
+    const enginesDetail = r.json && r.json.checks.engines && r.json.checks.engines.detail;
+    assert(
+      typeof enginesDetail === 'string' && (
+        /all HEALTHY/.test(enginesDetail) ||
+        /not ONLINE/.test(enginesDetail)
+      ),
+      'engines.detail has the new structured format',
+    );
     // In a fail-closed sandbox with GLOBAL_KILL_SWITCH_ACTIVE=true, engines must report as not-healthy
     // and ready must be false — but the endpoint MUST respond, not 5xx.
     if (process.env.GLOBAL_KILL_SWITCH_ACTIVE === 'true') {
