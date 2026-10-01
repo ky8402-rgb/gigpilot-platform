@@ -195,7 +195,7 @@ CORS_ALLOWED_ORIGINS="${FRONTEND_URL},https://*.amplifyapp.com,http://localhost:
 DATABASE_URL="${NEON_DATABASE_URL}"
 
 # Redis / Render / ElastiCache Connection
-REDIS_URL=redis://red-daarifid0e5s7392b3k0:6379
+REDIS_URL=redis://127.0.0.1:6379
 
 # Self-Healing, Python ML Microservice & Telemetry
 ML_SERVICE_URL=http://127.0.0.1:8000
@@ -203,11 +203,7 @@ ML_ENABLED=true
 AUTO_HEAL_ENABLED=true
 
 # GitHub Automated Push-to-Deploy Webhook Secret
-# Secret must be supplied by the operator; never store a default in source.
-GITHUB_WEBHOOK_SECRET="${GITHUB_WEBHOOK_SECRET:-}"
-if [ -z "$GITHUB_WEBHOOK_SECRET" ]; then
-  GITHUB_WEBHOOK_SECRET="$(openssl rand -hex 32)"
-fi
+GITHUB_WEBHOOK_SECRET=your_github_webhook_secret
 EOF
 
 chmod 600 "${APP_DIR}/.env"

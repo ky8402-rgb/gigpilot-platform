@@ -11,8 +11,6 @@ export const AutonomousProfitOptimizerView: React.FC = () => {
   const decision = data?.decisions?.[0];
   const build = data?.strategyBuilds?.[0];
   const edge = data?.latestAudit?.expectedNetEdge;
-  const auditReport = data?.latestAudit;
-  const costEvidence = auditReport?.costEvidence;
   const allocation = data?.latestStrategyAllocation || decision?.strategyAllocation;
 
   return (
@@ -90,49 +88,6 @@ export const AutonomousProfitOptimizerView: React.FC = () => {
             <div className="bg-slate-900/80 p-2 rounded border border-slate-800"><div className="text-[9px] text-slate-500 uppercase">− Carrying</div><div className="text-indigo-400 font-bold mt-0.5">−{edge.fundingCarryingCostBps} bps</div></div>
             <div className="bg-slate-900/80 p-2 rounded border border-slate-800"><div className="text-[9px] text-slate-500 uppercase">− Uncertainty</div><div className="text-violet-400 font-bold mt-0.5">−{edge.executionUncertaintyBps} bps</div></div>
             <div className={`p-2 rounded border ${edge.isTradeable ? 'bg-cyan-950/50 border-cyan-700/60' : 'bg-rose-950/50 border-rose-700/60'}`}><div className="text-[9px] text-cyan-300 uppercase font-bold">= Net Edge</div><div className={`font-black mt-0.5 ${edge.isTradeable ? 'text-cyan-200' : 'text-rose-300'}`}>{edge.expectedNetEdgeBps > 0 ? `+${edge.expectedNetEdgeBps}` : edge.expectedNetEdgeBps} bps</div></div>
-          </div>
-        </div>
-      )}
-
-      {costEvidence && (
-        <div className="rounded-xl border border-amber-800/50 bg-slate-950/80 p-4 font-mono">
-          <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-800 pb-2.5 mb-3 text-xs">
-            <span className="text-amber-300 font-bold flex items-center gap-1.5 uppercase">
-              <ShieldCheck className="w-4 h-4" /> Measured Post-Cost Ledger — {costEvidence.sampleCount} attributed fills, {costEvidence.markoutSampleCount} markouts
-            </span>
-            <span className="text-[10px] text-slate-400">fee source: {costEvidence.feeRateSource} · funding: {costEvidence.fundingRateSource}</span>
-          </div>
-          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2 text-center text-xs">
-            <div className="bg-slate-900/80 p-2 rounded border border-slate-800"><div className="text-[9px] text-slate-500 uppercase">Fees Paid</div><div className="text-rose-400 font-bold mt-0.5">${costEvidence.realizedFeesUsd?.toFixed(4)}</div></div>
-            <div className="bg-slate-900/80 p-2 rounded border border-slate-800"><div className="text-[9px] text-slate-500 uppercase">Spread Cost</div><div className="text-amber-400 font-bold mt-0.5">${costEvidence.realizedSpreadCostUsd?.toFixed(4)}</div></div>
-            <div className="bg-slate-900/80 p-2 rounded border border-slate-800"><div className="text-[9px] text-slate-500 uppercase">Slippage</div><div className="text-orange-400 font-bold mt-0.5">${costEvidence.realizedSlippageCostUsd?.toFixed(4)}</div></div>
-            <div className="bg-slate-900/80 p-2 rounded border border-slate-800"><div className="text-[9px] text-slate-500 uppercase">Adverse Sel</div><div className="text-purple-400 font-bold mt-0.5">${costEvidence.realizedAdverseSelectionCostUsd?.toFixed(4)}</div></div>
-            <div className="bg-slate-900/80 p-2 rounded border border-slate-800"><div className="text-[9px] text-slate-500 uppercase">Funding</div><div className="text-indigo-400 font-bold mt-0.5">${costEvidence.realizedFundingCostUsd?.toFixed(4)}</div></div>
-            <div className="bg-slate-900/80 p-2 rounded border border-amber-700/60"><div className="text-[9px] text-amber-300 uppercase font-bold">Total Cost</div><div className="text-amber-200 font-black mt-0.5">${costEvidence.realizedTotalCostUsd?.toFixed(4)}</div></div>
-          </div>
-          <div className="mt-3 text-[11px] text-slate-400">
-            Attributed notional ${costEvidence.realizedNotionalUsd?.toLocaleString()} USDT · fee-to-profit ratio {auditReport?.feeToProfitRatioPct ?? 0}% · spread capture efficiency {auditReport?.spreadCaptureEfficiencyPct ?? 0}% · realized net after all verified costs ${auditReport?.netRealizedProfitUsd?.toFixed(4) ?? '0.0000'} USDT
-          </div>
-          {!costEvidence.fundingRateSource || costEvidence.fundingRateSource === 'UNAVAILABLE' ? (
-            <div className="mt-2 text-[11px] text-amber-300/80">Funding carry could not be attributed (no live funding rate or no defensible holding horizon); it is reported as unavailable rather than assumed to be zero.</div>
-          ) : null}
-        </div>
-      )}
-
-      {(auditReport?.leaks?.length ?? 0) > 0 && (
-        <div className="rounded-xl border border-rose-800/50 bg-slate-950/80 p-4 font-mono">
-          <div className="text-rose-300 font-bold text-xs uppercase mb-2">Revenue Leaks ({auditReport.leaks.length})</div>
-          <div className="space-y-2">
-            {auditReport.leaks.map((leak: any) => (
-              <div key={leak.id} className="border border-slate-800 bg-slate-900/60 rounded p-2 text-[11px]">
-                <div className="flex justify-between gap-2">
-                  <span className="text-slate-200 font-bold">{leak.type}</span>
-                  <span className={leak.severity === 'HIGH' ? 'text-rose-300' : 'text-amber-300'}>{leak.severity}</span>
-                </div>
-                <div className="text-slate-400 mt-1">{leak.description}</div>
-                <div className="text-slate-500 mt-1">Remediation: {leak.recommendedRemediation}</div>
-              </div>
-            ))}
           </div>
         </div>
       )}

@@ -1,58 +1,30 @@
-# Dependencies
 node_modules/
-
-# Build output
 build/
 dist/
-*.tsbuildinfo
-.esbuild/
-
-# Test/coverage output
 coverage/
-.nyc_output/
-*.lcov
-
-# OS / editor cruft
 .DS_Store
-Thumbs.db
-desktop.ini
-.idea/
-.vscode/
-*.swp
-*.swo
-*.bak
-*.orig
-*~
-*.tmp
-.cache/
-.pyc
-__pycache__/
-*.pyc
-
-# Local env (template is committed)
+*.log
 .env*
 !.env.example
 .dev.env.json
 .dev.pid
-
-# Secrets and credentials (never commit)
 .owner-auth-config.json
 .binance-quant-keys.json
-.git-credentials
+.bybit-quant-keys.json
+.exchange-trade-only-keys.json
+__pycache__/
+*.pyc
+.cache/
+server/data/
 *.key
 *.pem
 *.pub
-
-# Local database files
 *.db
-*.sqlite
-*.sqlite3
+*.db-shm
+*.db-wal
 bids.db
-server/data/
-
-# ML / experiment runtime data
 mlruns/
+.git-credentials
 data/snapshots/
 data/deliverables/
 .gigpilot-data/
-.quarantine/

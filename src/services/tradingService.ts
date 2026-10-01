@@ -3,7 +3,6 @@ import {
   AutonomyLevel,
   BybitAccountState,
   CapitalAccounting,
-  CapitalPlan,
   DestinationWallet,
   GridConfiguration,
   MasterTradingState,
@@ -110,15 +109,7 @@ export async function fetchWithFailover<T>(
   if (token) mergedHeaders.Authorization = `Bearer ${token}`;
 
   const { timeoutMs: _timeout, ...fetchOptions } = options || {};
-
-  // Non-idempotent requests must never be replayed against another host. A POST that succeeded
-  // server-side but whose response was lost (timeout / 5xx after apply) would otherwise be re-sent
-  // to the next candidate, double-executing a real order, sweep, or state change.
-  const method = (fetchOptions.method || 'GET').toString().toUpperCase();
-  const isIdempotent = method === 'GET' || method === 'HEAD' || method === 'OPTIONS';
-  const attemptUrls = isIdempotent ? candidates : candidates.slice(0, 1);
-
-  for (const baseUrl of attemptUrls) {
+  for (const baseUrl of candidates) {
     const cleanEndpoint = endpointPath.startsWith('/') ? endpointPath : `/${endpointPath}`;
     const targetUrl = `${baseUrl}${cleanEndpoint}`;
     const controller = new AbortController();
@@ -273,39 +264,6 @@ export async function selectActivePair(symbol: string) {
   });
 }
 
-export async function startAutonomousTrading(symbol: string, allocatedCapitalUsd: number, leverage?: number) {
-  const body: Record<string, unknown> = { symbol, allocatedCapitalUsd };
-  if (typeof leverage === 'number' && Number.isFinite(leverage)) body.leverage = leverage;
-  return await fetchWithFailover<{
-    success: boolean;
-    status: 'RUNNING' | 'PAUSED' | 'BLOCKED';
-    activeSymbol?: string;
-    allocatedCapitalUsd?: number;
-    leverage?: number;
-    autonomyLevel?: AutonomyLevel;
-    error?: string;
-  }>('/autonomous/start', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(body)
-  });
-}
-
-export async function stopAutonomousTrading() {
-  return await fetchWithFailover<{
-    success: boolean;
-    status: 'PAUSED' | 'BLOCKED';
-    autonomyLevel?: AutonomyLevel;
-    cancelledEntryOrders?: number;
-    reconciledCount?: number;
-    message?: string;
-    error?: string;
-  }>('/autonomous/stop', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' }
-  });
-}
-
 export async function setAutonomyLevel(level: AutonomyLevel) {
   return await fetchWithFailover<{ success: boolean; level: AutonomyLevel }>('/autonomy', {
     method: 'POST',
@@ -364,20 +322,6 @@ export async function configureGrid(config: {
   return res;
 }
 
-export async function fetchOrderPreview(order: {
-  symbol: string;
-  side: 'BUY' | 'SELL';
-  type: 'LIMIT' | 'MARKET';
-  price: number;
-  amount: number;
-}): Promise<{ success: boolean; symbol: string; currentPrice: number; estimatedExecutionPrice: number; estimatedFeeUsd: number; expectedNetEdge: any; serverTime: string; error?: string }> {
-  return await fetchWithFailover('/order/preview', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(order) });
-}
-
-export async function placeProtectiveExit(spec: { symbol: string; kind: 'TAKE_PROFIT' | 'STOP_LOSS'; triggerPrice: number; amount: number }): Promise<{ success: boolean; orderId?: string; error?: string }> {
-  return await fetchWithFailover('/position/protection', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(spec) });
-}
-
 export async function placeManualOrder(order: {
   symbol: string;
   side: 'BUY' | 'SELL';
@@ -414,59 +358,14 @@ export async function fetchAutonomousOptimizer(): Promise<{
   decisions: any[];
   strategyBuilds: any[];
   engine: any;
-  latestAudit?: any;
-  latestStrategyAllocation?: any;
-  autoApplyEnabled?: boolean;
-  championStrategy?: any;
 }> {
-  // The optimizer is exposed at /autonomous-optimizer/status. The previous '/optimizer' path did
-  // not exist, so this view failed on mount and then again every 5 seconds.
-  const res = await fetchWithFailover<any>('/autonomous-optimizer/status');
+  const res = await fetchWithFailover<any>('/optimizer');
   if (!res?.success) throw new Error('Autonomous optimizer telemetry unavailable.');
-  return {
-    success: res.success,
-    objective: res.objective ?? 'NET_REALIZED_PROFIT_AFTER_FEES',
-    autonomousDecisioning: res?.health?.details?.autonomousDecisioning ?? true,
-    decisions: res.decisions ?? [],
-    strategyBuilds: res.builds ?? [],
-    engine: res.health,
-    latestAudit: res.latestAudit,
-    latestStrategyAllocation: res.latestStrategyAllocation,
-    autoApplyEnabled: res.autoApplyEnabled,
-    championStrategy: res.championStrategy
-  };
-}
-
-/**
- * Pre-flight for the Select Pair -> Allocate Capital -> Confirm START flow, so blockers are shown
- * before the operator commits rather than as a rejection afterwards.
- */
-export async function fetchAutonomyStatus(capital?: number, levels?: number, leverage?: number): Promise<{
-  success: boolean;
-  activeSymbol: string;
-  autonomyLevel: number;
-  automaticTradingReady: boolean;
-  blockers: string[];
-  systemFailClosed: boolean;
-  globalKillSwitchActive: boolean;
-  candleCount: number;
-  capitalPlan?: CapitalPlan;
-  expectedNetEdge?: any;
-  [key: string]: any;
-}> {
-  const params = new URLSearchParams();
-  if (typeof capital === 'number' && Number.isFinite(capital) && capital > 0) params.set('capital', String(capital));
-  if (typeof levels === 'number' && Number.isFinite(levels) && levels > 0) params.set('levels', String(levels));
-  if (typeof leverage === 'number' && Number.isFinite(leverage) && leverage > 0) params.set('leverage', String(leverage));
-  const query = params.toString();
-  const suffix = query ? `?${query}` : '';
-  const res = await fetchWithFailover<any>(`/autonomy/status${suffix}`);
-  if (!res?.success) throw new Error('Autonomy status unavailable.');
   return res;
 }
 
 export async function runAutonomousOptimizer() {
-  return await fetchWithFailover<any>('/autonomous-optimizer/run', {
+  return await fetchWithFailover<any>('/optimizer/run', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' }
   });
@@ -476,14 +375,38 @@ export async function fetchStrategies(): Promise<{
   champion: StrategyVersion;
   challengers: StrategyVersion[];
   history: StrategyVersion[];
+  rollbackTelemetry?: {
+    regressionRollbackCount: number;
+    lastRollbackEvent: any;
+    historyDepth: number;
+  };
 }> {
   const res = await fetchWithFailover<{
     champion: StrategyVersion;
     challengers: StrategyVersion[];
     history: StrategyVersion[];
+    rollbackTelemetry?: {
+      regressionRollbackCount: number;
+      lastRollbackEvent: any;
+      historyDepth: number;
+    };
   }>('/strategies');
   if (!res.champion) throw new Error('Live strategy state unavailable: champion strategy is missing.');
   return res;
+}
+
+export async function rollbackStrategy(reason?: string) {
+  return await fetchWithFailover<{
+    success: boolean;
+    message?: string;
+    error?: string;
+    restoredChampion?: StrategyVersion;
+    rolledBackChampion?: StrategyVersion;
+  }>('/strategy/rollback', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ reason: reason || 'Manual owner rollback invoked via UI' })
+  });
 }
 
 export async function promoteChallenger(challengerId: string) {
@@ -501,11 +424,11 @@ export async function createStrategyVariant(params: {
   parameters: Partial<StrategyVersion['parameters']>;
   expectedEffect: string;
 }) {
-  // No such route exists on the backend (`/strategy/create-variant` was never implemented); the
-  // previous path always returned a 404 through the catch-all handler. Fail with a clear, honest
-  // message instead of a misleading network error, and expose the parameters used.
-  void params;
-  throw new Error('Strategy variant creation is not exposed by the live backend API.');
+  return await fetchWithFailover<{ success: boolean; challenger: StrategyVersion }>('/strategy/create-variant', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(params)
+  });
 }
 
 export async function validateUserScript(code: string) {
@@ -551,30 +474,22 @@ export async function fetchProfitSweepInfo(): Promise<{
   };
   history: ProfitSweep[];
 }> {
-  return await fetchWithFailover('/sweep/info');
+  return await fetchWithFailover('/profit-sweep');
 }
 
-export async function updateDestinationWallet(wallet: { address: string; chain: string; label?: string; isWhitelisted?: boolean }) {
-  // The server expects a DestinationWallet carrying `network`; the client previously sent only
-  // `chain`, so the destination could never be persisted ("Destination chain/network is required").
-  return await fetchWithFailover<{ success: boolean; wallet: DestinationWallet }>('/sweep/wallet', {
+export async function updateDestinationWallet(wallet: { address: string; chain: string; label?: string }) {
+  return await fetchWithFailover<{ success: boolean; wallet: DestinationWallet }>('/profit-sweep/wallet', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      address: wallet.address,
-      network: wallet.chain,
-      label: wallet.label,
-      isWhitelisted: wallet.isWhitelisted !== false
-    })
+    body: JSON.stringify(wallet)
   });
 }
 
 export async function executeProfitSweep(amount: number) {
-  // The server contract is `amountUsd`, not `amount`.
-  return await fetchWithFailover<{ success: boolean; sweep?: ProfitSweep; updatedCapital?: CapitalAccounting; error?: string }>('/sweep/execute', {
+  return await fetchWithFailover<{ success: boolean; sweep?: ProfitSweep; updatedCapital?: CapitalAccounting; error?: string }>('/profit-sweep/execute', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ amountUsd: amount })
+    body: JSON.stringify({ amount })
   });
 }
 
@@ -595,7 +510,7 @@ export async function updateRiskConfig(config: Partial<RiskRuleConfig>) {
 }
 
 export async function resetCircuitBreaker() {
-  return await fetchWithFailover<{ success: boolean; circuitBreakerActive: boolean }>('/risk/circuit-breaker/reset', {
+  return await fetchWithFailover<{ success: boolean; circuitBreakerActive: boolean }>('/risk/reset-circuit-breaker', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' }
   });
@@ -608,12 +523,11 @@ export async function fetchUpdatesHistory(): Promise<{ updates: SystemUpdate[] }
 }
 
 export async function triggerCanaryRollout(version?: string, notes?: string) {
-  // No such route exists on the backend (`/updates/rollout` was never implemented); the previous
-  // path always returned a 404 through the catch-all handler. There is deliberately no fabricated
-  // "rollout" fallback: canary rollout requires a real deployment capability.
-  void version;
-  void notes;
-  throw new Error('Canary rollout is not exposed by the live backend API.');
+  return await fetchWithFailover<{ success: boolean; update: SystemUpdate }>('/updates/rollout', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ version, notes })
+  });
 }
 
 export async function fetchAuditLogs(): Promise<{ logs: AuditLog[] }> {
@@ -820,3 +734,114 @@ export async function evaluateSignalDecision(payload: {
     body: JSON.stringify(payload)
   });
 }
+
+// -------------------------------------------------------------
+// GigPilot Bybit Linear Futures Services
+// -------------------------------------------------------------
+export interface GigPilotMarket {
+  symbol: string;
+  mid: number;
+  last: number;
+  mark: number;
+  spread_bps: number;
+  funding_rate: number;
+  tick_age_ms: number;
+  imbalance: number;
+  atr_bps: number;
+  fee_bps: number;
+}
+
+export interface GigPilotSignal {
+  symbol: string;
+  side: string;
+  gross_bps: number;
+  fee_bps: number;
+  spread_bps: number;
+  slip_bps: number;
+  funding_bps: number;
+  net_bps: number;
+  tradable: boolean;
+  reason: string;
+  ts_ms: number;
+}
+
+export interface GigPilotPosition {
+  symbol: string;
+  side: string;
+  qty: number;
+  entry: number;
+  mark: number;
+  upnl: number;
+}
+
+export interface GigPilotEvent {
+  ts: string;
+  kind: string;
+  symbol: string;
+  side?: string;
+  px?: number;
+  qty?: number;
+  fee?: number;
+  closed_pnl?: number;
+  link?: string;
+  [key: string]: any;
+}
+
+export interface GigPilotState {
+  success: boolean;
+  reachable?: boolean;
+  error?: string;
+  daemonRunning?: boolean;
+  ts: string;
+  armed: boolean;
+  host: string;
+  position_mode?: string | null;
+  hurdle_bps: number;
+  equity: number | null;
+  margin_ratio: number | null;
+  gross_notional: number | null;
+  daily_pnl: number | null;
+  realized_today: number | null;
+  positions: GigPilotPosition[];
+  signals: GigPilotSignal[];
+  markets: GigPilotMarket[];
+  events: GigPilotEvent[];
+  message?: string;
+}
+
+export async function fetchGigPilotState(): Promise<GigPilotState> {
+  return fetchWithFailover<GigPilotState>('/gigpilot/state');
+}
+
+export async function armGigPilot(): Promise<{ success: boolean; armed: boolean; error?: string }> {
+  return fetchWithFailover<{ success: boolean; armed: boolean; error?: string }>('/gigpilot/arm', {
+    method: 'POST'
+  });
+}
+
+export async function disarmGigPilot(): Promise<{ success: boolean; armed: boolean; message?: string }> {
+  return fetchWithFailover<{ success: boolean; armed: boolean; message?: string }>('/gigpilot/disarm', {
+    method: 'POST'
+  });
+}
+
+export async function killGigPilot(): Promise<{ success: boolean; killed: boolean; message?: string }> {
+  return fetchWithFailover<{ success: boolean; killed: boolean; message?: string }>('/gigpilot/kill', {
+    method: 'POST'
+  });
+}
+
+export async function fetchGigPilotHealth(): Promise<{
+  success: boolean;
+  daemonRunning: boolean;
+  healthy: boolean;
+  public_ws: boolean;
+  private_ws: boolean;
+  feed_fresh: boolean;
+  armed: boolean;
+  host: string;
+  position_mode?: string;
+}> {
+  return fetchWithFailover('/gigpilot/health');
+}
+

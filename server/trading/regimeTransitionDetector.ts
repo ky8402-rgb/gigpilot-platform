@@ -15,8 +15,6 @@ interface SymbolTransitionTracking {
   sourceRegime: MarketRegimeType;
   transitionStartTimestamp: number;
   consecutiveBreakoutBars: number;
-  /** Timestamp of the closed candle that was last counted, so counting is per-bar not per-tick. */
-  lastBreakoutCandleTs: number;
   lastBreakoutSide: 'BULLISH' | 'BEARISH' | 'NONE';
   historicalAtrBaseline: number;
   historicalBbBandwidthBaseline: number;
@@ -45,7 +43,6 @@ export class RegimeTransitionDetector {
         sourceRegime: currentRegime,
         transitionStartTimestamp: now,
         consecutiveBreakoutBars: 0,
-        lastBreakoutCandleTs: 0,
         lastBreakoutSide: 'NONE',
         historicalAtrBaseline: indicators.atr14 || 250,
         historicalBbBandwidthBaseline: indicators.bollingerBands.bandwidth || 2.5
@@ -128,31 +125,13 @@ export class RegimeTransitionDetector {
     const isCurrentlyOutsideUpper = currentPrice > effectiveUpper;
     const isCurrentlyOutsideLower = currentPrice < effectiveLower;
 
-    // Count once per CLOSED candle, not once per polling tick. The live tick loop runs far more
-    // often than the 1m candle interval, so per-tick counting reached "2 bars" in a few seconds
-    // of price drift and then latched, permanently forcing BREAKOUT_CONFIRMED.
-    const latestClosedCandleTs = Array.isArray(candles) && candles.length > 0
-      ? Number(candles[candles.length - 1]?.timestamp) || 0
-      : 0;
-
     if (isCurrentlyOutsideUpper || isCurrentlyOutsideLower) {
-      if (latestClosedCandleTs > 0) {
-        if (latestClosedCandleTs !== tracking.lastBreakoutCandleTs) {
-          tracking.consecutiveBreakoutBars += 1;
-          tracking.lastBreakoutCandleTs = latestClosedCandleTs;
-        }
-      } else if (tracking.consecutiveBreakoutBars === 0) {
-        // No usable candle timestamps: count the first observation only, never per tick.
-        tracking.consecutiveBreakoutBars = 1;
-      }
+      tracking.consecutiveBreakoutBars += 1;
       tracking.lastBreakoutSide = isCurrentlyOutsideUpper ? 'BULLISH' : 'BEARISH';
     } else {
-      // Price is back inside the band: the breakout streak is broken and must not latch.
       if (tracking.consecutiveBreakoutBars > 0 && tracking.currentPhase === 'BREAKOUT_TESTING') {
         // Price was testing outside and is now back inside -> Rejection candidate!
       }
-      tracking.consecutiveBreakoutBars = 0;
-      tracking.lastBreakoutCandleTs = 0;
     }
 
     // =========================================================================

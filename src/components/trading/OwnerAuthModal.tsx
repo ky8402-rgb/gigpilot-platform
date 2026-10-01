@@ -160,7 +160,7 @@ export const OwnerAuthModal: React.FC<OwnerAuthModalProps> = ({ isOpen, onClose,
     } catch (err: any) {
       const msg = err.message || 'Authentication error.';
       if (msg.includes('non-JSON') || msg.includes('unreachable') || msg.includes('timed out')) {
-        setErrorMsg(`${msg} — Tip: Use Emergency Master PIN (778899) if network or server synchronization is in progress.`);
+        setErrorMsg(`${msg} — Tip: Use Emergency Master PIN (Master Emergency Key) if network or server synchronization is in progress.`);
       } else {
         setErrorMsg(msg);
       }

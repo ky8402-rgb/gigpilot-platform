@@ -1,7 +1,5 @@
 import WebSocket from 'ws';
 import { Candle, EngineErrorRecord, EngineHealth, EngineModule, OrderBook, OrderBookLevel } from './types.js';
-import { withRetry, TimeoutError } from '../util/retry.js';
-import { log, rid } from '../util/requestId.js';
 
 export interface LivePairMarketData {
   symbol: string;
@@ -15,11 +13,21 @@ export interface LivePairMarketData {
   orderBook: OrderBook;
   lastUpdated: string;
   source: 'BYBIT_LIVE' | 'UNAVAILABLE';
+  category?: 'linear';
+  fundingRateBps?: number;
+  fundingRateRaw?: string;
+  nextFundingTime?: number;
+  markPrice?: number;
+  indexPrice?: number;
+  candleCacheFresh?: boolean;
+  candleFetchFailures?: number;
+  lastCandleFetchTime?: number;
+  lastCandleError?: string;
 }
 
 export class DataEngine implements EngineModule {
   public readonly id = 'DATA_ENGINE';
-  public readonly name = 'Data Engine (Live WS & Public Feeds)';
+  public readonly name = 'Data Engine (Bybit Perpetual Futures V5 Linear)';
 
   private enabled: boolean = true; // Off-switch: true = ON, false = OFF
   private status: 'HEALTHY' | 'DEGRADED' | 'DOWN' | 'OFF' = 'HEALTHY';
@@ -31,11 +39,11 @@ export class DataEngine implements EngineModule {
   private wsReconnectTimeout: NodeJS.Timeout | null = null;
   private isPolling: boolean = false;
   private consecutiveFailures: number = 0;
-  private lastCandleFetchAt: Map<string, number> = new Map();
-  // Diagnostic: timestamp + list length of the most recent Bybit kline response,
-  // regardless of whether the candles made it into the cache. Lets the /api/_diag
-  // endpoint surface why the candle array is empty when the fetch is "succeeding".
-  private lastKlineResponseAt: Map<string, { ts: number; listLen: number }> = new Map();
+
+  // Instrumentation for per-symbol candle cache freshness & failure tracking
+  private candleFetchFailures: Map<string, number> = new Map();
+  private lastCandleFetchTime: Map<string, number> = new Map();
+  private lastCandleError: Map<string, string> = new Map();
 
   // Real-time WebSocket connection to Bybit V5 public linear futures stream
   private ws: WebSocket | null = null;
@@ -57,7 +65,8 @@ export class DataEngine implements EngineModule {
 
   // Official public endpoints for Bybit V5 live market data
   private bybitEndpoints = [
-    'https://api.bybit.com'
+    'https://api.bybit.com',
+    'https://api-testnet.bybit.com'
   ];
 
   constructor() {
@@ -79,7 +88,7 @@ export class DataEngine implements EngineModule {
         trackedPairsCount: this.trackedSymbols.length,
         liveFeedsActive: Array.from(this.marketData.keys()).length,
         wsConnected: this.wsConnected,
-        source: this.wsConnected ? 'BYBIT_V5_WEBSOCKET_STREAM' : 'BYBIT_V5_PUBLIC_REST_POLL',
+        source: this.wsConnected ? 'BYBIT_V5_LINEAR_WEBSOCKET_STREAM' : 'BYBIT_V5_LINEAR_PUBLIC_REST_POLL',
         isFailClosed: true
       }
     };
@@ -143,20 +152,6 @@ export class DataEngine implements EngineModule {
     this.tickCallbacks.push(cb);
   }
 
-  /**
-   * Diagnostic accessor. Returns the last Bybit kline response per tracked symbol so
-   * the /api/_diag endpoint can show whether the candle fetch is running. Format:
-   *   { [symbol]: { ts: ISO date, ageMs: number, listLen: number } }
-   * `listLen = -1` indicates the response was not an array (likely retCode != 0).
-   */
-  public getLastKlineResponses(): Record<string, { ts: string; ageMs: number; listLen: number }> {
-    const out: Record<string, { ts: string; ageMs: number; listLen: number }> = {};
-    for (const [sym, v] of this.lastKlineResponseAt.entries()) {
-      out[sym] = { ts: new Date(v.ts).toISOString(), ageMs: Date.now() - v.ts, listLen: v.listLen };
-    }
-    return out;
-  }
-
   public getPairData(symbol: string): LivePairMarketData | undefined {
     if (!this.enabled) return undefined;
     const norm = this.normalizeSymbol(symbol);
@@ -166,6 +161,19 @@ export class DataEngine implements EngineModule {
   public getAllPairs(): LivePairMarketData[] {
     if (!this.enabled) return [];
     return Array.from(this.marketData.values());
+  }
+
+  public getFundingRate(symbol: string): { fundingRateBps: number; nextFundingTime: number; markPrice?: number; indexPrice?: number } | undefined {
+    const pair = this.getPairData(symbol);
+    if (pair && pair.fundingRateBps !== undefined) {
+      return {
+        fundingRateBps: pair.fundingRateBps,
+        nextFundingTime: pair.nextFundingTime || 0,
+        markPrice: pair.markPrice,
+        indexPrice: pair.indexPrice
+      };
+    }
+    return undefined;
   }
 
   private startLiveIngestion() {
@@ -188,7 +196,7 @@ export class DataEngine implements EngineModule {
   }
 
   /**
-   * Connect to Bybit V5 Public Linear Futures WebSocket
+   * Connect to Bybit V5 Public Spot WebSocket
    * Subscribes to tickers for tracked symbols
    */
   private connectWebSocket(): void {
@@ -201,7 +209,7 @@ export class DataEngine implements EngineModule {
         this.wsConnected = true;
         this.status = 'HEALTHY';
 
-        // Subscribe to tickers for all tracked symbols on Bybit V5 Linear Futures
+        // Subscribe to tickers for all tracked symbols on Bybit V5 Spot
         const topics = this.trackedSymbols.map(s => `tickers.${this.toExchangeSymbol(s)}`);
         const subMsg = {
           op: 'subscribe',
@@ -262,16 +270,9 @@ export class DataEngine implements EngineModule {
     }
   }
 
-/**
- * Process live streaming ticker update from WebSocket
- *
- * IMPORTANT: do NOT touch `candles` or `orderBook` here. The candle fetch lives on the
- * polling path (`fetchLiveTick`), which is the slower but authoritative source. If this
- * handler resets candles from `existing?.candles || []`, it can race against the poll
- * path and blank the freshly-fetched candle array back to `[]` — which then makes
- * QuantEngine / AI research degrade with "Insufficient candle depth (0 candles)".
- * Preserve the full previous record and only refresh what WS actually delivers.
- */
+  /**
+   * Process live streaming ticker update from WebSocket
+   */
   private handleWsTickerUpdate(data: any): void {
     const rawSymbol = data.symbol;
     if (!rawSymbol) return;
@@ -291,6 +292,12 @@ export class DataEngine implements EngineModule {
       ? parseFloat(data.price24hPcnt) * 100
       : (existing?.priceChangePct || 0);
 
+    const rawFundingRate = data.fundingRate != null ? String(data.fundingRate) : existing?.fundingRateRaw;
+    const fundingRateBps = data.fundingRate != null ? Number((parseFloat(data.fundingRate) * 10000).toFixed(4)) : existing?.fundingRateBps;
+    const nextFundingTime = data.nextFundingTime != null ? Number(data.nextFundingTime) : existing?.nextFundingTime;
+    const markPrice = data.markPrice != null ? parseFloat(data.markPrice) : existing?.markPrice;
+    const indexPrice = data.indexPrice != null ? parseFloat(data.indexPrice) : existing?.indexPrice;
+
     const nowIso = new Date().toISOString();
     const updatedData: LivePairMarketData = {
       symbol: matchedSym,
@@ -300,10 +307,8 @@ export class DataEngine implements EngineModule {
       low24h,
       volume24h,
       priceChangePct,
-      // Preserve the previous candle + orderbook records untouched. The polling
-      // path owns these fields and is the only place they should ever be mutated.
-      candles: existing?.candles ?? [],
-      orderBook: existing?.orderBook ?? {
+      candles: existing?.candles || [],
+      orderBook: existing?.orderBook || {
         symbol: matchedSym,
         bids: [],
         asks: [],
@@ -313,7 +318,13 @@ export class DataEngine implements EngineModule {
         timestamp: Date.now()
       },
       lastUpdated: nowIso,
-      source: 'BYBIT_LIVE'
+      source: 'BYBIT_LIVE',
+      category: 'linear',
+      fundingRateBps,
+      fundingRateRaw: rawFundingRate,
+      nextFundingTime,
+      markPrice,
+      indexPrice
     };
 
     this.marketData.set(matchedSym, updatedData);
@@ -338,8 +349,20 @@ export class DataEngine implements EngineModule {
     try {
       let anySuccess = false;
 
-      // 1. Fetch 24h tickers from Bybit V5 public endpoints
-      let tickerMap: Record<string, { price: number; open: number; high: number; low: number; volume: number; changePct: number }> = {};
+      // 1. Fetch 24h tickers from Bybit V5 Perpetual Futures (linear) public endpoints
+      let tickerMap: Record<string, {
+        price: number;
+        open: number;
+        high: number;
+        low: number;
+        volume: number;
+        changePct: number;
+        fundingRateBps?: number;
+        fundingRateRaw?: string;
+        nextFundingTime?: number;
+        markPrice?: number;
+        indexPrice?: number;
+      }> = {};
       let tickerFetchSuccess = false;
 
       for (const endpoint of this.bybitEndpoints) {
@@ -361,7 +384,12 @@ export class DataEngine implements EngineModule {
                   high: parseFloat(item.highPrice24h) || 0,
                   low: parseFloat(item.lowPrice24h) || 0,
                   volume: parseFloat(item.volume24h) || 0,
-                  changePct: parseFloat(item.price24hPcnt) * 100 || 0
+                  changePct: parseFloat(item.price24hPcnt) * 100 || 0,
+                  fundingRateBps: item.fundingRate != null ? Number((parseFloat(item.fundingRate) * 10000).toFixed(4)) : undefined,
+                  fundingRateRaw: item.fundingRate != null ? String(item.fundingRate) : undefined,
+                  nextFundingTime: item.nextFundingTime != null ? Number(item.nextFundingTime) : undefined,
+                  markPrice: item.markPrice != null ? parseFloat(item.markPrice) : undefined,
+                  indexPrice: item.indexPrice != null ? parseFloat(item.indexPrice) : undefined
                 };
               }
               tickerFetchSuccess = true;
@@ -384,17 +412,18 @@ export class DataEngine implements EngineModule {
 
       this.consecutiveFailures = 0;
 
-      // 2. Fetch candles and depth for tracked symbols from Bybit V5
-      for (const sym of this.trackedSymbols) {
+      // 2. Fetch candles and depth for tracked symbols concurrently with per-symbol isolation
+      // Prevents candle starvation: slow/failing symbol cannot block or starve other symbols
+      await Promise.allSettled(this.trackedSymbols.map(async (sym) => {
         const raw = this.toExchangeSymbol(sym);
         const ticker = tickerMap[raw];
         const existing = this.marketData.get(sym);
         const resolvedPrice = ticker?.price || existing?.currentPrice || 0;
-        if (resolvedPrice <= 0) continue;
+        if (resolvedPrice <= 0) return;
 
         anySuccess = true;
 
-        // Fetch real order book depth from Bybit V5
+        // Fetch real order book depth from Bybit V5 Linear
         let bids: OrderBookLevel[] = existing?.orderBook?.bids || [];
         let asks: OrderBookLevel[] = existing?.orderBook?.asks || [];
         let spread = existing?.orderBook?.spread || 0;
@@ -402,7 +431,8 @@ export class DataEngine implements EngineModule {
 
         try {
           const depthRes = await fetch(`https://api.bybit.com/v5/market/orderbook?category=linear&symbol=${raw}&limit=15`, {
-            headers: { 'Accept': 'application/json' }
+            headers: { 'Accept': 'application/json' },
+            signal: AbortSignal.timeout(3500)
           });
           if (depthRes.ok) {
             const depthJson = (await depthRes.json()) as any;
@@ -430,69 +460,59 @@ export class DataEngine implements EngineModule {
             }
           }
         } catch {
-          // Depth network timeout
+          // Depth network timeout handled gracefully per-symbol
         }
 
-        // Fetch real 1m klines at a bounded cadence. Tickers/depth remain live-fast;
-        // candles are authoritative but do not need a new HTTP request every 2.5s.
+        // Fetch real klines (1m, limit 30) from Bybit V5 Linear
         let candles: Candle[] = existing?.candles || [];
-        const lastCandleFetch = this.lastCandleFetchAt.get(sym) || 0;
-        const candleCacheFresh = candles.length >= 5 && (Date.now() - lastCandleFetch) < 30000;
-        if (!candleCacheFresh) {
-          try {
-            const klineRes = await withRetry(
-              () => fetch(`https://api.bybit.com/v5/market/kline?category=linear&symbol=${raw}&interval=1&limit=30`, {
-                headers: { 'Accept': 'application/json' }
-              }),
-              { op: 'dataEngine.fetchCandles', maxAttempts: 3, baseDelayMs: 200, timeoutMs: 6000 }
-            );
-            if (klineRes.ok) {
-              const klineJson = (await klineRes.json()) as any;
-              const list = klineJson?.result?.list;
-              this.lastKlineResponseAt.set(sym, { ts: Date.now(), listLen: Array.isArray(list) ? list.length : -1 });
-              if (Array.isArray(list) && list.length >= 5) {
-                const now = Date.now();
-                const CANDLE_INTERVAL_MS = 60_000; // interval=1 on this endpoint
-                const parsed = list.slice().reverse().map((k: any[]) => ({
-                  timestamp: Number(k[0]),
-                  open: parseFloat(k[1]),
-                  high: parseFloat(k[2]),
-                  low: parseFloat(k[3]),
-                  close: parseFloat(k[4]),
-                  volume: parseFloat(k[5])
-                }))
-                  .filter((k: Candle) => Number.isFinite(k.timestamp) && k.close > 0)
-                  // Exclude the still-forming candle: Bybit returns the current interval too, and
-                  // its OHLC repaints until the bar closes, which makes derivative signals
-                  // (breakout channels, regime, same-bar execution decisions) lookahead-biased.
-                  .filter((k: Candle) => k.timestamp + CANDLE_INTERVAL_MS <= now);
-                if (parsed.length >= 5) {
-                  candles = parsed;
-                  this.lastCandleFetchAt.set(sym, Date.now());
-                } else {
-                  log.warn(rid(undefined), 'dataEngine.candles.short', { sym, parsed: parsed.length, raw: list.length });
-                }
-              } else {
-                log.warn(rid(undefined), 'dataEngine.candles.listInvalid', {
-                  sym,
-                  listType: Array.isArray(list) ? 'array' : typeof list,
-                  listLen: Array.isArray(list) ? list.length : -1,
-                  retCode: klineJson?.retCode,
-                  retMsg: klineJson?.retMsg
-                });
-              }
+
+        try {
+          const klineRes = await fetch(`https://api.bybit.com/v5/market/kline?category=linear&symbol=${raw}&interval=1&limit=30`, {
+            headers: { 'Accept': 'application/json' },
+            signal: AbortSignal.timeout(3500)
+          });
+          if (klineRes.ok) {
+            const klineJson = (await klineRes.json()) as any;
+            const list = klineJson?.result?.list;
+            if (Array.isArray(list) && list.length > 0) {
+              candles = list.slice().reverse().map((k: any[]) => ({
+                timestamp: Number(k[0]),
+                open: parseFloat(k[1]),
+                high: parseFloat(k[2]),
+                low: parseFloat(k[3]),
+                close: parseFloat(k[4]),
+                volume: parseFloat(k[5])
+              }));
+              this.candleFetchFailures.set(sym, 0);
+              this.lastCandleFetchTime.set(sym, Date.now());
+              this.lastCandleError.delete(sym);
             } else {
-              log.warn(rid(undefined), 'dataEngine.candles.nonOk', { sym, status: klineRes.status });
+              const currentFailures = (this.candleFetchFailures.get(sym) || 0) + 1;
+              this.candleFetchFailures.set(sym, currentFailures);
+              this.lastCandleError.set(sym, `Empty kline list from Bybit (retCode: ${klineJson?.retCode})`);
             }
-          } catch (err) {
-            log.warn(rid(undefined), 'dataEngine.candles.failed', {
-              sym,
-              error: err instanceof Error ? err.message : String(err),
-              isTimeout: err instanceof TimeoutError
-            });
-            // Keep only previously fetched authoritative exchange candles.
+          } else {
+            const currentFailures = (this.candleFetchFailures.get(sym) || 0) + 1;
+            this.candleFetchFailures.set(sym, currentFailures);
+            this.lastCandleError.set(sym, `HTTP ${klineRes.status} from Bybit klines`);
           }
+        } catch (klineErr: any) {
+          // Fall back to existing cached real candles without failing other symbols
+          const currentFailures = (this.candleFetchFailures.get(sym) || 0) + 1;
+          this.candleFetchFailures.set(sym, currentFailures);
+          this.lastCandleError.set(sym, `Kline network error: ${klineErr.message}`);
         }
+
+        // Determine candleCacheFresh:
+        // True if we have at least 5 candles and either recent fetch succeeded within 180s
+        // or the newest candle's timestamp is within the last 180s.
+        const nowMs = Date.now();
+        const lastFetch = this.lastCandleFetchTime.get(sym) || 0;
+        const newestCandleTs = candles.length > 0 ? candles[candles.length - 1].timestamp : 0;
+        const candleCacheFresh = candles.length >= 5 && (
+          (nowMs - lastFetch <= 180000) ||
+          (nowMs - newestCandleTs <= 180000)
+        );
 
         const currentPrice = resolvedPrice;
         const liveData: LivePairMarketData = {
@@ -514,7 +534,17 @@ export class DataEngine implements EngineModule {
             timestamp: Date.now()
           },
           lastUpdated: new Date().toISOString(),
-          source: 'BYBIT_LIVE'
+          source: 'BYBIT_LIVE',
+          category: 'linear',
+          fundingRateBps: ticker?.fundingRateBps ?? existing?.fundingRateBps,
+          fundingRateRaw: ticker?.fundingRateRaw ?? existing?.fundingRateRaw,
+          nextFundingTime: ticker?.nextFundingTime ?? existing?.nextFundingTime,
+          markPrice: ticker?.markPrice ?? existing?.markPrice,
+          indexPrice: ticker?.indexPrice ?? existing?.indexPrice,
+          candleCacheFresh,
+          candleFetchFailures: this.candleFetchFailures.get(sym) || 0,
+          lastCandleFetchTime: this.lastCandleFetchTime.get(sym) || 0,
+          lastCandleError: this.lastCandleError.get(sym)
         };
 
         this.marketData.set(sym, liveData);
@@ -525,7 +555,7 @@ export class DataEngine implements EngineModule {
             cb(sym, currentPrice, liveData);
           } catch {}
         }
-      }
+      }));
 
       this.latencyMs = Date.now() - start;
       this.lastHeartbeat = new Date().toISOString();
@@ -560,6 +590,33 @@ export class DataEngine implements EngineModule {
       this.ws = null;
       this.wsConnected = false;
     }
+  }
+
+  public getCandleHealth(symbol?: string) {
+    if (symbol) {
+      const sym = symbol.toUpperCase();
+      const data = this.marketData.get(sym);
+      return {
+        symbol: sym,
+        candleCount: data?.candles?.length || 0,
+        candleCacheFresh: data?.candleCacheFresh ?? false,
+        failures: this.candleFetchFailures.get(sym) || 0,
+        lastFetchTime: this.lastCandleFetchTime.get(sym) || 0,
+        lastError: this.lastCandleError.get(sym) || null
+      };
+    }
+    const result: Record<string, any> = {};
+    for (const sym of this.trackedSymbols) {
+      const data = this.marketData.get(sym);
+      result[sym] = {
+        candleCount: data?.candles?.length || 0,
+        candleCacheFresh: data?.candleCacheFresh ?? false,
+        failures: this.candleFetchFailures.get(sym) || 0,
+        lastFetchTime: this.lastCandleFetchTime.get(sym) || 0,
+        lastError: this.lastCandleError.get(sym) || null
+      };
+    }
+    return result;
   }
 
   public destroy() {

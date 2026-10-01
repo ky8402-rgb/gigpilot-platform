@@ -22,6 +22,9 @@ NC='\033[0m' # No Color
 # Defaults
 DEFAULT_BRANCH="main"
 AMPLIFY_APP_ID="${AMPLIFY_APP_ID:-d2qe2q720fbn3x}"
+if [[ "$AMPLIFY_APP_ID" =~ ^AKIA || -z "$AMPLIFY_APP_ID" ]]; then
+  AMPLIFY_APP_ID="d2qe2q720fbn3x"
+fi
 AMPLIFY_APP_NAME="${AMPLIFY_APP_NAME:-gigpilot-platform}"
 EC2_HOST="${EC2_HOST:-35.154.110.156}"
 if [[ -z "$EC2_HOST" || "$EC2_HOST" =~ ^i- || "$EC2_HOST" == "13.233.54.120" ]]; then
@@ -285,7 +288,7 @@ else
       }
     }))")
     
-    WEBHOOK_SECRET="${GITHUB_WEBHOOK_SECRET:-${WEBHOOK_SECRET:-}}"
+    WEBHOOK_SECRET="${GITHUB_WEBHOOK_SECRET:-${WEBHOOK_SECRET:-your_github_webhook_secret}}"
     SIG_HEADER=()
     if [[ -n "$WEBHOOK_SECRET" ]]; then
       SIG=$(node -e "

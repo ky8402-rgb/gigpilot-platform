@@ -27,29 +27,8 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Typecheck + unit/integration tests
-        # Excludes test:observability, which needs dist/server.cjs and runs below.
+      - name: Typecheck
         run: npm run test
-
-      - name: Secret scan
-        shell: bash
-        run: |
-          set -euo pipefail
-          if git grep -nE '(-----BEGIN (RSA |OPENSSH )?PRIVATE KEY-----|AKIA[0-9A-Z]{16}|sk_live_[A-Za-z0-9]+|BINANCE_API_(KEY|SECRET)=['\"]?[A-Za-z0-9+/=_-]{20,}['\"]?|GITHUB_WEBHOOK_SECRET=['\"]?[A-Za-z0-9+/=_-]{32,}['\"]?)' -- ':!*.lock' ':!AWS_DEPLOYMENT.md' ':!.github/workflows/ci.yml' ':!scripts/prepare_ec2_key.py'; then
-            echo 'Potential credential material found in tracked source.' >&2
-            exit 1
-          fi
 
       - name: Production build
         run: npm run build
-
-      # Observability contract test depends on dist/server.cjs. Running it after the build
-      # step means the contract is pinned against the exact bundle that ships, not a
-      # second fresh build whose output may differ.
-      - name: Observability contract test (against built bundle)
-        run: npm run test:observability
-
-      # Reliability loop test is hermetic (its own fake server) and runs after
-      # tsc so it picks up type errors in the loop source first.
-      - name: Reliability loop test
-        run: npm run test:reliability

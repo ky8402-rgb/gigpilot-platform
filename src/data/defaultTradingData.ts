@@ -289,7 +289,7 @@ export const DEFAULT_CHAMPION_STRATEGY: StrategyVersion = {
 };
 
 export const DEFAULT_DESTINATION_WALLET: DestinationWallet = {
-  address: '0x178166ffac90e6d94d2c1f822c1026f87641a0ec',
+  address: '0x0000000000000000000000000000000000000000',
   chain: 'bsc',
   label: 'Bybit Deposit Vault (USDT - BSC)',
   isWhitelisted: true,

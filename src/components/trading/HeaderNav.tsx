@@ -322,12 +322,12 @@ export const HeaderNav: React.FC<HeaderNavProps> = ({
               </>
             ) : (
               <>
-                <span className="w-2 h-2 rounded-full bg-amber-400 animate-pulse" />
-                <span className="text-amber-400 font-bold">SIMULATION</span>
+                <span className="w-2 h-2 rounded-full bg-rose-500 animate-pulse" />
+                <span className="text-rose-400 font-bold">FAIL-CLOSED (OFFLINE)</span>
                 {onReconnect && (
                   <button
                     onClick={onReconnect}
-                    className="ml-1 text-[10px] text-amber-300 hover:text-white underline font-semibold cursor-pointer"
+                    className="ml-1 text-[10px] text-rose-300 hover:text-white underline font-semibold cursor-pointer"
                   >
                     Connect Live
                   </button>

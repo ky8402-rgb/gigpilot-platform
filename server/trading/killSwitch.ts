@@ -19,6 +19,10 @@ export class EmergencyKillSwitch {
     return { ...this.state };
   }
 
+  public trigger(reason = 'Emergency kill switch triggered'): KillSwitchState {
+    return this.activate('OWNER', reason);
+  }
+
   public activate(
     triggeredBy: KillSwitchState['triggeredBy'],
     reason: string,

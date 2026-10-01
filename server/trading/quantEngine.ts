@@ -287,6 +287,7 @@ export class QuantEngine implements EngineModule {
     regime?: MarketRegime;
     makerFeeBps?: number;
     takerFeeBps?: number;
+    fundingRateBps?: number;
     minHurdleBps?: number;
   }): ExpectedNetEdgeBreakdown {
     const {
@@ -297,8 +298,9 @@ export class QuantEngine implements EngineModule {
       candles = [],
       gridSpacingPct = 0.45,
       regime,
-      makerFeeBps = 10.0, // Bybit spot VIP0 standard (0.10% = 10 bps)
-      takerFeeBps = 10.0,
+      makerFeeBps = 2.0, // Bybit linear perpetual futures VIP0 standard (0.02% = 2.0 bps)
+      takerFeeBps = 5.5, // Bybit linear perpetual futures VIP0 standard (0.055% = 5.5 bps)
+      fundingRateBps: inputFundingRateBps,
       minHurdleBps = 4.0
     } = params;
 
@@ -374,9 +376,11 @@ export class QuantEngine implements EngineModule {
     const adverseSelectionCostBps = Number((directionalToxicity + volatilityToxicity).toFixed(2));
 
     // 6. Funding / Other Carrying Cost (bps)
-    // Inventory risk: capital tied up in spot grid while waiting for fill
+    // Authoritative Bybit V5 Perpetual Futures funding rate when available
     const isVolatile = regime?.regime === 'RANGE_BOUND_HIGH_VOL' || regime?.regime === 'BREAKOUT_VOLATILITY';
-    const fundingCarryingCostBps = Number((1.2 + (isVolatile ? 0.8 : 0)).toFixed(2));
+    const fundingCarryingCostBps = (inputFundingRateBps != null && Number.isFinite(inputFundingRateBps))
+      ? Number(Math.abs(inputFundingRateBps).toFixed(2))
+      : Number((1.2 + (isVolatile ? 0.8 : 0)).toFixed(2));
 
     // 7. Execution Uncertainty (bps)
     // Non-execution risk (fill probability decay) and network latency jitter

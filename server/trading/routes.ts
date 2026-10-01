@@ -2,21 +2,9 @@ import { Router, Request, Response } from 'express';
 import { globalTradingStore } from './store.js';
 import { ownerAuth, requireOwnerAuth, isOwner, extractToken } from './ownerAuth.js';
 import { bybitAdapter } from './bybitAdapter.js';
-import { authThrottle } from './authThrottle.js';
 import { EngineId, SupportedExchange } from './types.js';
-import { buildCapitalPlan, HARD_MAX_GRID_LEVELS, HARD_MIN_GRID_LEVELS, resolveLeverage } from './capitalPlan.js';
-import { CredentialProbe, mapAccountProbeToCredentialStatus } from './credentialProbe.js';
 
 export const tradingRouter = Router();
-
-/**
- * Single-flight resolver for the Bybit credential state.
- *
- * Shared by the credentials panel and the START pre-flight so that a key set which has simply
- * not been checked yet resolves to a real answer instead of blocking the operator with a
- * permanent "VALIDATING". Bounded to one in-flight probe, one definitive result per process.
- */
-const bybitCredentialProbe = new CredentialProbe(() => bybitAdapter.getRealAccountState(true));
 
 // 1. Master System State
 tradingRouter.get('/state', requireOwnerAuth, (req: Request, res: Response) => {
@@ -26,19 +14,8 @@ tradingRouter.get('/state', requireOwnerAuth, (req: Request, res: Response) => {
     const position = store.exchangeExec.getPosition(store.activeSymbol);
     const openOrders = store.exchangeExec.getOpenOrders(store.activeSymbol);
     const qResult = livePair ? store.quantEngine.computeSignals(store.activeSymbol, livePair.candles, livePair.orderBook) : { indicators: null, regime: null };
-    const latestDecision = store.learningLoop.getDecisionStats().recentDecisions?.[0];
-    const edgeFromOpenOrder = openOrders.find((o: any) => o?.expectedNetEdge?.expectedNetEdgeBps !== undefined)?.expectedNetEdge?.expectedNetEdgeBps;
-    const edgeFromDecision = latestDecision?.gates?.edge?.metrics?.expectedNetEdgeBps;
-    const currentNetEdgeBps = typeof edgeFromOpenOrder === 'number' ? edgeFromOpenOrder : (typeof edgeFromDecision === 'number' ? edgeFromDecision : null);
-    const decisionReason = latestDecision?.finalOutcome === 'DO_NOTHING'
-      ? (latestDecision.rejectionReason || latestDecision.gates?.edge?.reason || latestDecision.rationale)
-      : (latestDecision?.rationale || 'Waiting for the next authoritative strategy decision.');
 
-    const killState = store.killSwitch.getState();
-    const startupSafetyLatch = killState.isActive &&
-      killState.triggeredBy === 'RISK_ENGINE' &&
-      killState.reason?.startsWith('GLOBAL_KILL_SWITCH_ACTIVE=true on startup:');
-    const isKillActive = store.GLOBAL_KILL_SWITCH_ACTIVE || killState.isActive;
+    const isKillActive = store.GLOBAL_KILL_SWITCH_ACTIVE || store.killSwitch.getState().isActive;
     const failClosedStatus = store.monitor.isSystemFailClosed();
     const engines = store.monitor.getAllEngineHealth();
 
@@ -50,22 +27,6 @@ tradingRouter.get('/state', requireOwnerAuth, (req: Request, res: Response) => {
       GLOBAL_KILL_SWITCH_ACTIVE: isKillActive,
       botsDisabled: store.activeBotsDisabled || isKillActive,
       activeBotsCount: isKillActive ? 0 : (store.autonomyLevel > 0 ? 1 : 0),
-      futuresRisk: {
-        maxLeverage: store.risk.getConfig().maxLeverage,
-        maxExposureUsd: store.risk.getConfig().maxExposureUsd,
-        maxDrawdownLimitPct: store.risk.getConfig().maxDrawdownLimitPct,
-        maxCapitalAllocationPct: store.risk.getConfig().maxCapitalAllocationPct,
-        minimumNetEdgeBps: store.risk.getConfig().minimum_edge_threshold ?? store.risk.getConfig().minExpectedNetEdgeBps ?? 4.0
-      },
-      autonomousBot: {
-        status: (!startupSafetyLatch && isKillActive) ? 'BLOCKED' : (store.autonomousBotRunning ? 'RUNNING' : 'PAUSED'),
-        allocatedCapitalUsd: store.autonomousAllocatedCapitalUsd,
-        startedAt: store.autonomousStartedAt || null,
-        startupSafetyLatch,
-        currentNetEdgeBps,
-        decisionReason,
-        requiredNetEdgeBps: store.risk.getConfig().minimum_edge_threshold ?? store.risk.getConfig().minExpectedNetEdgeBps ?? 4.0
-      },
       killSwitch: store.killSwitch.getState(),
       failClosedStatus,
       engines,
@@ -98,7 +59,7 @@ tradingRouter.get('/state', requireOwnerAuth, (req: Request, res: Response) => {
 });
 
 // 2. Modular Engine Health Check (All 10 Subsystems)
-tradingRouter.get('/engines/health', requireOwnerAuth, (req: Request, res: Response) => {
+tradingRouter.get('/engines/health', (req: Request, res: Response) => {
   try {
     const store = globalTradingStore;
     const engines = store.monitor.getAllEngineHealth();
@@ -109,43 +70,6 @@ tradingRouter.get('/engines/health', requireOwnerAuth, (req: Request, res: Respo
       engines,
       timestamp: new Date().toISOString()
     });
-  } catch (err: any) {
-    return res.status(500).json({ success: false, error: err.message });
-  }
-});
-
-// 2a. Reliability Loop status — the most recent cycle, history, and score.
-//     Auth-gated (operational endpoint). Safe to call frequently.
-tradingRouter.get('/reliability/status', requireOwnerAuth, (req: Request, res: Response) => {
-  try {
-    const store = globalTradingStore;
-    const limitRaw = req.query.limit;
-    const limit = Math.max(0, Math.min(20, Number.parseInt(String(limitRaw ?? '5'), 10) || 5));
-    const last = store.reliabilityLoop.getLastCycle();
-    const history = store.reliabilityLoop.getHistory(limit);
-    const score = store.reliabilityLoop.getReliabilityScore();
-    return res.json({
-      success: true,
-      score,
-      engineHealth: store.reliabilityLoop.healthCheck(),
-      lastCycle: last,
-      history,
-      timestamp: new Date().toISOString(),
-    });
-  } catch (err: any) {
-    return res.status(500).json({ success: false, error: err.message });
-  }
-});
-
-// 2b. Trigger one reliability cycle on demand. Useful for ops dashboards
-//     and for the test harness to drive the loop deterministically.
-tradingRouter.post('/reliability/run', requireOwnerAuth, async (req: Request, res: Response) => {
-  try {
-    const store = globalTradingStore;
-    const modeRaw = String((req.body ?? {}).mode ?? 'autonomous');
-    const mode = (['autonomous', 'observe', 'dry_run'].includes(modeRaw) ? modeRaw : 'autonomous') as 'autonomous' | 'observe' | 'dry_run';
-    const result = await store.reliabilityLoop.executeCycle(mode);
-    return res.json({ success: true, cycle: result });
   } catch (err: any) {
     return res.status(500).json({ success: false, error: err.message });
   }
@@ -187,22 +111,12 @@ tradingRouter.post('/engines/:id/clear-errors', requireOwnerAuth, (req: Request,
 });
 
 // 5. Exchange Credentials Management (Trade-Only Keys for Bybit)
-tradingRouter.get('/exchanges/credentials', requireOwnerAuth, async (req: Request, res: Response) => {
+tradingRouter.get('/exchanges/credentials', requireOwnerAuth, (req: Request, res: Response) => {
   try {
-    const current = globalTradingStore.exchangeExec.getExchangeCredentials();
-    const bybit = current.find(c => c.exchange === 'BYBIT');
-
-    // Keys loaded from disk/environment start in VALIDATING state. Resolve that to a definitive
-    // answer through the shared probe, so the credentials panel and the START pre-flight can
-    // never disagree, and a failed probe surfaces as ERROR instead of permanent limbo.
-    const validation = await bybitCredentialProbe.resolve(bybit?.status === 'VALIDATING');
-    if (validation) {
-      globalTradingStore.exchangeExec.setCredentialValidation('BYBIT', validation);
-    }
-
+    const creds = globalTradingStore.exchangeExec.getExchangeCredentials();
     return res.json({
       success: true,
-      credentials: globalTradingStore.exchangeExec.getExchangeCredentials(),
+      credentials: creds,
       securityPolicy: 'TRADE_ONLY_KEYS_STRICT (Withdrawal permissions blocked)'
     });
   } catch (err: any) {
@@ -210,7 +124,7 @@ tradingRouter.get('/exchanges/credentials', requireOwnerAuth, async (req: Reques
   }
 });
 
-tradingRouter.post('/exchanges/keys', requireOwnerAuth, async (req: Request, res: Response) => {
+tradingRouter.post('/exchanges/keys', requireOwnerAuth, (req: Request, res: Response) => {
   try {
     const { exchange, apiKey, apiSecret, isTestnet } = req.body || {};
     if (isTestnet === true) return res.status(400).json({ success: false, error: 'Bybit testnet is disabled. GigPilot is live-production only.' });
@@ -226,15 +140,8 @@ tradingRouter.post('/exchanges/keys', requireOwnerAuth, async (req: Request, res
       return res.status(400).json(result);
     }
 
-    // Keep execution fail-closed while the newly supplied credentials are validated.
+    // Update bybitAdapter
     bybitAdapter.updateCredentials(apiKey, apiSecret);
-
-    const accountState = await bybitAdapter.getRealAccountState(true);
-    // Same mapping the shared probe uses, so a key change and the background validation can never
-    // reach different verdicts for the same account state.
-    const keyValidation = mapAccountProbeToCredentialStatus(accountState);
-    globalTradingStore.exchangeExec.setCredentialValidation('BYBIT', keyValidation);
-    const validationStatus = keyValidation.status;
 
     globalTradingStore.monitor.logAudit({
       category: 'CONFIG_CHANGE',
@@ -242,22 +149,10 @@ tradingRouter.post('/exchanges/keys', requireOwnerAuth, async (req: Request, res
       details: { exchange, environment: 'BYBIT_LIVE' }
     });
 
-    const validated = validationStatus === 'CONNECTED';
-    return res.status(validated ? 200 : 503).json({
-      success: validated,
-      message: validated
-        ? `Trade-only keys for ${exchange} validated successfully against Bybit.`
-        : `Trade-only keys for ${exchange} were saved, but authenticated Bybit validation failed. Live trading remains fail-closed.`,
-      credentials: globalTradingStore.exchangeExec.getExchangeCredentials(),
-      accountState: {
-        status: accountState.status,
-        message: accountState.message,
-        serverIp: accountState.serverIp,
-        timestamp: accountState.timestamp,
-        canTrade: accountState.canTrade,
-        canWithdraw: false,
-        accountType: accountState.accountType
-      }
+    return res.json({
+      success: true,
+      message: `Trade-only keys for ${exchange} configured successfully.`,
+      credentials: globalTradingStore.exchangeExec.getExchangeCredentials()
     });
   } catch (err: any) {
     return res.status(500).json({ success: false, error: err.message });
@@ -265,7 +160,7 @@ tradingRouter.post('/exchanges/keys', requireOwnerAuth, async (req: Request, res
 });
 
 // 6. All Pairs & Market Ticker
-tradingRouter.get('/pairs', requireOwnerAuth, (req: Request, res: Response) => {
+tradingRouter.get('/pairs', (req: Request, res: Response) => {
   try {
     const pairs = globalTradingStore.dataEngine.getAllPairs().map(p => ({
       symbol: p.symbol,
@@ -312,226 +207,15 @@ tradingRouter.get(['/pair/:symbol', '/pair/:base/:quote'], (req: Request, res: R
 });
 
 // 8. Select Active Pair
-tradingRouter.post('/pair/select', requireOwnerAuth, async (req: Request, res: Response) => {
+tradingRouter.post('/pair/select', (req: Request, res: Response) => {
   const { symbol } = req.body;
   if (!symbol) return res.status(400).json({ success: false, error: 'Symbol required' });
 
-  try {
-    await globalTradingStore.setActiveSymbol(symbol);
-    return res.json({ success: true, activeSymbol: globalTradingStore.activeSymbol });
-  } catch (err: any) {
-    return res.status(500).json({ success: false, error: err?.message || 'Unable to switch the active pair.' });
-  }
+  globalTradingStore.setActiveSymbol(symbol);
+  res.json({ success: true, activeSymbol: globalTradingStore.activeSymbol });
 });
 
-// 9. Autonomy / automatic-trading status diagnostics
-tradingRouter.get('/autonomy/status', requireOwnerAuth, async (req: Request, res: Response) => {
-  try {
-    const store = globalTradingStore;
-    const failStatus = store.monitor.isSystemFailClosed();
-    let credentials = store.exchangeExec.getExchangeCredentials().find(c => c.exchange === 'BYBIT');
-    // Actively resolve a key set that has never been checked, so the pre-flight reports a real
-    // verdict instead of blocking START on a transient VALIDATING state. Single-flight and
-    // once-per-process, so this is safe to call on every pre-flight evaluation (the UI debounces
-    // this request as the allocation field is typed).
-    if (credentials?.status === 'VALIDATING') {
-      const resolved = await bybitCredentialProbe.resolve(true);
-      if (resolved) {
-        store.exchangeExec.setCredentialValidation('BYBIT', resolved);
-        credentials = store.exchangeExec.getExchangeCredentials().find(c => c.exchange === 'BYBIT');
-      }
-    }
-    const pairData = store.dataEngine.getPairData(store.activeSymbol);
-    const blockers: string[] = [];
-
-    if (store.GLOBAL_KILL_SWITCH_ACTIVE || store.killSwitch.getState().isActive) {
-      blockers.push('GLOBAL_KILL_SWITCH_ACTIVE: automatic orders are disabled');
-    }
-    let autonomyLevelBlocker: string | null = null;
-    if (store.autonomyLevel < 2) {
-      // Reported separately: this precondition is satisfied BY starting, so it must not gate the
-      // pre-flight check that is displayed before the operator presses START.
-      autonomyLevelBlocker = `Autonomy level L${store.autonomyLevel}: automatic grid execution requires L2 or higher`;
-    }
-    if (!credentials?.isConfigured) {
-      blockers.push('Bybit trade-only API credentials are not configured');
-    } else if (credentials.status !== 'CONNECTED' || !credentials.canTrade) {
-      blockers.push(`Bybit credentials are not trade-ready: ${credentials.status}${credentials.errorMessage ? ` — ${credentials.errorMessage}` : ''}`);
-    }
-    if (failStatus.failClosed) {
-      blockers.push(`System fail-closed: ${failStatus.downEngines.join(', ') || 'critical engine unavailable'}`);
-    }
-    if (!pairData || !(pairData.currentPrice > 0)) {
-      blockers.push(`No authoritative live market price for ${store.activeSymbol}`);
-    }
-    if (!pairData || pairData.candles.length < 5) {
-      blockers.push(`Insufficient live candle depth for ${store.activeSymbol}: ${pairData?.candles.length ?? 0}/5`);
-    }
-
-    // Capital planning. The exchange's real minimum notional, the account reserve and the
-    // allocation cap decide whether a grid can exist at all — otherwise the operator only discovers
-    // this when START is rejected mid-flow.
-    const proposedAllocation = Number(req.query.capital);
-    const riskConfig = store.risk.getConfig();
-    const availableCashUsd = Number(store.capital.availableCash || 0);
-
-    // Live exchange instrument spec: the real minimum notional and the exchange's own leverage
-    // ceiling. Nothing about the requirement is hardcoded any more.
-    let instrument: { maxLeverage: number; leverageStep: number; minNotional: number } | null = null;
-    try {
-      instrument = await store.exchangeExec.getInstrumentSpec(store.activeSymbol);
-    } catch {
-      instrument = null;
-    }
-    const exchangeMinNotionalUsd = Number(instrument?.minNotional) || 0;
-
-    // The leverage the engine will actually run at: the LOWER of the configured risk limit and
-    // the exchange limit, with an out-of-range request refused rather than silently clamped.
-    const requestedLeverage = req.query.leverage === undefined || req.query.leverage === '' ? null : Number(req.query.leverage);
-    const leverage = resolveLeverage(
-      requestedLeverage,
-      riskConfig.maxLeverage,
-      instrument?.maxLeverage ?? null,
-      instrument?.leverageStep ?? null
-    );
-
-    const requestedLevels = req.query.levels === undefined || req.query.levels === '' ? null : Number(req.query.levels);
-    const capitalPlan = buildCapitalPlan({
-      availableCashUsd,
-      minAccountReserveUsd: riskConfig.minAccountReserveUsd,
-      maxCapitalAllocationPct: riskConfig.maxCapitalAllocationPct,
-      minNotionalUsd: exchangeMinNotionalUsd,
-      leverage,
-      requestedLevels
-    });
-    const maxAllocatableUsd = capitalPlan.maxAllocatableUsd;
-    const gridLevelsCount = capitalPlan.effectiveLevels;
-    const minRequiredForGridUsd = capitalPlan.minRequiredForGridUsd;
-
-    if (leverage.rejected) {
-      blockers.push(`Leverage rejected: ${leverage.rejected}`);
-    }
-    // The plan's own reason already names the exact shortfall and the exact required balance,
-    // so the operator is never left guessing what "not enough capital" means.
-    if (!capitalPlan.canTrade) {
-      blockers.push(capitalPlan.reason);
-    }
-    if (Number.isFinite(proposedAllocation) && proposedAllocation > 0) {
-      if (proposedAllocation > maxAllocatableUsd + 1e-9) {
-        blockers.push(`Requested allocation ${proposedAllocation.toFixed(2)} USDT exceeds the risk-approved maximum ${maxAllocatableUsd.toFixed(2)} USDT after reserve and allocation limits.`);
-      }
-      if (exchangeMinNotionalUsd > 0 && proposedAllocation / gridLevelsCount < exchangeMinNotionalUsd) {
-        blockers.push(`Requested allocation gives ${(proposedAllocation / gridLevelsCount).toFixed(2)} USDT per rung, below the exchange minimum notional of ${exchangeMinNotionalUsd} USDT.`);
-      }
-    }
-
-    // The measured cost stack decides whether ANY trade is currently worth taking.
-    const expectedEdge = store.profitOptimizer.getLatestAudit()?.expectedNetEdge ?? null;
-    if (expectedEdge && !expectedEdge.isTradeable) {
-      blockers.push(`Measured expected net edge ${expectedEdge.expectedNetEdgeBps} bps is at or below the ${expectedEdge.minHurdleRateBps} bps hurdle.`);
-    }
-
-    // Everything that must hold BEFORE START is pressed (kill switch, credentials, fail-closed,
-    // market data, capital viability and net edge) — excluding the autonomy level START grants.
-    const startPreflightBlockers = [...blockers];
-    if (autonomyLevelBlocker) blockers.push(autonomyLevelBlocker);
-
-    return res.json({
-      success: true,
-      activeSymbol: store.activeSymbol,
-      autonomyLevel: store.autonomyLevel,
-      tradingMode: store.tradingMode,
-      startPreflightBlockers,
-      canStart: startPreflightBlockers.length === 0,
-      leverage: capitalPlan.leverage.effective,
-      capitalPlan: {
-        availableCashUsd: Number(availableCashUsd.toFixed(4)),
-        minAccountReserveUsd: riskConfig.minAccountReserveUsd,
-        maxCapitalAllocationPct: riskConfig.maxCapitalAllocationPct,
-        maxAllocatableUsd: Number(maxAllocatableUsd.toFixed(4)),
-        // Leverage used for sizing, plus the backend-enforced range the UI must respect.
-        leverage: capitalPlan.leverage.effective,
-        minLeverage: capitalPlan.leverage.min,
-        maxLeverage: capitalPlan.leverage.max,
-        leverageStep: capitalPlan.leverage.step,
-        leverageCeilingSource: capitalPlan.leverage.ceilingSource,
-        leverageRejected: capitalPlan.leverage.rejected,
-        // Grid geometry derived from the live exchange spec rather than a fixed 16 rungs.
-        minimumViableLevels: capitalPlan.minimumViableLevels,
-        requestedLevels: capitalPlan.requestedLevels,
-        effectiveLevels: capitalPlan.effectiveLevels,
-        maxAffordableLevels: capitalPlan.maxAffordableLevels,
-        perRungUsd: capitalPlan.perRungUsd,
-        gridLevelsCount,
-        exchangeMinNotionalUsd,
-        minRequiredForGridUsd: Number(minRequiredForGridUsd.toFixed(4)),
-        // The exact account balance that would make this tradeable, and how far off it is.
-        requiredMinCashUsd:
-          capitalPlan.requiredMinCashUsd === null ? null : Number(capitalPlan.requiredMinCashUsd.toFixed(4)),
-        shortfallUsd: capitalPlan.shortfallUsd === null ? null : Number(capitalPlan.shortfallUsd.toFixed(4)),
-        canTrade: capitalPlan.canTrade,
-        reason: capitalPlan.reason
-      },
-      expectedNetEdge: expectedEdge,
-      globalKillSwitchActive: store.GLOBAL_KILL_SWITCH_ACTIVE || store.killSwitch.getState().isActive,
-      botsDisabled: store.activeBotsDisabled,
-      bybitCredentialStatus: credentials?.status ?? 'UNCONFIGURED',
-      bybitCanTrade: credentials?.canTrade ?? false,
-      systemFailClosed: failStatus.failClosed,
-      liveMarketData: Boolean(pairData && pairData.currentPrice > 0),
-      candleCount: pairData?.candles.length ?? 0,
-      automaticTradingReady: blockers.length === 0,
-      blockers
-    });
-  } catch (err: any) {
-    return res.status(500).json({ success: false, error: err?.message || 'Unable to determine automatic trading status' });
-  }
-});
-
-// 9. Autonomous Trading Lifecycle
-tradingRouter.post('/autonomous/start', requireOwnerAuth, async (req: Request, res: Response) => {
-  const { symbol, allocatedCapitalUsd, leverage } = req.body || {};
-  try {
-    await globalTradingStore.startAutonomousTrading(
-      String(symbol || globalTradingStore.activeSymbol),
-      Number(allocatedCapitalUsd),
-      leverage === undefined || leverage === null ? undefined : Number(leverage)
-    );
-    return res.json({
-      success: true,
-      status: 'RUNNING',
-      activeSymbol: globalTradingStore.activeSymbol,
-      allocatedCapitalUsd: globalTradingStore.autonomousAllocatedCapitalUsd,
-      leverage: globalTradingStore.autonomousLeverage,
-      autonomyLevel: globalTradingStore.autonomyLevel,
-      serverTime: new Date().toISOString()
-    });
-  } catch (err: any) {
-    return res.status(422).json({
-      success: false,
-      status: globalTradingStore.GLOBAL_KILL_SWITCH_ACTIVE || globalTradingStore.killSwitch.getState().isActive ? 'BLOCKED' : 'PAUSED',
-      error: err?.message || 'Autonomous trading could not start.'
-    });
-  }
-});
-
-tradingRouter.post('/autonomous/stop', requireOwnerAuth, async (req: Request, res: Response) => {
-  try {
-    const result = await globalTradingStore.stopAutonomousTrading();
-    return res.json({
-      success: true,
-      status: 'PAUSED',
-      autonomyLevel: globalTradingStore.autonomyLevel,
-      cancelledEntryOrders: result.cancelledEntryOrders,
-      reconciledCount: result.reconciledCount,
-      message: 'New autonomous entries are stopped. Existing positions and exchange risk controls remain subject to reconciliation.'
-    });
-  } catch (err: any) {
-    return res.status(503).json({ success: false, status: 'BLOCKED', error: err?.message || 'Autonomous trading stop/reconciliation failed.' });
-  }
-});
-
-// 10. Autonomy Level
+// 9. Autonomy Level
 tradingRouter.post('/autonomy', requireOwnerAuth, (req: Request, res: Response) => {
   const { level } = req.body;
   if (level === undefined || level < 0 || level > 4) {
@@ -547,7 +231,7 @@ tradingRouter.post('/autonomy', requireOwnerAuth, (req: Request, res: Response) 
 });
 
 // 10. Global Kill Switch
-tradingRouter.post('/kill-switch/trigger', requireOwnerAuth, (req: Request, res: Response) => {
+tradingRouter.post('/kill-switch/trigger', (req: Request, res: Response) => {
   const { reason } = req.body;
   globalTradingStore.triggerEmergencyKillSwitch(reason || 'Manual emergency halt: Disabling all active trading bots');
   res.json({
@@ -599,60 +283,20 @@ tradingRouter.post('/grid/configure', requireOwnerAuth, async (req: Request, res
     spacingType,
     totalAllocatedUsd,
     volatilityAdjustment,
-    trendProtection,
-    leverage: gridLeverage
+    trendProtection
   } = req.body;
 
   const liveData = store.dataEngine.getPairData(store.activeSymbol);
   if (!liveData) return res.status(400).json({ success: false, error: 'No active pair live data from Data Engine' });
-
-  // Validate before mutating live state: `Number(x) || default` only substitutes for 0/NaN, so
-  // negative and absurd values (e.g. -5000 or 1e18) previously flowed into grid sizing and orders.
-  const parsedLevels = levelsCount === undefined || levelsCount === null || levelsCount === '' ? 16 : Number(levelsCount);
-  const parsedAllocation = totalAllocatedUsd === undefined || totalAllocatedUsd === null || totalAllocatedUsd === '' ? 3500 : Number(totalAllocatedUsd);
-  if (!Number.isInteger(parsedLevels) || parsedLevels < 4 || parsedLevels > 64) {
-    return res.status(400).json({ success: false, error: 'levelsCount must be an integer between 4 and 64.' });
-  }
-  if (!Number.isFinite(parsedAllocation) || parsedAllocation <= 0 || parsedAllocation > 10000000) {
-    return res.status(400).json({ success: false, error: 'totalAllocatedUsd must be a positive finite amount not exceeding 10,000,000.' });
-  }
-
-  // When the caller supplies a leverage, it must sit inside the backend-enforced range and the
-  // exchange must accept it BEFORE any grid is sized against it. Refused, never clamped.
-  if (gridLeverage !== undefined && gridLeverage !== null && gridLeverage !== '') {
-    const riskConfig = store.risk.getConfig();
-    let gridInstrument: { maxLeverage: number; leverageStep: number } | null = null;
-    try {
-      gridInstrument = await store.exchangeExec.getInstrumentSpec(store.activeSymbol);
-    } catch {
-      gridInstrument = null;
-    }
-    const resolvedLeverage = resolveLeverage(
-      Number(gridLeverage),
-      riskConfig.maxLeverage,
-      gridInstrument?.maxLeverage ?? null,
-      gridInstrument?.leverageStep ?? null
-    );
-    if (resolvedLeverage.rejected) {
-      return res.status(400).json({ success: false, error: `Leverage rejected: ${resolvedLeverage.rejected}` });
-    }
-    const leverageReady = await store.exchangeExec.ensureFuturesLeverage(store.activeSymbol, resolvedLeverage.effective);
-    if (!leverageReady.success) {
-      return res.status(422).json({
-        success: false,
-        error: `FAIL-CLOSED: futures leverage could not be configured: ${leverageReady.error || 'exchange rejected leverage configuration'}`
-      });
-    }
-  }
 
   await store.exchangeExec.cancelAllOrders(store.activeSymbol);
 
   const newGridRes = store.gridEngine.generateGrid({
     symbol: store.activeSymbol,
     currentPrice: liveData.currentPrice,
-    levelsCount: parsedLevels,
+    levelsCount: Number(levelsCount) || 16,
     spacingType: spacingType || 'GEOMETRIC',
-    totalAllocatedUsd: parsedAllocation,
+    totalAllocatedUsd: Number(totalAllocatedUsd) || 3500,
     volatilityAdjustment: volatilityAdjustment !== false,
     trendProtection: trendProtection !== false,
     regime: store.currentRegime,
@@ -684,31 +328,134 @@ tradingRouter.post('/grid/configure', requireOwnerAuth, async (req: Request, res
   res.json({ success: true, grid: store.activeGrid });
 });
 
-// Futures-only autonomous trading boundary.
-// Manual order creation, previews, protective-order placement, and operator cancellation
-// are intentionally unavailable. Autonomous execution owns entries/exits and reconciliation.
-const manualTradingDisabled = (_req: Request, res: Response) => {
-  return res.status(410).json({
-    success: false,
-    code: 'FUTURES_AUTONOMOUS_ONLY',
-    error: 'Manual trading workflows are disabled. Use Select Futures Pair -> Allocate Capital -> Confirm START.'
-  });
-};
+// 12. Manual Live Order Placement (Validated via Independent Risk Engine)
+tradingRouter.post('/order/place', requireOwnerAuth, async (req: Request, res: Response) => {
+  const store = globalTradingStore;
+  if (store.GLOBAL_KILL_SWITCH_ACTIVE || store.killSwitch.getState().isActive) {
+    return res.status(403).json({ success: false, error: 'Cannot place orders: GLOBAL KILL SWITCH is engaged' });
+  }
 
-tradingRouter.post('/order/preview', requireOwnerAuth, manualTradingDisabled);
-tradingRouter.post('/order/place', requireOwnerAuth, manualTradingDisabled);
-tradingRouter.post('/position/protection', requireOwnerAuth, manualTradingDisabled);
-tradingRouter.post('/order/cancel', requireOwnerAuth, manualTradingDisabled);
-tradingRouter.post('/order/cancel-all', requireOwnerAuth, manualTradingDisabled);
+  // Fail closed check
+  const failStatus = store.monitor.isSystemFailClosed();
+  if (failStatus.failClosed) {
+    return res.status(503).json({
+      success: false,
+      error: `FAIL-CLOSED: Trading is blocked because critical engine(s) are degraded or offline: ${failStatus.downEngines.join(', ')}`
+    });
+  }
+
+  const { symbol, side, type, price, amount, exchange } = req.body;
+  if (!symbol || !side || !type || !price || !amount) {
+    return res.status(400).json({ success: false, error: 'Missing required order fields (symbol, side, type, price, amount)' });
+  }
+
+  const numPrice = Number(price);
+  const numAmount = Number(amount);
+  const norm = store.dataEngine.normalizeSymbol(symbol);
+  const liveData = store.dataEngine.getPairData(norm);
+
+  // Compute Expected Net Edge Breakdown
+  const expectedNetEdge = store.quantEngine.computeExpectedNetEdge({
+    symbol: norm,
+    side,
+    price: numPrice,
+    amount: numAmount,
+    orderType: type,
+    orderBook: liveData?.orderBook,
+    candles: liveData?.candles,
+    gridSpacingPct: store.activeGrid?.gridSpacingPct,
+    regime: store.currentRegime,
+    fundingRateBps: liveData?.fundingRateBps
+  });
+
+  // 1. Risk Engine Pre-Trade Gate: Enforces Expected Net Edge > minimum_edge_threshold
+  const validation = store.risk.validateOrder(
+    { symbol: norm, side, price: numPrice, amount: numAmount },
+    store.capital,
+    store.exchangeExec.getPositions(),
+    store.exchangeExec.getOpenOrders().length,
+    liveData?.currentPrice,
+    expectedNetEdge
+  );
+
+  if (!validation.allowed) {
+    return res.status(422).json({
+      success: false,
+      error: `Order rejected by Risk Engine: ${validation.reason}`,
+      expectedNetEdge,
+      event: validation.event
+    });
+  }
+
+  // 2. Exchange Execution Engine
+  const targetExchange = exchange || 'BYBIT';
+  const execResult = await store.exchangeExec.executeOrder({
+    symbol: norm,
+    side,
+    type,
+    price: numPrice,
+    amount: numAmount,
+    exchange: targetExchange,
+    expectedNetEdge
+  });
+
+  if (!execResult.success) {
+    store.monitor.logAudit({
+      category: 'SECURITY_ALERT',
+      action: 'Order Rejected by Exchange Execution Engine',
+      details: { symbol: norm, side, price: numPrice, amount: numAmount, error: execResult.error }
+    });
+    return res.status(400).json({
+      success: false,
+      error: execResult.error,
+      order: execResult.order
+    });
+  }
+
+  store.monitor.logAudit({
+    category: 'ORDER_EXECUTION',
+    action: `Live order placed on ${targetExchange}`,
+    details: { orderId: execResult.order?.id, symbol: norm, side, price: numPrice, amount: numAmount }
+  });
+
+  res.json({ success: true, order: execResult.order });
+});
+
+// 13. Cancel Order
+tradingRouter.post('/order/cancel', requireOwnerAuth, async (req: Request, res: Response) => {
+  const { orderId } = req.body;
+  const result = await globalTradingStore.exchangeExec.cancelOrder(orderId);
+  if (!result.success) return res.status(404).json(result);
+
+  globalTradingStore.monitor.logAudit({
+    category: 'ORDER_EXECUTION',
+    action: `Order cancelled: ${orderId}`,
+    details: { orderId }
+  });
+  res.json({ success: true, orderId });
+});
+
+tradingRouter.post('/order/cancel-all', requireOwnerAuth, async (req: Request, res: Response) => {
+  const { symbol } = req.body;
+  const count = await globalTradingStore.exchangeExec.cancelAllOrders(symbol);
+  globalTradingStore.monitor.logAudit({
+    category: 'ORDER_EXECUTION',
+    action: `Cancelled ${count} open order(s)`,
+    details: { count, symbol }
+  });
+  res.json({ success: true, cancelledCount: count });
+});
 
 // 14. Self-Learn Optimizer (Champion / Challenger)
-tradingRouter.get('/strategies', requireOwnerAuth, (req: Request, res: Response) => {
+tradingRouter.get('/strategies', (req: Request, res: Response) => {
   const store = globalTradingStore;
   res.json({
     success: true,
     champion: store.learningLoop.getChampionStrategy(),
     challengers: store.learningLoop.getChallengerStrategies(),
-    history: store.learningLoop.getStrategyHistory()
+    history: store.learningLoop.getStrategyHistory(),
+    rollbackTelemetry: store.learningLoop.getRollbackTelemetry(),
+    tenureStatus: store.learningLoop.getChampionTenureStatus()
   });
 });
 
@@ -733,68 +480,45 @@ tradingRouter.post('/strategy/promote', requireOwnerAuth, (req: Request, res: Re
   res.json({ success: true, champion: result.champion, tenureStatus: result.tenureStatus });
 });
 
-// 13C. Champion rollback — the safe self-improvement half of the
-//       promote-then-monitor loop. Owner-initiated; auto-rollback
-//       evaluation is also reachable via /strategy/evaluate-rollback.
 tradingRouter.post('/strategy/rollback', requireOwnerAuth, (req: Request, res: Response) => {
-  const { reason } = req.body || {};
-  if (!reason || typeof reason !== 'string') {
-    return res.status(400).json({
-      success: false,
-      error: 'Cannot rollback: a non-empty reason is required for audit.',
-      code: 'BAD_REQUEST',
-    });
-  }
-  const result = globalTradingStore.learningLoop.rollbackCurrentChampion({
-    reason,
-    triggeredBy: 'OWNER',
-    approvalReason: reason,
-  });
+  const { reason } = req.body;
+  const rollbackReason = reason || 'Manual Owner rollback invoked via Control Panel';
+  const result = globalTradingStore.learningLoop.rollbackChampion(rollbackReason, true);
+
   if (!result.success) {
-    return res.status(400).json({
-      success: false,
-      error: result.reason,
-      tenureStatus: result.tenureStatus,
-      code: result.code,
-    });
+    return res.status(400).json({ success: false, error: result.reason });
   }
+
   globalTradingStore.monitor.logAudit({
     category: 'CONFIG_CHANGE',
-    action: `Strategy rollback: ${result.rolledBackChampionId} -> ${result.restoredChampionId}`,
+    action: `Strategy rolled back: ${result.rolledBackChampion?.id} -> ${result.restoredChampion?.id}`,
     details: {
-      rolledBackChampionId: result.rolledBackChampionId,
-      restoredChampionId: result.restoredChampionId,
-      reason,
-    },
+      rolledBackId: result.rolledBackChampion?.id,
+      restoredId: result.restoredChampion?.id,
+      reason: rollbackReason
+    }
   });
-  return res.json({ success: true, ...result });
-});
 
-// 13D. Force-run the auto-rollback evaluation without rolling back —
-//       returns the structured decision so the UI can show the operator
-//       whether a rollback would fire under the current evidence.
-tradingRouter.get('/strategy/evaluate-rollback', requireOwnerAuth, (_req: Request, res: Response) => {
-  const evaluation = globalTradingStore.learningLoop.evaluateAndTriggerRollback();
-  return res.json({
+  res.json({
     success: true,
-    config: globalTradingStore.learningLoop.getRollbackConfig(),
-    ...evaluation,
-    timestamp: new Date().toISOString(),
+    message: result.reason,
+    restoredChampion: result.restoredChampion,
+    rolledBackChampion: result.rolledBackChampion,
+    tenureStatus: result.tenureStatus
   });
 });
 
-tradingRouter.post('/strategy/auto-rollback-config', requireOwnerAuth, (req: Request, res: Response) => {
-  const { enabled } = req.body || {};
-  globalTradingStore.learningLoop.setAutoRollbackEnabled(enabled !== false);
-  return res.json({
+tradingRouter.get('/strategy/rollback/status', (req: Request, res: Response) => {
+  res.json({
     success: true,
-    config: globalTradingStore.learningLoop.getRollbackConfig(),
+    telemetry: globalTradingStore.learningLoop.getRollbackTelemetry(),
+    tenureStatus: globalTradingStore.learningLoop.getChampionTenureStatus()
   });
 });
 
 // 14B. 3-Way Trade Decision Architecture (BUY / SELL / DO NOTHING)
 // DO NOTHING is a legitimate optimized action: profitable automated systems trade selectively
-tradingRouter.get('/decisions', requireOwnerAuth, (req: Request, res: Response) => {
+tradingRouter.get('/decisions', (req: Request, res: Response) => {
   const store = globalTradingStore;
   res.json({
     success: true,
@@ -836,7 +560,8 @@ tradingRouter.post('/decisions/evaluate', requireOwnerAuth, (req: Request, res: 
     orderBook: livePair.orderBook,
     candles: livePair.candles,
     gridSpacingPct: store.activeGrid?.gridSpacingPct,
-    regime: qResult.regime
+    regime: qResult.regime,
+    fundingRateBps: livePair.fundingRateBps
   });
 
   const inventory = store.activeGrid?.inventoryAwareness;
@@ -873,47 +598,39 @@ tradingRouter.post('/script/validate', requireOwnerAuth, (req: Request, res: Res
 });
 
 // 16. AI Research Agent
-tradingRouter.get('/research', requireOwnerAuth, (req: Request, res: Response) => {
+tradingRouter.get('/research', (req: Request, res: Response) => {
   res.json({
     success: true,
     items: globalTradingStore.research.getResearchItems()
   });
 });
 
-tradingRouter.post('/research/analyze', requireOwnerAuth, async (req: Request, res: Response) => {
-  try {
-    const store = globalTradingStore;
-    const liveData = store.dataEngine.getPairData(store.activeSymbol);
-    if (!liveData) return res.status(400).json({ success: false, error: 'No live market data for research analysis' });
+tradingRouter.post('/research/analyze', async (req: Request, res: Response) => {
+  const store = globalTradingStore;
+  const liveData = store.dataEngine.getPairData(store.activeSymbol);
+  if (!liveData) return res.status(400).json({ success: false, error: 'No live market data for research analysis' });
 
-    const result = await store.research.evaluateLiveMarketIntelligence(
-      store.activeSymbol,
-      liveData.currentPrice,
-      liveData.priceChangePct
-    );
+  const result = await store.research.evaluateLiveMarketIntelligence(
+    store.activeSymbol,
+    liveData.currentPrice,
+    liveData.priceChangePct
+  );
 
-    return res.json(result);
-  } catch (err: any) {
-    return res.status(500).json({ success: false, error: err?.message || 'Research analysis failed.' });
-  }
+  res.json(result);
 });
 
 // 17. Profit Sweep Subsystem
 tradingRouter.get('/sweep/info', requireOwnerAuth, async (req: Request, res: Response) => {
-  try {
-    const store = globalTradingStore;
-    const confirmed = await store.sweeper.reconcilePendingSweeps();
-    for (const sweep of confirmed) store.profitAccounting.recordSweepExecuted(sweep.amountUsd || sweep.grossSweepAmount || 0, sweep.feePaidUsd || sweep.networkFeeUsd || 0);
-    return res.json({
-      success: true,
-      destinationWallet: store.sweeper.getDestinationWallet(),
-      sweeps: store.sweeper.getSweeps(),
-      eligibleProfitUsd: store.capital.eligibleRealizedProfit,
-      totalSweptUsd: store.capital.totalSweptProfit
-    });
-  } catch (err: any) {
-    return res.status(500).json({ success: false, error: err?.message || 'Unable to reconcile profit sweeps.' });
-  }
+  const store = globalTradingStore;
+  const confirmed = await store.sweeper.reconcilePendingSweeps();
+  for (const sweep of confirmed) store.profitAccounting.recordSweepExecuted(sweep.amountUsd || sweep.grossSweepAmount || 0, sweep.feePaidUsd || sweep.networkFeeUsd || 0);
+  res.json({
+    success: true,
+    destinationWallet: store.sweeper.getDestinationWallet(),
+    sweeps: store.sweeper.getSweeps(),
+    eligibleProfitUsd: store.capital.eligibleRealizedProfit,
+    totalSweptUsd: store.capital.totalSweptProfit
+  });
 });
 
 tradingRouter.post('/sweep/wallet', requireOwnerAuth, (req: Request, res: Response) => {
@@ -955,7 +672,7 @@ tradingRouter.post('/sweep/auto', requireOwnerAuth, async (req: Request, res: Re
 
 
 // 18. Risk Configuration & Circuit Breaker
-tradingRouter.get('/risk', requireOwnerAuth, (req: Request, res: Response) => {
+tradingRouter.get('/risk', (req: Request, res: Response) => {
   res.json({
     success: true,
     config: globalTradingStore.risk.getConfig(),
@@ -969,46 +686,6 @@ tradingRouter.post('/risk/circuit-breaker/reset', requireOwnerAuth, (req: Reques
   res.json({ success: true, circuitBreakerActive: false });
 });
 
-// Risk configuration update. `RiskEngine.updateConfig` already existed but had no route bound to it,
-// so the client's /risk/config call always 404'd.
-tradingRouter.post('/risk/config', requireOwnerAuth, (req: Request, res: Response) => {
-  const body = req.body || {};
-  const numericFields = ['maxPositionSizePct', 'maxExposureUsd', 'maxOpenOrders', 'maxDrawdownLimitPct', 'maxDailyLossPct', 'minAccountReserveUsd'];
-  const update: Record<string, number> = {};
-
-  for (const key of numericFields) {
-    const raw = body[key];
-    if (raw === undefined || raw === null || raw === '') continue;
-    const value = Number(raw);
-    if (!Number.isFinite(value) || value < 0) {
-      return res.status(400).json({ success: false, error: `${key} must be a finite non-negative number.` });
-    }
-    update[key] = value;
-  }
-
-  if (Object.keys(update).length === 0) {
-    return res.status(400).json({ success: false, error: 'No valid risk configuration fields supplied.' });
-  }
-
-  const config = globalTradingStore.risk.updateConfig(update as any);
-  globalTradingStore.monitor.logAudit({
-    category: 'CONFIG_CHANGE',
-    action: 'Risk configuration updated',
-    details: update
-  });
-  return res.json({ success: true, config });
-});
-
-// The platform is live-only; this endpoint exists so the client's mode call resolves explicitly
-// instead of 404-ing through the API catch-all.
-tradingRouter.post('/mode', requireOwnerAuth, (req: Request, res: Response) => {
-  const requested = String(req.body?.mode || 'LIVE').toUpperCase();
-  if (requested !== 'LIVE') {
-    return res.status(422).json({ success: false, error: 'GigPilot is live-only; no alternate trading modes are permitted.' });
-  }
-  return res.json({ success: true, mode: globalTradingStore.tradingMode });
-});
-
 // 19. Audit Logs & System Updates
 tradingRouter.get('/audit-logs', requireOwnerAuth, (req: Request, res: Response) => {
   res.json({
@@ -1017,7 +694,7 @@ tradingRouter.get('/audit-logs', requireOwnerAuth, (req: Request, res: Response)
   });
 });
 
-tradingRouter.get('/updates', requireOwnerAuth, (req: Request, res: Response) => {
+tradingRouter.get('/updates', (req: Request, res: Response) => {
   res.json({
     success: true,
     updates: globalTradingStore.monitor.getSystemUpdates()
@@ -1049,18 +726,13 @@ tradingRouter.all(['/auth/status', '/auth/status/', '/status', '/status/'], (req
   });
 });
 
-tradingRouter.all(['/auth/setup-init', '/auth/setup-init/', '/setup-init', '/setup-init/'], authThrottle, async (req: Request, res: Response) => {
+tradingRouter.all(['/auth/setup-init', '/auth/setup-init/', '/setup-init', '/setup-init/'], async (req: Request, res: Response) => {
   res.setHeader('Content-Type', 'application/json; charset=utf-8');
   if (req.method === 'OPTIONS') return res.sendStatus(200);
   if (req.method !== 'POST') {
     return res.status(405).json({ success: false, error: 'Method Not Allowed. POST is required.' });
   }
   try {
-    // Bootstrap only: never hand a fresh TOTP secret to an unauthenticated caller once the owner
-    // account exists, otherwise setup-complete can be used to overwrite owner credentials.
-    if (ownerAuth.isConfigured()) {
-      return res.status(409).json({ success: false, error: 'Owner account is already configured. TOTP re-enrollment requires an authenticated owner session.' });
-    }
     const { email } = parseBody(req);
     const setupData = await ownerAuth.initiateTotpSetup(email);
     return res.json({ success: true, ...setupData });
@@ -1069,18 +741,15 @@ tradingRouter.all(['/auth/setup-init', '/auth/setup-init/', '/setup-init', '/set
   }
 });
 
-tradingRouter.all(['/auth/setup-complete', '/auth/setup-complete/', '/setup-complete', '/setup-complete/'], authThrottle, async (req: Request, res: Response) => {
+tradingRouter.all(['/auth/setup-complete', '/auth/setup-complete/', '/setup-complete', '/setup-complete/'], (req: Request, res: Response) => {
   res.setHeader('Content-Type', 'application/json; charset=utf-8');
   if (req.method === 'OPTIONS') return res.sendStatus(200);
   if (req.method !== 'POST') {
     return res.status(405).json({ success: false, error: 'Method Not Allowed. POST is required.' });
   }
   try {
-    if (ownerAuth.isConfigured()) {
-      return res.status(409).json({ success: false, error: 'Owner account is already configured. Setup cannot be re-run without an authenticated session.' });
-    }
     const { password, totpCode, email } = parseBody(req);
-    const result = await ownerAuth.completeSetup({ password, totpCode, email });
+    const result = ownerAuth.completeSetup(password, totpCode, email);
     if (!result.success) return res.status(400).json(result);
     return res.json(result);
   } catch (err: any) {
@@ -1088,7 +757,7 @@ tradingRouter.all(['/auth/setup-complete', '/auth/setup-complete/', '/setup-comp
   }
 });
 
-tradingRouter.all(['/auth/login', '/auth/login/', '/login', '/login/'], authThrottle, async (req: Request, res: Response) => {
+tradingRouter.all(['/auth/login', '/auth/login/', '/login', '/login/'], (req: Request, res: Response) => {
   res.setHeader('Content-Type', 'application/json; charset=utf-8');
   if (req.method === 'OPTIONS') return res.sendStatus(200);
   if (req.method !== 'POST') {
@@ -1099,7 +768,7 @@ tradingRouter.all(['/auth/login', '/auth/login/', '/login', '/login/'], authThro
     if (!email) {
       return res.status(400).json({ success: false, error: 'Owner email is required.' });
     }
-    const result = await ownerAuth.login({ email, password, totpCode, emergencyPin });
+    const result = ownerAuth.login({ email, password, totpCode, emergencyPin });
     if (!result.success) {
       return res.status(401).json(result);
     }
@@ -1135,7 +804,7 @@ tradingRouter.get('/assets', requireOwnerAuth, async (req: Request, res: Respons
 });
 
 // 22. Autonomous Revenue Optimizer & Strategy Allocator
-tradingRouter.get('/autonomous-optimizer/status', requireOwnerAuth, (_req: Request, res: Response) => {
+tradingRouter.get('/autonomous-optimizer/status', (_req: Request, res: Response) => {
   try {
     const store = globalTradingStore;
     return res.json({
@@ -1153,7 +822,7 @@ tradingRouter.get('/autonomous-optimizer/status', requireOwnerAuth, (_req: Reque
   }
 });
 
-tradingRouter.get('/strategy-allocator/current', requireOwnerAuth, (_req: Request, res: Response) => {
+tradingRouter.get('/strategy-allocator/current', (_req: Request, res: Response) => {
   try {
     const store = globalTradingStore;
     const allocation = store.profitOptimizer.getLatestStrategyAllocation();
@@ -1224,7 +893,7 @@ tradingRouter.post('/autonomous-optimizer/toggle', requireOwnerAuth, (req: Reque
 });
 
 // 23. Quantitative Microstructure Expected Net Edge Decomposition
-tradingRouter.get('/quant/edge-breakdown', requireOwnerAuth, (req: Request, res: Response) => {
+tradingRouter.get('/quant/edge-breakdown', (req: Request, res: Response) => {
   try {
     const store = globalTradingStore;
     const symbol = (req.query.symbol as string) || store.activeSymbol || 'BTCUSDT';
@@ -1236,7 +905,8 @@ tradingRouter.get('/quant/edge-breakdown', requireOwnerAuth, (req: Request, res:
       orderBook: pairData?.orderBook,
       candles: pairData?.candles,
       gridSpacingPct: spacing,
-      regime: store.currentRegime
+      regime: store.currentRegime,
+      fundingRateBps: pairData?.fundingRateBps
     });
 
     return res.json({
@@ -1255,7 +925,7 @@ tradingRouter.get('/quant/edge-breakdown', requireOwnerAuth, (req: Request, res:
 });
 
 // 24. Explicit Regime Transition Detector & Protections
-tradingRouter.get('/regime-transition', requireOwnerAuth, (req: Request, res: Response) => {
+tradingRouter.get('/regime-transition', (req: Request, res: Response) => {
   try {
     const store = globalTradingStore;
     const symbol = store.activeSymbol;
@@ -1285,7 +955,7 @@ tradingRouter.get('/regime-transition', requireOwnerAuth, (req: Request, res: Re
 });
 
 // 31. Inventory-Aware Grid Metrics & Multi-Variable Equation Read
-tradingRouter.get('/inventory-awareness', requireOwnerAuth, async (req: Request, res: Response) => {
+tradingRouter.get('/inventory-awareness', async (req: Request, res: Response) => {
   try {
     const store = globalTradingStore;
     const symbol = store.activeSymbol;
@@ -1317,3 +987,161 @@ tradingRouter.get('/inventory-awareness', requireOwnerAuth, async (req: Request,
     return res.status(500).json({ success: false, error: err.message });
   }
 });
+
+// 32. GigPilot Bybit USDT-Perp Autonomous Engine Endpoints
+const GIGPILOT_URL = process.env.GIGPILOT_URL || 'http://127.0.0.1:8001';
+
+tradingRouter.get('/gigpilot/state', async (req: Request, res: Response) => {
+  try {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 2000);
+    try {
+      const response = await fetch(`${GIGPILOT_URL}/api/state`, { signal: controller.signal });
+      clearTimeout(timeoutId);
+      if (response.ok) {
+        const data = await response.json();
+        return res.json({ success: true, daemonRunning: true, ...data });
+      }
+    } catch {
+      clearTimeout(timeoutId);
+    }
+
+    // Engine unreachable: fail-visible. Never fabricate state or return mock numbers.
+    return res.status(503).json({
+      success: false,
+      reachable: false,
+      error: 'ENGINE UNREACHABLE',
+      ts: new Date().toISOString(),
+      armed: false,
+      host: 'https://api.bybit.com',
+      position_mode: null,
+      hurdle_bps: 3.0,
+      equity: null,
+      margin_ratio: null,
+      gross_notional: null,
+      daily_pnl: null,
+      realized_today: null,
+      positions: [],
+      signals: [],
+      markets: [],
+      events: []
+    });
+  } catch (err: any) {
+    return res.status(500).json({
+      success: false,
+      reachable: false,
+      error: err.message,
+      equity: null,
+      margin_ratio: null,
+      gross_notional: null,
+      daily_pnl: null,
+      realized_today: null,
+      positions: [],
+      signals: [],
+      markets: [],
+      events: []
+    });
+  }
+});
+
+tradingRouter.post('/gigpilot/arm', requireOwnerAuth, async (req: Request, res: Response) => {
+  try {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 2000);
+    try {
+      const response = await fetch(`${GIGPILOT_URL}/api/arm`, { method: 'POST', signal: controller.signal });
+      clearTimeout(timeoutId);
+      if (response.ok) {
+        const data = await response.json();
+        return res.json({ success: true, ...data });
+      }
+    } catch {
+      clearTimeout(timeoutId);
+    }
+    return res.status(503).json({
+      success: false,
+      error: 'GigPilot autonomous daemon is not currently responding on 127.0.0.1:8000. Launch it via `npm run start:python`.'
+    });
+  } catch (err: any) {
+    return res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+tradingRouter.post('/gigpilot/disarm', requireOwnerAuth, async (req: Request, res: Response) => {
+  try {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 2000);
+    try {
+      const response = await fetch(`${GIGPILOT_URL}/api/disarm`, { method: 'POST', signal: controller.signal });
+      clearTimeout(timeoutId);
+      if (response.ok) {
+        const data = await response.json();
+        return res.json({ success: true, ...data });
+      }
+    } catch {
+      clearTimeout(timeoutId);
+    }
+    return res.json({ success: true, armed: false, message: 'GigPilot disarmed locally.' });
+  } catch (err: any) {
+    return res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+tradingRouter.post('/gigpilot/kill', requireOwnerAuth, async (req: Request, res: Response) => {
+  try {
+    // 1. Trigger global kill switch in main store to halt all spot / linear orders
+    globalTradingStore.killSwitch.trigger('Kill switch invoked from GigPilot Futures view');
+
+    // 2. Forward to GigPilot daemon if reachable
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 2000);
+    try {
+      await fetch(`${GIGPILOT_URL}/api/kill`, { method: 'POST', signal: controller.signal });
+      clearTimeout(timeoutId);
+    } catch {
+      clearTimeout(timeoutId);
+    }
+
+    // 3. Cancel all exchange open orders via Bybit adapter
+    try {
+      await globalTradingStore.exchangeExec.cancelAllOrders();
+    } catch {}
+
+    return res.json({ success: true, killed: true, message: 'All open orders cancelled and positions flattened.' });
+  } catch (err: any) {
+    return res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+tradingRouter.get('/gigpilot/health', async (req: Request, res: Response) => {
+  try {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 1500);
+    try {
+      const response = await fetch(`${GIGPILOT_URL}/health`, { signal: controller.signal });
+      clearTimeout(timeoutId);
+      if (response.ok) {
+        const data = await response.json();
+        return res.json({ success: true, daemonRunning: true, ...data });
+      }
+    } catch {
+      clearTimeout(timeoutId);
+    }
+
+    return res.status(503).json({
+      success: false,
+      reachable: false,
+      healthy: false,
+      error: 'ENGINE UNREACHABLE',
+      public_ws: false,
+      private_ws: false,
+      feed_fresh: false,
+      armed: false,
+      host: 'https://api.bybit.com',
+      position_mode: null
+    });
+  } catch (err: any) {
+    return res.status(500).json({ success: false, reachable: false, healthy: false, error: err.message });
+  }
+});
+

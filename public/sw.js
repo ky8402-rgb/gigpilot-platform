@@ -1,5 +1,5 @@
-// Service Worker for GigPilot: Cache-First for static assets, Network-First for APIs
-const CACHE_NAME = 'gigpilot-v1';
+// Service Worker for KundanVision369 Autonomous Crypto Grid Trading Platform
+const CACHE_NAME = 'kundanvision-trading-v2';
 const PRECACHE_ASSETS = [
   '/',
   '/index.html',

@@ -15,26 +15,24 @@
     "clean": "rm -rf dist server.js",
     "health": "node healthcheck.js",
     "deploy:all": "bash ./scripts/push-and-deploy.sh",
+    "deploy:master": "bash ./master-deploy.sh",
     "setup:ec2": "bash ./setup-ec2.sh",
     "verify:prod": "bash ./verify-production.sh",
+    "update-godaddy-dns": "tsx scripts/update-godaddy-dns.ts",
+    "update-cloudflare-dns": "tsx scripts/update-cloudflare-dns.ts",
     "push": "bash ./scripts/push-and-deploy.sh",
     "lint": "tsc --noEmit",
-    "test": "tsc --noEmit && npm run test:profit && npm run test:cost && npm run test:state && npm run test:research && npm run test:strategy && npm run test:security && npm run test:capital && npm run test:env && npm run test:platform",
+    "test": "tsc --noEmit && npm run test:profit && npm run test:research && npm run test:strategy && npm run test:linear && npm run test:rollback && npm run test:starvation && npm run test:cors && npm run test:bybit-retry",
     "test:profit": "node scripts/test-profit-gate.mjs",
-    "test:cost": "node scripts/test-cost-model.mjs",
-    "test:state": "node scripts/test-state-durability.mjs",
     "test:research": "node scripts/test-ai-research-agent.mjs",
     "test:strategy": "node scripts/test-strategy-builder-safety.mjs",
-    "test:security": "tsx scripts/test-auth-throttle.ts",
-    "test:capital": "tsx scripts/test-capital-plan.ts",
-    "test:env": "node scripts/test-update-env.mjs",
-    "test:observability": "node scripts/test-observability-endpoints.mjs",
-    "test:platform": "node --import tsx scripts/test-request-id-and-retry.mjs",
-    "test:reliability": "tsx scripts/test-reliability-loop.ts",
-    "test:architecture": "tsx scripts/test-exchange-and-auth-architecture.ts",
-    "test:rollback": "tsx scripts/test-promote-and-rollback.ts",
-    "monitor:platform": "node scripts/monitor-platform.mjs",
-    "readiness": "node scripts/readiness-check.mjs",
+    "test:linear": "node scripts/test-bybit-linear-engine.mjs",
+    "test:rollback": "node scripts/test-champion-challenger-rollback.mjs",
+    "test:starvation": "node scripts/test-candle-starvation-isolation.mjs",
+    "test:cors": "node scripts/test-cors-strict.mjs",
+    "test:bybit-retry": "node scripts/test-bybit-retry-logging.mjs",
+    "test:loop": "tsx scripts/test-autonomous-loop.ts",
+    "start:python": "python3 gigpilot.py",
     "postinstall": "node scripts/postinstall.js"
   },
   "dependencies": {
@@ -43,6 +41,7 @@
     "@neondatabase/serverless": "^1.1.0",
     "@prisma/client": "^6.4.1",
     "@tailwindcss/vite": "^4.1.14",
+    "@types/bull": "^4.10.4",
     "@types/canvas-confetti": "^1.9.0",
     "@types/cookie-parser": "^1.4.10",
     "@types/jsonwebtoken": "^9.0.10",
@@ -50,6 +49,7 @@
     "@types/qrcode": "^1.5.6",
     "@vitejs/plugin-react": "^5.0.4",
     "axios": "^1.20.0",
+    "bull": "^4.16.5",
     "canvas-confetti": "^1.9.4",
     "chart.js": "^4.5.1",
     "cheerio": "^1.2.0",
@@ -71,6 +71,7 @@
     "react-dom": "^19.0.1",
     "recharts": "^3.10.1",
     "ws": "^8.21.3",
+    "xlsx": "^0.18.5",
     "zod": "^4.6.2"
   },
   "devDependencies": {
@@ -92,9 +93,5 @@
     "tweetsodium": "^0.0.6",
     "typescript": "~5.8.2",
     "vite": "^6.2.3"
-  },
-  "overrides": {
-    "deepmerge-ts": "^8.0.0",
-    "ip-address": "^10.7.2"
   }
 }

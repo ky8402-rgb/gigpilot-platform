@@ -278,7 +278,6 @@ export interface Position {
   totalFeesPaid: number;
   netPnL: number;
   liquidationPrice?: number;
-  leverage?: number;
 }
 
 export interface CapitalAccounting {
@@ -309,47 +308,6 @@ export interface CapitalAccounting {
   totalTrades: number;
   winningTrades: number;
   losingTrades: number;
-}
-
-/**
- * Backend-computed capital & leverage plan, returned nested under `capitalPlan`
- * on the owner-authed `GET /autonomy/status`. Every field is optional because
- * the plan is authoritative on the backend and can be partially populated (or
- * absent) when live price / account cash data is unavailable. The UI must never
- * invent a value the backend did not send.
- */
-export interface CapitalPlan {
-  availableCashUsd?: number;
-  minAccountReserveUsd?: number;
-  maxCapitalAllocationPct?: number;
-  /** Already net of the account reserve and the allocation-percentage cap. */
-  maxAllocatableUsd?: number;
-  /** Leverage the backend sizing actually used. */
-  leverage?: number;
-  /** Backend-enforced floor; always 1. */
-  minLeverage?: number;
-  /** Backend-enforced safe ceiling = min(configured limit, exchange maximum). */
-  maxLeverage?: number;
-  leverageStep?: number;
-  leverageCeilingSource?: 'CONFIG' | 'EXCHANGE' | 'CONFIG_AND_EXCHANGE';
-  /** Smallest grid that can exist (4). */
-  minimumViableLevels?: number;
-  requestedLevels?: number;
-  /** Levels actually used to compute the requirement. */
-  effectiveLevels?: number;
-  /** Most rungs the current balance can fund. */
-  maxAffordableLevels?: number;
-  /** Notional per rung at effectiveLevels. */
-  perRungUsd?: number;
-  exchangeMinNotionalUsd?: number;
-  minRequiredForGridUsd?: number;
-  /** EXACT account cash needed to become tradeable; null when not computable. */
-  requiredMinCashUsd?: number | null;
-  /** Additional cash needed right now; null when not computable. */
-  shortfallUsd?: number | null;
-  canTrade?: boolean;
-  /** Legacy alias retained so existing readers do not break. */
-  gridLevelsCount?: number;
 }
 
 export interface DestinationWallet {
@@ -398,7 +356,7 @@ export interface StrategyVersion {
   name: string;
   version: string;
   type: 'ADAPTIVE_GRID' | 'TREND_GRID' | 'VOLATILITY_BREAKOUT' | 'MEAN_REVERSION_GRID' | 'CUSTOM_SCRIPT';
-  status: 'CHAMPION' | 'CHALLENGER' | 'RETIRED' | 'REJECTED' | 'VALIDATING';
+  status: 'CHAMPION' | 'CHALLENGER' | 'RETIRED' | 'REJECTED' | 'VALIDATING' | 'ROLLED_BACK';
   parentVersionId?: string;
   createdAt: string;
   deployedAt?: string;
@@ -620,22 +578,6 @@ export interface MasterTradingState {
   GLOBAL_KILL_SWITCH_ACTIVE?: boolean;
   botsDisabled?: boolean;
   activeBotsCount?: number;
-  futuresRisk?: {
-    maxLeverage: number;
-    maxExposureUsd: number;
-    maxDrawdownLimitPct: number;
-    maxCapitalAllocationPct: number;
-    minimumNetEdgeBps: number;
-  };
-  autonomousBot?: {
-    status: 'RUNNING' | 'PAUSED' | 'BLOCKED';
-    allocatedCapitalUsd: number;
-    startedAt?: string | null;
-    startupSafetyLatch: boolean;
-    currentNetEdgeBps: number | null;
-    decisionReason: string;
-    requiredNetEdgeBps: number;
-  };
   failClosedStatus?: { failClosed: boolean; downEngines: string[] };
   engines?: EngineHealth[];
   killSwitch: {
@@ -716,8 +658,7 @@ export type BybitAccountState = ExchangeAccountState;
 export interface OwnerAuthStatus {
   isAuthenticated: boolean;
   isConfigured: boolean;
-  /** Only present on an authenticated response; the server withholds it from anonymous callers. */
-  ownerEmail?: string;
+  ownerEmail: string;
   totpEnabled: boolean;
   hasPassword: boolean;
   GLOBAL_KILL_SWITCH_ACTIVE?: boolean;
@@ -898,7 +839,7 @@ export interface ExchangeCredentialsInfo {
   exchange: SupportedExchange;
   configured: boolean;
   apiKeyMask: string;
-  status: 'CONNECTED' | 'VALIDATING' | 'ERROR' | 'RESTRICTED' | 'DISCONNECTED' | 'UNCONFIGURED';
+  status: 'CONNECTED' | 'ERROR' | 'UNCONFIGURED';
   permissions: {
     spotTrading: boolean;
     marginTrading: boolean;

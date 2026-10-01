@@ -11,7 +11,7 @@
 #
 # Usage:
 #   ./deploy.sh
-#   ./deploy.sh -m "feat: updated payout rules and escrow release"
+#   ./deploy.sh -m "feat: updated grid spacing and risk parameters"
 #   ./deploy.sh --skip-amplify
 #   ./deploy.sh --skip-verify
 #   ./deploy.sh --dry-run

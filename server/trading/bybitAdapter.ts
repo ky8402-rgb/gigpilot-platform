@@ -1,10 +1,8 @@
 import crypto from 'crypto';
 import fs from 'fs';
 import path from 'path';
-import { Candle, Fill, Order, OrderBook, OrderBookLevel } from './types.js';
+import { Candle, Fill, Order, OrderBook, OrderBookLevel, Position } from './types.js';
 import { formatBybitError } from './bybitErrors.js';
-import { withRetry, TimeoutError } from '../util/retry.js';
-import { log, rid } from '../util/requestId.js';
 
 export interface BybitBalanceItem {
   asset: string;
@@ -32,6 +30,8 @@ export interface BybitAccountState {
   availableCashUsd: number;
   lockedInOrdersUsd: number;
   spotBalances: BybitAssetWithUsd[];
+  positions?: Position[];
+  category?: 'linear';
   realizedProfitUsd: number;
   unrealizedProfitUsd: number;
   todayPnLUsd: number;
@@ -83,32 +83,15 @@ export class BybitAdapter {
 
 
   public async syncServerTime(): Promise<number> {
-    // Time-sync drives HMAC signatures; a wrong offset here causes 401s on every signed
-    // call. Retry transient failures but DO NOT retry permanent ones (non-JSON, 4xx),
-    // and surface them in the log instead of silently snapping the offset to zero —
-    // the previous behaviour could leave every signed request 4xx'd for an hour.
     try {
-      const res = await withRetry(
-        () => fetch(`${this.getActiveBaseUrl()}/v5/market/time`),
-        { op: 'bybit.syncServerTime', maxAttempts: 3, baseDelayMs: 400, timeoutMs: 4000 }
-      );
-      if (!res.ok) {
-        log.warn(rid(undefined), 'bybit.syncServerTime.nonOk', { status: res.status });
-        return this.timeOffset;
+      const res = await fetch(`${this.getActiveBaseUrl()}/v5/market/time`);
+      if (res.ok) {
+        const data = (await res.json()) as any;
+        const serverTime = Number(data?.time || (data?.result?.timeSecond ? data.result.timeSecond * 1000 : Date.now()));
+        this.timeOffset = serverTime - Date.now();
       }
-      const data = (await res.json()) as any;
-      const serverTime = Number(
-        data?.time || (data?.result?.timeSecond ? data.result.timeSecond * 1000 : Date.now())
-      );
-      this.timeOffset = serverTime - Date.now();
-    } catch (err) {
-      log.error(rid(undefined), 'bybit.syncServerTime.failed', {
-        error: err instanceof Error ? err.message : String(err),
-        isTimeout: err instanceof TimeoutError
-      });
-      // Keep the previously-known offset rather than snapping to zero. A wrong-but-stable
-      // offset is far less damaging than an unknown one — the next successful sync will
-      // heal it.
+    } catch {
+      this.timeOffset = 0;
     }
     return this.timeOffset;
   }
@@ -140,8 +123,7 @@ export class BybitAdapter {
           },
           null,
           2
-        ),
-        { mode: 0o600 }
+        )
       );
     } catch (e) {
       console.error('Failed to save Bybit config:', e);
@@ -215,7 +197,148 @@ export class BybitAdapter {
   }
 
   /**
-   * Public: Real live ticker price from Bybit V5 Linear Futures
+   * Safe Secret Masking Helper: Ensures no API key, secret, or HMAC signature ever leaks into error logs
+   */
+  public sanitizeSecrets(text: string): string {
+    if (!text) return '';
+    let sanitized = String(text);
+    if (this.apiSecret) {
+      sanitized = sanitized.split(this.apiSecret).join('[REDACTED_SECRET]');
+    }
+    if (this.apiKey) {
+      sanitized = sanitized.split(this.apiKey).join(this.getKeyMask());
+    }
+    sanitized = sanitized.replace(/[a-f0-9]{64}/gi, '[SIGNATURE_REDACTED]');
+    return sanitized;
+  }
+
+  /**
+   * Robust Signed Request Dispatcher with Exponential Backoff Retries & Secret Scrubbing
+   */
+  public async fetchSignedWithRetry<T = any>(
+    method: 'GET' | 'POST',
+    endpoint: string,
+    payload: Record<string, any>,
+    options?: {
+      maxRetries?: number;
+      baseDelayMs?: number;
+      timeoutMs?: number;
+      label?: string;
+    }
+  ): Promise<{
+    ok: boolean;
+    status: number;
+    retCode: number;
+    retMsg: string;
+    result?: T;
+    raw?: any;
+    attempts: number;
+  }> {
+    if (!this.apiKey || !this.apiSecret) {
+      return {
+        ok: false,
+        status: 401,
+        retCode: 10003,
+        retMsg: 'Bybit credentials missing or unconfigured.',
+        attempts: 0
+      };
+    }
+
+    const maxRetries = options?.maxRetries ?? 3;
+    const baseDelayMs = options?.baseDelayMs ?? 250;
+    const timeoutMs = options?.timeoutMs ?? 5000;
+
+    let lastError: any = null;
+    let attempts = 0;
+
+    for (let attempt = 1; attempt <= maxRetries; attempt++) {
+      attempts = attempt;
+      try {
+        let url = `${this.getActiveBaseUrl()}${endpoint}`;
+        let fetchOptions: RequestInit;
+
+        if (method === 'GET') {
+          const { headers, queryString } = this.signGet(payload);
+          if (queryString) url += `?${queryString}`;
+          fetchOptions = {
+            method: 'GET',
+            headers,
+            signal: AbortSignal.timeout(timeoutMs)
+          };
+        } else {
+          const { headers, bodyStr } = this.signPost(payload);
+          fetchOptions = {
+            method: 'POST',
+            headers,
+            body: bodyStr,
+            signal: AbortSignal.timeout(timeoutMs)
+          };
+        }
+
+        const res = await fetch(url, fetchOptions);
+        const json = await res.json().catch(() => null);
+
+        const retCode = Number(json?.retCode ?? (res.ok ? 0 : -1));
+        const rawRetMsg = String(json?.retMsg || `HTTP ${res.status}`);
+        const retMsg = this.sanitizeSecrets(rawRetMsg);
+
+        // Check Bybit Success
+        if (res.ok && retCode === 0) {
+          return {
+            ok: true,
+            status: res.status,
+            retCode: 0,
+            retMsg: 'OK',
+            result: json?.result as T,
+            raw: json,
+            attempts
+          };
+        }
+
+        // Retryable error check:
+        // HTTP 429 (Rate limit) or 5xx (Gateway/server error) or Bybit transient codes:
+        // 10006: Too many visits
+        // 10018: Rate limit reached
+        // 10016: Server error
+        const isRateLimit = res.status === 429 || retCode === 10006 || retCode === 10018;
+        const isServerError = res.status >= 500 || retCode === 10016;
+        const isRetryable = isRateLimit || isServerError;
+
+        if (!isRetryable || attempt === maxRetries) {
+          const errorMsg = formatBybitError(retCode, retMsg);
+          return {
+            ok: false,
+            status: res.status,
+            retCode,
+            retMsg: this.sanitizeSecrets(errorMsg),
+            raw: json,
+            attempts
+          };
+        }
+
+        // Exponential backoff with jitter
+        const delay = baseDelayMs * Math.pow(2, attempt - 1) + Math.floor(Math.random() * 50);
+        await new Promise(resolve => setTimeout(resolve, delay));
+      } catch (err: any) {
+        lastError = err;
+        if (attempt === maxRetries) break;
+        const delay = baseDelayMs * Math.pow(2, attempt - 1);
+        await new Promise(resolve => setTimeout(resolve, delay));
+      }
+    }
+
+    const sanitizedErrMsg = this.sanitizeSecrets(lastError?.message || 'Network dispatch timeout / failure');
+    return {
+      ok: false,
+      status: 504,
+      retCode: -1,
+      retMsg: sanitizedErrMsg,
+      attempts
+    };
+  }
+
+  /**
+   * Public: Real live ticker price from Bybit V5 Perpetual Futures (Linear)
    */
   public async getRealPrice(symbol = 'BTCUSDT'): Promise<number> {
     const raw = this.normalizeSymbol(symbol);
@@ -225,12 +348,9 @@ export class BybitAdapter {
     }
 
     try {
-      const res = await withRetry(
-        () => fetch(`${this.getActiveBaseUrl()}/v5/market/tickers?category=linear&symbol=${raw}`, {
-          headers: { 'Accept': 'application/json' }
-        }),
-        { op: 'bybit.getRealPrice', maxAttempts: 3, baseDelayMs: 200, timeoutMs: 4000 }
-      );
+      const res = await fetch(`${this.getActiveBaseUrl()}/v5/market/tickers?category=linear&symbol=${raw}`, {
+        headers: { 'Accept': 'application/json' }
+      });
       if (res.ok) {
         const json = (await res.json()) as any;
         const item = json?.result?.list?.[0];
@@ -239,24 +359,64 @@ export class BybitAdapter {
           this.priceCache.set(raw, { price: p, time: Date.now() });
           return p;
         }
-      } else {
-        log.warn(rid(undefined), 'bybit.getRealPrice.nonOk', { symbol: raw, status: res.status });
       }
-    } catch (err) {
-      log.warn(rid(undefined), 'bybit.getRealPrice.failed', {
-        symbol: raw,
-        error: err instanceof Error ? err.message : String(err),
-        isTimeout: err instanceof TimeoutError
-      });
+    } catch {
+      // ignore
     }
 
-    // Always serve the cache rather than 0 — a stale-but-real price is more honest
-    // than no price, and the readiness probe already gates trades on candle freshness.
     return cached?.price || 0;
   }
 
   /**
-   * Public: Real 24h ticker statistics from Bybit V5 Linear Futures
+   * Public: Real authoritative Bybit V5 Perpetual Futures funding rate & next funding time
+   */
+  public async getRealFuturesFundingRate(symbol = 'BTCUSDT'): Promise<{
+    symbol: string;
+    fundingRateBps: number;
+    fundingRateRaw: string;
+    nextFundingTime: number;
+    markPrice: number;
+    indexPrice: number;
+  }> {
+    const raw = this.normalizeSymbol(symbol);
+    try {
+      const res = await fetch(`${this.getActiveBaseUrl()}/v5/market/tickers?category=linear&symbol=${raw}`, {
+        headers: { 'Accept': 'application/json' }
+      });
+      if (res.ok) {
+        const json = (await res.json()) as any;
+        const item = json?.result?.list?.[0];
+        if (item) {
+          const rawRate = item.fundingRate ? String(item.fundingRate) : '0';
+          const fundingRateBps = Number((parseFloat(rawRate) * 10000).toFixed(4));
+          const nextFundingTime = Number(item.nextFundingTime) || 0;
+          const markPrice = parseFloat(item.markPrice) || 0;
+          const indexPrice = parseFloat(item.indexPrice) || 0;
+          return {
+            symbol: this.denormalizeSymbol(raw),
+            fundingRateBps,
+            fundingRateRaw: rawRate,
+            nextFundingTime,
+            markPrice,
+            indexPrice
+          };
+        }
+      }
+    } catch {
+      // ignore
+    }
+    return {
+      symbol: this.denormalizeSymbol(raw),
+      fundingRateBps: 0,
+      fundingRateRaw: '0',
+      nextFundingTime: 0,
+      markPrice: 0,
+      indexPrice: 0
+    };
+  }
+
+  /**
+   * Public: Real 24h ticker statistics from Bybit V5 Perpetual Futures (Linear)
    */
   public async getReal24hStats(symbol = 'BTCUSDT'): Promise<{
     symbol: string;
@@ -266,15 +426,14 @@ export class BybitAdapter {
     low24h: number;
     volume: number;
     change24hPct: number;
+    fundingRateBps?: number;
+    markPrice?: number;
   }> {
     const raw = this.normalizeSymbol(symbol);
     try {
-      const res = await withRetry(
-        () => fetch(`${this.getActiveBaseUrl()}/v5/market/tickers?category=linear&symbol=${raw}`, {
-          headers: { 'Accept': 'application/json' }
-        }),
-        { op: 'bybit.getReal24hStats', maxAttempts: 3, baseDelayMs: 200, timeoutMs: 4000 }
-      );
+      const res = await fetch(`${this.getActiveBaseUrl()}/v5/market/tickers?category=linear&symbol=${raw}`, {
+        headers: { 'Accept': 'application/json' }
+      });
       if (res.ok) {
         const json = (await res.json()) as any;
         const item = json?.result?.list?.[0];
@@ -285,17 +444,13 @@ export class BybitAdapter {
           const low24h = parseFloat(item.lowPrice24h) || 0;
           const volume = parseFloat(item.volume24h) || 0;
           const change24hPct = parseFloat(item.price24hPcnt) * 100 || 0;
-          return { symbol: this.denormalizeSymbol(raw), price, open24h, high24h, low24h, volume, change24hPct };
+          const fundingRateBps = item.fundingRate != null ? Number((parseFloat(item.fundingRate) * 10000).toFixed(4)) : undefined;
+          const markPrice = item.markPrice != null ? parseFloat(item.markPrice) : undefined;
+          return { symbol: this.denormalizeSymbol(raw), price, open24h, high24h, low24h, volume, change24hPct, fundingRateBps, markPrice };
         }
-      } else {
-        log.warn(rid(undefined), 'bybit.getReal24hStats.nonOk', { symbol: raw, status: res.status });
       }
-    } catch (err) {
-      log.warn(rid(undefined), 'bybit.getReal24hStats.failed', {
-        symbol: raw,
-        error: err instanceof Error ? err.message : String(err),
-        isTimeout: err instanceof TimeoutError
-      });
+    } catch {
+      // ignore
     }
 
     return {
@@ -310,7 +465,7 @@ export class BybitAdapter {
   }
 
   /**
-   * Public: Real Candlesticks from Bybit V5 Linear Futures
+   * Public: Real Candlesticks from Bybit V5 Perpetual Futures (Linear)
    */
   public async getRealCandles(symbol = 'BTCUSDT', interval = '1m', limit = 50): Promise<Candle[]> {
     const raw = this.normalizeSymbol(symbol);
@@ -324,12 +479,9 @@ export class BybitAdapter {
     else if (interval === '1d') intervalParam = 'D';
 
     try {
-      const res = await withRetry(
-        () => fetch(`${this.getActiveBaseUrl()}/v5/market/kline?category=linear&symbol=${raw}&interval=${intervalParam}&limit=${limit}`, {
-          headers: { 'Accept': 'application/json' }
-        }),
-        { op: 'bybit.getRealCandles', maxAttempts: 3, baseDelayMs: 200, timeoutMs: 6000 }
-      );
+      const res = await fetch(`${this.getActiveBaseUrl()}/v5/market/kline?category=linear&symbol=${raw}&interval=${intervalParam}&limit=${limit}`, {
+        headers: { 'Accept': 'application/json' }
+      });
       if (res.ok) {
         const json = (await res.json()) as any;
         const list = json?.result?.list;
@@ -344,22 +496,16 @@ export class BybitAdapter {
             volume: parseFloat(k[5])
           }));
         }
-      } else {
-        log.warn(rid(undefined), 'bybit.getRealCandles.nonOk', { symbol: raw, status: res.status });
       }
-    } catch (err) {
-      log.warn(rid(undefined), 'bybit.getRealCandles.failed', {
-        symbol: raw,
-        error: err instanceof Error ? err.message : String(err),
-        isTimeout: err instanceof TimeoutError
-      });
+    } catch {
+      // ignore
     }
 
     return [];
   }
 
   /**
-   * Public: Real Order Book (Depth) from Bybit V5 Linear Futures
+   * Public: Real Order Book (Depth) from Bybit V5 Perpetual Futures (Linear)
    */
   public async getRealOrderBook(symbol = 'BTCUSDT', limit = 15): Promise<OrderBook> {
     const raw = this.normalizeSymbol(symbol);
@@ -420,23 +566,8 @@ export class BybitAdapter {
     };
   }
 
-  /** Set native TP/SL on a Bybit linear futures position. */
-  public async setFuturesTradingStop(symbol: string, takeProfit: number, stopLoss: number, positionIdx?: number): Promise<{ success: boolean; error?: string }> {
-    if (!this.apiKey || !this.apiSecret) return { success: false, error: 'Bybit credentials are not configured.' };
-    if (!Number.isFinite(takeProfit) || takeProfit <= 0 || !Number.isFinite(stopLoss) || stopLoss <= 0) return { success: false, error: 'Futures TP/SL prices must be positive live values.' };
-    const payload: Record<string, any> = { category: 'linear', symbol: this.normalizeSymbol(symbol), tpslMode: 'Full', takeProfit: String(takeProfit), stopLoss: String(stopLoss), tpTriggerBy: 'MarkPrice', slTriggerBy: 'MarkPrice' };
-    // Hedge-mode accounts address protection per leg (1 = long, 2 = short). Omitting positionIdx on
-    // such an account either rejects the request or applies it to the wrong leg.
-    if (Number.isFinite(positionIdx) && Number(positionIdx) !== 0) payload.positionIdx = Number(positionIdx);
-    const { headers, bodyStr } = this.signPost(payload);
-    const res = await fetch(this.getActiveBaseUrl() + '/v5/position/trading-stop', { method: 'POST', headers, body: bodyStr });
-    const json = await res.json() as any;
-    if (!res.ok || json?.retCode !== 0) return { success: false, error: json?.retMsg || ('Bybit futures TP/SL update failed: HTTP ' + res.status) };
-    return { success: true };
-  }
-
   /**
-   * Private Signed: Real Bybit Linear Futures Account balances and portfolio valuation
+   * Private Signed: Real Bybit Spot Account balances and portfolio valuation
    * Supports both Unified Trading Account (UTA) and classic Spot wallets
    */
   public async getRealAccountState(forceRefresh = false): Promise<BybitAccountState> {
@@ -463,7 +594,7 @@ export class BybitAdapter {
         canTrade: false,
         canWithdraw: false,
         canDeposit: false,
-        accountType: 'LINEAR FUTURES / UTA',
+        accountType: 'SPOT / UTA',
         apiKeyConfigured: false,
         keyMask: 'NOT_CONFIGURED',
       };
@@ -471,35 +602,31 @@ export class BybitAdapter {
 
     try {
       // 1. Query Bybit V5 wallet balance (UNIFIED accountType first, fall back to SPOT if non-UTA)
-      let walletList: any[] = [];
       let queryType = 'UNIFIED';
-      let signed = this.signGet({ accountType: queryType });
-      let res = await fetch(`${this.getActiveBaseUrl()}/v5/account/wallet-balance?${signed.queryString}`, {
-        headers: signed.headers
+      let callRes = await this.fetchSignedWithRetry<any>('GET', '/v5/account/wallet-balance', { accountType: queryType }, {
+        label: 'getRealAccountState UNIFIED',
+        maxRetries: 2
       });
 
-      let json = (await res.json()) as any;
-
-      // If UNIFIED fails or empty, try SPOT
-      if (!res.ok || json.retCode !== 0 || !json?.result?.list?.length) {
+      // If UNIFIED fails or returns empty, try SPOT
+      if (!callRes.ok || !callRes.result?.list?.length) {
         queryType = 'SPOT';
-        signed = this.signGet({ accountType: queryType });
-        res = await fetch(`${this.getActiveBaseUrl()}/v5/account/wallet-balance?${signed.queryString}`, {
-          headers: signed.headers
+        callRes = await this.fetchSignedWithRetry<any>('GET', '/v5/account/wallet-balance', { accountType: queryType }, {
+          label: 'getRealAccountState SPOT',
+          maxRetries: 2
         });
-        json = (await res.json()) as any;
       }
 
-      if (!res.ok || json.retCode !== 0) {
-        const retMsg = json?.retMsg || `Bybit HTTP ${res.status}`;
-        const isIpError = json?.retCode === 10003 || json?.retCode === 10004 || json?.retCode === 10005;
+      if (!callRes.ok || !callRes.result?.list?.length) {
+        const retMsg = callRes.retMsg || 'Unable to retrieve wallet balance';
+        const isIpError = callRes.retCode === 10003 || callRes.retCode === 10004 || callRes.retCode === 10005;
         const msg = isIpError
-          ? `Bybit API Auth/IP Error (Code ${json.retCode}): ${retMsg}. Verify IP whitelist (${this.serverIp}) or API key permissions.`
-          : `Bybit Account Query Failed: ${retMsg} (Code: ${json?.retCode})`;
+          ? `Bybit API Auth/IP Error (Code ${callRes.retCode}): ${retMsg}. Verify IP whitelist (${this.serverIp}) or API key permissions.`
+          : `Bybit Account Query Failed: ${retMsg} (Code: ${callRes.retCode})`;
 
         return {
           status: isIpError ? 'RESTRICTED' : 'ERROR',
-          message: msg,
+          message: this.sanitizeSecrets(msg),
           serverIp: this.serverIp,
           timestamp: new Date().toISOString(),
           totalEquityUsd: 0,
@@ -521,7 +648,7 @@ export class BybitAdapter {
         };
       }
 
-      const accountData = json.result.list[0];
+      const accountData = callRes.result.list[0];
       const coinList: any[] = accountData.coin || [];
 
       let totalEquityUsd = parseFloat(accountData.totalEquity || accountData.totalWalletBalance || '0');
@@ -591,25 +718,38 @@ export class BybitAdapter {
         // ignore
       }
 
+      // Fetch live linear futures positions
+      let positions: Position[] = [];
+      try {
+        positions = await this.getRealPositions();
+      } catch {
+        // ignore
+      }
+
+      const unrealizedProfitUsd = Number(positions.reduce((sum, p) => sum + (p.unrealizedPnL || 0), 0).toFixed(2));
+      const realizedProfitUsd = Number(positions.reduce((sum, p) => sum + (p.realizedPnL || 0), 0).toFixed(2));
+
       const state: BybitAccountState = {
         status: 'CONNECTED',
-        message: 'Connected to Bybit Live Linear Futures/UTA. Real-time balances synchronized.',
+        message: 'Connected to Bybit Live Perpetual Futures (Linear V5). Real-time contracts & balances synchronized.',
         serverIp: this.serverIp,
         timestamp: new Date().toISOString(),
         totalEquityUsd: Number(totalEquityUsd.toFixed(2)),
         availableCashUsd: Number(availableCashUsd.toFixed(2)),
         lockedInOrdersUsd: Number(lockedInOrdersUsd.toFixed(2)),
         spotBalances,
-        realizedProfitUsd: 0,
-        unrealizedProfitUsd: 0,
-        todayPnLUsd: 0,
-        todayPnLPct: 0,
+        positions,
+        category: 'linear',
+        realizedProfitUsd,
+        unrealizedProfitUsd,
+        todayPnLUsd: Number((realizedProfitUsd + unrealizedProfitUsd).toFixed(2)),
+        todayPnLPct: totalEquityUsd > 0 ? Number((((realizedProfitUsd + unrealizedProfitUsd) / totalEquityUsd) * 100).toFixed(2)) : 0,
         openOrdersCount,
         recentTrades,
         canTrade: true,
         canWithdraw: false,
         canDeposit: true,
-        accountType: queryType,
+        accountType: 'FUTURES / UTA (category: linear)',
         apiKeyConfigured: true,
         keyMask: this.getKeyMask(),
       };
@@ -627,6 +767,8 @@ export class BybitAdapter {
         availableCashUsd: 0,
         lockedInOrdersUsd: 0,
         spotBalances: [],
+        positions: [],
+        category: 'linear',
         realizedProfitUsd: 0,
         unrealizedProfitUsd: 0,
         todayPnLUsd: 0,
@@ -636,7 +778,7 @@ export class BybitAdapter {
         canTrade: false,
         canWithdraw: false,
         canDeposit: false,
-        accountType: 'LINEAR FUTURES / UTA',
+        accountType: 'FUTURES / UTA (category: linear)',
         apiKeyConfigured: true,
         keyMask: this.getKeyMask(),
       };
@@ -644,7 +786,58 @@ export class BybitAdapter {
   }
 
   /**
-   * Private Signed: Real Open Orders from Bybit
+   * Private Signed: Real Bybit V5 Linear Perpetual Futures Positions
+   */
+  public async getRealPositions(symbol?: string): Promise<Position[]> {
+    if (!this.apiKey || !this.apiSecret) return [];
+
+    const params: Record<string, any> = { category: 'linear', settleCoin: 'USDT' };
+    if (symbol) {
+      params.symbol = this.normalizeSymbol(symbol);
+    }
+
+    try {
+      const callRes = await this.fetchSignedWithRetry<any>('GET', '/v5/position/list', params, { label: 'getRealPositions' });
+      if (!callRes.ok || !callRes.result) return [];
+
+      const rawList = callRes.result?.list || [];
+      const activePositions = rawList.filter((p: any) => parseFloat(p.size || '0') > 0);
+      return activePositions.map((p: any) => {
+        const size = parseFloat(p.size || '0');
+        const entryPrice = parseFloat(p.avgPrice || p.entryPrice || '0');
+        const markPrice = parseFloat(p.markPrice || '0');
+        const unrealizedPnL = parseFloat(p.unrealisedPnl || '0');
+        const cumRealisedPnl = parseFloat(p.cumRealisedPnl || '0');
+        const liqPrice = parseFloat(p.liqPrice || '0') || undefined;
+        const leverage = parseFloat(p.leverage || '1');
+        const notional = parseFloat(p.positionValue || '0') || (size * (markPrice || entryPrice));
+        const side = p.side === 'Buy' ? 'Buy' : (p.side === 'Sell' ? 'Sell' : 'None');
+
+        return {
+          symbol: this.denormalizeSymbol(p.symbol),
+          baseAmount: size,
+          quoteAmount: notional,
+          entryPrice,
+          currentPrice: markPrice || entryPrice,
+          unrealizedPnL,
+          unrealizedPnLPct: notional > 0 ? Number(((unrealizedPnL / (notional / leverage)) * 100).toFixed(2)) : 0,
+          realizedPnL: cumRealisedPnl,
+          totalFeesPaid: 0,
+          netPnL: unrealizedPnL + cumRealisedPnl,
+          liquidationPrice: liqPrice,
+          currentPositionCostUsd: notional / leverage,
+          leverage,
+          side,
+          markPrice
+        };
+      });
+    } catch {
+      return [];
+    }
+  }
+
+  /**
+   * Private Signed: Real Open Orders from Bybit Perpetual Futures (Linear)
    */
   public async getRealOpenOrders(symbol?: string): Promise<Order[]> {
     if (!this.apiKey || !this.apiSecret) return [];
@@ -654,18 +847,12 @@ export class BybitAdapter {
       params.symbol = this.normalizeSymbol(symbol);
     }
 
-    const { headers, queryString } = this.signGet(params);
-    const res = await fetch(`${this.getActiveBaseUrl()}/v5/order/realtime?${queryString}`, {
-      headers
-    });
-
-    if (!res.ok) {
-      const err = await res.json().catch(() => ({}));
-      throw new Error(err.retMsg || `HTTP ${res.status}`);
+    const callRes = await this.fetchSignedWithRetry<any>('GET', '/v5/order/realtime', params, { label: 'getRealOpenOrders' });
+    if (!callRes.ok || !callRes.result) {
+      throw new Error(callRes.retMsg || `HTTP ${callRes.status}`);
     }
 
-    const json = (await res.json()) as any;
-    const rawList = json?.result?.list || [];
+    const rawList = callRes.result?.list || [];
 
     return rawList.map((o: any) => ({
       id: String(o.orderId),
@@ -679,7 +866,7 @@ export class BybitAdapter {
       costUsd: parseFloat(o.cumExecValue || '0'),
       status: o.orderStatus === 'New' || o.orderStatus === 'PartiallyFilled' ? 'OPEN' : o.orderStatus,
       isGridOrder: false,
-      strategyId: 'LIVE-BYBIT-SPOT',
+      strategyId: 'LIVE-BYBIT-FUTURES-LINEAR',
       mode: 'LIVE',
       feesPaid: parseFloat(o.cumExecFee || '0'),
       slippageBps: 0,
@@ -689,21 +876,18 @@ export class BybitAdapter {
   }
 
   /**
-   * Private Signed: Real trade execution history from Bybit
+   * Private Signed: Real trade execution history from Bybit Perpetual Futures (Linear)
    */
   public async getRealTrades(symbol?: string, limit = 50): Promise<Fill[]> {
     if (!this.apiKey || !this.apiSecret) return [];
 
     const params: Record<string, any> = { category: 'linear', limit };
     if (symbol) params.symbol = this.normalizeSymbol(symbol);
-    const { headers, queryString } = this.signGet(params);
-    const res = await fetch(`${this.getActiveBaseUrl()}/v5/execution/list?${queryString}`, {
-      headers
-    });
 
-    if (!res.ok) return [];
-    const json = (await res.json()) as any;
-    const list = json?.result?.list || [];
+    const callRes = await this.fetchSignedWithRetry<any>('GET', '/v5/execution/list', params, { label: 'getRealTrades' });
+    if (!callRes.ok || !callRes.result) return [];
+
+    const list = callRes.result?.list || [];
 
     return Promise.all(list.map(async (t: any) => {
       const feeAmount = Math.max(0, parseFloat(t.execFee || '0') || 0);
@@ -723,173 +907,10 @@ export class BybitAdapter {
         amount: parseFloat(t.execQty || '0'),
         feeUsd,
         slippageBps: 0,
-        realizedPnL: 0,
+        realizedPnL: parseFloat(t.execPnl || '0') || 0,
         timestamp: new Date(Number(t.execTime)).toISOString()
       };
     }));
-  }
-
-  /**
-   * Private Signed: the account's ACTUAL maker/taker fee rates for a linear symbol.
-   * Used in place of the hardcoded assumption so the net-edge gate prices real fees.
-   */
-  public async getRealFeeRate(symbol?: string): Promise<{ makerBps: number; takerBps: number; source: string } | null> {
-    if (!this.apiKey || !this.apiSecret) return null;
-    try {
-      const params: Record<string, any> = { category: 'linear' };
-      if (symbol) params.symbol = this.normalizeSymbol(symbol);
-      const { headers, queryString } = this.signGet(params);
-      const res = await fetch(`${this.getActiveBaseUrl()}/v5/account/fee-rate?${queryString}`, { headers });
-      if (!res.ok) return null;
-      const json = await res.json() as any;
-      if (json?.retCode !== 0) return null;
-      const row = json?.result?.list?.[0];
-      const maker = Number(row?.makerFeeRate);
-      const taker = Number(row?.takerFeeRate);
-      if (!Number.isFinite(maker) || !Number.isFinite(taker)) return null;
-      return { makerBps: maker * 1e4, takerBps: taker * 1e4, source: 'BYBIT_ACCOUNT_FEE_RATE' };
-    } catch {
-      return null;
-    }
-  }
-
-  /**
-   * Public: current funding rate for a linear perpetual, converted to an HOURLY fraction.
-   * Replaces the synthetic funding constant previously used in the cost equation.
-   */
-  public async getRealFundingRate(symbol: string): Promise<number | null> {
-    const raw = this.normalizeSymbol(symbol);
-    try {
-      const res = await fetch(`${this.getActiveBaseUrl()}/v5/market/tickers?category=linear&symbol=${raw}`, {
-        headers: { 'Accept': 'application/json' }
-      });
-      if (!res.ok) return null;
-      const json = await res.json() as any;
-      const item = json?.result?.list?.[0];
-      const rate = Number(item?.fundingRate);
-      if (!Number.isFinite(rate)) return null;
-      // Bybit quotes the rate per funding interval (8h on linear); normalise to per-hour.
-      const intervalHours = Number(item?.fundingIntervalHour) > 0 ? Number(item.fundingIntervalHour) : 8;
-      return rate / intervalHours;
-    } catch {
-      return null;
-    }
-  }
-
-  /**
-   * Private Signed: funding actually settled on futures positions since a timestamp, summed from
-   * the account transaction log. This is the authoritative funding cost — the rate x horizon figure
-   * used for forward-looking decisions is only an estimate.
-   */
-  public async getRealFundingSummary(sinceMs: number): Promise<{ netFundingUsd: number; fundingPaidUsd: number; fundingReceivedUsd: number; entries: number; source: string } | null> {
-    if (!this.apiKey || !this.apiSecret) return null;
-    try {
-      const params: Record<string, any> = {
-        accountType: 'UNIFIED',
-        category: 'linear',
-        type: 'SETTLEMENT',
-        startTime: Math.max(0, Math.floor(sinceMs)),
-        limit: 100
-      };
-      const { headers, queryString } = this.signGet(params);
-      const res = await fetch(`${this.getActiveBaseUrl()}/v5/account/transaction-log?${queryString}`, { headers });
-      if (!res.ok) return null;
-      const json = await res.json() as any;
-      if (json?.retCode !== 0) return null;
-      const list = json?.result?.list;
-      if (!Array.isArray(list)) return null;
-
-      // Gross paid and received are tracked separately: netting them would understate the cost of
-      // funding when a window happens to contain both payments and receipts.
-      let fundingPaidUsd = 0;
-      let fundingReceivedUsd = 0;
-      for (const row of list) {
-        const cashFlow = Number(row?.cashFlow);
-        if (!Number.isFinite(cashFlow)) continue;
-        if (cashFlow < 0) fundingPaidUsd += Math.abs(cashFlow);
-        else fundingReceivedUsd += cashFlow;
-      }
-      return {
-        netFundingUsd: Number((fundingReceivedUsd - fundingPaidUsd).toFixed(6)),
-        fundingPaidUsd: Number(fundingPaidUsd.toFixed(6)),
-        fundingReceivedUsd: Number(fundingReceivedUsd.toFixed(6)),
-        entries: list.length,
-        source: 'BYBIT_TRANSACTION_LOG'
-      };
-    } catch {
-      return null;
-    }
-  }
-
-  /** Set the exchange leverage for a linear USDT perpetual before any autonomous entry. */
-  public async setFuturesLeverage(symbol: string, leverage: number): Promise<{ success: boolean; error?: string }> {
-    if (!this.apiKey || !this.apiSecret) return { success: false, error: 'Bybit credentials are not configured.' };
-    if (!Number.isFinite(leverage) || leverage < 1) return { success: false, error: 'Futures leverage must be at least 1x.' };
-    const payload = { category: 'linear', symbol: this.normalizeSymbol(symbol), buyLeverage: String(leverage), sellLeverage: String(leverage) };
-    const { headers, bodyStr } = this.signPost(payload);
-    const res = await fetch(this.getActiveBaseUrl() + '/v5/position/set-leverage', { method: 'POST', headers, body: bodyStr });
-    const json = await res.json() as any;
-    if (!res.ok || json?.retCode !== 0) return { success: false, error: json?.retMsg || ('Bybit leverage update failed: HTTP ' + res.status) };
-    return { success: true };
-  }
-
-  /**
-   * Private Signed: Real Bybit linear futures positions.
-   * Position size is signed: positive=LONG, negative=SHORT.
-   */
-  public async getRealPositions(symbol?: string): Promise<Array<{
-    symbol: string;
-    baseAmount: number;
-    quoteAmount: number;
-    entryPrice: number;
-    currentPrice: number;
-    unrealizedPnL: number;
-    unrealizedPnLPct: number;
-    realizedPnL: number;
-    totalFeesPaid: number;
-    netPnL: number;
-    liquidationPrice?: number;
-    leverage?: number;
-  }>> {
-    if (!this.apiKey || !this.apiSecret) return [];
-    const params: Record<string, any> = { category: 'linear', settleCoin: 'USDT' };
-    if (symbol) params.symbol = this.normalizeSymbol(symbol);
-    const { headers, queryString } = this.signGet(params);
-    const res = await fetch(this.getActiveBaseUrl() + '/v5/position/list?' + queryString, { headers });
-    const json = await res.json() as any;
-    if (!res.ok || json?.retCode !== 0) {
-      throw new Error(json?.retMsg || ('Bybit position query failed: HTTP ' + res.status));
-    }
-    return (json?.result?.list || []).map((p: any) => {
-      const size = Number(p.size || 0);
-      const entryPrice = Number(p.avgPrice || p.entryPrice || 0);
-      const markPrice = Number(p.markPrice || 0);
-      const unrealizedPnL = Number(p.unrealisedPnl || p.unrealizedPnl || 0);
-      const realizedPnL = Number(p.curRealisedPnl || p.cumRealisedPnl || 0);
-      const positionValue = Number(p.positionValue || (size * markPrice) || 0);
-      const signedSize = String(p.side || '').toUpperCase() === 'SHORT' ? -size : size;
-      const cost = Math.abs(positionValue);
-      const unrealizedPnLPct = cost > 0 ? (unrealizedPnL / cost) * 100 : 0;
-      return {
-        symbol: this.denormalizeSymbol(String(p.symbol || '')),
-        baseAmount: signedSize,
-        quoteAmount: positionValue,
-        entryPrice,
-        currentPrice: markPrice,
-        unrealizedPnL,
-        unrealizedPnLPct,
-        realizedPnL,
-        totalFeesPaid: 0,
-        netPnL: unrealizedPnL + realizedPnL,
-        liquidationPrice: Number(p.liqPrice || 0) || undefined,
-        leverage: Number(p.leverage || 0) || undefined,
-        // Read back so protection can be verified instead of blindly re-sent every cycle, and so
-        // hedge-mode accounts can address the correct position leg (positionIdx 1=long, 2=short).
-        takeProfit: Number(p.takeProfit || 0) || undefined,
-        stopLoss: Number(p.stopLoss || 0) || undefined,
-        positionIdx: Number.isFinite(Number(p.positionIdx)) ? Number(p.positionIdx) : undefined
-      };
-    }).filter((p: any) => Math.abs(p.baseAmount) > 0);
   }
 
   /**
@@ -897,16 +918,16 @@ export class BybitAdapter {
    */
   public getSymbolRules(symbol: string): { priceDecimals: number; qtyDecimals: number; minNotional: number } {
     const norm = this.normalizeSymbol(symbol);
-    if (norm.startsWith('BTC')) return { priceDecimals: 2, qtyDecimals: 5, minNotional: 5.0 };
-    if (norm.startsWith('ETH')) return { priceDecimals: 2, qtyDecimals: 4, minNotional: 5.0 };
-    if (norm.startsWith('SOL')) return { priceDecimals: 2, qtyDecimals: 3, minNotional: 5.0 };
-    if (norm.startsWith('BNB')) return { priceDecimals: 2, qtyDecimals: 3, minNotional: 5.0 };
-    if (norm.startsWith('AVAX')) return { priceDecimals: 2, qtyDecimals: 2, minNotional: 5.0 };
-    return { priceDecimals: 2, qtyDecimals: 4, minNotional: 5.0 };
+    if (norm.startsWith('BTC')) return { priceDecimals: 2, qtyDecimals: 3, minNotional: 5.0 };
+    if (norm.startsWith('ETH')) return { priceDecimals: 2, qtyDecimals: 2, minNotional: 5.0 };
+    if (norm.startsWith('SOL')) return { priceDecimals: 2, qtyDecimals: 2, minNotional: 5.0 };
+    if (norm.startsWith('BNB')) return { priceDecimals: 2, qtyDecimals: 2, minNotional: 5.0 };
+    if (norm.startsWith('AVAX')) return { priceDecimals: 2, qtyDecimals: 1, minNotional: 5.0 };
+    return { priceDecimals: 2, qtyDecimals: 2, minNotional: 5.0 };
   }
 
   /**
-   * Private Signed: Place real spot order on Bybit
+   * Private Signed: Place real linear futures order on Bybit
    */
   public async placeRealOrder(params: {
     symbol: string;
@@ -938,7 +959,8 @@ export class BybitAdapter {
       side: params.side === 'BUY' ? 'Buy' : 'Sell',
       orderType: params.type === 'MARKET' ? 'Market' : 'Limit',
       qty: formattedQty.toString(),
-      orderLinkId
+      orderLinkId,
+      positionIdx: 0 // One-way mode standard in Bybit Linear Futures
     };
 
     if (params.type === 'LIMIT') {
@@ -959,33 +981,28 @@ export class BybitAdapter {
     }
 
     try {
-      const { headers, bodyStr } = this.signPost(payload);
-      const res = await fetch(`${this.getActiveBaseUrl()}/v5/order/create`, {
-        method: 'POST',
-        headers,
-        body: bodyStr
+      const callRes = await this.fetchSignedWithRetry<any>('POST', '/v5/order/create', payload, {
+        maxRetries: 2,
+        label: 'placeRealOrder'
       });
 
-      const json = (await res.json()) as any;
-
-      if (!res.ok || json.retCode !== 0) {
-        const errorMsg = formatBybitError(json?.retCode, json?.retMsg || `HTTP ${res.status}`);
-        return { success: false, error: errorMsg, raw: json };
+      if (!callRes.ok || !callRes.result) {
+        return { success: false, error: callRes.retMsg, raw: callRes.raw };
       }
 
       return {
         success: true,
-        orderId: json.result?.orderId || json.result?.orderLinkId,
-        orderLinkId: json.result?.orderLinkId || orderLinkId,
-        raw: json.result
+        orderId: callRes.result?.orderId || callRes.result?.orderLinkId,
+        orderLinkId: callRes.result?.orderLinkId || orderLinkId,
+        raw: callRes.result
       };
     } catch (e: any) {
-      return { success: false, error: `Bybit Order Dispatch Failed: ${e.message}` };
+      return { success: false, error: `Bybit Order Dispatch Failed: ${this.sanitizeSecrets(e.message)}` };
     }
   }
 
   /**
-   * Private Signed: Cancel single order on Bybit
+   * Private Signed: Cancel single linear futures order on Bybit
    */
   public async cancelOrder(symbol: string, orderId: string): Promise<{ success: boolean; error?: string }> {
     if (!this.apiKey || !this.apiSecret) {
@@ -1003,20 +1020,17 @@ export class BybitAdapter {
         payload.orderId = orderId;
       }
 
-      const { headers, bodyStr } = this.signPost(payload);
-      const res = await fetch(`${this.getActiveBaseUrl()}/v5/order/cancel`, {
-        method: 'POST',
-        headers,
-        body: bodyStr
+      const callRes = await this.fetchSignedWithRetry<any>('POST', '/v5/order/cancel', payload, {
+        maxRetries: 2,
+        label: 'cancelOrder'
       });
 
-      const json = (await res.json()) as any;
-      if (!res.ok || json.retCode !== 0) {
-        return { success: false, error: formatBybitError(json?.retCode, json?.retMsg || `HTTP ${res.status}`) };
+      if (!callRes.ok) {
+        return { success: false, error: callRes.retMsg };
       }
       return { success: true };
     } catch (e: any) {
-      return { success: false, error: e.message };
+      return { success: false, error: this.sanitizeSecrets(e.message) };
     }
   }
   public async createSpotWithdrawal(params: {
@@ -1041,23 +1055,21 @@ export class BybitAdapter {
       requestId: params.requestId
     };
     try {
-      const signed = this.signPost(body);
-      const res = await fetch(`${this.getActiveBaseUrl()}/v5/asset/withdraw/create`, {
-        method: 'POST',
-        headers: signed.headers,
-        body: signed.bodyStr
+      const callRes = await this.fetchSignedWithRetry<any>('POST', '/v5/asset/withdraw/create', body, {
+        maxRetries: 1, // withdrawals fail-closed without ambiguous repeat
+        label: 'createSpotWithdrawal'
       });
-      const json = await res.json() as any;
-      if (!res.ok || json?.retCode !== 0) {
-        return { success: false, error: formatBybitError(Number(json?.retCode), json?.retMsg || `HTTP ${res.status}`) };
+
+      if (!callRes.ok || !callRes.result) {
+        return { success: false, error: callRes.retMsg };
       }
       return {
         success: true,
-        withdrawId: json?.result?.id || json?.result?.withdrawId,
-        txId: json?.result?.txID
+        withdrawId: callRes.result?.id || callRes.result?.withdrawId,
+        txId: callRes.result?.txID
       };
     } catch (err: any) {
-      return { success: false, error: err.message || 'Bybit withdrawal request failed.' };
+      return { success: false, error: this.sanitizeSecrets(err.message || 'Bybit withdrawal request failed.') };
     }
   }
 
@@ -1076,13 +1088,12 @@ export class BybitAdapter {
     if (params.withdrawId) query.withdrawId = params.withdrawId;
     if (params.coin) query.coin = params.coin.toUpperCase();
     try {
-      const signed = this.signGet(query);
-      const res = await fetch(`${this.getActiveBaseUrl()}/v5/asset/withdraw/query-record?${signed.queryString}`, {
-        headers: signed.headers
+      const callRes = await this.fetchSignedWithRetry<any>('GET', '/v5/asset/withdraw/query-record', query, {
+        label: 'queryWithdrawalRecords'
       });
-      const json = await res.json() as any;
-      if (!res.ok || json?.retCode !== 0) return [];
-      return (json?.result?.rows || []).map((row: any) => ({
+      if (!callRes.ok || !callRes.result) return [];
+      const rows = Array.isArray(callRes.result.rows) ? callRes.result.rows : (callRes.result.list || []);
+      return rows.map((row: any) => ({
         withdrawId: String(row.withdrawId || row.id || ''),
         txId: String(row.txID || ''),
         status: String(row.status || ''),

@@ -1,10 +1,9 @@
 #!/usr/bin/env node
-
 /**
  * Deployment Environment Variable & Key Verification Script
  * Validates critical environment variables before building or deploying.
+ * Ensures zero credentials or partial credential prefixes/suffixes are printed to logs or stdout.
  */
-
 import fs from 'fs';
 import path from 'path';
 
@@ -18,7 +17,7 @@ const DIM = '\x1b[2m';
 
 console.log(`\n${BOLD}${CYAN}🔍 [Autonomous Crypto Grid Trading Platform] Verifying Deployment Environment...${RESET}`);
 
-// Load .env if present in current directory
+// Load .env if present in current directory without printing contents
 const envPath = path.join(process.cwd(), '.env');
 if (fs.existsSync(envPath)) {
   try {
@@ -44,7 +43,6 @@ const CHECKS = [
     name: 'GitHub Personal Access Token',
     category: 'gitops',
     required: false,
-    default: process.env.GITHUB_TOKEN ? 'configured' : undefined,
     hint: 'Enables automated git push to GitHub repository.'
   },
   {
@@ -52,7 +50,6 @@ const CHECKS = [
     name: 'AWS EC2 Production Host',
     category: 'cloud',
     required: false,
-    default: '35.154.110.156',
     hint: 'Host IP or public DNS for backend zero-downtime reload.'
   },
   {
@@ -60,7 +57,6 @@ const CHECKS = [
     name: 'AWS Amplify App ID',
     category: 'cloud',
     required: false,
-    default: 'd2qe2q720fbn3x',
     hint: 'AWS Amplify application ID for frontend CD sync.'
   },
   {
@@ -68,7 +64,6 @@ const CHECKS = [
     name: 'Server Listening Port',
     category: 'server',
     required: false,
-    default: '3000',
     hint: 'Port used by Express and reverse proxy routing.'
   },
   {
@@ -91,12 +86,8 @@ CHECKS.forEach((check) => {
 
   if (isPresent) {
     configuredCount++;
-    const masked = value.length > 8 
-      ? `${value.slice(0, 4)}...${value.slice(-4)}` 
-      : '********';
-    console.log(`  ${GREEN}✔${RESET} ${BOLD}${check.key}${RESET} (${check.name}): ${GREEN}Configured${RESET} ${DIM}[${masked}]${RESET}`);
-  } else if (check.default) {
-    console.log(`  ${YELLOW}▲${RESET} ${BOLD}${check.key}${RESET} (${check.name}): ${YELLOW}Using Default${RESET} ${DIM}[${check.default}]${RESET}`);
+    // Never print any portion, prefix, or suffix of credentials or tokens
+    console.log(`  ${GREEN}✔${RESET} ${BOLD}${check.key}${RESET} (${check.name}): ${GREEN}Configured (Protected)${RESET}`);
   } else if (check.required) {
     criticalMissing++;
     console.log(`  ${RED}✖${RESET} ${BOLD}${check.key}${RESET} (${check.name}): ${RED}MISSING (Required)${RESET}`);

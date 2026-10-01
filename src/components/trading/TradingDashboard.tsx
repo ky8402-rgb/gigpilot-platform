@@ -28,13 +28,13 @@ import {
   fetchUpdatesHistory,
   fetchAuditLogs,
   isEngineLiveConnected,
-  getLastSyncTime,
   fetchOwnerAuthStatus,
   logoutOwner,
   getStoredOwnerToken,
   triggerAutonomousOptimizerRun,
   toggleAutonomousOptimizer,
-  reallocateStrategyCapital
+  reallocateStrategyCapital,
+  rollbackStrategy
 } from '../../services/tradingService';
 import {
   generateDefaultMasterState,
@@ -53,7 +53,6 @@ import {
 
 import { HeaderNav } from './HeaderNav';
 import { CapitalMetricsBar } from './CapitalMetricsBar';
-import { OperatorOverview } from './OperatorOverview';
 import { InteractiveGridChart } from './InteractiveGridChart';
 import { GridMatrixAndOrders } from './GridMatrixAndOrders';
 import { AdaptiveGridConfigurator } from './AdaptiveGridConfigurator';
@@ -66,7 +65,7 @@ import { CanaryAndAuditView } from './CanaryAndAuditView';
 import { AssetDashboard } from './AssetDashboard';
 import { OwnerAuthModal } from './OwnerAuthModal';
 import { AutonomousRevenueEngineView } from './AutonomousRevenueEngineView';
-import { LiveTradingView } from './LiveTradingView';
+import { GigPilotFuturesView } from './GigPilotFuturesView';
 
 import {
   BarChart2,
@@ -89,10 +88,11 @@ import { EngineHealthView } from './EngineHealthView';
 import { RegimeTransitionView } from './RegimeTransitionView';
 import { InventoryAwareGridView } from './InventoryAwareGridView';
 import { DecisionPipelineVisualizer } from './DecisionPipelineVisualizer';
-import { Activity, Scale, Shield } from 'lucide-react';
+import { Activity, Scale, Shield, Zap } from 'lucide-react';
 
 export type ActiveTerminalTab =
   | 'TERMINAL'
+  | 'GIGPILOT_FUTURES'
   | 'DECISION_PIPELINE'
   | 'AUTONOMOUS_OPTIMIZER'
   | 'REGIME_TRANSITION'
@@ -121,6 +121,7 @@ export const TradingDashboard: React.FC<TradingDashboardProps> = ({ onLogout }) 
     champion: StrategyVersion;
     challengers: StrategyVersion[];
     history: StrategyVersion[];
+    rollbackTelemetry?: any;
   }>(() => ({
     champion: DEFAULT_CHAMPION_STRATEGY,
     challengers: [],
@@ -200,75 +201,16 @@ export const TradingDashboard: React.FC<TradingDashboardProps> = ({ onLogout }) 
     }
   }, []);
 
-  // Auxiliary telemetry (pairs, strategies, research, sweeps, risk, updates, audit logs, pair
-  // details) is slow-moving relative to price, so it is refreshed far less often than the core
-  // state. Previously all nine endpoints were re-fetched every 3s (~180 requests/minute).
-  const loadAuxTelemetry = useCallback(async (activeSymbol?: string) => {
-    const [pairsRes, stratRes, researchRes, sweepRes, riskRes, updatesRes, logsRes, pairDetailsRes] = await Promise.allSettled([
-      fetchAllPairs(),
-      fetchStrategies(),
-      fetchWebResearch(),
-      fetchProfitSweepInfo(),
-      fetchRiskData(),
-      fetchUpdatesHistory(),
-      fetchAuditLogs(),
-      activeSymbol ? fetchPairDetails(activeSymbol) : Promise.resolve(null)
-    ]);
-
-    if (pairsRes.status === 'fulfilled') setPairs(pairsRes.value);
-    if (stratRes.status === 'fulfilled') setStrategies(stratRes.value);
-    if (researchRes.status === 'fulfilled') setResearchItems(researchRes.value.items);
-    if (sweepRes.status === 'fulfilled') setProfitSweepInfo(sweepRes.value);
-    if (riskRes.status === 'fulfilled') setRiskData(riskRes.value);
-    if (updatesRes.status === 'fulfilled') setUpdatesHistory(updatesRes.value.updates);
-    if (logsRes.status === 'fulfilled') setAuditLogs(logsRes.value.logs);
-    if (pairDetailsRes.status === 'fulfilled' && pairDetailsRes.value) setPairDetails(pairDetailsRes.value);
-  }, []);
-
-  const loadCoreState = useCallback(async () => {
-    try {
-      const masterState = await fetchTradingState();
-      setState(masterState);
-      setGlobalKillSwitchActive(Boolean(masterState.GLOBAL_KILL_SWITCH_ACTIVE ?? masterState.killSwitch?.isActive));
-      setIsLiveConnected(isEngineLiveConnected());
-      return masterState;
-    } catch (err: any) {
-      console.warn('[TradingDashboard] Telemetry notice:', err.message || err);
-      setIsLiveConnected(false);
-      return null;
-    }
-  }, []);
-
   useEffect(() => {
     loadFullState();
 
-    // Poll only while the tab is actually visible: a backgrounded dashboard was generating the same
-    // request load with nobody reading it, and the live exchange API is rate limited.
-    const isVisible = () => typeof document === 'undefined' || document.visibilityState === 'visible';
-
-    const coreInterval = setInterval(async () => {
-      if (!isVisible()) return;
-      await loadCoreState();
+    // 3s polling loop for live telemetry
+    const interval = setInterval(() => {
+      loadFullState();
     }, 3000);
 
-    const auxInterval = setInterval(async () => {
-      if (!isVisible()) return;
-      const masterState = await loadCoreState();
-      if (masterState) await loadAuxTelemetry(masterState.activeSymbol);
-    }, 15000);
-
-    // Catch up immediately when the operator returns to the tab.
-    const onVisibilityChange = () => {
-      if (document.visibilityState === 'visible') loadFullState();
-    };
-    document.addEventListener('visibilitychange', onVisibilityChange);
-
-    return () => {
-      clearInterval(coreInterval);
-      clearInterval(auxInterval);
-      document.removeEventListener('visibilitychange', onVisibilityChange);
-    };
-  }, [loadFullState, loadCoreState, loadAuxTelemetry]);
+    return () => clearInterval(interval);
+  }, [loadFullState]);
 
   // Check and sync Owner 2FA authentication state
   useEffect(() => {
@@ -314,20 +256,6 @@ export const TradingDashboard: React.FC<TradingDashboardProps> = ({ onLogout }) 
       await loadFullState();
     } catch (err: any) {
       console.error('Failed to toggle Global Kill Switch:', err);
-      // Revert the optimistic update and re-sync with the server. Leaving the header showing the
-      // wrong kill-switch state could make the operator believe bots are halted when they are not.
-      setGlobalKillSwitchActive(!nextActive);
-      setState(prev => ({
-        ...prev,
-        GLOBAL_KILL_SWITCH_ACTIVE: !nextActive,
-        botsDisabled: !nextActive,
-        killSwitch: { ...prev.killSwitch, isActive: !nextActive }
-      }));
-      try {
-        await loadFullState();
-      } catch {
-        // Keep the reverted local state; the next poll will reconcile.
-      }
     }
   };
 
@@ -359,7 +287,9 @@ export const TradingDashboard: React.FC<TradingDashboardProps> = ({ onLogout }) 
   };
 
   const activePairInfo = pairs.find(p => p.symbol.replace(/[\/\-_]/g, '').toUpperCase() === state.activeSymbol.replace(/[\/\-_]/g, '').toUpperCase());
-  const activePrice = (pairDetails?.currentPrice && pairDetails.currentPrice > 0) ? pairDetails.currentPrice : 0;
+  const activePrice = (pairDetails?.currentPrice && pairDetails.currentPrice > 0)
+    ? pairDetails.currentPrice
+    : (activePairInfo?.price || DEFAULT_PAIRS.find(p => p.symbol.replace(/[\/\-_]/g, '').toUpperCase() === state.activeSymbol.replace(/[\/\-_]/g, '').toUpperCase())?.price || 85859.20);
 
   return (
     <div className="min-h-screen bg-[#070B14] text-slate-100 flex flex-col font-sans selection:bg-emerald-500 selection:text-black">
@@ -542,27 +472,13 @@ export const TradingDashboard: React.FC<TradingDashboardProps> = ({ onLogout }) 
         </div>
       )}
 
-      {isLiveConnected ? (
-        <>
-      {/* 2. Backend-sourced operator control surface */}
-      <div className="px-4 pt-3">
-        <div className="max-w-[1700px] mx-auto">
-          <OperatorOverview
-            state={state}
-            isLiveConnected={isLiveConnected}
-            lastSyncTime={getLastSyncTime()}
-          />
-        </div>
-      </div>
-
-      {/* 3. Real-Time Net Capital Accounting & Performance Metrics Bar */}
+      {/* 2. Real-Time Net Capital Accounting & Performance Metrics Bar */}
       <CapitalMetricsBar
         capital={state.capital}
-        isLive={isLiveConnected}
         onOpenSweepModal={() => setActiveTab('PROFIT_SWEEP')}
       />
 
-      {/* 4. Terminal View Tabs Bar */}
+      {/* 3. Terminal View Tabs Bar */}
       <div className="border-b border-slate-800 bg-[#090D18] px-4 py-1.5">
         <div className="max-w-[1700px] mx-auto flex items-center justify-between gap-2 overflow-x-auto">
           <div className="flex items-center gap-1">
@@ -576,6 +492,21 @@ export const TradingDashboard: React.FC<TradingDashboardProps> = ({ onLogout }) 
             >
               <BarChart2 className="w-3.5 h-3.5" />
               <span>Grid Terminal</span>
+            </button>
+
+            <button
+              onClick={() => setActiveTab('GIGPILOT_FUTURES')}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-mono font-bold transition-all relative ${
+                activeTab === 'GIGPILOT_FUTURES'
+                  ? 'bg-emerald-950/90 text-emerald-300 border border-emerald-500/80 shadow-lg shadow-emerald-950/50'
+                  : 'text-emerald-400 hover:text-white hover:bg-emerald-950/40 border border-emerald-500/30'
+              }`}
+            >
+              <Zap className="w-3.5 h-3.5 text-emerald-400 animate-pulse" />
+              <span>Bybit USDT-Perp</span>
+              <span className="px-1.5 py-0.2 rounded bg-emerald-500/20 text-emerald-300 text-[10px] font-bold">
+                AUTONOMOUS
+              </span>
             </button>
 
             <button
@@ -762,21 +693,50 @@ export const TradingDashboard: React.FC<TradingDashboardProps> = ({ onLogout }) 
         </div>
       </div>
 
-      {/* 5. Active Tab Content Body */}
+      {/* 4. Active Tab Content Body */}
       <main className="flex-1 p-4 max-w-[1700px] w-full mx-auto">
         {activeTab === 'TERMINAL' && (
-          <LiveTradingView
-            state={state}
-            pairs={pairs}
-            pairDetails={pairDetails}
-            isLiveConnected={isLiveConnected}
-            isOwnerAuthenticated={isOwnerAuth}
-            onSelectSymbol={async (sym) => {
-              await selectActivePair(sym);
-              await loadFullState();
-            }}
-            onRefresh={loadFullState}
-          />
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 h-[calc(100vh-190px)] min-h-[700px]">
+            {/* Left: Interactive Candlestick + Grid Overlay Chart */}
+            <div className="lg:col-span-7 h-full">
+              <InteractiveGridChart
+                symbol={state.activeSymbol}
+                candles={pairDetails?.candles || []}
+                orderBook={pairDetails?.orderBook || { bids: [], asks: [] }}
+                grid={state.activeGrid}
+                indicators={state.indicators}
+                currentPrice={activePrice}
+              />
+            </div>
+
+            {/* Right: Grid Matrix, Orders, Execution Fills, and Manual Ticket */}
+            <div className="lg:col-span-5 h-full">
+              <GridMatrixAndOrders
+                grid={state.activeGrid}
+                currentPrice={activePrice}
+                openOrders={state.openOrders}
+                recentFills={state.recentFills}
+                position={state.position}
+                onCancelOrder={async (id) => {
+                  await cancelOrder(id);
+                  loadFullState();
+                }}
+                onCancelAllOrders={async () => {
+                  await cancelAllOrders();
+                  loadFullState();
+                }}
+                onPlaceManualOrder={async (order) => {
+                  const res = await placeManualOrder(order);
+                  loadFullState();
+                  return res;
+                }}
+              />
+            </div>
+          </div>
+        )}
+
+        {activeTab === 'GIGPILOT_FUTURES' && (
+          <GigPilotFuturesView />
         )}
 
         {activeTab === 'AUTONOMOUS_OPTIMIZER' && (
@@ -855,12 +815,18 @@ export const TradingDashboard: React.FC<TradingDashboardProps> = ({ onLogout }) 
             challengers={strategies.challengers}
             history={strategies.history}
             decisionStats={state.decisionStats}
+            rollbackTelemetry={strategies.rollbackTelemetry}
             activeSymbol={state.activeSymbol}
             onRefresh={loadFullState}
             onPromoteChallenger={async (id) => {
               const res = await promoteChallenger(id);
               loadFullState();
               return res;
+            }}
+            onRollbackChampion={async (reason) => {
+              const res = await rollbackStrategy(reason);
+              loadFullState();
+              return { success: res.success, reason: res.message || res.error || 'Rollback complete' };
             }}
             onCreateVariant={async (params) => {
               await createStrategyVariant(params);
@@ -908,23 +874,7 @@ export const TradingDashboard: React.FC<TradingDashboardProps> = ({ onLogout }) 
         )}
       </main>
 
-        </>
-      ) : (
-        <div className="flex min-h-[calc(100vh-80px)] items-center justify-center p-6">
-          <div className="w-full max-w-2xl rounded-2xl border border-rose-500/30 bg-rose-950/20 p-6 text-center shadow-2xl">
-            <div className="mx-auto mb-3 flex h-10 w-10 items-center justify-center rounded-full border border-rose-500/40 bg-rose-500/10 text-rose-300">
-              <WifiOff className="h-5 w-5" />
-            </div>
-            <h2 className="text-lg font-black uppercase tracking-wider text-rose-200">LIVE TRADING DATA UNAVAILABLE</h2>
-            <p className="mt-2 text-sm leading-6 text-slate-300">
-              Trading telemetry and controls are withheld until the authenticated backend provides a live state. Demo/default balances, prices, orders, positions, profit, and strategy data are not shown as production truth.
-            </p>
-            <div className="mt-4 text-[11px] font-mono uppercase tracking-wider text-slate-500">Fail-closed UI • refresh will retry automatically</div>
-          </div>
-        </div>
-      )}
-
-      {/* 6. Single Owner Authentication & TOTP Modal */}
+      {/* 5. Single Owner Authentication & TOTP Modal */}
       <OwnerAuthModal
         isOpen={showAuthModal}
         onClose={() => setShowAuthModal(false)}

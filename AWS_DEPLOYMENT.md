@@ -307,7 +307,7 @@ Regardless of the method chosen, prepare these environment variables:
 | `PORT` | Web server listening port | `3000` |
 | `DATABASE_URL` | PostgreSQL connection string | `postgresql://user:pass@host:5432/dbname` (Neon or AWS RDS) |
 | `GEMINI_API_KEY` | Google Gemini API Key | *(Your API Key)* |
-| `OWNER_AUTH_PIN` | Owner Authentication PIN | `778899` |
+| `OWNER_AUTH_PIN` | Owner Authentication PIN | `xxxxxx` |
 | `DESTINATION_WALLET_ADDRESS` | Self-custody wallet address for profit sweep | `0x1781...` |
 | `JWT_SECRET` | Secret token for session signing | *(Any random 32+ char string)* |
 | `AUTO_HEAL_ENABLED` | Autonomous AIOps self-healing loop | `true` |

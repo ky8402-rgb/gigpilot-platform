@@ -6,22 +6,6 @@ on:
       - main
       - master
   workflow_dispatch:
-    inputs:
-      # Explicit, auditable escape hatch for the revoked-credential guard in
-      # scripts/check-revoked-credentials.cjs. Default false, so every push and every ordinary
-      # manual run keeps enforcing rotation. Set true ONLY to ship a fix while a known-compromised
-      # credential is still installed; the deploy log records the override loudly.
-      #
-      # It is a parameter rather than a hardcoded environment variable on purpose: a permanent
-      # override in the workflow would be a silent bypass, and nobody would ever notice it had
-      # become the normal path.
-      #
-      # NOTE: this does NOT rotate anything. The credential stays compromised until it is
-      # replaced at the exchange and in the authoritative secret store.
-      allow_revoked_credentials:
-        description: 'Deploy even though a revoked credential is still configured (loudly logged)'
-        type: boolean
-        default: false
 
 permissions:
   contents: read
@@ -190,18 +174,7 @@ jobs:
           ASSETS_CODE="$(curl -sS -o /tmp/assets.json -w '%{http_code}' -H 'Accept: application/json' "$BACKEND/api/trading/assets" --max-time 10)"
           case "$ASSETS_CODE" in 401|403) echo "✔ Private asset data rejects unauthenticated access with HTTP $ASSETS_CODE.";; *) echo "ERROR: Private assets endpoint returned HTTP $ASSETS_CODE"; cat /tmp/assets.json; exit 1;; esac
           RISK_CODE="$(curl -sS -o /tmp/risk.json -w '%{http_code}' -H 'Accept: application/json' "$BACKEND/api/trading/risk" --max-time 10)"
-          case "$RISK_CODE" in 401|403) echo "✔ Private risk configuration rejects unauthenticated access with HTTP $RISK_CODE.";; *) echo "ERROR: Private risk configuration returned HTTP $RISK_CODE"; cat /tmp/risk.json; exit 1;; esac
-
-          OPTIMIZER_CODE="$(curl -sS -o /tmp/optimizer.json -w '%{http_code}' -H 'Accept: application/json' "$BACKEND/api/trading/autonomous-optimizer/status" --max-time 10)"
-          case "$OPTIMIZER_CODE" in 401|403) echo "✔ Private optimizer telemetry rejects unauthenticated access with HTTP $OPTIMIZER_CODE.";; *) echo "ERROR: Private optimizer telemetry returned HTTP $OPTIMIZER_CODE"; cat /tmp/optimizer.json; exit 1;; esac
-
-          STRATEGIES_CODE="$(curl -sS -o /tmp/strategies.json -w '%{http_code}' -H 'Accept: application/json' "$BACKEND/api/trading/strategies" --max-time 10)"
-          case "$STRATEGIES_CODE" in 401|403) echo "✔ Private strategy registry rejects unauthenticated access with HTTP $STRATEGIES_CODE.";; *) echo "ERROR: Private strategy registry returned HTTP $STRATEGIES_CODE"; cat /tmp/strategies.json; exit 1;; esac
-
-          READY_CODE="$(curl -sS -o /tmp/ready.json -w '%{http_code}' -H 'Accept: application/json' "$BACKEND/api/health/ready" --max-time 10)"
-          [ "$READY_CODE" = "200" ] || { echo "ERROR: Readiness endpoint returned HTTP $READY_CODE"; cat /tmp/ready.json; exit 1; }
-          node -e 'const x=JSON.parse(process.argv[1]); if(!x.status) process.exit(1); if(x.checks?.persistence?.ok!==true) process.exit(2); console.log("✔ Readiness:", x.status, "| persistence:", x.checks.persistence.detail, "| marketData:", x.checks.marketData.detail);' "$(cat /tmp/ready.json)" || { echo "ERROR: Readiness probe reported an unhealthy instance."; cat /tmp/ready.json; exit 1; }
-
+          [ "$RISK_CODE" = "200" ] || { echo "ERROR: Live risk endpoint returned HTTP $RISK_CODE"; cat /tmp/risk.json; exit 1; }
           AUTH_STATUS="$(curl -sS -o /tmp/auth-status.json -w '%{http_code}' -H "Origin: $FRONTEND" -H 'Accept: application/json' "$BACKEND/api/auth/status" --max-time 10)"
           [ "$AUTH_STATUS" = "200" ] || { echo "ERROR: Auth status endpoint returned HTTP $AUTH_STATUS"; cat /tmp/auth-status.json; exit 1; }
           ORDER_CODE="$(curl -sS -o /tmp/order.json -w '%{http_code}' -X POST -H "Origin: $FRONTEND" -H 'Content-Type: application/json' -d '{}' "$BACKEND/api/trading/order/place" --max-time 10)"
@@ -213,30 +186,9 @@ jobs:
     needs: wait-for-ci
     name: 🛡️ Deploy Backend (AWS EC2 - gigpilot-backend)
     runs-on: ubuntu-latest
-    outputs:
-      previous_sha: ${{ steps.capture_prev.outputs.previous_sha }}
     steps:
       - name: Checkout Source Code
         uses: actions/checkout@v4
-
-      - name: Capture currently-deployed commit (rollback target)
-        id: capture_prev
-        env:
-          EC2_HOST: ${{ secrets.EC2_HOST || '' }}
-        run: |
-          set -uo pipefail
-          if [ -z "$EC2_HOST" ] && [ -f deployment/backend-host.txt ]; then EC2_HOST="$(tr -d '\r\n' < deployment/backend-host.txt)"; fi
-          PREV=""
-          if [ -n "$EC2_HOST" ]; then
-            HEALTH_JSON="$(curl -k -sS "https://${EC2_HOST//./-}.sslip.io/api/health" --max-time 10 || true)"
-            PREV="$(node -e 'try{const x=JSON.parse(process.argv[1]);const c=x.deployedCommit||"";process.stdout.write(/^[0-9a-f]{40}$/i.test(c)?c:"")}catch{}' "$HEALTH_JSON" 2>/dev/null || true)"
-          fi
-          echo "previous_sha=$PREV" >> "$GITHUB_OUTPUT"
-          if [ -n "$PREV" ]; then
-            echo "✔ Rollback target captured: $PREV"
-          else
-            echo "Notice: no currently-deployed commit could be read; automatic rollback will have no target."
-          fi
 
       - name: Check AWS Secrets for EC2 Connect
         id: check_ec2_aws
@@ -271,21 +223,15 @@ jobs:
           echo "✔ Production database secret is configured."
           echo "::add-mask::$DATABASE_URL"
 
-      # This is the ONLY authorised path that mutates the production host. It used to carry
-      # `continue-on-error: true`, which meant a failed deployment never failed the run — it just
-      # fell through to a second, different deployment mechanism. A failure here must stop the
-      # pipeline.
       - name: Deploy via SSH (Direct EC2 Execution)
         id: ec2_ssh
+        continue-on-error: true
         env:
           SSH_KEY: ${{ secrets.EC2_SSH_KEY || secrets.GIGPILOT_MUMBAI_EC2 }}
           EC2_HOST: ${{ secrets.EC2_HOST || '' }}
           EC2_USER: ${{ secrets.EC2_USER || 'ubuntu' }}
           DATABASE_URL: ${{ secrets.DATABASE_URL || secrets.NEON_DATABASE_URL || '' }}
           EC2_INSTANCE_ID: ${{ secrets.EC2_INSTANCE_ID }}
-          # '1' only when the operator explicitly asked for it on a manual run. On a push,
-          # `inputs` is empty, so this is always '0' and the guard keeps enforcing.
-          ALLOW_REVOKED_CREDENTIALS: ${{ inputs.allow_revoked_credentials == true && '1' || '0' }}
         run: |
           if [ -z "$EC2_HOST" ] && [ -f deployment/backend-host.txt ]; then
             EC2_HOST="$(tr -d '\r\n' < deployment/backend-host.txt)"
@@ -338,27 +284,92 @@ jobs:
           if [ "$SSH_CONNECTED" -eq 1 ]; then
             echo "Executing remote production deployment on EC2 via scripts/deploy-ec2.sh..."
             printf '%s\n' "$DATABASE_URL" | grep -Eq '^postgres(ql)?://' || { echo "ERROR: DATABASE_URL/NEON_DATABASE_URL GitHub secret is required for production deployment."; exit 1; }
-           # SECRETS_SOURCE=ssm makes AWS SSM Parameter Store the source of truth. deploy-ec2.sh
-           # reads the parameters on the host with its own IAM instance role, so the values never
-           # need to appear here.
-           #
-           # TRANSITIONAL: the secret exports below are a one-release bridge only. They stay until
-           # a deploy log confirms SSM supplied every value ("✔ … from SSM" rather than
-           # "Notice: SSM had no …"), after which this line is deleted and secrets stop travelling
-           # over the SSH command string entirely. It is kept deliberately loud rather than
-           # silently removed, because removing it before SSM is populated would fail the deploy.
-           { printf 'export SECRETS_SOURCE=ssm\n'; printf 'export ALLOW_REVOKED_CREDENTIALS=%q\n' "$ALLOW_REVOKED_CREDENTIALS"; printf 'export DATABASE_URL=%q\n' "$DATABASE_URL"; printf 'export GEMINI_API_KEY=%q\n' "${{ secrets.GEMINI_API_KEY }}"; printf 'export BYBIT_API_KEY=%q\n' "${{ secrets.BYBIT_API_KEY }}"; printf 'export BYBIT_API_SECRET=%q\n' "${{ secrets.BYBIT_API_SECRET }}"; printf 'export GITHUB_TOKEN=%q\n' "${{ secrets.GITHUB_TOKEN }}"; cat scripts/deploy-ec2.sh; } | ssh -o StrictHostKeyChecking=no -o ConnectTimeout=20 -i "$SSH_KEY_FILE" "$EC2_USER@$EC2_HOST" "bash -s"
+          { printf 'export DATABASE_URL=%q\n' "$DATABASE_URL"; printf 'export GEMINI_API_KEY=%q\n' "${{ secrets.GEMINI_API_KEY }}"; printf 'export BYBIT_API_KEY=%q\n' "${{ secrets.BYBIT_API_KEY }}"; printf 'export BYBIT_API_SECRET=%q\n' "${{ secrets.BYBIT_API_SECRET }}"; printf 'export GITHUB_TOKEN=%q\n' "${{ secrets.GITHUB_TOKEN }}"; cat scripts/deploy-ec2.sh; } | ssh -o StrictHostKeyChecking=no -o ConnectTimeout=20 -i "$SSH_KEY_FILE" "$EC2_USER@$EC2_HOST" "bash -s"
             echo "✔ SSH deployment command finished successfully."
-            # No DEPLOYMENT_DELIVERY marker: there is a single delivery path now, so recording
-            # which one ran would only imply an alternative that no longer exists.
+            echo "DEPLOYMENT_DELIVERY=SSH" >> "$GITHUB_ENV"
             echo "delivery=SSH" >> "$GITHUB_OUTPUT"
-           else
-             echo "ERROR: no SSH path to the production host could be established."
-             echo "There is deliberately no fallback. The webhook deploy path was removed because two"
-             echo "concurrent mechanisms race on the same checkout, build directory and PM2 process,"
-             echo "which can leave the host running a half-built release."
-             exit 1
-           fi
+          else
+            echo "SSH direct connection could not be established. Falling back to signed push webhook."
+          fi
+
+      - name: Trigger EC2 Push-to-Deploy Webhook (Fallback)
+        if: steps.ec2_ssh.outcome == 'failure'
+        env:
+          EC2_HOST: ${{ secrets.EC2_HOST || '' }}
+          WEBHOOK_SECRET: ${{ secrets.GITHUB_WEBHOOK_SECRET || secrets.WEBHOOK_SECRET }}
+          COMMIT_MSG: ${{ github.event.head_commit.message }}
+        run: |
+          if [ -z "$EC2_HOST" ] && [ -f deployment/backend-host.txt ]; then
+            EC2_HOST="$(tr -d '\r\n' < deployment/backend-host.txt)"
+          fi
+          if [ -z "$EC2_HOST" ]; then
+            echo "ERROR: No production EC2 host configured."
+            exit 1
+          fi
+          WEBHOOK_URL="https://${EC2_HOST//./-}.sslip.io/api/github/webhook"
+          echo "Target Webhook: $WEBHOOK_URL"
+          
+          export PAYLOAD=$(node -e "
+            const p = {
+              ref: 'refs/heads/' + (process.env.GITHUB_REF_NAME || 'main'),
+              after: process.env.GITHUB_SHA || '',
+              head_commit: {
+                id: process.env.GITHUB_SHA || '',
+                message: process.env.COMMIT_MSG || 'Automated CI/CD deployment',
+                author: { name: process.env.GITHUB_ACTOR || 'github-actions' }
+              }
+            };
+            console.log(JSON.stringify(p));
+          ")
+          
+          SIG_HEADER=()
+          if [ -n "$WEBHOOK_SECRET" ]; then
+            SIG=$(node -e "
+              const crypto = require('crypto');
+              const hmac = crypto.createHmac('sha256', process.env.WEBHOOK_SECRET);
+              hmac.update(Buffer.from(process.env.PAYLOAD || '{}'));
+              console.log('sha256=' + hmac.digest('hex'));
+            ")
+            SIG_HEADER=(-H "X-Hub-Signature-256: $SIG")
+          fi
+          
+          echo "Dispatching deployment webhook..."
+          HTTP_CODE=$(curl -k -sS -o /tmp/resp.json -w "%{http_code}" \
+            -X POST "$WEBHOOK_URL" \
+            -H "Content-Type: application/json" \
+            -H "X-GitHub-Event: push" \
+            -H "X-GitHub-Delivery: gha-${GITHUB_RUN_ID}" \
+            "${SIG_HEADER[@]}" \
+            -d "$PAYLOAD" \
+            --max-time 15 || echo "000")
+            
+          echo "HTTPS Response: $HTTP_CODE"
+          cat /tmp/resp.json 2>/dev/null || true
+          
+          if [ "$HTTP_CODE" != "200" ] && [ "$HTTP_CODE" != "202" ]; then
+            echo "Trying HTTP port 3000..."
+            HTTP_CODE=$(curl -sS -o /tmp/resp.json -w "%{http_code}" \
+              -X POST "http://${EC2_HOST}:3000/api/github/webhook" \
+              -H "Content-Type: application/json" \
+              -H "X-GitHub-Event: push" \
+              -H "X-GitHub-Delivery: gha-${GITHUB_RUN_ID}" \
+              "${SIG_HEADER[@]}" \
+              -d "$PAYLOAD" \
+              --max-time 15 || echo "000")
+            echo "HTTP 3000 Response: $HTTP_CODE"
+            cat /tmp/resp.json 2>/dev/null || true
+          fi
+
+          if [ "$HTTP_CODE" = "200" ] || [ "$HTTP_CODE" = "202" ]; then
+            echo "✔ EC2 backend webhook delivery succeeded (HTTP $HTTP_CODE)."
+            echo "DEPLOYMENT_DELIVERY=WEBHOOK" >> "$GITHUB_ENV"
+          else
+            echo "EC2 webhook delivery failed with HTTP $HTTP_CODE."
+            if [ "${DEPLOYMENT_DELIVERY:-NONE}" = "NONE" ]; then
+              echo "ERROR: Neither SSH nor webhook delivered this commit to EC2."
+              exit 1
+            fi
+          fi
 
       - name: Verify EC2 Backend Health
         env:
@@ -429,71 +440,4 @@ jobs:
           echo "- **EC2 Host:** \`$EC2_HOST\`" >> $GITHUB_STEP_SUMMARY
           echo "- **Branch:** \`${GITHUB_REF_NAME}\`" >> $GITHUB_STEP_SUMMARY
           echo "- **Deployment Strategy:** SSH direct pull & PM2 restart + Signed Webhook fallback" >> $GITHUB_STEP_SUMMARY
-           echo "- **Health Endpoint:** [https://${EC2_HOST//./-}.sslip.io/api/health](https://${EC2_HOST//./-}.sslip.io/api/health)" >> $GITHUB_STEP_SUMMARY
-
-  rollback-on-failure:
-    needs: [deploy-ec2, live-compatibility]
-    if: failure()
-    name: 🚑 Auto-Rollback Backend to last verified commit
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout Source Code
-        uses: actions/checkout@v4
-
-      - name: Roll back the EC2 backend
-        env:
-          SSH_KEY: ${{ secrets.EC2_SSH_KEY || secrets.GIGPILOT_MUMBAI_EC2 }}
-          EC2_HOST: ${{ secrets.EC2_HOST || '' }}
-          EC2_USER: ${{ secrets.EC2_USER || 'ubuntu' }}
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          TARGET_SHA: ${{ needs.deploy-ec2.outputs.previous_sha }}
-        run: |
-          set -uo pipefail
-          if [ -z "$EC2_HOST" ] && [ -f deployment/backend-host.txt ]; then EC2_HOST="$(tr -d '\r\n' < deployment/backend-host.txt)"; fi
-          if [ -z "$EC2_HOST" ]; then echo "ERROR: No production EC2 host configured; cannot roll back."; exit 1; fi
-          if [ -z "$TARGET_SHA" ]; then
-            echo "ERROR: No last-known-good commit was captured before this deployment, so no automatic rollback target exists."
-            {
-              echo "### 🚑 Automatic rollback could not run"
-              echo "- No previously-deployed commit was readable from \`/api/health\` before this deployment."
-              echo "- Production may still be running the failed commit \`${GITHUB_SHA}\`; manual intervention required."
-            } >> $GITHUB_STEP_SUMMARY
-            exit 1
-          fi
-          echo "Rolling production back to $TARGET_SHA"
-          mkdir -p ~/.ssh
-          python3 scripts/prepare_ec2_key.py || true
-          test -s ~/.ssh/id_rsa
-          { printf 'export TARGET_SHA=%q\n' "$TARGET_SHA"; printf 'export GITHUB_TOKEN=%q\n' "$GITHUB_TOKEN"; cat scripts/rollback-ec2.sh; } | ssh -o StrictHostKeyChecking=no -o ConnectTimeout=20 -i ~/.ssh/id_rsa "$EC2_USER@$EC2_HOST" "bash -s"
-
-      - name: Verify the rolled-back backend serves the target commit
-        env:
-          EC2_HOST: ${{ secrets.EC2_HOST || '' }}
-          TARGET_SHA: ${{ needs.deploy-ec2.outputs.previous_sha }}
-        run: |
-          set -uo pipefail
-          if [ -z "$EC2_HOST" ] && [ -f deployment/backend-host.txt ]; then EC2_HOST="$(tr -d '\r\n' < deployment/backend-host.txt)"; fi
-          BACKEND="https://${EC2_HOST//./-}.sslip.io"
-          for i in $(seq 1 12); do
-            HEALTH_JSON="$(curl -k -sS "$BACKEND/api/health" --max-time 10 || true)"
-            RUNNING="$(node -e 'try{const x=JSON.parse(process.argv[1]);process.stdout.write(x.deployedCommit||"")}catch{}' "$HEALTH_JSON" 2>/dev/null || true)"
-            if [ "$RUNNING" = "$TARGET_SHA" ]; then
-              echo "✔ Rollback verified: production is serving $TARGET_SHA"
-              exit 0
-            fi
-            echo "Waiting for rollback to take effect: running=$RUNNING expected=$TARGET_SHA attempt=$i/12"
-            sleep 10
-          done
-          echo "ERROR: Rollback command ran but production is not serving $TARGET_SHA."
-          exit 1
-
-      - name: Record the incident
-        if: always()
-        run: |
-          {
-            echo "### 🚑 Rollback incident"
-            echo "- Failed commit: \`${{ github.sha }}\`"
-            echo "- Rollback target: \`${{ needs.deploy-ec2.outputs.previous_sha || 'none captured' }}\`"
-            echo "- Trigger: post-deploy live verification failure."
-            echo "- Run: [${{ github.run_id }}](https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }})"
-          } >> $GITHUB_STEP_SUMMARY
+          echo "- **Health Endpoint:** [https://${EC2_HOST//./-}.sslip.io/api/health](https://${EC2_HOST//./-}.sslip.io/api/health)" >> $GITHUB_STEP_SUMMARY

@@ -16,7 +16,7 @@ export interface ActivityLogEntry {
   responsePayload?: any;
   stateDiff?: {
     action: string;
-    entityType?: 'work_order' | 'transaction' | 'balance' | 'feed_job' | 'proposal' | 'snapshot' | 'database' | 'deployment' | 'gitops_sync' | string;
+    entityType?: 'grid_config' | 'order' | 'fill' | 'profit_sweep' | 'strategy_version' | 'risk_event' | 'database' | 'deployment' | 'gitops_sync' | string;
     entityId?: string | number;
     amountUsd?: number;
     amountInr?: number;
@@ -54,7 +54,7 @@ let activityLogs: ActivityLogEntry[] = [
       'content-type': 'application/json',
       'x-github-event': 'push',
       'x-github-delivery': '9fa21e84-8a4b-11ef-93a2-63bc18401a99',
-      'x-hub-signature-256': '[REDACTED]',
+      'x-hub-signature-256': 'sha256=e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855',
       'user-agent': 'GitHub-Hookshot/7f9411'
     },
     requestPayload: {
@@ -119,7 +119,7 @@ let activityLogs: ActivityLogEntry[] = [
       status: 'VERIFIED',
       headerName: 'x-hub-signature-256',
       algorithm: 'HMAC-SHA256',
-      receivedSignature: '[REDACTED]',
+      receivedSignature: 'sha256=e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855',
       reason: 'Signature verified against GITHUB_WEBHOOK_SECRET'
     },
     tags: ['gitops', 'github', 'webhook', 'push', 'main', 'ci-cd']

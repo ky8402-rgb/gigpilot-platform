@@ -454,13 +454,8 @@ export class GridEngine implements EngineModule {
           continue;
         }
 
-        const rawBuyMultiplier = Number(inventoryMetrics.asymmetricOrderSizing.buyOrderSizeMultiplier);
-        const safeBuyMultiplier = Number.isFinite(rawBuyMultiplier) && rawBuyMultiplier > 0 ? Math.min(rawBuyMultiplier, 1) : 1;
         const baseRungUsd = buyBudgetUsd / rungsPerSide;
-        // Cap at the un-scaled rung budget. The budget split already encodes the inventory bias, so
-        // a multiplier > 1 inflated the side's total deployed notional beyond its allocated budget
-        // (up to ~2.4x) and silently breached the position-size cap approved by the risk engine.
-        const adjustedRungUsd = baseRungUsd * safeBuyMultiplier;
+        const adjustedRungUsd = baseRungUsd * inventoryMetrics.asymmetricOrderSizing.buyOrderSizeMultiplier;
         const orderSize = Number((adjustedRungUsd / price).toFixed(6));
 
         levels.push({
@@ -472,7 +467,7 @@ export class GridEngine implements EngineModule {
           valueUsd: Number(adjustedRungUsd.toFixed(2)),
           status: 'PENDING',
           requiredEdgeHurdleBps: inventoryMetrics.asymmetricEdgeHurdles.requiredBuyEdgeHurdleBps,
-          orderSizeMultiplier: safeBuyMultiplier,
+          orderSizeMultiplier: inventoryMetrics.asymmetricOrderSizing.buyOrderSizeMultiplier,
           inventorySkewMultiplier: Number((1.0 - inventoryMetrics.inventorySkew).toFixed(2))
         });
       }
@@ -493,11 +488,8 @@ export class GridEngine implements EngineModule {
           continue;
         }
 
-        const rawSellMultiplier = Number(inventoryMetrics.asymmetricOrderSizing.sellOrderSizeMultiplier);
-        const safeSellMultiplier = Number.isFinite(rawSellMultiplier) && rawSellMultiplier > 0 ? Math.min(rawSellMultiplier, 1) : 1;
         const baseRungUsd = sellBudgetUsd / rungsPerSide;
-        // Same budget-preservation rule as the buy side (see above).
-        const adjustedRungUsd = baseRungUsd * safeSellMultiplier;
+        const adjustedRungUsd = baseRungUsd * inventoryMetrics.asymmetricOrderSizing.sellOrderSizeMultiplier;
         const orderSize = Number((adjustedRungUsd / price).toFixed(6));
 
         levels.push({
@@ -509,7 +501,7 @@ export class GridEngine implements EngineModule {
           valueUsd: Number(adjustedRungUsd.toFixed(2)),
           status: 'PENDING',
           requiredEdgeHurdleBps: inventoryMetrics.asymmetricEdgeHurdles.requiredSellEdgeHurdleBps,
-          orderSizeMultiplier: safeSellMultiplier,
+          orderSizeMultiplier: inventoryMetrics.asymmetricOrderSizing.sellOrderSizeMultiplier,
           inventorySkewMultiplier: Number((1.0 + inventoryMetrics.inventorySkew).toFixed(2))
         });
       }

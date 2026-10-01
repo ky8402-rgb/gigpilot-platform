@@ -1,7 +1,5 @@
 // GigPilot Live-Only Autonomous Cryptocurrency Grid Trading Platform - Core Types
 
-import type { CostEvidence } from './costModel.js';
-
 export type AutonomyLevel = 0 | 1 | 2 | 3 | 4;
 // 0: OBSERVE (Safety default - Live data only, all order execution disabled)
 // 1: ASSISTED (Manual confirmation required for every live order)
@@ -25,8 +23,7 @@ export type EngineId =
   | 'PROFIT_ACCOUNTING'
   | 'AUTO_PROFIT_SWEEP'
   | 'SYSTEM_MONITOR_SECURITY'
-  | 'AUTONOMOUS_PROFIT_OPTIMIZER'
-  | 'RELIABILITY_LOOP';
+  | 'AUTONOMOUS_PROFIT_OPTIMIZER';
 
 export interface ExpectedNetEdgeBreakdown {
   expectedGrossEdgeBps: number;       // Theoretical gross alpha or grid spacing capture (bps)
@@ -61,8 +58,6 @@ export interface RevenueAuditReport {
   spreadCaptureEfficiencyPct: number;
   effectiveNetMarginBps: number;
   expectedNetEdge?: ExpectedNetEdgeBreakdown;
-  /** The measured evidence behind the audit, so the ledger is inspectable rather than asserted. */
-  costEvidence?: CostEvidence;
   leaks: RevenueLeak[];
   vanityMetricsFiltered: {
     grossVolumeIgnoredUsd: number;
@@ -461,16 +456,12 @@ export interface Fill {
   slippageBps: number;
   realizedPnL: number;
   timestamp: string;
-  /** Mid price observed when the parent order was dispatched (enables cost attribution). */
-  referenceMid?: number;
-  /** Half of the quoted spread observed at dispatch, in bps. */
-  referenceHalfSpreadBps?: number;
 }
 
 export interface Position {
   symbol: string;
-  baseAmount: number; // e.g. BTC
-  quoteAmount: number; // e.g. USDT
+  baseAmount: number; // e.g. BTC contracts
+  quoteAmount: number; // e.g. USDT notional
   entryPrice: number;
   currentPrice: number;
   unrealizedPnL: number;
@@ -480,12 +471,10 @@ export interface Position {
   netPnL: number;
   liquidationPrice?: number;
   currentPositionCostUsd?: number;
-  /** Exchange-side protection, read back from /v5/position/list. */
-  takeProfit?: number;
-  stopLoss?: number;
-  /** 0 = one-way mode; 1 = long leg, 2 = short leg in hedge mode. */
-  positionIdx?: number;
   leverage?: number;
+  side?: 'Buy' | 'Sell' | 'None';
+  markPrice?: number;
+  fundingRateBps?: number;
 }
 
 export interface CapitalAccounting {
@@ -575,7 +564,7 @@ export interface StrategyVersion {
   name: string;
   version: string;
   type: 'ADAPTIVE_GRID' | 'TREND_GRID' | 'VOLATILITY_BREAKOUT' | 'MEAN_REVERSION_GRID' | 'CUSTOM_SCRIPT';
-  status: 'CHAMPION' | 'CHALLENGER' | 'RETIRED' | 'REJECTED' | 'VALIDATING';
+  status: 'CHAMPION' | 'CHALLENGER' | 'RETIRED' | 'REJECTED' | 'VALIDATING' | 'ROLLED_BACK';
   parentVersionId?: string;
   createdAt: string;
   deployedAt?: string;
@@ -1116,151 +1105,5 @@ export interface HierarchicalRiskStructure {
 
   overallStatus: 'HEALTHY' | 'WARNING' | 'BREACHED';
   evaluatedAt: string;
-}
-
-// =========================================================================
-// Continuous Reliability Loop (self-healing, observable, independently tested)
-//
-// The loop runs N bounded stages, each of which is exercised by
-// scripts/test-reliability-loop.ts. The contract is: every stage is read-only
-// on the live exchange; only safe actions (flush state, clear engine error
-// surfaces, retry a failed probe) ever mutate anything; and the loop itself is
-// an EngineModule so the existing monitor surfaces its health.
-// =========================================================================
-
-export type ReliabilityProbeName =
-  | 'ping'
-  | 'health'
-  | 'ready'
-  | 'market_data_freshness'
-  | 'durable_state_flush';
-
-export type ReliabilityProbeStatus = 'passed' | 'failed' | 'skipped';
-
-/** One synthetic canary probe result. Probes are intentionally narrow so a
- * regression can be attributed to exactly one subsystem. */
-export interface ReliabilityProbeResult {
-  name: ReliabilityProbeName;
-  status: ReliabilityProbeStatus;
-  /** How long the probe took end-to-end, in milliseconds. */
-  latencyMs: number;
-  /** One-line human-readable summary suitable for an alert body. */
-  detail: string;
-  /** Structured detail for ops dashboards; always includes a `ts` field. */
-  data?: Record<string, unknown>;
-  /** What error was raised on a failed probe, when applicable. */
-  error?: string;
-}
-
-/** Stage 2 output: pattern-matched diagnosis from the engine fleet telemetry. */
-export interface ReliabilityDiagnosisReport {
-  /** Best-effort root cause string for the alert body, or "nominal". */
-  rootCause: string;
-  /** Engines currently in DEGRADED / DOWN / OFF state, with reason. */
-  unhealthyEngines: Array<{ id: EngineId; status: string; reason: string }>;
-  /** Probes that have failed at least twice in the recent window. */
-  flappingProbes: ReliabilityProbeName[];
-  /** Plain-English remediation hints. */
-  recommendedActions: string[];
-}
-
-/** Stage 3 output: a heuristic failure probability. Not ML — a bounded scoring
- * function over recent telemetry. Documented as heuristic so it isn't claimed
- * to be a learned model. */
-export interface ReliabilityForecast {
-  /** 0..1 — probability that the next cycle sees a degraded engine. */
-  failureProbability: number;
-  /** Plain-English rationale. */
-  rationale: string;
-  /** Inputs that produced the score, so the score is auditable. */
-  inputs: Record<string, number>;
-}
-
-/** Stage 4 output: one self-healing action actually taken, or skipped. */
-export interface ReliabilityRemediation {
-  /** "executed" when a bounded action ran; "skipped_nominal" when nothing was
-   *  wrong; "simulated" in dry_run mode; "cooldown" when the same action was
-   *  already taken within the dedupe window. */
-  status: 'executed' | 'skipped_nominal' | 'simulated' | 'cooldown';
-  /** Action identifier, e.g. "flush_durable_state" or "retry_probes". */
-  action: string;
-  /** Whether the action succeeded (no exceptions). */
-  success: boolean;
-  /** Plain-English description. */
-  detail: string;
-}
-
-/** Stage 5 output: the canary probe suite. */
-export interface ReliabilityProbeSuite {
-  /** Always 5 — the contract; if you add a probe you add an assertion in the
-   *  test that the suite is still exactly five probes. */
-  total_probes: number;
-  passed_count: number;
-  failed_count: number;
-  avg_latency_ms: number;
-  probes: ReliabilityProbeResult[];
-}
-
-/** Stage 6 output: small pattern observations from the cycle. Heuristic-only;
- *  no model is trained or persisted here. */
-export interface ReliabilityOptimization {
-  status: 'optimized' | 'nominal';
-  /** 0..1 — observed engine-health availability across the recent window. */
-  modelAccuracy: number;
-  notes: string[];
-}
-
-/** Stage 7 output: a self-update recommendation. The loop NEVER performs an
- *  update itself — it observes the running version and emits a recommendation
- *  that an operator (or a deploy pipeline) can act on. */
-export interface ReliabilitySelfUpdate {
-  status: 'stable' | 'candidate_evaluated' | 'promoted' | 'rollback_ready';
-  activeVersion: string;
-  recommendation: string;
-}
-
-/** A single complete cycle result. */
-export interface ReliabilityCycleResult {
-  executionId: string;
-  startedAt: string;
-  finishedAt: string;
-  durationTotalMs: number;
-  mode: 'autonomous' | 'observe' | 'dry_run';
-  /** 0..100 — aggregate of all stages. Used by the readiness probe and by
-   *  operators for at-a-glance health. */
-  reliabilityScore: number;
-  stages: {
-    telemetry: { status: 'success' | 'failed'; snapshot?: ReliabilityTelemetrySnapshot; detail: string };
-    diagnosis: { status: 'success' | 'failed'; report: ReliabilityDiagnosisReport };
-    prediction: { status: 'success' | 'failed'; forecast: ReliabilityForecast };
-    remediation: { status: 'success' | 'failed'; remediation: ReliabilityRemediation };
-    testing: { status: 'passed' | 'failed'; testSuite: ReliabilityProbeSuite };
-    optimization: { status: 'success' | 'failed'; optimization: ReliabilityOptimization };
-    selfUpdating: { status: 'success' | 'failed'; selfUpdate: ReliabilitySelfUpdate };
-  };
-}
-
-/** Stage 1 output: a denormalized view of every registered engine's health at
- *  one instant. */
-export interface ReliabilityTelemetrySnapshot {
-  takenAt: string;
-  registeredEngines: number;
-  onlineCount: number;
-  degradedCount: number;
-  downCount: number;
-  offCount: number;
-  /** Health row per engine — subset of EngineHealth, copied so the snapshot is
-   *  serializable even if the live engine mutates after the snapshot. */
-  engines: Array<{
-    id: EngineId;
-    status: string;
-    enabled: boolean;
-    latencyMs: number;
-    errorCount: number;
-    lastError?: string;
-  }>;
-  /** Whether the system-level fail-closed gate is engaged. */
-  failClosed: boolean;
-  downEngines: string[];
 }
 

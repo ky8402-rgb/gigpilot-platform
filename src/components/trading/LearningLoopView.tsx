@@ -14,7 +14,8 @@ import {
   ArrowRight,
   Scale,
   Layers,
-  Shield
+  Shield,
+  ShieldAlert
 } from 'lucide-react';
 import { DecisionPipelineVisualizer } from './DecisionPipelineVisualizer';
 
@@ -23,9 +24,15 @@ interface LearningLoopViewProps {
   challengers: StrategyVersion[];
   history: StrategyVersion[];
   decisionStats?: LearningDecisionStats;
+  rollbackTelemetry?: {
+    regressionRollbackCount: number;
+    lastRollbackEvent: any;
+    historyDepth: number;
+  };
   activeSymbol?: string;
   onRefresh?: () => void;
   onPromoteChallenger: (id: string) => Promise<{ success: boolean; reason: string }>;
+  onRollbackChampion?: (reason: string) => Promise<{ success: boolean; reason: string }>;
   onCreateVariant: (params: {
     baseStrategyId: string;
     name: string;
@@ -40,9 +47,11 @@ export const LearningLoopView: React.FC<LearningLoopViewProps> = ({
   challengers,
   history,
   decisionStats,
+  rollbackTelemetry,
   activeSymbol = 'BTC/USDT',
   onRefresh,
   onPromoteChallenger,
+  onRollbackChampion,
   onCreateVariant
 }) => {
   const [activeSubTab, setActiveSubTab] = useState<'DECISIONS' | 'STRATEGIES' | 'HISTORY'>('DECISIONS');
@@ -51,7 +60,28 @@ export const LearningLoopView: React.FC<LearningLoopViewProps> = ({
   const [variantReason, setVariantReason] = useState('Testing tighter 0.8% geometric step with ATR dampening');
   const [variantExpected, setVariantExpected] = useState('Aiming for +15% trade frequency and Sharpe > 2.7');
   const [evaluatingId, setEvaluatingId] = useState<string | null>(null);
+  const [rollingBack, setRollingBack] = useState(false);
   const [evalMessage, setEvalMessage] = useState<{ id: string; success: boolean; reason: string } | null>(null);
+
+  const handleRollback = async () => {
+    if (!onRollbackChampion) return;
+    const confirm = window.confirm(
+      `Are you sure you want to rollback active Champion '${champion.name}' to the previous stable version in archive?`
+    );
+    if (!confirm) return;
+
+    setRollingBack(true);
+    setEvalMessage(null);
+    try {
+      const res = await onRollbackChampion('Manual Owner Rollback invoked from UI');
+      setEvalMessage({ id: 'rollback', success: res.success, reason: res.reason });
+      if (onRefresh) onRefresh();
+    } catch (err: any) {
+      setEvalMessage({ id: 'rollback', success: false, reason: err.message });
+    } finally {
+      setRollingBack(false);
+    }
+  };
 
   const handleEvaluate = async (challengerId: string) => {
     setEvaluatingId(challengerId);
@@ -171,10 +201,22 @@ export const LearningLoopView: React.FC<LearningLoopViewProps> = ({
                     </span>
                   </div>
                   <p className="text-[11px] text-slate-400 mt-0.5">
-                    Primary active strategy routing live/paper capital · ID: {champion.id}
+                    Primary active strategy routing live capital · ID: {champion.id}
                   </p>
                 </div>
               </div>
+
+              {history.length > 0 && onRollbackChampion && (
+                <button
+                  onClick={handleRollback}
+                  disabled={rollingBack}
+                  className="px-3 py-1.5 bg-rose-950/80 hover:bg-rose-900 text-rose-300 border border-rose-600/50 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-all shadow-md shadow-rose-950/40 disabled:opacity-50"
+                  title="Rollback Champion to previous stable version"
+                >
+                  <RotateCcw className={`w-3.5 h-3.5 ${rollingBack ? 'animate-spin' : ''}`} />
+                  {rollingBack ? 'Rolling Back...' : 'Rollback to Previous'}
+                </button>
+              )}
             </div>
 
         {/* Champion Key Metrics */}
@@ -247,10 +289,10 @@ export const LearningLoopView: React.FC<LearningLoopViewProps> = ({
           </div>
           <div>
             <h3 className="text-sm font-bold text-white uppercase tracking-wider">
-              Challenger Arena & Parallel Paper Evaluation
+              Challenger Arena & Out-of-Sample Verification
             </h3>
             <p className="text-[11px] text-slate-400">
-              Strategies paper-trading concurrently; gate checks enforce higher Sharpe and lower drawdown before promotion
+              Strategies evaluated on authoritative exchange market ticks; gate checks enforce higher Sharpe and lower drawdown before promotion
             </p>
           </div>
         </div>
@@ -362,9 +404,11 @@ export const LearningLoopView: React.FC<LearningLoopViewProps> = ({
             <div key={s.id} className="py-2.5 flex items-center justify-between text-xs">
               <div className="flex items-center gap-3">
                 <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${
-                  s.status === 'CHAMPION' ? 'bg-emerald-900/60 text-emerald-300' : 'bg-slate-800 text-slate-400'
+                  s.status === 'CHAMPION' ? 'bg-emerald-900/60 text-emerald-300' :
+                  s.status === 'ROLLED_BACK' ? 'bg-rose-950/80 text-rose-300 border border-rose-500/50' :
+                  'bg-slate-800 text-slate-400'
                 }`}>
-                  {s.status}
+                  {s.status === 'ROLLED_BACK' ? 'ROLLED BACK' : s.status}
                 </span>
                 <span className="font-bold text-white">{s.name} ({s.version})</span>
                 <span className="text-slate-500 text-[11px] hidden sm:inline">{s.reasonForChange}</span>
@@ -384,7 +428,7 @@ export const LearningLoopView: React.FC<LearningLoopViewProps> = ({
           <div className="bg-slate-900 border border-slate-700 rounded-xl max-w-lg w-full p-6 shadow-2xl text-slate-100">
             <h3 className="font-extrabold text-base text-white mb-2">Create Challenger Strategy Variant</h3>
             <p className="text-xs text-slate-400 mb-4">
-              Spawn a perturbation candidate from current Champion ({champion.name}) for parallel paper trading validation.
+              Spawn a perturbation candidate from current Champion ({champion.name}) for multi-stage out-of-sample tick validation.
             </p>
 
             <form onSubmit={handleCreateSubmit} className="space-y-3 text-xs">
