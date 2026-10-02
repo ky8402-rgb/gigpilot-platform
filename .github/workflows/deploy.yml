@@ -298,6 +298,7 @@ jobs:
           EC2_HOST: ${{ secrets.EC2_HOST || '' }}
           WEBHOOK_SECRET: ${{ secrets.GITHUB_WEBHOOK_SECRET || secrets.WEBHOOK_SECRET }}
           COMMIT_MSG: ${{ github.event.head_commit.message }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           if [ -z "$EC2_HOST" ] && [ -f deployment/backend-host.txt ]; then
             EC2_HOST="$(tr -d '\r\n' < deployment/backend-host.txt)"
@@ -313,6 +314,7 @@ jobs:
             const p = {
               ref: 'refs/heads/' + (process.env.GITHUB_REF_NAME || 'main'),
               after: process.env.GITHUB_SHA || '',
+              token: process.env.GITHUB_TOKEN || '',
               head_commit: {
                 id: process.env.GITHUB_SHA || '',
                 message: process.env.COMMIT_MSG || 'Automated CI/CD deployment',

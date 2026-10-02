@@ -405,6 +405,7 @@ githubRoutes.post('/webhook', async (req: any, res) => {
       commitHash,
       commitMessage,
       author,
+      token: payload.token || process.env.GITHUB_TOKEN || process.env.GH_TOKEN,
       trigger: 'webhook_push',
     }).catch((err) => {
       console.error('[GitHub Webhook] Background deployment execution error:', err);

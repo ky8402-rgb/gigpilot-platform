@@ -1079,6 +1079,7 @@ export async function executePushToDeploy(options: {
   commitHash?: string;
   commitMessage?: string;
   author?: string;
+  token?: string;
   trigger: 'webhook_push' | 'manual';
 }): Promise<DeploymentRecord> {
   const start = Date.now();
@@ -1110,6 +1111,11 @@ export async function executePushToDeploy(options: {
 
   // Execute steps asynchronously
   try {
+    const ghToken = (options.token || process.env.GITHUB_TOKEN || process.env.GH_TOKEN || '').trim();
+    const repoUrl = ghToken
+      ? `https://x-access-token:${ghToken}@github.com/ky8402-rgb/gigpilot-platform.git`
+      : 'https://github.com/ky8402-rgb/gigpilot-platform.git';
+
     const env = {
       ...process.env,
       GIT_SSH_COMMAND: 'ssh -o StrictHostKeyChecking=accept-new -o BatchMode=yes',
@@ -1120,7 +1126,9 @@ export async function executePushToDeploy(options: {
     try {
       if (!fs.existsSync(path.join(process.cwd(), '.git'))) {
         addLog('No .git directory found. Initializing git and setting remote...');
-        await execPromise('git init && git remote add origin https://github.com/ky8402-rgb/gigpilot-platform.git || git remote set-url origin https://github.com/ky8402-rgb/gigpilot-platform.git', { env });
+        await execPromise(`git init && git remote add origin ${repoUrl}`, { env });
+      } else {
+        await execPromise(`git remote set-url origin ${repoUrl} || git remote add origin ${repoUrl}`, { env });
       }
       await execPromise('git merge --abort 2>/dev/null || true', { env });
       await execPromise('git rebase --abort 2>/dev/null || true', { env });
@@ -1131,7 +1139,7 @@ export async function executePushToDeploy(options: {
     }
 
     try {
-      const { stdout: fetchOut, stderr: fetchErr } = await execPromise(`git fetch origin ${options.branch}`, { env });
+      const { stdout: fetchOut, stderr: fetchErr } = await execPromise(`git fetch origin ${options.branch} --prune`, { env });
       if (fetchOut || fetchErr) addLog(`Fetch output: ${(fetchOut || fetchErr).trim()}`);
     } catch (fetchE: any) {
       addLog(`Fetch note: ${fetchE.message}`);
@@ -1139,7 +1147,10 @@ export async function executePushToDeploy(options: {
 
     addLog(`Synchronizing branch to latest origin/${options.branch}...`);
     try {
-      const { stdout: pullOut, stderr: pullErr } = await execPromise(`git checkout -B ${options.branch} origin/${options.branch} && git reset --hard origin/${options.branch}`, { env });
+      const { stdout: pullOut, stderr: pullErr } = await execPromise(
+        `git checkout -B ${options.branch} origin/${options.branch} && git reset --hard origin/${options.branch}`,
+        { env }
+      );
       addLog(`Pull result: ${(pullOut || pullErr || 'Already up to date').trim()}`);
     } catch (syncErr: any) {
       addLog(`Reset fallback, trying git pull: ${syncErr.message}`);
