@@ -213,6 +213,36 @@ try {
   } else {
     fail('resolveUnknownOrders() is missing — UNKNOWN orders could never be closed out');
   }
+
+  // (f) a non-JSON / empty body must produce a DESCRIPTIVE error, not a parse throw.
+  // This is the defect that filled the error surface with "Unexpected end of JSON input".
+  (globalThis as any).fetch = async () => ({ ok: true, status: 200, text: async () => '' });
+  let reconError = '';
+  try {
+    const recon: any = await engine.reconcileOpenOrders('BTC/USDT');
+    reconError = String(recon?.error || '');
+  } catch (thrown: any) {
+    reconError = `THREW: ${thrown?.message}`;
+  }
+  if (/EMPTY body/i.test(reconError)) {
+    pass('an empty response body yields a descriptive error instead of a JSON parse throw');
+  } else {
+    fail(`empty-bodied response produced: ${reconError || '(no error reported)'}`);
+  }
+
+  (globalThis as any).fetch = async () => ({ ok: true, status: 502, text: async () => '<html>Bad Gateway</html>' });
+  let htmlError = '';
+  try {
+    const recon2: any = await engine.reconcileOpenOrders('BTC/USDT');
+    htmlError = String(recon2?.error || '');
+  } catch (thrown: any) {
+    htmlError = `THREW: ${thrown?.message}`;
+  }
+  if (/non-JSON body/i.test(htmlError)) {
+    pass('an HTML (proxy 502) body is reported as non-JSON, naming what was received');
+  } else {
+    fail(`HTML response body produced: ${htmlError || '(no error reported)'}`);
+  }
 } finally {
   (globalThis as any).fetch = realFetch;
 }

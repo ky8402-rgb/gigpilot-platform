@@ -308,6 +308,32 @@ export class ExchangeExecutionEngine implements EngineModule {
     }
   }
 
+  /**
+   * Read a JSON response defensively.
+   *
+   * A bare `await res.json()` throws "Unexpected end of JSON input" whenever the body is empty or
+   * not JSON — a proxy 502 page, a truncated response, a rate-limit page. That message tells an
+   * operator nothing about what happened, and it is precisely what filled this engine's error
+   * surface with 18 unhelpful "Order reconciliation failed: Unexpected end of JSON input" entries
+   * while the real cause (a rejected API key) was elsewhere.
+   */
+  private async readJson(res: any): Promise<{ ok: boolean; json: any; error?: string }> {
+    let text = '';
+    try {
+      text = await res.text();
+    } catch (err: any) {
+      return { ok: false, json: null, error: `could not read response body (${err?.message || err})` };
+    }
+    if (!text || !text.trim()) {
+      return { ok: false, json: null, error: `HTTP ${res.status} returned an EMPTY body where JSON was expected` };
+    }
+    try {
+      return { ok: true, json: JSON.parse(text) };
+    } catch {
+      return { ok: false, json: null, error: `HTTP ${res.status} returned a non-JSON body: ${text.slice(0, 120)}` };
+    }
+  }
+
   private async dispatchBybitOrder(
     cred: ExchangeApiCredentials,
     spec: any,
@@ -426,7 +452,11 @@ export class ExchangeExecutionEngine implements EngineModule {
         body: bodyStr
       });
 
-      const json = (await res.json()) as any;
+      const parsed = await this.readJson(res);
+      if (!parsed.ok) {
+        return { success: false, error: parsed.error };
+      }
+      const json = parsed.json as any;
       if (!res.ok || json.retCode !== 0) {
         return { success: false, error: json.retMsg || `Bybit HTTP ${res.status}` };
       }
@@ -460,7 +490,11 @@ export class ExchangeExecutionEngine implements EngineModule {
         body: bodyStr
       });
 
-      const json = (await res.json()) as any;
+      const parsed = await this.readJson(res);
+      if (!parsed.ok) {
+        return { success: false, error: parsed.error };
+      }
+      const json = parsed.json as any;
       if (!res.ok || json.retCode !== 0) {
         return { success: false, error: json.retMsg || `Bybit HTTP ${res.status}` };
       }
@@ -515,7 +549,13 @@ export class ExchangeExecutionEngine implements EngineModule {
             'X-BAPI-RECV-WINDOW': '5000'
           }
         });
-        const json: any = await res.json();
+        const parsed = await this.readJson(res);
+        if (!parsed.ok) {
+          errors++;
+          this.recordError('WARN', `Could not resolve UNKNOWN order ${key}: ${parsed.error}`);
+          continue;
+        }
+        const json: any = parsed.json;
         if (!res.ok || json.retCode !== 0) {
           errors++;
           continue;
@@ -593,7 +633,11 @@ export class ExchangeExecutionEngine implements EngineModule {
         }
       });
 
-      const json = (await res.json()) as any;
+      const parsed = await this.readJson(res);
+      if (!parsed.ok) {
+        return { reconciledCount: 0, error: parsed.error };
+      }
+      const json = parsed.json as any;
       if (!res.ok || json.retCode !== 0) {
         return { reconciledCount: 0, error: json.retMsg };
       }
@@ -672,7 +716,11 @@ export class ExchangeExecutionEngine implements EngineModule {
         }
       });
 
-      const json = (await res.json()) as any;
+      const parsed = await this.readJson(res);
+      if (!parsed.ok) {
+        return { activePositionsCount: 0, error: parsed.error };
+      }
+      const json = parsed.json as any;
       if (!res.ok || json.retCode !== 0) {
         return { activePositionsCount: 0, error: json.retMsg };
       }
@@ -937,7 +985,12 @@ export class ExchangeExecutionEngine implements EngineModule {
         signal: AbortSignal.timeout(5000)
       });
 
-      const json = (await res.json()) as any;
+      const parsed = await this.readJson(res);
+      // A non-JSON body becomes a structured request error here rather than throwing
+      // "Unexpected end of JSON input" out of a reconciliation path.
+      const json: any = parsed.ok
+        ? parsed.json
+        : { retCode: -1, retMsg: parsed.error || 'unparseable response body' };
       if (!res.ok || json.retCode !== 0) {
         const errorMsg = json.retMsg || `Bybit HTTP ${res.status}`;
         this.recordReconciliationEvent({
