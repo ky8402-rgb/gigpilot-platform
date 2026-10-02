@@ -226,7 +226,7 @@ const SCHEMAS = [
     src: () => read('server/trading/tradingReadiness.ts'),
     anchor: 'export type ReadinessInputs =',
     marker: 'export type ReadinessInputs =',
-    required: ['engineTradingReady', 'engineCredentialsOk', 'engineCredentialsError', 'executionEngineEnabled', 'killSwitchActive', 'systemFailClosed', 'autonomyLevel', 'armed']
+    required: ['engineTradingReady', 'engineCredentialsOk', 'engineCredentialsError', 'tradePermissionsOk', 'tradePermissionsError', 'executionEngineEnabled', 'killSwitchActive', 'systemFailClosed', 'autonomyLevel', 'armed']
   },
   {
     // The DEFAULT push path: acknowledged, deliberately NOT deployed. Asserted on the first
@@ -252,7 +252,7 @@ const SCHEMAS = [
     src: () => read('server/trading/autonomousEngineProbe.ts'),
     anchor: 'type AutonomousEngineHealth =',
     marker: 'type AutonomousEngineHealth =',
-    required: ['reachable', 'status', 'latencyMs', 'httpStatus', 'armed', 'publicWs', 'privateWs', 'feedFresh', 'positionMode', 'error'],
+    required: ['reachable', 'status', 'latencyMs', 'httpStatus', 'armed', 'publicWs', 'privateWs', 'feedFresh', 'positionMode', 'error', 'tradingReady', 'credentialsOk', 'credentialsError', 'tradePermissionsOk', 'tradePermissionsError', 'tradingBlockers'],
     literals: ["'healthy'", "'unhealthy'", "'unreachable'"]
   }
 ];

@@ -320,6 +320,8 @@ const allGood = {
   engineTradingReady: true,
   engineCredentialsOk: true,
   engineCredentialsError: null,
+  tradePermissionsOk: true,
+  tradePermissionsError: null,
   engineBlockers: [],
   executionEngineEnabled: true,
   executionEngineLastError: null,
@@ -340,6 +342,8 @@ if (ready.ready === true && ready.blockers.length === 0) {
 const GATE_FAILURES: Array<[string, Record<string, unknown>]> = [
   ['credentials rejected by the exchange', { engineCredentialsOk: false, engineCredentialsError: 'API key is invalid', engineTradingReady: false }],
   ['credentials never validated (unknown)', { engineCredentialsOk: null, engineTradingReady: null }],
+  ['authenticated but NOT authorised to trade', { tradePermissionsOk: false, tradePermissionsError: 'API key lacks the ContractTrade permission' }],
+  ['trade permission never validated (unknown)', { tradePermissionsOk: null }],
   ['execution engine switched OFF', { executionEngineEnabled: false, executionEngineLastError: 'API key is invalid' }],
   ['kill switch active', { killSwitchActive: true }],
   ['system fail-closed', { systemFailClosed: true }],
@@ -372,6 +376,37 @@ if (/credentials rejected/i.test(credsText) && /API key is invalid/.test(credsTe
   pass('the blocker says "credentials rejected for trading" AND names the exchange error verbatim');
 } else {
   fail(`credential blocker did not name the cause: ${credsText}`);
+}
+
+// THE PRODUCTION CASE, asserted explicitly: the key AUTHENTICATES fine (reads succeed) but is
+// refused on order endpoints. This is exactly what shipped a green "credentials accepted" line
+// next to a red "API key is invalid", so it gets its own test.
+const authOkTradeDenied = assessTradingReadiness({
+  ...allGood,
+  engineCredentialsOk: true,
+  engineCredentialsError: null,
+  tradePermissionsOk: false,
+  tradePermissionsError: 'API key lacks the ContractTrade permission',
+} as any);
+const tradeText = authOkTradeDenied.blockers.join(' | ');
+if (authOkTradeDenied.ready === false && /cannot trade/i.test(tradeText)) {
+  pass('authenticated-but-unauthorised credentials yield NOT ready and say "cannot trade"');
+} else {
+  fail(`read-only/unauthorised credentials produced ready=${authOkTradeDenied.ready} blockers=${tradeText}`);
+}
+// And the authentication signal must not claim more than it proves.
+const authSignal = authOkTradeDenied.signals.find((s) => s.id === 'CREDENTIALS_AUTHENTICATE');
+if (authSignal && /does NOT permit order placement/i.test(authSignal.detail)) {
+  pass('the authentication signal states it does not imply permission to place orders');
+} else {
+  fail('the authentication signal reads as a green light for trading');
+}
+// A trade-authorisation failure must never be reported as merely informational.
+const tradeSignal = authOkTradeDenied.signals.find((s) => s.id === 'TRADE_AUTHORIZED');
+if (tradeSignal && tradeSignal.ok === false) {
+  pass('TRADE_AUTHORIZED is a hard gate, not a warning');
+} else {
+  fail('TRADE_AUTHORIZED did not fail for unauthorised credentials');
 }
 
 // The engine's own blockers must survive into the report.

@@ -279,6 +279,15 @@ class BybitREST:
     async def open_orders(self):
         return (await self._req("GET", "/v5/order/realtime",
                                 {"category": "linear", "settleCoin": "USDT"})).get("list", [])
+    async def api_info(self):
+        """Describe THIS API key: permissions and read-only status.
+
+        Non-mutating (unlike cancel-all), so it is safe to poll. It answers the question that
+        actually matters for trading readiness — NOT "does the key authenticate?" (a key can read
+        positions and orders perfectly well while being refused on every order-mutating endpoint)
+        but "is this key AUTHORISED TO TRADE?".
+        """
+        return await self._req("GET", "/v5/user/query-api", {})
     async def closed_pnl(self, limit: int = 100):
         return (await self._req("GET", "/v5/position/closed-pnl",
                                 {"category": "linear", "limit": limit})).get("list", [])
@@ -867,6 +876,13 @@ class Reconciler:
         self.healthy = False
         self.last_error: Optional[str] = "not_run"
         self.last_run_ms = 0
+        # Trade AUTHORIZATION, tracked separately from authentication.
+        # `healthy`/`last_error` describe whether signed REST calls succeed at all (reads). A key can
+        # pass that while being refused on every order-mutating endpoint — which is exactly the
+        # production state — so readiness must be gated on the permission probe below, not on reads.
+        self.trade_permissions_ok = False
+        self.trade_permissions_error: Optional[str] = "not_run"
+        self.trade_permissions_ms = 0
 
     async def run_once(self):
         try:
@@ -912,6 +928,31 @@ class Reconciler:
             self.healthy = False; self.last_error = str(e); self.last_run_ms = now_ms()
             log.warning("reconcile orders: %s", e)
             return
+        # --- trade-authorization probe (non-mutating) -------------------------------------------
+        # Read access succeeding does NOT mean the key may trade. In production this key reads
+        # positions and open orders perfectly well while every order-mutating endpoint answers
+        # "API key is invalid", so `healthy` alone would report a fully working credential.
+        try:
+            info = (await self.rest.api_info()).get("result", {}) or {}
+            perms = info.get("permissions", {}) or {}
+            contract_trade = perms.get("ContractTrade") or []
+            read_only = int(info.get("readOnly", 0) or 0)
+            if read_only != 0:
+                self.trade_permissions_ok = False
+                self.trade_permissions_error = "API key is READ-ONLY; it cannot place orders"
+            elif not contract_trade:
+                self.trade_permissions_ok = False
+                self.trade_permissions_error = (
+                    "API key lacks the ContractTrade permission; it cannot place futures orders"
+                )
+            else:
+                self.trade_permissions_ok = True
+                self.trade_permissions_error = None
+        except Exception as e:
+            self.trade_permissions_ok = False
+            self.trade_permissions_error = str(e)
+        self.trade_permissions_ms = now_ms()
+
         self.healthy = True; self.last_error = None; self.last_run_ms = now_ms()
 
 
@@ -1399,6 +1440,7 @@ async def health():
     #   - reconciler.healthy starts False with last_error="not_run", so a credential state that has
     #     never been validated can never present as ready. Absence of a failure is not readiness.
     credentials_ok = bool(gp.reconciler.healthy)
+    trade_authorized = bool(gp.reconciler.trade_permissions_ok)
     blockers = []
     if not public_ok:
         blockers.append("public market-data feed is not connected")
@@ -1407,9 +1449,17 @@ async def health():
     if not fresh:
         blockers.append("market data is stale")
     if not credentials_ok:
+        # Signed REST calls themselves are failing => the credential is not accepted at all.
         blockers.append(
             "credentials rejected for trading: "
             + (gp.reconciler.last_error or "never validated")
+        )
+    elif not trade_authorized:
+        # Reads work but order placement would be refused. This is the production state and it must
+        # NOT be reported as acceptable: an authenticated key that cannot trade is not trading-ready.
+        blockers.append(
+            "credentials cannot trade: "
+            + (gp.reconciler.trade_permissions_error or "trade permission not validated")
         )
     if gp.position_mode != "one-way":
         blockers.append(f"position mode is '{gp.position_mode}', expected 'one-way'")
@@ -1425,6 +1475,10 @@ async def health():
         "credentials_error": gp.reconciler.last_error,
         "credentials_checked_ms_ago": (now_ms() - gp.reconciler.last_run_ms)
                                       if gp.reconciler.last_run_ms else None,
+        "trade_permissions_ok": trade_authorized,
+        "trade_permissions_error": gp.reconciler.trade_permissions_error,
+        "trade_permissions_checked_ms_ago": (now_ms() - gp.reconciler.trade_permissions_ms)
+                                            if gp.reconciler.trade_permissions_ms else None,
         "trading_blockers": blockers,
     })
 

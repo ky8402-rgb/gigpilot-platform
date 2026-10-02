@@ -31,9 +31,13 @@ export type AutonomousEngineHealth = {
   /** Whether execution is actually possible. Distinct from status/healthy, which describe the
    *  process and its feeds. Never true without authenticated REST credential validation. */
   tradingReady: boolean | null;
-  /** Whether the exchange ACCEPTED the credentials on a real signed REST call. */
+  /** Whether signed REST calls succeed at all (i.e. the credential AUTHENTICATES). */
   credentialsOk: boolean | null;
   credentialsError: string | null;
+  /** Whether the key is AUTHORISED TO TRADE (permission probe). Distinct from authenticating:
+   *  a key can read positions and orders while every order-mutating endpoint refuses it. */
+  tradePermissionsOk: boolean | null;
+  tradePermissionsError: string | null;
   /** The engine's own reasons for not being trading-ready, surfaced verbatim. */
   tradingBlockers: string[];
 };
@@ -69,6 +73,8 @@ export async function probeAutonomousEngine(): Promise<AutonomousEngineHealth> {
         tradingReady: null,
         credentialsOk: null,
         credentialsError: null,
+        tradePermissionsOk: null,
+        tradePermissionsError: null,
         tradingBlockers: ['engine health body was malformed; readiness UNKNOWN']
       };
     }
@@ -92,6 +98,8 @@ export async function probeAutonomousEngine(): Promise<AutonomousEngineHealth> {
       tradingReady: typeof body.trading_ready === 'boolean' ? body.trading_ready : null,
       credentialsOk: typeof body.credentials_ok === 'boolean' ? body.credentials_ok : null,
       credentialsError: typeof body.credentials_error === 'string' ? body.credentials_error : null,
+      tradePermissionsOk: typeof body.trade_permissions_ok === 'boolean' ? body.trade_permissions_ok : null,
+      tradePermissionsError: typeof body.trade_permissions_error === 'string' ? body.trade_permissions_error : null,
       tradingBlockers: Array.isArray(body.trading_blockers)
         ? body.trading_blockers.filter((b: any) => typeof b === 'string')
         : []
@@ -112,6 +120,8 @@ export async function probeAutonomousEngine(): Promise<AutonomousEngineHealth> {
       tradingReady: null,
       credentialsOk: null,
       credentialsError: null,
+      tradePermissionsOk: null,
+      tradePermissionsError: null,
       tradingBlockers: ['autonomous engine was unreachable; trading readiness UNKNOWN']
     };
   } finally {

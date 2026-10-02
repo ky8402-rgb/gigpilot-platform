@@ -48,8 +48,13 @@ export type TradingReadiness = {
 export type ReadinessInputs = {
   /** Python engine's own verdict (requires authenticated REST validation, not just WS). */
   engineTradingReady: boolean | null;
+  /** Whether signed REST calls succeed at all (the credential AUTHENTICATES). */
   engineCredentialsOk: boolean | null;
   engineCredentialsError: string | null;
+  /** Whether the credential is AUTHORISED TO TRADE. Deliberately separate from authenticating:
+   *  a read-capable key can be refused on every order-mutating endpoint. */
+  tradePermissionsOk: boolean | null;
+  tradePermissionsError: string | null;
   /** The engine's own reasons, surfaced verbatim so the cause is never lost. */
   engineBlockers: string[];
   /** Node execution engine off-switch: false means all real order dispatch is halted. */
@@ -84,13 +89,29 @@ export function assessTradingReadiness(input: ReadinessInputs): TradingReadiness
     ? `Credentials rejected for trading: ${input.engineCredentialsError}`
     : 'Credentials have not been validated against the exchange (never validated)';
 
+  // Authentication: do signed REST calls work at all?
+  // Its OK detail deliberately states what it does NOT prove. Reporting a bare green here is how
+  // the dashboard came to claim "credentials accepted" while every order endpoint said
+  // "API key is invalid" — authenticating is not the same as being allowed to trade.
   gate(
     signals,
     blockers,
-    'CREDENTIALS_ACCEPTED',
+    'CREDENTIALS_AUTHENTICATE',
     input.engineCredentialsOk,
-    'Exchange credentials accepted (authenticated REST validated)',
+    'Exchange credentials authenticate for reads (this alone does NOT permit order placement)',
     credentialFailure
+  );
+
+  // Authorization: will the exchange actually ACCEPT an order from this key?
+  gate(
+    signals,
+    blockers,
+    'TRADE_AUTHORIZED',
+    input.tradePermissionsOk,
+    'API key is authorised to trade (ContractTrade permission granted, not read-only)',
+    input.tradePermissionsError
+      ? `Credentials cannot trade: ${input.tradePermissionsError}`
+      : 'Credentials cannot trade: trade permission has not been validated'
   );
 
   gate(

@@ -677,6 +677,8 @@ export class TradingStore {
       engineTradingReady: engine.tradingReady,
       engineCredentialsOk: engine.credentialsOk,
       engineCredentialsError: engine.credentialsError,
+      tradePermissionsOk: engine.tradePermissionsOk,
+      tradePermissionsError: engine.tradePermissionsError,
       engineBlockers: engine.tradingBlockers,
       executionEngineEnabled: this.exchangeExec.getOffSwitch(),
       executionEngineLastError: executionHealth?.lastError ?? null,
