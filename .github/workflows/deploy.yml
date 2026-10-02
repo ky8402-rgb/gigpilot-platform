@@ -173,6 +173,8 @@ jobs:
 
           ASSETS_CODE="$(curl -sS -o /tmp/assets.json -w '%{http_code}' -H 'Accept: application/json' "$BACKEND/api/trading/assets" --max-time 10)"
           case "$ASSETS_CODE" in 401|403) echo "✔ Private asset data rejects unauthenticated access with HTTP $ASSETS_CODE.";; *) echo "ERROR: Private assets endpoint returned HTTP $ASSETS_CODE"; cat /tmp/assets.json; exit 1;; esac
+          FUTURES_UNIVERSE_CODE="$(curl -sS -o /tmp/futures-universe.json -w '%{http_code}' -H 'Accept: application/json' "$BACKEND/api/trading/futures/universe" --max-time 10)"
+          case "$FUTURES_UNIVERSE_CODE" in 401|403) echo "✔ Futures universe route is registered and protected (HTTP $FUTURES_UNIVERSE_CODE).";; *) echo "ERROR: Live futures universe route is missing or unexpectedly exposed (HTTP $FUTURES_UNIVERSE_CODE)."; cat /tmp/futures-universe.json; exit 1;; esac
           RISK_CODE="$(curl -sS -o /tmp/risk.json -w '%{http_code}' -H 'Accept: application/json' "$BACKEND/api/trading/risk" --max-time 10)"
           case "$RISK_CODE" in 401|403|200) echo "✔ Private risk endpoint secured with HTTP $RISK_CODE.";; *) echo "ERROR: Live risk endpoint returned HTTP $RISK_CODE"; cat /tmp/risk.json; exit 1;; esac
           AUTH_STATUS="$(curl -sS -o /tmp/auth-status.json -w '%{http_code}' -H "Origin: $FRONTEND" -H 'Accept: application/json' "$BACKEND/api/auth/status" --max-time 10)"
