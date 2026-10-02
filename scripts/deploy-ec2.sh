@@ -104,6 +104,13 @@ elif ! grep -qE '^DATABASE_URL=(postgres://|postgresql://)' "$APP_DIR/.env" 2>/d
   echo "ERROR: No production DATABASE_URL is configured. Refusing live deployment."; exit 1
 fi
 
+echo "Installing GigPilot Python engine dependencies..."
+if ! command -v python3 >/dev/null 2>&1; then
+  echo "ERROR: python3 is required for the autonomous futures engine."; exit 1
+fi
+python3 -m venv "$APP_DIR/.venv"
+"$APP_DIR/.venv/bin/pip" install --disable-pip-version-check --no-input -r "$APP_DIR/requirements.txt"
+
 echo "Installing production build dependencies..."
 npm install --prefer-offline || npm install --legacy-peer-deps
 
@@ -111,6 +118,7 @@ echo "Building application bundles (Vite + esbuild)..."
 npm run build
 
 echo "Configuring and restarting PM2 backend daemon..."
+pm2 delete gigpilot-engine 2>/dev/null || true
 pm2 delete gigpilot 2>/dev/null || true
 
 if [ -f "ecosystem.config.cjs" ]; then
@@ -122,6 +130,16 @@ else
 fi
 
 pm2 save
+
+echo "Waiting for Node and GigPilot engine processes to initialize..."
+sleep 3
+if curl -fsS -m 5 http://127.0.0.1:8001/health >/tmp/gigpilot-engine-health.json 2>/dev/null; then
+  echo "✔ GigPilot autonomous engine health check passed on 127.0.0.1:8001."
+else
+  echo "ERROR: GigPilot autonomous engine failed to become healthy on port 8001."
+  pm2 logs gigpilot-engine --lines 80 --nostream || true
+  exit 1
+fi
 
 echo "Waiting for process to initialize on port 3000..."
 sleep 3
