@@ -169,6 +169,37 @@ export async function fetchTradingState(): Promise<MasterTradingState> {
   return await fetchWithFailover<MasterTradingState>('/state');
 }
 
+
+export interface FuturesUniverseMarket {
+  exchange: 'BYBIT' | 'BINANCE';
+  symbol: string;
+  baseAsset: string;
+  quoteAsset: 'USDT';
+  contractType: 'PERPETUAL';
+  status: string;
+  price: number;
+  volume24h: number;
+  change24hPct: number;
+  fundingRate: number | null;
+  bid: number;
+  ask: number;
+  spreadBps: number;
+  tickSize: number | null;
+  qtyStep: number | null;
+  makerFeeBps: number | null;
+  takerFeeBps: number | null;
+  liquidityScore: number;
+  executionScore: number;
+  eligible: boolean;
+  reasons: string[];
+}
+
+export async function fetchFuturesUniverse(): Promise<FuturesUniverseMarket[]> {
+  const data = await fetchWithFailover<{ success: boolean; markets: FuturesUniverseMarket[] }>('/futures/universe');
+  if (!data.success || !Array.isArray(data.markets)) throw new Error('Live futures universe unavailable.');
+  return data.markets;
+}
+
 export async function fetchAllPairs(): Promise<Array<{
   symbol: string;
   price: number;
