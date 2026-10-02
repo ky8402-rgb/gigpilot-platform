@@ -171,7 +171,7 @@ export async function fetchTradingState(): Promise<MasterTradingState> {
 
 
 export interface FuturesUniverseMarket {
-  exchange: 'BYBIT' | 'BINANCE';
+  exchange: 'BYBIT';
   symbol: string;
   baseAsset: string;
   quoteAsset: 'USDT';
