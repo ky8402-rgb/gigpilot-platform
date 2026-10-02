@@ -1,7 +1,19 @@
 import crypto from 'crypto';
 import fs from 'fs';
 import path from 'path';
-import { EngineErrorRecord, EngineHealth, EngineModule, ExpectedNetEdgeBreakdown, Fill, Order, Position, SupportedExchange } from './types.js';
+import {
+  EngineErrorRecord,
+  EngineHealth,
+  EngineModule,
+  ExpectedNetEdgeBreakdown,
+  Fill,
+  Order,
+  Position,
+  PositionDriftRecord,
+  ReconciliationAuditEvent,
+  ReconciliationAuditStatus,
+  SupportedExchange
+} from './types.js';
 
 export interface ExchangeApiCredentials {
   exchange: SupportedExchange;
@@ -34,8 +46,16 @@ export class ExchangeExecutionEngine implements EngineModule {
   private fills: Fill[] = [];
   private positions: Map<string, Position> = new Map();
 
+  // Self-Healing Position & Order Reconciliation Loop State
+  private reconciliationAuditHistory: ReconciliationAuditEvent[] = [];
+  private lastReconciliationAudit?: ReconciliationAuditStatus;
+  private lastSelfHealTimestamp?: string;
+  private reconciliationTimer: NodeJS.Timeout | null = null;
+  private autoHealingEnabled: boolean = true;
+
   constructor() {
     this.initCredentials();
+    this.startReconciliationLoop();
   }
 
   private initCredentials() {
@@ -103,9 +123,11 @@ export class ExchangeExecutionEngine implements EngineModule {
     this.enabled = enabled;
     if (!enabled) {
       this.status = 'OFF';
+      this.stopReconciliationLoop();
       this.recordError('WARN', 'Exchange Execution Engine switched OFF. All real order dispatching halted. System fails closed.');
     } else {
       this.status = 'HEALTHY';
+      this.startReconciliationLoop();
       this.recordError('WARN', 'Exchange Execution Engine switched ON.');
     }
   }
@@ -614,5 +636,310 @@ export class ExchangeExecutionEngine implements EngineModule {
 
   public getPosition(symbol: string): Position | undefined {
     return this.positions.get(symbol);
+  }
+
+  // ==========================================
+  // SELF-HEALING RECONCILIATION ENGINE
+  // ==========================================
+
+  public startReconciliationLoop(intervalMs: number = 30000): void {
+    if (this.reconciliationTimer) {
+      clearInterval(this.reconciliationTimer);
+      this.reconciliationTimer = null;
+    }
+
+    this.reconciliationTimer = setInterval(() => {
+      const cred = this.credentials.get('BYBIT');
+      if (this.enabled && cred && cred.isConfigured) {
+        this.performAutomatedReconciliationAudit(this.autoHealingEnabled).catch(err => {
+          this.recordError('WARN', `Background reconciliation loop error: ${err?.message || err}`);
+        });
+      }
+    }, intervalMs);
+  }
+
+  public stopReconciliationLoop(): void {
+    if (this.reconciliationTimer) {
+      clearInterval(this.reconciliationTimer);
+      this.reconciliationTimer = null;
+    }
+  }
+
+  public setAutoHealingEnabled(enabled: boolean): void {
+    this.autoHealingEnabled = enabled;
+  }
+
+  private recordReconciliationEvent(evt: ReconciliationAuditEvent): void {
+    this.reconciliationAuditHistory.unshift(evt);
+    if (this.reconciliationAuditHistory.length > 50) {
+      this.reconciliationAuditHistory.pop();
+    }
+  }
+
+  public getReconciliationStatus(): ReconciliationAuditStatus {
+    const cred = this.credentials.get('BYBIT');
+    if (this.lastReconciliationAudit) {
+      return this.lastReconciliationAudit;
+    }
+    return {
+      status: this.enabled ? 'SYNCED' : 'OFF',
+      lastAuditTimestamp: new Date().toISOString(),
+      activeDriftCount: 0,
+      isClean: true,
+      activeDrifts: [],
+      recentEvents: this.reconciliationAuditHistory.slice(0, 15),
+      autoHealingEnabled: this.autoHealingEnabled,
+      reconciliationIntervalSeconds: 30,
+      bybitConnected: Boolean(cred?.isConfigured)
+    };
+  }
+
+  /**
+   * Automated Position & Order Reconciliation Audit & Self-Healing
+   * Compares internal portfolio state against Bybit V5 Linear ground truth.
+   * Auto-heals position drift and cancels orphaned orders if autoHeal is true.
+   */
+  public async performAutomatedReconciliationAudit(autoHeal: boolean = true): Promise<ReconciliationAuditStatus> {
+    const cred = this.credentials.get('BYBIT');
+    const nowIso = new Date().toISOString();
+
+    if (!this.enabled) {
+      return {
+        status: 'OFF',
+        lastAuditTimestamp: nowIso,
+        activeDriftCount: 0,
+        isClean: true,
+        activeDrifts: [],
+        recentEvents: this.reconciliationAuditHistory.slice(0, 15),
+        autoHealingEnabled: this.autoHealingEnabled,
+        reconciliationIntervalSeconds: 30,
+        bybitConnected: Boolean(cred?.isConfigured)
+      };
+    }
+
+    if (!cred || !cred.isConfigured) {
+      const status: ReconciliationAuditStatus = {
+        status: 'SYNCED',
+        lastAuditTimestamp: nowIso,
+        activeDriftCount: 0,
+        isClean: true,
+        activeDrifts: [],
+        recentEvents: this.reconciliationAuditHistory.slice(0, 15),
+        autoHealingEnabled: this.autoHealingEnabled,
+        reconciliationIntervalSeconds: 30,
+        bybitConnected: false
+      };
+      this.lastReconciliationAudit = status;
+      return status;
+    }
+
+    try {
+      // 1. Reconcile open orders first
+      const orderRec = await this.reconcileOpenOrders();
+
+      // 2. Snapshot current in-memory positions before query
+      const internalPositionsSnapshot = new Map(this.positions);
+
+      // 3. Query Bybit linear positions directly
+      const timestamp = Date.now().toString();
+      const query = new URLSearchParams({ category: 'linear', settleCoin: 'USDT' });
+      const signPayload = `${timestamp}${cred.apiKey}5000${query.toString()}`;
+      const signature = crypto.createHmac('sha256', cred.apiSecret).update(signPayload).digest('hex');
+
+      const res = await fetch(`https://api.bybit.com/v5/position/list?${query.toString()}`, {
+        method: 'GET',
+        headers: {
+          'X-BAPI-API-KEY': cred.apiKey,
+          'X-BAPI-SIGN': signature,
+          'X-BAPI-TIMESTAMP': timestamp,
+          'X-BAPI-RECV-WINDOW': '5000'
+        },
+        signal: AbortSignal.timeout(5000)
+      });
+
+      const json = (await res.json()) as any;
+      if (!res.ok || json.retCode !== 0) {
+        const errorMsg = json.retMsg || `Bybit HTTP ${res.status}`;
+        this.recordReconciliationEvent({
+          id: `rec_err_${Date.now()}`,
+          timestamp: nowIso,
+          type: 'RECONCILIATION_ERROR',
+          details: `Reconciliation audit query failed: ${errorMsg}`
+        });
+        const errStatus: ReconciliationAuditStatus = {
+          status: 'ERROR',
+          lastAuditTimestamp: nowIso,
+          activeDriftCount: 0,
+          isClean: false,
+          activeDrifts: [],
+          recentEvents: this.reconciliationAuditHistory.slice(0, 15),
+          autoHealingEnabled: this.autoHealingEnabled,
+          reconciliationIntervalSeconds: 30,
+          bybitConnected: true
+        };
+        this.lastReconciliationAudit = errStatus;
+        return errStatus;
+      }
+
+      const rawPositions = json.result?.list || [];
+      const exchangeActivePositions = new Map<string, Position>();
+
+      for (const p of rawPositions) {
+        const size = parseFloat(p.size || '0');
+        if (size <= 0) continue;
+
+        const entryPrice = parseFloat(p.avgPrice || p.entryPrice || '0');
+        const markPrice = parseFloat(p.markPrice || '0');
+        const unrealizedPnL = parseFloat(p.unrealisedPnl || '0');
+        const cumRealisedPnl = parseFloat(p.cumRealisedPnl || '0');
+        const liqPrice = parseFloat(p.liqPrice || '0') || undefined;
+        const leverage = parseFloat(p.leverage || '1');
+        const notional = parseFloat(p.positionValue || '0') || (size * (markPrice || entryPrice));
+        const side = p.side === 'Buy' ? 'Buy' : (p.side === 'Sell' ? 'Sell' : 'None');
+        const normSym = p.symbol.endsWith('USDT') ? `${p.symbol.slice(0, -4)}/USDT` : p.symbol;
+
+        exchangeActivePositions.set(normSym, {
+          symbol: normSym,
+          baseAmount: size,
+          quoteAmount: notional,
+          entryPrice,
+          currentPrice: markPrice || entryPrice,
+          unrealizedPnL,
+          unrealizedPnLPct: notional > 0 ? Number(((unrealizedPnL / (notional / leverage)) * 100).toFixed(2)) : 0,
+          realizedPnL: cumRealisedPnl,
+          totalFeesPaid: 0,
+          netPnL: unrealizedPnL + cumRealisedPnl,
+          liquidationPrice: liqPrice,
+          currentPositionCostUsd: notional / leverage,
+          leverage,
+          side,
+          markPrice
+        });
+      }
+
+      // 4. Compare all symbols across internal vs exchange
+      const allSymbols = new Set<string>([
+        ...Array.from(internalPositionsSnapshot.keys()),
+        ...Array.from(exchangeActivePositions.keys())
+      ]);
+
+      const drifts: PositionDriftRecord[] = [];
+
+      for (const sym of allSymbols) {
+        const internalPos = internalPositionsSnapshot.get(sym);
+        const exchangePos = exchangeActivePositions.get(sym);
+
+        const internalSize = internalPos ? internalPos.baseAmount : 0;
+        const exchangeSize = exchangePos ? exchangePos.baseAmount : 0;
+        const markPrice = exchangePos?.markPrice || internalPos?.markPrice || internalPos?.currentPrice || 1;
+
+        const deltaBase = Number((exchangeSize - internalSize).toFixed(6));
+        const deltaUsd = Number((Math.abs(deltaBase) * markPrice).toFixed(2));
+
+        // Epsilon threshold: 0.0001 base units or $0.10 USD
+        const isClean = Math.abs(deltaBase) < 0.0001 || deltaUsd < 0.10;
+        let severity: PositionDriftRecord['driftSeverity'] = 'NONE';
+
+        if (!isClean) {
+          if (deltaUsd > 50 || (internalSize > 0 && Math.abs(deltaBase / internalSize) > 0.20)) {
+            severity = 'CRITICAL';
+          } else {
+            severity = 'MINOR';
+          }
+
+          drifts.push({
+            symbol: sym,
+            internalBaseAmount: internalSize,
+            exchangeBaseAmount: exchangeSize,
+            deltaBaseAmount: deltaBase,
+            deltaUsd,
+            driftSeverity: severity,
+            isClean: false,
+            timestamp: nowIso,
+            actionTaken: autoHeal ? 'SYNCHRONIZED_TO_EXCHANGE' : 'DETECTED_PENDING_ACTION'
+          });
+        }
+      }
+
+      const hasDrift = drifts.length > 0;
+      let finalStatus: ReconciliationAuditStatus['status'] = hasDrift
+        ? (autoHeal ? 'SELF_HEALING' : 'DRIFT_DETECTED')
+        : 'SYNCED';
+
+      if (hasDrift) {
+        if (autoHeal) {
+          // Self-heal: update positions directly to match exchange truth
+          this.positions = exchangeActivePositions;
+          this.lastSelfHealTimestamp = nowIso;
+
+          this.recordReconciliationEvent({
+            id: `rec_heal_${Date.now()}`,
+            timestamp: nowIso,
+            type: 'DRIFT_AUTO_HEALED',
+            details: `Auto-healed ${drifts.length} drifted position(s). Synchronized internal state to live Bybit linear reality.`,
+            drifts
+          });
+
+          this.recordError('WARN', `Self-Healing Reconciliation: Corrected ${drifts.length} position drift(s). Live Bybit linear ground truth restored.`);
+          finalStatus = 'SYNCED';
+        } else {
+          this.recordReconciliationEvent({
+            id: `rec_drift_${Date.now()}`,
+            timestamp: nowIso,
+            type: 'DRIFT_DETECTED',
+            details: `Detected ${drifts.length} position discrepancy between internal portfolio and Bybit exchange.`,
+            drifts
+          });
+        }
+      } else {
+        // Update positions to exchange positions to keep markPrice & unrealized PnL fresh
+        this.positions = exchangeActivePositions;
+        if (orderRec.reconciledCount > 0) {
+          this.recordReconciliationEvent({
+            id: `rec_orders_${Date.now()}`,
+            timestamp: nowIso,
+            type: 'ORDERS_RECONCILED',
+            details: `Imported ${orderRec.reconciledCount} missing open order(s) from Bybit.`,
+            reconciledOrdersCount: orderRec.reconciledCount
+          });
+        }
+      }
+
+      const auditStatus: ReconciliationAuditStatus = {
+        status: finalStatus,
+        lastAuditTimestamp: nowIso,
+        lastSelfHealTimestamp: this.lastSelfHealTimestamp,
+        activeDriftCount: drifts.length,
+        isClean: !hasDrift,
+        activeDrifts: drifts,
+        recentEvents: this.reconciliationAuditHistory.slice(0, 20),
+        autoHealingEnabled: this.autoHealingEnabled,
+        reconciliationIntervalSeconds: 30,
+        bybitConnected: true
+      };
+
+      this.lastReconciliationAudit = auditStatus;
+      return auditStatus;
+    } catch (err: any) {
+      this.recordReconciliationEvent({
+        id: `rec_err_${Date.now()}`,
+        timestamp: nowIso,
+        type: 'RECONCILIATION_ERROR',
+        details: `Reconciliation audit exception: ${err.message}`
+      });
+      const errStatus: ReconciliationAuditStatus = {
+        status: 'ERROR',
+        lastAuditTimestamp: nowIso,
+        activeDriftCount: 0,
+        isClean: false,
+        activeDrifts: [],
+        recentEvents: this.reconciliationAuditHistory.slice(0, 15),
+        autoHealingEnabled: this.autoHealingEnabled,
+        reconciliationIntervalSeconds: 30,
+        bybitConnected: Boolean(cred?.isConfigured)
+      };
+      this.lastReconciliationAudit = errStatus;
+      return errStatus;
+    }
   }
 }

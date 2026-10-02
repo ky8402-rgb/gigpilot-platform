@@ -291,6 +291,22 @@ export class TradingStore {
       this.currentRegime = quantResult.regime;
     }
 
+    // 1.5. Self-Healing Champion Safety: Check for live strategy regression and auto-rollback if breached
+    try {
+      const regressionCheck = this.learningLoop.checkRegressionAndAutoRollback();
+      if (regressionCheck.regressionDetected && regressionCheck.rolledBack) {
+        this.monitor.logAudit({
+          category: 'CHAMPION_REGRESSION_ROLLBACK',
+          action: 'Automatic self-healing rollback executed for active Champion strategy',
+          details: {
+            reason: regressionCheck.reason,
+            restoredChampion: regressionCheck.restoredChampion?.id,
+            rolledBackStrategy: regressionCheck.rolledBackStrategy?.id
+          }
+        });
+      }
+    } catch {}
+
     // 2. If active grid exists and system is not in kill switch
     if (!this.GLOBAL_KILL_SWITCH_ACTIVE && this.activeGrid && this.autonomyLevel >= 2) {
       // Check for fail-closed system condition

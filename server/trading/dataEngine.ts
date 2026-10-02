@@ -23,6 +23,8 @@ export interface LivePairMarketData {
   candleFetchFailures?: number;
   lastCandleFetchTime?: number;
   lastCandleError?: string;
+  depthImbalanceRatio?: number;
+  fundingCountdownSeconds?: number;
 }
 
 export class DataEngine implements EngineModule {
@@ -298,6 +300,48 @@ export class DataEngine implements EngineModule {
     const markPrice = data.markPrice != null ? parseFloat(data.markPrice) : existing?.markPrice;
     const indexPrice = data.indexPrice != null ? parseFloat(data.indexPrice) : existing?.indexPrice;
 
+    // Real-time top-of-book depth and spread extraction from Bybit tickers stream
+    const bid1Price = parseFloat(data.bid1Price);
+    const bid1Size = parseFloat(data.bid1Size) || 0;
+    const ask1Price = parseFloat(data.ask1Price);
+    const ask1Size = parseFloat(data.ask1Size) || 0;
+
+    let updatedOrderBook = existing?.orderBook || {
+      symbol: matchedSym,
+      bids: [],
+      asks: [],
+      spread: 0,
+      spreadBps: 0,
+      midPrice: lastPrice,
+      timestamp: Date.now()
+    };
+
+    let depthImbalanceRatio: number | undefined = existing?.depthImbalanceRatio;
+
+    if (!isNaN(bid1Price) && !isNaN(ask1Price) && bid1Price > 0 && ask1Price > 0 && ask1Price >= bid1Price) {
+      const spread = Number((ask1Price - bid1Price).toFixed(6));
+      const mid = Number(((ask1Price + bid1Price) / 2).toFixed(6));
+      const spreadBps = Number(((spread / (mid || lastPrice)) * 10000).toFixed(2));
+      const totalDepth = bid1Size + ask1Size;
+      if (totalDepth > 0) {
+        depthImbalanceRatio = Number(((bid1Size - ask1Size) / totalDepth).toFixed(4));
+      }
+
+      updatedOrderBook = {
+        symbol: matchedSym,
+        bids: [{ price: bid1Price, amount: bid1Size, total: bid1Size }, ...(existing?.orderBook?.bids?.slice(1) || [])],
+        asks: [{ price: ask1Price, amount: ask1Size, total: ask1Size }, ...(existing?.orderBook?.asks?.slice(1) || [])],
+        spread,
+        spreadBps,
+        midPrice: mid || lastPrice,
+        timestamp: Date.now()
+      };
+    }
+
+    const fundingCountdownSeconds = nextFundingTime
+      ? Math.max(0, Math.floor((nextFundingTime - Date.now()) / 1000))
+      : undefined;
+
     const nowIso = new Date().toISOString();
     const updatedData: LivePairMarketData = {
       symbol: matchedSym,
@@ -308,15 +352,7 @@ export class DataEngine implements EngineModule {
       volume24h,
       priceChangePct,
       candles: existing?.candles || [],
-      orderBook: existing?.orderBook || {
-        symbol: matchedSym,
-        bids: [],
-        asks: [],
-        spread: 0,
-        spreadBps: 0,
-        midPrice: lastPrice,
-        timestamp: Date.now()
-      },
+      orderBook: updatedOrderBook,
       lastUpdated: nowIso,
       source: 'BYBIT_LIVE',
       category: 'linear',
@@ -324,7 +360,13 @@ export class DataEngine implements EngineModule {
       fundingRateRaw: rawFundingRate,
       nextFundingTime,
       markPrice,
-      indexPrice
+      indexPrice,
+      depthImbalanceRatio,
+      fundingCountdownSeconds,
+      candleCacheFresh: existing?.candleCacheFresh,
+      candleFetchFailures: existing?.candleFetchFailures,
+      lastCandleFetchTime: existing?.lastCandleFetchTime,
+      lastCandleError: existing?.lastCandleError
     };
 
     this.marketData.set(matchedSym, updatedData);
@@ -541,6 +583,12 @@ export class DataEngine implements EngineModule {
           nextFundingTime: ticker?.nextFundingTime ?? existing?.nextFundingTime,
           markPrice: ticker?.markPrice ?? existing?.markPrice,
           indexPrice: ticker?.indexPrice ?? existing?.indexPrice,
+          depthImbalanceRatio: (bids.length > 0 && asks.length > 0)
+            ? Number(((bids.slice(0, 5).reduce((s, b) => s + b.amount, 0) - asks.slice(0, 5).reduce((s, a) => s + a.amount, 0)) / Math.max(0.0001, bids.slice(0, 5).reduce((s, b) => s + b.amount, 0) + asks.slice(0, 5).reduce((s, a) => s + a.amount, 0))).toFixed(4))
+            : existing?.depthImbalanceRatio,
+          fundingCountdownSeconds: (ticker?.nextFundingTime || existing?.nextFundingTime)
+            ? Math.max(0, Math.floor(((ticker?.nextFundingTime || existing?.nextFundingTime || 0) - Date.now()) / 1000))
+            : undefined,
           candleCacheFresh,
           candleFetchFailures: this.candleFetchFailures.get(sym) || 0,
           lastCandleFetchTime: this.lastCandleFetchTime.get(sym) || 0,

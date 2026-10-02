@@ -8,7 +8,10 @@ import {
   MasterTradingState,
   Order,
   OwnerAuthStatus,
+  PositionDriftRecord,
   ProfitSweep,
+  ReconciliationAuditEvent,
+  ReconciliationAuditStatus,
   ResearchItem,
   RiskRuleConfig,
   StrategyVersion,
@@ -844,4 +847,32 @@ export async function fetchGigPilotHealth(): Promise<{
 }> {
   return fetchWithFailover('/gigpilot/health');
 }
+
+export async function fetchReconciliationStatus(): Promise<{
+  success: boolean;
+  reconciliation: ReconciliationAuditStatus;
+}> {
+  return fetchWithFailover<{
+    success: boolean;
+    reconciliation: ReconciliationAuditStatus;
+  }>('/reconciliation/status');
+}
+
+export async function triggerReconciliationAudit(autoHeal: boolean = true): Promise<{
+  success: boolean;
+  message?: string;
+  reconciliation: ReconciliationAuditStatus;
+  error?: string;
+}> {
+  return fetchWithFailover<{
+    success: boolean;
+    message?: string;
+    reconciliation: ReconciliationAuditStatus;
+    error?: string;
+  }>('/reconciliation/audit', {
+    method: 'POST',
+    body: JSON.stringify({ autoHeal })
+  });
+}
+
 

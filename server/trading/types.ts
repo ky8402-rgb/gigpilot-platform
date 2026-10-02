@@ -1107,3 +1107,41 @@ export interface HierarchicalRiskStructure {
   evaluatedAt: string;
 }
 
+// ==========================================
+// 8. POSITION RECONCILIATION & SELF-HEALING
+// ==========================================
+
+export interface PositionDriftRecord {
+  symbol: string;
+  internalBaseAmount: number;
+  exchangeBaseAmount: number;
+  deltaBaseAmount: number;
+  deltaUsd: number;
+  driftSeverity: 'NONE' | 'MINOR' | 'CRITICAL';
+  isClean: boolean;
+  timestamp: string;
+  actionTaken?: string;
+}
+
+export interface ReconciliationAuditEvent {
+  id: string;
+  timestamp: string;
+  type: 'AUDIT_CLEAN' | 'DRIFT_DETECTED' | 'DRIFT_AUTO_HEALED' | 'ORDERS_RECONCILED' | 'RECONCILIATION_ERROR';
+  symbol?: string;
+  details: string;
+  drifts?: PositionDriftRecord[];
+  reconciledOrdersCount?: number;
+}
+
+export interface ReconciliationAuditStatus {
+  status: 'SYNCED' | 'DRIFT_DETECTED' | 'SELF_HEALING' | 'ERROR' | 'OFF';
+  lastAuditTimestamp: string;
+  lastSelfHealTimestamp?: string;
+  activeDriftCount: number;
+  isClean: boolean;
+  activeDrifts: PositionDriftRecord[];
+  recentEvents: ReconciliationAuditEvent[];
+  autoHealingEnabled: boolean;
+  reconciliationIntervalSeconds: number;
+  bybitConnected: boolean;
+}

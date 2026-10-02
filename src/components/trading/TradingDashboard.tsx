@@ -66,6 +66,7 @@ import { AssetDashboard } from './AssetDashboard';
 import { OwnerAuthModal } from './OwnerAuthModal';
 import { AutonomousRevenueEngineView } from './AutonomousRevenueEngineView';
 import { GigPilotFuturesView } from './GigPilotFuturesView';
+import { ReconciliationTerminal } from './ReconciliationTerminal';
 
 import {
   BarChart2,
@@ -93,6 +94,7 @@ import { Activity, Scale, Shield, Zap } from 'lucide-react';
 export type ActiveTerminalTab =
   | 'TERMINAL'
   | 'GIGPILOT_FUTURES'
+  | 'RECONCILIATION'
   | 'DECISION_PIPELINE'
   | 'AUTONOMOUS_OPTIMIZER'
   | 'REGIME_TRANSITION'
@@ -572,6 +574,18 @@ export const TradingDashboard: React.FC<TradingDashboardProps> = ({ onLogout }) 
             </button>
 
             <button
+              onClick={() => setActiveTab('RECONCILIATION')}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-mono font-bold transition-all ${
+                activeTab === 'RECONCILIATION'
+                  ? 'bg-emerald-950/80 text-emerald-300 border border-emerald-600/80 shadow'
+                  : 'text-slate-400 hover:text-slate-200'
+              }`}
+            >
+              <Scale className="w-3.5 h-3.5 text-emerald-400" />
+              <span>Reconciliation</span>
+            </button>
+
+            <button
               onClick={() => setActiveTab('ENGINES')}
               className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-mono font-bold transition-all ${
                 activeTab === 'ENGINES'
@@ -737,6 +751,10 @@ export const TradingDashboard: React.FC<TradingDashboardProps> = ({ onLogout }) 
 
         {activeTab === 'GIGPILOT_FUTURES' && (
           <GigPilotFuturesView />
+        )}
+
+        {activeTab === 'RECONCILIATION' && (
+          <ReconciliationTerminal />
         )}
 
         {activeTab === 'AUTONOMOUS_OPTIMIZER' && (

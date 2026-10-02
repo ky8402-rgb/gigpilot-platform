@@ -619,6 +619,36 @@ tradingRouter.post('/research/analyze', async (req: Request, res: Response) => {
   res.json(result);
 });
 
+// 16.5. Automated Position & Order Reconciliation Status and Trigger
+tradingRouter.get('/reconciliation/status', (req: Request, res: Response) => {
+  const store = globalTradingStore;
+  const status = store.exchangeExec.getReconciliationStatus();
+  res.json({
+    success: true,
+    reconciliation: status
+  });
+});
+
+tradingRouter.post('/reconciliation/audit', requireOwnerAuth, async (req: Request, res: Response) => {
+  const store = globalTradingStore;
+  const autoHeal = req.body?.autoHeal !== false; // default true
+  try {
+    const status = await store.exchangeExec.performAutomatedReconciliationAudit(autoHeal);
+    res.json({
+      success: true,
+      message: status.isClean
+        ? 'Reconciliation audit completed. Internal state matches Bybit Linear exchange.'
+        : `Reconciliation audit completed. Detected ${status.activeDriftCount} drift(s). Auto-heal: ${autoHeal ? 'APPLIED' : 'OBSERVED_ONLY'}.`,
+      reconciliation: status
+    });
+  } catch (err: any) {
+    res.status(500).json({
+      success: false,
+      error: `Reconciliation audit failed: ${err.message}`
+    });
+  }
+});
+
 // 17. Profit Sweep Subsystem
 tradingRouter.get('/sweep/info', requireOwnerAuth, async (req: Request, res: Response) => {
   const store = globalTradingStore;
