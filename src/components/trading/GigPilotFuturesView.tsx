@@ -103,8 +103,8 @@ export const GigPilotFuturesView: React.FC = () => {
     try {
       setActionLoading('kill');
       setActionMessage(null);
-      await killGigPilot();
-      setActionMessage({ type: 'success', text: 'KILL SWITCH EXECUTED: All open orders cancelled and positions flattened.' });
+      const res = await killGigPilot();
+      setActionMessage({ type: res.killed ? 'success' : 'error', text: res.message || (res.killed ? 'KILL SWITCH EXECUTED and verified.' : 'KILL SWITCH ACTIVE; complete STOP verification is unavailable.') });
       await loadState();
     } catch (err: any) {
       setActionMessage({ type: 'error', text: err?.message || 'Kill switch error' });
