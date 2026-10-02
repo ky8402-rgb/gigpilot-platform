@@ -626,6 +626,7 @@ Return JSON ONLY:
     this.latencyMs = Date.now() - start;
     this.lastHeartbeat = new Date().toISOString();
     this.status = 'HEALTHY';
+    this.lastRunAt = Date.now();
     return result;
   }
 
