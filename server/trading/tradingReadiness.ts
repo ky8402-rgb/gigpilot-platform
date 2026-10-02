@@ -158,17 +158,36 @@ export function assessTradingReadiness(input: ReadinessInputs): TradingReadiness
 
   // The engine's own reasons are surfaced verbatim: a summary that hides the specific cause is
   // how "API key is invalid" stayed invisible behind "Unexpected end of JSON input".
+  //
+  // Appended plainly here; collapsing duplicates is the dedup pass's job below. (An earlier edit
+  // removed this loop while rewriting the dedup, and engine blockers silently vanished from the
+  // report — caught by the "engine blockers must survive" assertion, which is why that test exists.)
   for (const b of input.engineBlockers) {
-    if (b && !blockers.some((existing) => existing.includes(b))) blockers.push(b);
+    if (b && b.trim()) blockers.push(b);
   }
 
-  // Deterministic ordering so the dashboard and tests never depend on object key order.
+  // Deduplication is CASE-INSENSITIVE and ignores a trailing full stop. The assessor and the engine
+  // independently report the same underlying fact with slightly different prose ("Credentials
+  // cannot trade: ..." vs "credentials cannot trade: ..."), and an exact-match check let both
+  // through — so the dashboard showed the same reason twice, which reads as two separate problems.
+  const fingerprint = (s: string) => s.trim().toLowerCase().replace(/[.\s]+$/, '');
   const seen = new Set<string>();
-  const dedupedBlockers = blockers.filter((b) => {
-    if (seen.has(b)) return false;
-    seen.add(b);
-    return true;
-  });
+  const dedupedBlockers: string[] = [];
+  for (const raw of blockers) {
+    const b = (raw || '').trim();
+    if (!b) continue;
+    const mark = fingerprint(b);
+    const alreadyCovered =
+      seen.has(mark) ||
+      // Also collapse a shorter message fully contained in one already listed, either direction.
+      dedupedBlockers.some((existing) => {
+        const e = fingerprint(existing);
+        return e.includes(mark) || mark.includes(e);
+      });
+    if (alreadyCovered) continue;
+    seen.add(mark);
+    dedupedBlockers.push(b);
+  }
 
   const ready = dedupedBlockers.length === 0 && signals.every((s) => s.ok);
 

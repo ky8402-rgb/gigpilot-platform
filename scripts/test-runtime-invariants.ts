@@ -409,6 +409,36 @@ if (tradeSignal && tradeSignal.ok === false) {
   fail('TRADE_AUTHORIZED did not fail for unauthorised credentials');
 }
 
+// Case-variant duplicates must collapse. The assessor and the engine phrase the same underlying
+// fact slightly differently; an exact-match dedup let both through, so production showed the same
+// reason twice, which reads as two separate faults.
+const dupe = assessTradingReadiness({
+  ...allGood,
+  tradePermissionsOk: false,
+  tradePermissionsError: 'API key lacks the ContractTrade permission',
+  engineTradingReady: false,
+  engineBlockers: ['credentials cannot trade: API key lacks the ContractTrade permission'],
+} as any);
+const tradeMentions = dupe.blockers.filter((b) => /cannot trade/i.test(b)).length;
+if (tradeMentions === 1) {
+  pass('a case-variant duplicate blocker collapses to a single entry');
+} else {
+  fail(`the same blocker is reported ${tradeMentions} times — case-variant dedup failed`);
+}
+
+// Distinct reasons must NOT be collapsed by that same rule.
+const distinct = assessTradingReadiness({
+  ...allGood,
+  engineTradingReady: false,
+  engineBlockers: ['market data is stale'],
+  systemFailClosed: true,
+} as any);
+if (distinct.blockers.length >= 2) {
+  pass('genuinely distinct blockers are all preserved');
+} else {
+  fail('dedup was too aggressive and removed distinct reasons');
+}
+
 // The engine's own blockers must survive into the report.
 const withEngineBlockers = assessTradingReadiness({ ...allGood, engineTradingReady: false, engineBlockers: ['market data is stale'] } as any);
 if (withEngineBlockers.blockers.includes('market data is stale')) {
