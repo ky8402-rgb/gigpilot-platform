@@ -397,25 +397,31 @@ jobs:
             if [ -n "$HEALTH_JSON" ]; then
               HEALTH_STATUS=$(node -e "try { const x=JSON.parse(process.argv[1]); process.stdout.write(x.status || '') } catch { process.stdout.write('') }" "$HEALTH_JSON")
               RUNNING_COMMIT=$(node -e "try { const x=JSON.parse(process.argv[1]); process.stdout.write(x.deployedCommit || '') } catch { process.stdout.write('') }" "$HEALTH_JSON")
-              if [ "$HEALTH_STATUS" = "ok" ] && [ "$RUNNING_COMMIT" = "$GITHUB_SHA" ]; then
+              ENGINE_STATUS=$(node -e "try { const x=JSON.parse(process.argv[1]); process.stdout.write((x.autonomousEngine && x.autonomousEngine.status) || 'missing') } catch { process.stdout.write('unparsed') }" "$HEALTH_JSON")
+              if [ "$HEALTH_STATUS" = "ok" ] && [ "$RUNNING_COMMIT" = "$GITHUB_SHA" ] && [ "$ENGINE_STATUS" = "healthy" ]; then
                 echo "✔ EC2 backend is healthy and running the exact GitHub SHA: $RUNNING_COMMIT"
+                echo "✔ Autonomous engine is healthy (autonomousEngine.status=$ENGINE_STATUS)"
                 exit 0
               fi
-              echo "Health responded, but exact commit verification failed. status=$HEALTH_STATUS runningCommit=$RUNNING_COMMIT expected=$GITHUB_SHA"
+              echo "Health responded, but verification failed. status=$HEALTH_STATUS runningCommit=$RUNNING_COMMIT engine=$ENGINE_STATUS expected=$GITHUB_SHA"
             fi
 
             FALLBACK_JSON=$(curl -sS "$FALLBACK_URL" --max-time 5 || true)
             if [ -n "$FALLBACK_JSON" ]; then
               HEALTH_STATUS=$(node -e "try { const x=JSON.parse(process.argv[1]); process.stdout.write(x.status || '') } catch { process.stdout.write('') }" "$FALLBACK_JSON")
               RUNNING_COMMIT=$(node -e "try { const x=JSON.parse(process.argv[1]); process.stdout.write(x.deployedCommit || '') } catch { process.stdout.write('') }" "$FALLBACK_JSON")
-              if [ "$HEALTH_STATUS" = "ok" ] && [ "$RUNNING_COMMIT" = "$GITHUB_SHA" ]; then
+              ENGINE_STATUS=$(node -e "try { const x=JSON.parse(process.argv[1]); process.stdout.write((x.autonomousEngine && x.autonomousEngine.status) || 'missing') } catch { process.stdout.write('unparsed') }" "$FALLBACK_JSON")
+              if [ "$HEALTH_STATUS" = "ok" ] && [ "$RUNNING_COMMIT" = "$GITHUB_SHA" ] && [ "$ENGINE_STATUS" = "healthy" ]; then
                 echo "✔ EC2 backend HTTP:3000 is healthy and running the exact GitHub SHA: $RUNNING_COMMIT"
+                echo "✔ Autonomous engine is healthy (autonomousEngine.status=$ENGINE_STATUS)"
                 exit 0
               fi
             fi
             sleep 3
           done
-          echo "ERROR: EC2 backend health/commit verification failed after deployment delivery."
+          echo "ERROR: EC2 backend health/commit/autonomous-engine verification failed after deployment delivery."
+          echo "The pipeline deliberately fails closed here: a green deploy must mean the Node API,"
+          echo "the exact commit, AND the autonomous engine are all verified live."
           exit 1
 
       - name: Verify Production Database Connectivity and Transactions

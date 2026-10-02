@@ -1,3 +1,5 @@
+const path = require('path');
+
 module.exports = {
   apps: [
     {
@@ -26,7 +28,10 @@ module.exports = {
     {
       name: 'gigpilot-engine',
       script: './gigpilot.py',
-      interpreter: 'python3',
+      // requirements.txt is installed into .venv by scripts/deploy-ec2.sh. Running the
+      // system python3 cannot import those deps (aiohttp) and crash-loops the engine.
+      interpreter: path.join(__dirname, '.venv', 'bin', 'python3'),
+      cwd: __dirname,
       instances: 1,
       autorestart: true,
       watch: false,
