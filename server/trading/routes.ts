@@ -77,6 +77,8 @@ tradingRouter.get('/engines/health', async (req: Request, res: Response) => {
       engines,
       autonomousEngine,
       autonomousEngineCard: toEngineCard(autonomousEngine),
+      // Same object as /api/health.tradingReadiness and GET /readiness — one source of truth.
+      tradingReadiness: await store.getTradingReadiness(autonomousEngine),
       timestamp: new Date().toISOString()
     });
   } catch (err: any) {
@@ -819,6 +821,17 @@ tradingRouter.get('/updates', (req: Request, res: Response) => {
 // fetched paths that could only ever 404. Each handler is a THIN wrapper that applies the
 // engine's own logic and returns its real result — no value is synthesised here, and every
 // failure is reported as a failure rather than as an empty success.
+// Single authoritative trading-readiness endpoint. The SAME object is embedded in /api/health and
+// /engines/health, so no surface can disagree about whether trading is possible.
+tradingRouter.get('/readiness', async (req: Request, res: Response) => {
+  try {
+    const readiness = await globalTradingStore.getTradingReadiness();
+    return res.json({ success: true, ...readiness });
+  } catch (err: any) {
+    return res.status(500).json({ success: false, error: err.message || 'Readiness assessment failed' });
+  }
+});
+
 tradingRouter.get('/pair/:symbol', (req: Request, res: Response) => {
   try {
     const pair = globalTradingStore.dataEngine.getPairData(req.params.symbol);

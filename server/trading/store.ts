@@ -24,6 +24,8 @@ import { bybitAdapter } from './bybitAdapter.js';
 import { AutonomousProfitOptimizer } from './autonomousProfitOptimizer.js';
 import { AutonomousOptimizationDecision } from './types.js';
 import { ownsBackgroundLoops } from './backgroundOwnership.js';
+import { probeAutonomousEngine } from './autonomousEngineProbe.js';
+import { assessTradingReadiness } from './tradingReadiness.js';
 
 export class TradingStore {
   // Modular Subsystems
@@ -652,6 +654,37 @@ export class TradingStore {
         }
       }
     }
+  }
+
+  /**
+   * THE single source of truth for "can this platform trade right now?".
+   *
+   * Every API surface and the dashboard read THIS, so they cannot disagree about readiness. It
+   * gathers the independent authorities — the engine's own REST-validated credential state, the
+   * execution engine's off-switch, the emergency kill switch, and the monitor's fail-closed
+   * verdict — and hands them to the pure assessor. It never decides whether to trade; it reports
+   * whether trading is POSSIBLE.
+   */
+  public async getTradingReadiness(engineOverride?: Awaited<ReturnType<typeof probeAutonomousEngine>>) {
+    // Callers that already probed the engine pass their result in, so a single health request does
+    // not hit the engine twice (and the two surfaces can never disagree about it).
+    const engine = engineOverride ?? (await probeAutonomousEngine());
+    const executionHealth: any = this.exchangeExec.healthCheck();
+    const killState: any = this.killSwitch.getState();
+    const failClosed = this.monitor.isSystemFailClosed();
+
+    return assessTradingReadiness({
+      engineTradingReady: engine.tradingReady,
+      engineCredentialsOk: engine.credentialsOk,
+      engineCredentialsError: engine.credentialsError,
+      engineBlockers: engine.tradingBlockers,
+      executionEngineEnabled: this.exchangeExec.getOffSwitch(),
+      executionEngineLastError: executionHealth?.lastError ?? null,
+      killSwitchActive: typeof killState?.isActive === 'boolean' ? killState.isActive : null,
+      systemFailClosed: typeof failClosed?.failClosed === 'boolean' ? failClosed.failClosed : null,
+      autonomyLevel: this.autonomyLevel,
+      armed: engine.armed
+    });
   }
 }
 

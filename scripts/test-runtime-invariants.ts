@@ -307,6 +307,90 @@ if (!fs.existsSync(WORKER)) {
   }
 }
 
+// ---------------------------------------------------------------------------------------------
+// [6] TRADING READINESS must never report ready without evidence
+// This is the rule that stops a green dashboard while execution is impossible.
+// ---------------------------------------------------------------------------------------------
+console.log('');
+console.log('[6] Trading readiness requires evidence, never the absence of an objection');
+
+const { assessTradingReadiness } = await import('../server/trading/tradingReadiness.ts');
+
+const allGood = {
+  engineTradingReady: true,
+  engineCredentialsOk: true,
+  engineCredentialsError: null,
+  engineBlockers: [],
+  executionEngineEnabled: true,
+  executionEngineLastError: null,
+  killSwitchActive: false,
+  systemFailClosed: false,
+  autonomyLevel: 1,
+  armed: true,
+};
+
+const ready = assessTradingReadiness(allGood);
+if (ready.ready === true && ready.blockers.length === 0) {
+  pass('readiness is TRUE only when every gate is positively verified');
+} else {
+  fail(`readiness was ${ready.ready} despite all gates passing (${ready.blockers.join(' | ')})`);
+}
+
+// Every single failing gate must independently force NOT-ready.
+const GATE_FAILURES: Array<[string, Record<string, unknown>]> = [
+  ['credentials rejected by the exchange', { engineCredentialsOk: false, engineCredentialsError: 'API key is invalid', engineTradingReady: false }],
+  ['credentials never validated (unknown)', { engineCredentialsOk: null, engineTradingReady: null }],
+  ['execution engine switched OFF', { executionEngineEnabled: false, executionEngineLastError: 'API key is invalid' }],
+  ['kill switch active', { killSwitchActive: true }],
+  ['system fail-closed', { systemFailClosed: true }],
+  ['execution engine state unknown', { executionEngineEnabled: null }],
+  ['kill switch state unknown', { killSwitchActive: null }],
+  ['fail-closed state unknown', { systemFailClosed: null }],
+];
+for (const [label, override] of GATE_FAILURES) {
+  const r = assessTradingReadiness({ ...allGood, ...override } as any);
+  if (r.ready === false && r.blockers.length > 0) {
+    pass(`readiness is FALSE with a stated blocker when ${label}`);
+  } else {
+    fail(`readiness reported ${r.ready} when ${label} — it must never be green there`);
+  }
+}
+
+// The fail-closed default: nothing known at all.
+const unknownAll = assessTradingReadiness({
+  engineTradingReady: null, engineCredentialsOk: null, engineCredentialsError: null,
+  engineBlockers: [], executionEngineEnabled: null, executionEngineLastError: null,
+  killSwitchActive: null, systemFailClosed: null, autonomyLevel: null, armed: null,
+} as any);
+if (unknownAll.ready === false) pass('all-unknown inputs yield NOT ready (fail-closed default)');
+else fail('all-unknown inputs yielded READY — unknown must never be treated as evidence');
+
+// The blocker must name the real cause, not a generic message.
+const creds = assessTradingReadiness({ ...allGood, engineCredentialsOk: false, engineCredentialsError: 'API key is invalid', engineTradingReady: false } as any);
+const credsText = creds.blockers.join(' | ');
+if (/credentials rejected/i.test(credsText) && /API key is invalid/.test(credsText)) {
+  pass('the blocker says "credentials rejected for trading" AND names the exchange error verbatim');
+} else {
+  fail(`credential blocker did not name the cause: ${credsText}`);
+}
+
+// The engine's own blockers must survive into the report.
+const withEngineBlockers = assessTradingReadiness({ ...allGood, engineTradingReady: false, engineBlockers: ['market data is stale'] } as any);
+if (withEngineBlockers.blockers.includes('market data is stale')) {
+  pass("the engine's own blockers are surfaced verbatim, not summarised away");
+} else {
+  fail('engine blockers were dropped from the readiness report');
+}
+
+// Being unarmed/observe-only makes trading INADVISABLE, not IMPOSSIBLE — it must not be a gate,
+// or the dashboard would claim execution is broken when it is merely idle.
+const unarmed = assessTradingReadiness({ ...allGood, armed: false, autonomyLevel: 0 } as any);
+if (unarmed.ready === true && unarmed.context.autonomousTradingActive === false) {
+  pass('unarmed/observe-only is reported as context, not as an execution blocker');
+} else {
+  fail(`unarmed state wrongly affected readiness (ready=${unarmed.ready})`);
+}
+
 console.log('');
 console.log(`Result: ${checks} passed, ${failures} failed`);
 if (failures > 0) {

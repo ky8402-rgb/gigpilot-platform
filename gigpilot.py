@@ -1378,12 +1378,54 @@ async def health():
     gp = get_gp()
     fresh = all((now_ms() - ms.ts_book_ms) < gp.cfg.staleness_ms
                 for ms in gp.markets.values() if ms.ts_book_ms > 0)
-    healthy = gp.ws._public_ok and gp.ws._private_ok and fresh
+    public_ok = gp.ws._public_ok
+    private_ok = gp.ws._private_ok
+    healthy = public_ok and private_ok and fresh
+
+    # ------------------------------------------------------------------ trading readiness
+    # TRADING READINESS IS DELIBERATELY SEPARATE FROM `healthy`.
+    #
+    # `healthy` describes the PROCESS and its feeds. That is what a deployment gate should verify,
+    # and it must not depend on an owner-side credential problem — otherwise a rejected key would
+    # freeze every release, including the releases that fix things.
+    #
+    # `trading_ready` describes whether EXECUTION IS ACTUALLY POSSIBLE. It therefore also requires
+    # authenticated REST validation: the reconciler performs real signed REST calls (positions,
+    # open orders) and records the outcome, which is the only evidence that the credentials are
+    # accepted. A connected private WebSocket is NOT sufficient evidence — WS auth and REST auth
+    # can disagree, and they currently DO in production.
+    #
+    # Every condition defaults to NOT-ready:
+    #   - reconciler.healthy starts False with last_error="not_run", so a credential state that has
+    #     never been validated can never present as ready. Absence of a failure is not readiness.
+    credentials_ok = bool(gp.reconciler.healthy)
+    blockers = []
+    if not public_ok:
+        blockers.append("public market-data feed is not connected")
+    if not private_ok:
+        blockers.append("private (authenticated) WebSocket is not connected")
+    if not fresh:
+        blockers.append("market data is stale")
+    if not credentials_ok:
+        blockers.append(
+            "credentials rejected for trading: "
+            + (gp.reconciler.last_error or "never validated")
+        )
+    if gp.position_mode != "one-way":
+        blockers.append(f"position mode is '{gp.position_mode}', expected 'one-way'")
+
     return JSONResponse(status_code=200 if healthy else 503, content={
-        "healthy": healthy, "public_ws": gp.ws._public_ok,
-        "private_ws": gp.ws._private_ok, "feed_fresh": fresh,
+        "healthy": healthy, "public_ws": public_ok,
+        "private_ws": private_ok, "feed_fresh": fresh,
         "armed": gp.armed, "host": gp.cfg.host,
         "position_mode": gp.position_mode,
+        # ---- authoritative trading-readiness signal ----
+        "trading_ready": len(blockers) == 0,
+        "credentials_ok": credentials_ok,
+        "credentials_error": gp.reconciler.last_error,
+        "credentials_checked_ms_ago": (now_ms() - gp.reconciler.last_run_ms)
+                                      if gp.reconciler.last_run_ms else None,
+        "trading_blockers": blockers,
     })
 
 

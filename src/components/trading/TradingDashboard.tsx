@@ -87,6 +87,7 @@ import {
   Sparkles
 } from 'lucide-react';
 import { EngineHealthView } from './EngineHealthView';
+import { TradingReadinessBanner } from './TradingReadinessBanner';
 import { RegimeTransitionView } from './RegimeTransitionView';
 import { InventoryAwareGridView } from './InventoryAwareGridView';
 import { DecisionPipelineVisualizer } from './DecisionPipelineVisualizer';
@@ -803,7 +804,12 @@ export const TradingDashboard: React.FC<TradingDashboardProps> = ({ onLogout }) 
         )}
 
         {activeTab === 'ENGINES' && (
-          <EngineHealthView onEngineToggled={loadFullState} />
+          <>
+            {/* Authoritative "can we trade right now?" verdict, above everything else so a blocked
+                platform can never be mistaken for a working one. */}
+            <TradingReadinessBanner />
+            <EngineHealthView onEngineToggled={loadFullState} />
+          </>
         )}
 
         {activeTab === 'ASSETS' && (

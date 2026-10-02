@@ -32,6 +32,8 @@ app.use(corsMiddleware);
 app.get("/api/health", async (req, res) => {
   const store = globalTradingStore;
   const autonomousEngine = await probeAutonomousEngine();
+  // Reuses the probe above so one health request does not hit the engine twice.
+  const tradingReadiness = await store.getTradingReadiness(autonomousEngine);
   const mem = process.memoryUsage();
   const deployedCommitPath = process.env.GIGPILOT_DEPLOYED_COMMIT_FILE || path.join(process.cwd(), ".gigpilot-data", "deployed-commit.txt");
   let deployedCommit: string | null = null;
@@ -66,6 +68,10 @@ app.get("/api/health", async (req, res) => {
     // Aggregate flag so monitors and the deploy gate can treat a down engine as a failure.
     degraded: autonomousEngine.status !== "healthy",
     autonomousEngine,
+    // THE authoritative answer to "can this platform trade right now?". Deliberately separate from
+    // `degraded`: a rejected API key makes trading impossible without making the process unhealthy,
+    // and the deploy gate must not depend on an owner-side credential problem.
+    tradingReadiness,
     tradingEngine: {
       activeSymbol: store.activeSymbol,
       autonomyLevel: store.autonomyLevel,

@@ -27,6 +27,15 @@ export type AutonomousEngineHealth = {
   feedFresh: boolean | null;
   positionMode: string | null;
   error: string | null;
+  // ---- trading readiness (authoritative; from the engine's own REST credential validation) ----
+  /** Whether execution is actually possible. Distinct from status/healthy, which describe the
+   *  process and its feeds. Never true without authenticated REST credential validation. */
+  tradingReady: boolean | null;
+  /** Whether the exchange ACCEPTED the credentials on a real signed REST call. */
+  credentialsOk: boolean | null;
+  credentialsError: string | null;
+  /** The engine's own reasons for not being trading-ready, surfaced verbatim. */
+  tradingBlockers: string[];
 };
 
 export async function probeAutonomousEngine(): Promise<AutonomousEngineHealth> {
@@ -55,7 +64,12 @@ export async function probeAutonomousEngine(): Promise<AutonomousEngineHealth> {
         privateWs: null,
         feedFresh: null,
         positionMode: null,
-        error: 'malformed_engine_health_body'
+        error: 'malformed_engine_health_body',
+        // A body we could not read is not evidence of readiness.
+        tradingReady: null,
+        credentialsOk: null,
+        credentialsError: null,
+        tradingBlockers: ['engine health body was malformed; readiness UNKNOWN']
       };
     }
 
@@ -71,7 +85,16 @@ export async function probeAutonomousEngine(): Promise<AutonomousEngineHealth> {
       privateWs: typeof body.private_ws === 'boolean' ? body.private_ws : null,
       feedFresh: typeof body.feed_fresh === 'boolean' ? body.feed_fresh : null,
       positionMode: typeof body.position_mode === 'string' ? body.position_mode : null,
-      error: healthy ? null : 'engine_reported_unhealthy'
+      error: healthy ? null : 'engine_reported_unhealthy',
+      // Readiness is reported EXACTLY as the engine measured it. Missing fields stay null, which
+      // the assessor treats as not-ready, so an older engine that does not report readiness can
+      // never be mistaken for one that reported "ready".
+      tradingReady: typeof body.trading_ready === 'boolean' ? body.trading_ready : null,
+      credentialsOk: typeof body.credentials_ok === 'boolean' ? body.credentials_ok : null,
+      credentialsError: typeof body.credentials_error === 'string' ? body.credentials_error : null,
+      tradingBlockers: Array.isArray(body.trading_blockers)
+        ? body.trading_blockers.filter((b: any) => typeof b === 'string')
+        : []
     };
   } catch (err: any) {
     return {
@@ -84,7 +107,12 @@ export async function probeAutonomousEngine(): Promise<AutonomousEngineHealth> {
       privateWs: null,
       feedFresh: null,
       positionMode: null,
-      error: err?.name === 'AbortError' ? 'engine_health_timeout' : (err?.message || 'engine_unreachable')
+      error: err?.name === 'AbortError' ? 'engine_health_timeout' : (err?.message || 'engine_unreachable'),
+      // Unreachable engine => readiness UNKNOWN, never assumed.
+      tradingReady: null,
+      credentialsOk: null,
+      credentialsError: null,
+      tradingBlockers: ['autonomous engine was unreachable; trading readiness UNKNOWN']
     };
   } finally {
     clearTimeout(timer);

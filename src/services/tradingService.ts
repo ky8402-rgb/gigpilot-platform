@@ -385,6 +385,22 @@ export async function cancelAllOrders() {
   });
 }
 
+/**
+ * The authoritative answer to "can this platform trade right now?".
+ *
+ * Deliberately NOT derived in the UI: the server owns this verdict so every surface agrees. The UI
+ * renders what it is told, including the blocker list that names the real cause.
+ */
+export async function fetchTradingReadiness(): Promise<{
+  ready: boolean;
+  blockers: string[];
+  signals: { id: string; ok: boolean; detail: string }[];
+  context: { autonomyLevel: number | null; armed: boolean | null; autonomousTradingActive: boolean };
+  assessedAt: string;
+}> {
+  return await fetchWithFailover('/readiness');
+}
+
 export async function fetchAutonomousOptimizer(): Promise<{
   success: boolean;
   objective: 'NET_REALIZED_PROFIT_AFTER_FEES';

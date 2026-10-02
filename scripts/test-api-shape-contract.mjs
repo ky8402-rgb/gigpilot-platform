@@ -117,7 +117,7 @@ const SCHEMAS = [
     id: 'GET /api/health',
     src: () => SERVER_SRC,
     anchor: 'app.get("/api/health"',
-    required: ['status', 'deployedCommit', 'degraded', 'autonomousEngine', 'tradingEngine', 'system'],
+    required: ['status', 'deployedCommit', 'degraded', 'autonomousEngine', 'tradingEngine', 'system', 'tradingReadiness'],
     // `autonomousEngine` is a shorthand variable, so its inner shape is asserted at its true
     // source — see the AutonomousEngineHealth schema below.
     nested: {
@@ -195,6 +195,38 @@ const SCHEMAS = [
     id: 'GET /api/trading/engines/health (off-switch)',
     anchor: "tradingRouter.post('/engines/:id/off-switch'",
     required: ['success', 'engineHealth', 'failClosed']
+  },
+  {
+    // The handler returns `{ success: true, ...readiness }`, so its remaining fields come from the
+    // spread. Asserting them here would require reading through the spread, which this extractor
+    // cannot do — so it asserts what the handler literally guarantees PLUS that the spread is of
+    // `readiness` (changing it to spread something else fails the literal check). The field-level
+    // coverage for ready/blockers/signals/context/assessedAt comes from the TradingReadiness type
+    // schema immediately below, which is the object's true source.
+    id: 'GET /api/trading/readiness (authoritative trading-readiness signal)',
+    anchor: "tradingRouter.get('/readiness'",
+    required: ['success'],
+    literals: ['...readiness']
+  },
+  {
+    // The declared shape of the readiness object itself. Asserted at its true source because every
+    // embedder (`/api/health`, `/engines/health`, `/readiness`) returns it by reference.
+    id: 'TradingReadiness type (source of every embedded readiness object)',
+    src: () => read('server/trading/tradingReadiness.ts'),
+    anchor: 'export type TradingReadiness =',
+    marker: 'export type TradingReadiness =',
+    required: ['ready', 'blockers', 'signals', 'context', 'assessedAt'],
+    literals: ['ready', 'blockers', 'signals']
+  },
+  {
+    // The readiness input contract must keep the nullable fields that make "unknown != ready"
+    // expressible. If these collapse to plain booleans, unknown states would silently read false
+    // and could be mistaken for measured values.
+    id: 'ReadinessInputs type (nullability that encodes "unknown")',
+    src: () => read('server/trading/tradingReadiness.ts'),
+    anchor: 'export type ReadinessInputs =',
+    marker: 'export type ReadinessInputs =',
+    required: ['engineTradingReady', 'engineCredentialsOk', 'engineCredentialsError', 'executionEngineEnabled', 'killSwitchActive', 'systemFailClosed', 'autonomyLevel', 'armed']
   },
   {
     // The DEFAULT push path: acknowledged, deliberately NOT deployed. Asserted on the first
