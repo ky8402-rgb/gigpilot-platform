@@ -118,8 +118,13 @@ echo "Building application bundles (Vite + esbuild)..."
 npm run build
 
 echo "Configuring and restarting PM2 backend daemon..."
+# All ecosystem apps must be recreated, not just the API. `pm2 start ecosystem.config.cjs` does
+# NOT update an already-running app's loaded code or env, so a surviving "worker" would keep
+# executing a stale dist/worker.cjs and stale env forever — changes to it would silently never
+# deploy, and the single-owner env flag below would never take effect.
 pm2 delete gigpilot-engine 2>/dev/null || true
 pm2 delete gigpilot 2>/dev/null || true
+pm2 delete worker 2>/dev/null || true
 
 if [ -f "ecosystem.config.cjs" ]; then
   echo "Starting PM2 via ecosystem.config.cjs..."

@@ -23,6 +23,17 @@ module.exports = {
       max_memory_restart: '300M',
       env: {
         NODE_ENV: 'production',
+        // The worker imports the same store singleton, whose constructor starts reconciliation,
+        // capital sync and the autonomous optimizer. Without this flag BOTH pm2 processes would
+        // run those loops against the same live Bybit account with separate in-memory state.
+        // The API process ('gigpilot') owns them; this process must stay inert.
+        GIGPILOT_DISABLE_BACKGROUND_LOOPS: '1',
+      },
+      // Repeated under env_production as well: the deploy runs `pm2 start ... --env production`,
+      // and the worker exits(1) if this flag is absent. Setting it in both places means the
+      // worker cannot enter a crash loop over a pm2 env-resolution difference.
+      env_production: {
+        GIGPILOT_DISABLE_BACKGROUND_LOOPS: '1',
       },
     },
     {

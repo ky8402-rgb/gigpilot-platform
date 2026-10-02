@@ -1,6 +1,7 @@
 import crypto from 'crypto';
 import fs from 'fs';
 import path from 'path';
+import { ownsBackgroundLoops, backgroundLoopsDisabledReason } from './backgroundOwnership.js';
 import {
   EngineErrorRecord,
   EngineHealth,
@@ -55,7 +56,15 @@ export class ExchangeExecutionEngine implements EngineModule {
 
   constructor() {
     this.initCredentials();
-    this.startReconciliationLoop();
+    // Auto-start only in the process that owns background work. Ungated, a second process that
+    // merely imports the store would run a duplicate reconciliation loop against the same live
+    // account and could drive the same fail-closed/kill-switch state from stale local state.
+    // See backgroundOwnership.ts. Operator toggles (setOffSwitch) are intentionally unaffected.
+    if (ownsBackgroundLoops()) {
+      this.startReconciliationLoop();
+    } else {
+      console.log(`[ExchangeExecutionEngine] Reconciliation loop NOT started: ${backgroundLoopsDisabledReason()}.`);
+    }
   }
 
   private initCredentials() {
