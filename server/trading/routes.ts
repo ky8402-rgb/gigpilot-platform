@@ -4,6 +4,7 @@ import { ownerAuth, requireOwnerAuth, isOwner, extractToken } from './ownerAuth.
 import { bybitAdapter } from './bybitAdapter.js';
 import { EngineId, SupportedExchange } from './types.js';
 import { futuresUniverseHandler } from './futuresUniverse.js';
+import { probeAutonomousEngine, toEngineCard } from './autonomousEngineProbe.js';
 
 export const tradingRouter = Router();
 
@@ -60,15 +61,22 @@ tradingRouter.get('/state', requireOwnerAuth, (req: Request, res: Response) => {
 });
 
 // 2. Modular Engine Health Check (All 10 Subsystems)
-tradingRouter.get('/engines/health', (req: Request, res: Response) => {
+tradingRouter.get('/engines/health', async (req: Request, res: Response) => {
   try {
     const store = globalTradingStore;
     const engines = store.monitor.getAllEngineHealth();
-    const failClosed = store.monitor.isSystemFailClosed();
+    // The Python autonomous engine runs OUTSIDE this Node process, so it is probed live and
+    // reported alongside the in-process engines. It is deliberately NOT injected into the
+    // monitor's typed engine list: the monitor's off-switch and fail-closed logic must keep
+    // operating only on the engines it actually owns, otherwise it would claim authority over
+    // a process it cannot control.
+    const autonomousEngine = await probeAutonomousEngine();
     return res.json({
       success: true,
-      failClosed,
+      failClosed: store.monitor.isSystemFailClosed(),
       engines,
+      autonomousEngine,
+      autonomousEngineCard: toEngineCard(autonomousEngine),
       timestamp: new Date().toISOString()
     });
   } catch (err: any) {

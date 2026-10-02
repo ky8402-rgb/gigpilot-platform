@@ -12,70 +12,7 @@ import { globalTradingStore } from "./server/trading/store.js";
 import { requireOwnerAuth } from "./server/trading/ownerAuth.js";
 import { corsMiddleware } from "./server/corsConfig.js";
 import { futuresUniverseHandler } from "./server/trading/futuresUniverse.js";
-
-// -------------------- AUTONOMOUS ENGINE HEALTH --------------------
-// Measured, never assumed. The Python engine is probed on each health request so a
-// crash-looping engine can never be reported as healthy. Bounded and fully guarded so this
-// endpoint stays fast and never throws for load balancers / external monitors.
-const AUTONOMOUS_ENGINE_URL = process.env.GIGPILOT_URL || "http://127.0.0.1:8001";
-
-type AutonomousEngineHealth = {
-  reachable: boolean;
-  status: "healthy" | "unhealthy" | "unreachable";
-  latencyMs: number;
-  httpStatus: number | null;
-  armed: boolean | null;
-  publicWs: boolean | null;
-  privateWs: boolean | null;
-  feedFresh: boolean | null;
-  positionMode: string | null;
-  error: string | null;
-};
-
-async function probeAutonomousEngine(): Promise<AutonomousEngineHealth> {
-  const started = Date.now();
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), 1500);
-  try {
-    const response = await fetch(`${AUTONOMOUS_ENGINE_URL}/health`, { signal: controller.signal });
-    const latencyMs = Date.now() - started;
-    let body: any = null;
-    try {
-      body = await response.json();
-    } catch {
-      body = null;
-    }
-    if (!body || typeof body !== "object") {
-      return {
-        reachable: true, status: "unhealthy", latencyMs, httpStatus: response.status,
-        armed: null, publicWs: null, privateWs: null, feedFresh: null, positionMode: null,
-        error: "malformed_engine_health_body",
-      };
-    }
-    // The engine answers 503 with healthy:false when its own feed is stale or a socket is down.
-    const healthy = response.status === 200 && body.healthy === true;
-    return {
-      reachable: true,
-      status: healthy ? "healthy" : "unhealthy",
-      latencyMs,
-      httpStatus: response.status,
-      armed: typeof body.armed === "boolean" ? body.armed : null,
-      publicWs: typeof body.public_ws === "boolean" ? body.public_ws : null,
-      privateWs: typeof body.private_ws === "boolean" ? body.private_ws : null,
-      feedFresh: typeof body.feed_fresh === "boolean" ? body.feed_fresh : null,
-      positionMode: typeof body.position_mode === "string" ? body.position_mode : null,
-      error: healthy ? null : "engine_reported_unhealthy",
-    };
-  } catch (err: any) {
-    return {
-      reachable: false, status: "unreachable", latencyMs: Date.now() - started, httpStatus: null,
-      armed: null, publicWs: null, privateWs: null, feedFresh: null, positionMode: null,
-      error: err?.name === "AbortError" ? "engine_health_timeout" : (err?.message || "engine_unreachable"),
-    };
-  } finally {
-    clearTimeout(timer);
-  }
-}
+import { probeAutonomousEngine } from "./server/trading/autonomousEngineProbe.js";
 
 const app = express();
 const PORT = 3000;

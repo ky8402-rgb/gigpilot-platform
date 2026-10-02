@@ -1,4 +1,24 @@
 import React, { useState, useEffect } from 'react';
+
+/**
+ * Live health of the Python autonomous futures engine, as measured by the Node API on each
+ * request. Every field is optional-by-nature: `null` means "not reported", which is rendered
+ * as such — never as 0/false/healthy.
+ */
+type AutonomousEngineHealth = {
+  reachable: boolean;
+  status: 'healthy' | 'unhealthy' | 'unreachable';
+  latencyMs: number;
+  httpStatus: number | null;
+  armed: boolean | null;
+  publicWs: boolean | null;
+  privateWs: boolean | null;
+  feedFresh: boolean | null;
+  positionMode: string | null;
+  error: string | null;
+};
+
+const triState = (v: boolean | null | undefined) => (v === null || v === undefined ? 'n/a' : v ? 'yes' : 'no');
 import {
   Activity,
   AlertTriangle,
@@ -46,6 +66,9 @@ export const EngineHealthView: React.FC<EngineHealthViewProps> = ({ onEngineTogg
     downEngines: []
   });
   const [credentials, setCredentials] = useState<ExchangeCredentialsInfo[]>([]);
+  // null = the API did not report the engine at all (older backend / failed fetch), which is
+  // rendered as "not reported" rather than being silently shown as healthy.
+  const [autonomousEngine, setAutonomousEngine] = useState<AutonomousEngineHealth | null>(null);
   const [loading, setLoading] = useState<boolean>(true);
   const [selectedEngineId, setSelectedEngineId] = useState<EngineId | null>(null);
   const [actionLoading, setActionLoading] = useState<string | null>(null);
@@ -63,7 +86,7 @@ export const EngineHealthView: React.FC<EngineHealthViewProps> = ({ onEngineTogg
     try {
       setLoading(true);
       const [hData, cData] = await Promise.all([
-        fetchWithFailover<{ success: boolean; engines: EngineHealth[]; failClosed: { failClosed: boolean; downEngines: string[] } }>('/engines/health').catch(err => {
+        fetchWithFailover<{ success: boolean; engines: EngineHealth[]; failClosed: { failClosed: boolean; downEngines: string[] }; autonomousEngine?: AutonomousEngineHealth | null }>('/engines/health').catch(err => {
           console.warn('[EngineHealthView] Health fetch notice:', err?.message || err);
           return null;
         }),
@@ -76,6 +99,7 @@ export const EngineHealthView: React.FC<EngineHealthViewProps> = ({ onEngineTogg
       if (hData && hData.success) {
         setEngines(hData.engines || []);
         setFailClosed(hData.failClosed || { failClosed: false, downEngines: [] });
+        setAutonomousEngine(hData.autonomousEngine ?? null);
         if (!selectedEngineId && hData.engines?.length > 0) {
           setSelectedEngineId(hData.engines[0].id);
         }
@@ -343,6 +367,44 @@ export const EngineHealthView: React.FC<EngineHealthViewProps> = ({ onEngineTogg
           </div>
 
           <div className="space-y-2.5">
+            {/* Autonomous Futures Engine (Python) — measured live on every health fetch.
+                Absent data renders as "not reported", never as healthy. */}
+            <div className={`p-3.5 rounded-xl border ${
+              autonomousEngine?.status === 'healthy'
+                ? 'bg-zinc-900/70 border-emerald-800/60'
+                : autonomousEngine
+                  ? 'bg-zinc-900/70 border-amber-700/60'
+                  : 'bg-zinc-900/70 border-zinc-800'
+            }`}>
+              <div className="flex items-start justify-between gap-2">
+                <div className="space-y-1">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <span className="text-sm font-semibold text-zinc-100">Autonomous Futures Engine (Python)</span>
+                    <span className={`text-[10px] px-2 py-0.5 rounded-full font-mono font-bold uppercase ${
+                      autonomousEngine?.status === 'healthy'
+                        ? 'bg-emerald-950 text-emerald-300 border border-emerald-800'
+                        : 'bg-amber-950 text-amber-300 border border-amber-800'
+                    }`}>
+                      {autonomousEngine?.status ?? 'not reported'}
+                    </span>
+                  </div>
+                  <div className="text-[11px] text-zinc-500 font-mono">
+                    {autonomousEngine
+                      ? `probe ${autonomousEngine.latencyMs}ms · http ${autonomousEngine.httpStatus ?? 'n/a'} · ${autonomousEngine.error ?? 'no error'}`
+                      : 'The API did not report autonomous-engine health on this fetch.'}
+                  </div>
+                  {autonomousEngine && (
+                    <div className="flex flex-wrap gap-x-3 gap-y-1 text-[11px] font-mono text-zinc-400 pt-1">
+                      <span>public WS: <span className={autonomousEngine.publicWs ? 'text-emerald-400' : 'text-amber-400'}>{triState(autonomousEngine.publicWs)}</span></span>
+                      <span>private WS: <span className={autonomousEngine.privateWs ? 'text-emerald-400' : 'text-amber-400'}>{triState(autonomousEngine.privateWs)}</span></span>
+                      <span>feed fresh: <span className={autonomousEngine.feedFresh ? 'text-emerald-400' : 'text-amber-400'}>{triState(autonomousEngine.feedFresh)}</span></span>
+                      <span>armed: <span className={autonomousEngine.armed ? 'text-amber-400' : 'text-emerald-400'}>{triState(autonomousEngine.armed)}</span></span>
+                      <span>position mode: {autonomousEngine.positionMode ?? 'n/a'}</span>
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
             {engines.map((eng) => {
               const isSelected = selectedEngineId === eng.id;
               const isOff = !eng.enabled || eng.status === 'OFF';

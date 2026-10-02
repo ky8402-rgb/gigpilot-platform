@@ -223,6 +223,32 @@ for (const p of FORBIDDEN) {
 }
 
 console.log('');
+console.log('[4] Response contracts the dashboard depends on');
+// A field that is measured and exposed but never surfaced changes no decision — assert the
+// whole chain: engine probes it, API reports it, dashboard reads it.
+const enginesHandlerIdx = routesSrc.indexOf("'/engines/health'");
+const enginesHandler = enginesHandlerIdx >= 0 ? routesSrc.slice(enginesHandlerIdx, enginesHandlerIdx + 1500) : '';
+if (enginesHandler.includes('autonomousEngine')) pass('/engines/health exposes autonomousEngine');
+else fail('/engines/health no longer exposes autonomousEngine (health card would go blank)');
+
+if (serverSrc.includes('autonomousEngine') && serverSrc.includes('degraded')) {
+  pass('/api/health exposes autonomousEngine + degraded');
+} else {
+  fail('/api/health lost autonomousEngine/degraded');
+}
+
+const uiHealthSrc = fs.readFileSync(path.join(ROOT, 'src/components/trading/EngineHealthView.tsx'), 'utf8');
+if (uiHealthSrc.includes('autonomousEngine')) pass('EngineHealthView consumes autonomousEngine');
+else fail('EngineHealthView does not read autonomousEngine (served but never surfaced)');
+
+const probeSrc = fs.readFileSync(path.join(ROOT, 'server', 'trading', 'autonomousEngineProbe.ts'), 'utf8');
+if (probeSrc.includes('AbortController') && probeSrc.includes('unreachable')) {
+  pass('engine probe is bounded and reports unreachable instead of defaulting to healthy');
+} else {
+  fail('engine probe lost its timeout / fail-visible behaviour');
+}
+
+console.log('');
 console.log(`Result: ${checks} passed, ${failures} failed`);
 if (failures > 0) {
   console.log('UI/API CONTRACT VIOLATED — the frontend would render empty or error states in production.');
