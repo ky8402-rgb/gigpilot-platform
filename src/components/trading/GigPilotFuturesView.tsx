@@ -65,11 +65,13 @@ export const GigPilotFuturesView: React.FC = () => {
       setActionLoading('arm');
       setActionMessage(null);
       const res = await armGigPilot();
-      if (res.success) {
-        setActionMessage({ type: 'success', text: 'GigPilot autonomous engine successfully ARMED.' });
+      if (res.success && res.armed) {
+        setActionMessage({ type: 'success', text: res.idempotent ? 'GigPilot is already ARMED; no duplicate worker or loop was created.' : 'GigPilot autonomous engine successfully ARMED after all safety gates passed.' });
         await loadState();
       } else {
-        setActionMessage({ type: 'error', text: res.error || 'Failed to arm GigPilot' });
+        const reasons = res.reasons?.map(r => r.message).join(' ') || res.error || 'ARM blocked by safety gates.';
+        setActionMessage({ type: 'error', text: reasons });
+        await loadState();
       }
     } catch (err: any) {
       setActionMessage({ type: 'error', text: err?.message || 'Error communicating with engine' });
