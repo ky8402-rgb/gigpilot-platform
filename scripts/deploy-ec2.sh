@@ -54,40 +54,39 @@ if [ -f "/tmp/gigpilot.env.bak" ]; then
   cp -f /tmp/gigpilot.env.bak "$APP_DIR/.env" 2>/dev/null || true
 fi
 
+# Write a dotenv value without sed interpolation. This keeps secret characters
+# such as |, &, \\, $, and / from corrupting the deployment command.
+set_env_value() {
+  local key="$1"
+  local value="$2"
+  local tmp_env
+  tmp_env="$(mktemp)"
+  grep -v "^\${key}=" "$APP_DIR/.env" > "$tmp_env" || true
+  printf '%s=%s\\n' "$key" "$value" >> "$tmp_env"
+  chmod 600 "$tmp_env"
+  mv "$tmp_env" "$APP_DIR/.env"
+}
+
 # Configure BYBIT_API_KEY & BYBIT_API_SECRET if supplied
 if [ -n "${BYBIT_API_KEY:-}" ]; then
   umask 077
   touch "$APP_DIR/.env"
-  if grep -q '^BYBIT_API_KEY=' "$APP_DIR/.env"; then
-    sed -i "s|^BYBIT_API_KEY=.*|BYBIT_API_KEY=\"$BYBIT_API_KEY\"|" "$APP_DIR/.env"
-  else
-    printf '%s\n' "BYBIT_API_KEY=\"$BYBIT_API_KEY\"" >> "$APP_DIR/.env"
-  fi
+  set_env_value "BYBIT_API_KEY" "$BYBIT_API_KEY"
   echo "✔ BYBIT_API_KEY updated in $APP_DIR/.env"
 fi
 
 if [ -n "${BYBIT_API_SECRET:-}" ]; then
   umask 077
   touch "$APP_DIR/.env"
-  if grep -q '^BYBIT_API_SECRET=' "$APP_DIR/.env"; then
-    sed -i "s|^BYBIT_API_SECRET=.*|BYBIT_API_SECRET=\"$BYBIT_API_SECRET\"|" "$APP_DIR/.env"
-  else
-    printf '%s\n' "BYBIT_API_SECRET=\"$BYBIT_API_SECRET\"" >> "$APP_DIR/.env"
-  fi
+  set_env_value "BYBIT_API_SECRET" "$BYBIT_API_SECRET"
   echo "✔ BYBIT_API_SECRET updated in $APP_DIR/.env"
 fi
 
 # Configure GEMINI_API_KEY if supplied
-# Use a line-rewrite instead of sed substitution so secret characters (|, &, \, etc.)
-# cannot corrupt the command or expose the value in shell parsing.
 if [ -n "${GEMINI_API_KEY:-}" ]; then
   umask 077
   touch "$APP_DIR/.env"
-  TMP_ENV="$(mktemp)"
-  grep -v '^GEMINI_API_KEY=' "$APP_DIR/.env" > "$TMP_ENV" || true
-  printf '%s\n' "GEMINI_API_KEY=$GEMINI_API_KEY" >> "$TMP_ENV"
-  chmod 600 "$TMP_ENV"
-  mv "$TMP_ENV" "$APP_DIR/.env"
+  set_env_value "GEMINI_API_KEY" "$GEMINI_API_KEY"
   echo "✔ GEMINI_API_KEY updated in $APP_DIR/.env"
 fi
 
@@ -100,11 +99,7 @@ if [ -n "${DATABASE_URL:-}" ]; then
   esac
   umask 077
   touch "$APP_DIR/.env"
-  if grep -q '^DATABASE_URL=' "$APP_DIR/.env"; then
-    sed -i "s|^DATABASE_URL=.*|DATABASE_URL=\"$DATABASE_URL\"" "$APP_DIR/.env"
-  else
-    printf '%s\n' "DATABASE_URL=\"$DATABASE_URL\"" >> "$APP_DIR/.env"
-  fi
+  set_env_value "DATABASE_URL" "$DATABASE_URL"
 elif ! grep -qE '^DATABASE_URL=(postgres://|postgresql://)' "$APP_DIR/.env" 2>/dev/null; then
   echo "ERROR: No production DATABASE_URL is configured. Refusing live deployment."; exit 1
 fi
