@@ -11,6 +11,7 @@ import { pushAndDeployAll } from "./server/githubService.js";
 import { globalTradingStore } from "./server/trading/store.js";
 import { requireOwnerAuth } from "./server/trading/ownerAuth.js";
 import { corsMiddleware } from "./server/corsConfig.js";
+import { futuresUniverseHandler } from "./server/trading/futuresUniverse.js";
 
 const app = express();
 const PORT = 3000;
@@ -79,6 +80,7 @@ app.get("/api/health", (req, res) => {
 
 // 2. Autonomous Crypto Grid Trading Platform Router
 app.use("/api/trading", tradingRouter);
+app.get("/api/trading/futures/universe", requireOwnerAuth, futuresUniverseHandler);
 
 // Authentication Route Aliases (Ensures all variations like /api/auth/login and /auth/login guarantee JSON responses)
 app.use("/api/auth", tradingRouter);
