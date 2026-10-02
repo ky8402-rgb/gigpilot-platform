@@ -185,6 +185,72 @@ for (const name of ['test:loop', 'update-godaddy-dns', 'update-cloudflare-dns'])
   else fail(`npm script '${name}' points at a deleted script`);
 }
 
+// ------------------------------------------------- [5] deployed-commit attestation integrity
+console.log('');
+console.log('[5] deployed-commit.txt is attested only by a completed, verified deploy');
+
+const routesSrc = read('server/githubRoutes.ts');
+const serviceSrc = read('server/githubService.ts');
+const deploySrc = read('scripts/deploy-ec2.sh');
+
+// Only the deploy script may attest. /api/health re-reads the file on every request, so any
+// other writer reports a release that is not actually running.
+// Detect an actual WRITE, not a mention: this file is legitimately referenced in comments
+// explaining why it must not be written here. A test that fails on a comment is a bad test.
+const writesCommitFile = (src) => /writeFileSync\([^;]{0,140}deployed-commit\.txt/.test(src);
+const allowedWriter = serviceSrc.includes('deployed-commit.txt'); // the post-reload attestation
+if (!writesCommitFile(routesSrc)) {
+  pass('the webhook push branch does NOT write deployed-commit.txt');
+} else {
+  fail('the webhook writes deployed-commit.txt — it would claim a release it never deployed');
+}
+if (allowedWriter) {
+  const idxWrite = serviceSrc.indexOf('deployed-commit.txt');
+  const idxReload = serviceSrc.indexOf('pm2 reload gigpilot');
+  if (idxReload > 0 && idxWrite > idxReload) {
+    pass('executePushToDeploy records the commit AFTER the reload');
+  } else {
+    fail('executePushToDeploy records the commit before the reload — health could report unapplied code');
+  }
+} else {
+  fail('executePushToDeploy no longer records the deployed commit at all');
+}
+
+// Fail-closed build + reload.
+if (serviceSrc.includes('Production build failed')) {
+  pass('a failed production build aborts the deploy (no reload of stale artifacts)');
+} else {
+  fail('a failed build is still tolerated — stale artifacts would be reloaded as success');
+}
+if (serviceSrc.includes('accepted the reload')) {
+  pass('an unapplied reload is a FAILED deploy, not a success claim');
+} else {
+  fail('an unapplied reload can still be reported as SUCCESS');
+}
+
+// The deploy script must attest only after the restart and the engine health gate.
+const idxScriptWrite = deploySrc.indexOf('deployed-commit.txt');
+const idxPm2Start = deploySrc.indexOf('pm2 start ecosystem.config.cjs');
+const idxEngineGate = deploySrc.indexOf('127.0.0.1:8001/health');
+if (idxScriptWrite > idxPm2Start && idxScriptWrite > idxEngineGate && idxPm2Start > 0) {
+  pass('deploy-ec2.sh attests the commit only after the pm2 restart and engine health gate');
+} else {
+  fail('deploy-ec2.sh attests the commit before the restart — health could report a stale process as updated');
+}
+if (deploySrc.includes('HEALTH_OK')) {
+  pass('deploy-ec2.sh withholds the attestation when local health never responded');
+} else {
+  fail('deploy-ec2.sh attests unconditionally, even if the new process is not serving');
+}
+
+// The webhook must not deploy by default: two deployers on one checkout is the race that was
+// fixed once already and silently reintroduced.
+if (routesSrc.includes("PUSH_TO_DEPLOY_ENABLED === '1'") && routesSrc.includes('deployed: false')) {
+  pass('the webhook acknowledges pushes but does NOT deploy unless explicitly enabled');
+} else {
+  fail('the webhook no longer guards its deploy path — it would race the Actions workflow');
+}
+
 console.log('');
 console.log(`Result: ${checks} passed, ${failures} failed`);
 if (failures > 0) {

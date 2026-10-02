@@ -1161,15 +1161,12 @@ export async function executePushToDeploy(options: {
       addLog(`Fallback result: ${(fallbackOut || 'Updated').trim()}`);
     }
 
-    // Record deployed commit SHA immediately so health endpoint reflects new release
-    try {
-      const commitToRecord = options.commitHash || (await execPromise('git rev-parse HEAD', { env })).stdout.trim();
-      if (commitToRecord && /^[0-9a-f]{40}$/i.test(commitToRecord)) {
-        const commitDir = path.join(process.cwd(), '.gigpilot-data');
-        if (!fs.existsSync(commitDir)) fs.mkdirSync(commitDir, { recursive: true });
-        fs.writeFileSync(path.join(commitDir, 'deployed-commit.txt'), commitToRecord, 'utf8');
-      }
-    } catch {}
+    // NOTE: the deployed-commit attestation is deliberately NOT written here.
+    //
+    // It used to be recorded at this point — after `git reset --hard` but BEFORE the build and
+    // BEFORE the reload — so /api/health would immediately report the new commit while the OLD
+    // process was still serving, and would keep claiming it even if the build then failed. The
+    // record now happens only after a successful build AND a confirmed reload (see below).
 
     // Step 2: Build project artifacts if build script exists
     addLog('Checking build requirements and compiling production bundle...');
@@ -1180,7 +1177,13 @@ export async function executePushToDeploy(options: {
       });
       addLog(`Build output: ${buildOut.split('\n').slice(-3).join(' ')}`);
     } catch (buildErr: any) {
-      addLog(`Build warning: ${buildErr.message || 'Build script finished with warnings'}`);
+      // FAIL CLOSED. A production build that did not complete means dist/ does not match the
+      // checked-out source. Reloading anyway would serve stale or partially-written artifacts
+      // while reporting success.
+      addLog(`Build FAILED: ${buildErr.message || 'build script exited non-zero'}`);
+      throw new Error(
+        `Production build failed; refusing to reload stale artifacts: ${buildErr.message || buildErr}`
+      );
     }
 
     // Step 3: Zero-downtime graceful reload via PM2, systemd, or Docker
@@ -1208,7 +1211,28 @@ export async function executePushToDeploy(options: {
     }
 
     if (!reloaded) {
-      addLog('Application files updated. Process is running directly under Node supervisor.');
+      // Previously this logged SUCCESS anyway ("files updated; process is running under a
+      // supervisor"), which reports a deployment that never took effect. An unapplied deploy is
+      // a failed deploy, and saying otherwise is exactly the kind of false green that makes a
+      // pipeline untrustworthy.
+      addLog('Reload FAILED: neither PM2 nor Docker Compose accepted the reload.');
+      throw new Error('Deployment could not be applied: no managed process (PM2/Docker) accepted the reload.');
+    }
+
+    // ATTESTATION — written ONLY now, after the build succeeded AND the new process has been
+    // reloaded. This is what makes /api/health's deployedCommit a statement about code that is
+    // actually running rather than an optimistic prediction.
+    try {
+      const commitToRecord = options.commitHash || (await execPromise('git rev-parse HEAD', { env })).stdout.trim();
+      if (commitToRecord && /^[0-9a-f]{40}$/i.test(commitToRecord)) {
+        const commitDir = path.join(process.cwd(), '.gigpilot-data');
+        if (!fs.existsSync(commitDir)) fs.mkdirSync(commitDir, { recursive: true });
+        fs.writeFileSync(path.join(commitDir, 'deployed-commit.txt'), commitToRecord, 'utf8');
+        addLog(`Recorded deployed commit ${commitToRecord.substring(0, 7)} after verified build and reload.`);
+      }
+    } catch (recordErr: any) {
+      // Not fatal to the deploy itself, but never silent.
+      addLog(`WARNING: could not record deployed commit: ${recordErr.message || recordErr}`);
     }
 
     record.status = 'SUCCESS';

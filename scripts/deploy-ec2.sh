@@ -41,13 +41,14 @@ git fetch origin main --prune 2>/dev/null || true
 git checkout -B main origin/main 2>/dev/null || git checkout -f main 2>/dev/null || true
 git reset --hard origin/main 2>/dev/null || true
 
-# Record the exact source revision that this host is running. Health verification
-# uses this value to prove the live process matches the GitHub deployment SHA.
+# The exact source revision this run is deploying. It is NOT written to the attestation file
+# here: /api/health re-reads that file on every request, so recording it before the build and
+# reload would make the currently-running OLD process report the NEW sha as deployed — a false
+# release claim that could even satisfy the deployment verification gate. The write happens at
+# the end of this script, after a verified restart (see ATTESTATION below).
 DEPLOYED_COMMIT="$(git rev-parse HEAD)"
 mkdir -p "$APP_DIR/.gigpilot-data"
-printf '%s\n' "$DEPLOYED_COMMIT" > "$APP_DIR/.gigpilot-data/deployed-commit.txt"
-chmod 600 "$APP_DIR/.gigpilot-data/deployed-commit.txt"
-echo "Deployed commit recorded: $DEPLOYED_COMMIT"
+echo "Target revision for this deployment: $DEPLOYED_COMMIT"
 
 # Restore .env
 if [ -f "/tmp/gigpilot.env.bak" ]; then
@@ -156,10 +157,25 @@ echo "Waiting for process to initialize on port 3000..."
 sleep 3
 
 # Local health verification
+HEALTH_OK=0
 if curl -sS -m 5 http://127.0.0.1:3000/api/health >/dev/null 2>&1; then
   echo "✔ Local health check passed (http://127.0.0.1:3000/api/health: OK)"
+  HEALTH_OK=1
 else
   echo "Notice: Service starting up or warming cache."
+fi
+
+# ATTESTATION — record the deployed commit ONLY now. By this point the source is checked out, the
+# runtime invariant gate passed, the build completed, PM2 relaunched every app, and the engine
+# passed its own health gate. Recording it any earlier would let a stale process report a release
+# that is not running.
+if [ "$HEALTH_OK" = "1" ]; then
+  printf '%s\n' "$DEPLOYED_COMMIT" > "$APP_DIR/.gigpilot-data/deployed-commit.txt"
+  chmod 600 "$APP_DIR/.gigpilot-data/deployed-commit.txt"
+  echo "✔ Deployed commit attested after verified restart: $DEPLOYED_COMMIT"
+else
+  echo "WARNING: local /api/health did not respond, so the deployed-commit attestation was NOT updated."
+  echo "         /api/health will keep reporting the previous revision, which is the truthful value."
 fi
 
 echo "Reloading Nginx reverse proxy..."

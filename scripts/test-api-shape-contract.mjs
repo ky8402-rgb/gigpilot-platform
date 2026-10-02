@@ -84,15 +84,24 @@ function topLevelKeys(objText) {
   return keys;
 }
 
-/** The response body literal of the handler that starts at `anchor`. */
-function responseBody(fileSrc, anchor, marker = 'res.json({') {
+/**
+ * The bounded source region of the handler starting at `anchor` — from the route registration up
+ * to the next route registration. Bounding by the NEXT ROUTE (rather than by a fixed character
+ * window) matters: the webhook handler is long, and a fixed window silently stopped before the
+ * code it was supposed to inspect, producing a false "literal not found" failure.
+ */
+function handlerRegion(fileSrc, anchor) {
   const start = fileSrc.indexOf(anchor);
   if (start < 0) return null;
-  // Bound the handler: next route registration, or 4000 chars, whichever comes first.
   const rest = fileSrc.slice(start);
   const next = rest.search(/\n(tradingRouter|githubRoutes|app)\.(get|post|put|delete|all)\s*\(/);
-  const handler = next > 0 ? rest.slice(0, next) : rest.slice(0, 4000);
-  return literalAfter(handler, marker);
+  return next > 0 ? rest.slice(0, next) : rest;
+}
+
+/** The response body literal of the handler that starts at `anchor`. */
+function responseBody(fileSrc, anchor, marker = 'res.json({') {
+  const handler = handlerRegion(fileSrc, anchor);
+  return handler ? literalAfter(handler, marker) : null;
 }
 
 const ROUTES_SRC = read('server/trading/routes.ts');
@@ -188,6 +197,16 @@ const SCHEMAS = [
     required: ['success', 'engineHealth', 'failClosed']
   },
   {
+    // The DEFAULT push path: acknowledged, deliberately NOT deployed. Asserted on the first
+    // res.status(202) in the handler, which is the single-deployer guard's early return.
+    id: 'POST /api/github/webhook (push, default path)',
+    src: () => read('server/githubRoutes.ts'),
+    anchor: "githubRoutes.post('/webhook'",
+    marker: 'res.status(202).json({',
+    required: ['success', 'deployed', 'message'],
+    literals: ['deployed: false']
+  },
+  {
     // Asserted at its true source, because /engines/health returns this by calling it.
     id: 'systemMonitor.isSystemFailClosed() shape (consumed by /engines/health)',
     src: () => read('server/trading/systemMonitor.ts'),
@@ -244,7 +263,7 @@ for (const schema of SCHEMAS) {
     else fail(`${schema.id} — nested '${parent}' MISSING: ${innerMissing.join(', ')}`);
   }
 
-  const handlerText = normalise(src.slice(src.indexOf(schema.anchor), src.indexOf(schema.anchor) + 2500));
+  const handlerText = normalise(handlerRegion(src, schema.anchor) || '');
   for (const lit of schema.literals || []) {
     if (handlerText.includes(normalise(lit))) pass(`${schema.id} — enum/flag literal ${lit} preserved`);
     else fail(`${schema.id} — expected literal ${lit} not found (enum value changed?)`);

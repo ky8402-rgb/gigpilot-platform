@@ -340,6 +340,76 @@ githubRoutes.post('/webhook', async (req: any, res) => {
     const commitMessage = payload.head_commit?.message;
     const author = payload.head_commit?.author?.name || payload.pusher?.name || 'GitHub Pusher';
 
+    // SINGLE-DEPLOYER GUARD (restored; the original was lost in a rewrite).
+    //
+    // .github/workflows/deploy.yml owns deployment. This webhook previously deployed too, which
+    // raced the workflow on the SAME checkout: two concurrent `git reset` + `npm run build` +
+    // `pm2` restart sequences interleaving on one host, producing broken builds and restarts of
+    // half-updated artifacts.
+    //
+    // It also used to write .gigpilot-data/deployed-commit.txt with the PUSHED sha before any
+    // deployment had occurred. Since /api/health re-reads that file on every request, the old
+    // running process would immediately report the new sha as "deployed" — a false release
+    // claim, and one that could satisfy the deployment verification gate while stale code was
+    // still serving.
+    //
+    // Acknowledging a push is not a deployment. Only the process that actually completes a
+    // verified deploy may attest to it, so this path no longer writes that file at all.
+    const webhookDeployEnabled = process.env.PUSH_TO_DEPLOY_ENABLED === '1';
+
+    if (!webhookDeployEnabled) {
+      console.log(`[GitHub Webhook] Push to "${branch}" by "${author}" acknowledged. Webhook deployment is DISABLED (the Actions workflow owns deploys).`);
+      logActivityEvent({
+        source: 'GitHub GitOps',
+        type: 'GITOPS_SYNC',
+        status: 'info',
+        method: 'POST',
+        endpoint: '/api/github/webhook',
+        statusCode: 202,
+        latencyMs: Date.now() - startMs,
+        summary: `GitOps Push Acknowledged: push to "${branch}" by @${author} (${commitHash?.substring(0, 7) || 'HEAD'}) — deployment owned by GitHub Actions; webhook deploy disabled`,
+        headers: {
+          'x-github-event': event,
+          'x-github-delivery': deliveryId,
+          'x-hub-signature-256': signature || 'none',
+          'user-agent': (req.headers['user-agent'] as string) || 'GitHub-Hookshot',
+        },
+        requestPayload: payload,
+        responsePayload: {
+          success: true,
+          deployed: false,
+          message: 'Push acknowledged. Deployment is performed by the GitHub Actions workflow.',
+          commit: commitHash,
+          branch,
+        },
+        signatureVerification: {
+          verified: true,
+          status: 'VERIFIED',
+          headerName: 'x-hub-signature-256',
+          algorithm: 'HMAC-SHA256',
+          receivedSignature: signature,
+          reason: verification.reason,
+        },
+        stateDiff: {
+          action: 'GITOPS_PUSH_ACKNOWLEDGED',
+          entityType: 'gitops_sync',
+          details: `Push to ${branch} acknowledged; webhook deployment is disabled so the Actions workflow remains the single deployer.`,
+        },
+        tags: ['gitops', 'github', 'webhook', 'push', 'acknowledged'],
+      });
+
+      return res.status(202).json({
+        success: true,
+        deployed: false,
+        message: `Push to "${branch}" acknowledged. Deployment is owned by the GitHub Actions workflow; this webhook does not deploy.`,
+        commit: commitHash,
+        branch,
+        author,
+        deliveryId,
+        timestamp: new Date().toISOString(),
+      });
+    }
+
     console.log(`[GitHub Webhook] Validated push to "${branch}" by "${author}". Commit: ${commitHash?.substring(0, 7) || 'HEAD'}`);
 
     logActivityEvent({
@@ -382,14 +452,8 @@ githubRoutes.post('/webhook', async (req: any, res) => {
       tags: ['gitops', 'github', 'webhook', 'push', branch, 'sync'],
     });
 
-    // Record deployed commit SHA immediately so health endpoint reflects new release
-    if (commitHash && /^[0-9a-f]{40}$/i.test(commitHash)) {
-      try {
-        const commitDir = path.join(process.cwd(), '.gigpilot-data');
-        if (!fs.existsSync(commitDir)) fs.mkdirSync(commitDir, { recursive: true });
-        fs.writeFileSync(path.join(commitDir, 'deployed-commit.txt'), commitHash, 'utf8');
-      } catch {}
-    }
+    // NOTE: no deployed-commit.txt write here. Only executePushToDeploy may record the commit,
+    // and only after the build succeeded and the new process is actually serving.
 
     // Immediate response to GitHub to prevent HTTP timeout
     res.status(202).json({
