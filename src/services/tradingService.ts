@@ -393,13 +393,22 @@ export async function fetchAutonomousOptimizer(): Promise<{
   strategyBuilds: any[];
   engine: any;
 }> {
-  const res = await fetchWithFailover<any>('/optimizer');
+  const res = await fetchWithFailover<any>('/autonomous-optimizer/status');
   if (!res?.success) throw new Error('Autonomous optimizer telemetry unavailable.');
-  return res;
+  // Map names only — never invent values. `autonomousDecisioning` and `engine` come from the
+  // live engine health payload the backend already returns.
+  return {
+    success: true,
+    objective: 'NET_REALIZED_PROFIT_AFTER_FEES',
+    autonomousDecisioning: Boolean(res.engine?.details?.autonomousDecisioning ?? res.health?.details?.autonomousDecisioning),
+    decisions: res.decisions ?? [],
+    strategyBuilds: res.strategyBuilds ?? res.builds ?? [],
+    engine: res.engine ?? res.health ?? null
+  };
 }
 
 export async function runAutonomousOptimizer() {
-  return await fetchWithFailover<any>('/optimizer/run', {
+  return await fetchWithFailover<any>('/autonomous-optimizer/run', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' }
   });
@@ -508,22 +517,24 @@ export async function fetchProfitSweepInfo(): Promise<{
   };
   history: ProfitSweep[];
 }> {
-  return await fetchWithFailover('/profit-sweep');
+  return await fetchWithFailover('/sweep/info');
 }
 
 export async function updateDestinationWallet(wallet: { address: string; chain: string; label?: string }) {
-  return await fetchWithFailover<{ success: boolean; wallet: DestinationWallet }>('/profit-sweep/wallet', {
+  // The sweeper route expects the wallet WRAPPED as { wallet }; posting it bare would 400.
+  return await fetchWithFailover<{ success: boolean; wallet: DestinationWallet }>('/sweep/wallet', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(wallet)
+    body: JSON.stringify({ wallet })
   });
 }
 
 export async function executeProfitSweep(amount: number) {
-  return await fetchWithFailover<{ success: boolean; sweep?: ProfitSweep; updatedCapital?: CapitalAccounting; error?: string }>('/profit-sweep/execute', {
+  // The sweeper route reads `amountUsd`; sending `amount` would 400 as an invalid amount.
+  return await fetchWithFailover<{ success: boolean; sweep?: ProfitSweep; updatedCapital?: CapitalAccounting; error?: string }>('/sweep/execute', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ amount })
+    body: JSON.stringify({ amountUsd: amount })
   });
 }
 
@@ -544,7 +555,7 @@ export async function updateRiskConfig(config: Partial<RiskRuleConfig>) {
 }
 
 export async function resetCircuitBreaker() {
-  return await fetchWithFailover<{ success: boolean; circuitBreakerActive: boolean }>('/risk/reset-circuit-breaker', {
+  return await fetchWithFailover<{ success: boolean; circuitBreakerActive: boolean }>('/risk/circuit-breaker/reset', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' }
   });

@@ -712,12 +712,29 @@ tradingRouter.get('/sweep/info', requireOwnerAuth, async (req: Request, res: Res
   const store = globalTradingStore;
   const confirmed = await store.sweeper.reconcilePendingSweeps();
   for (const sweep of confirmed) store.profitAccounting.recordSweepExecuted(sweep.amountUsd || sweep.grossSweepAmount || 0, sweep.feePaidUsd || sweep.networkFeeUsd || 0);
+  // Sweep eligibility is DERIVED from live values (eligible realized profit vs the sweeper's own
+  // configured threshold) rather than asserted, so the dashboard cannot show a sweepable balance
+  // that the backend would refuse to execute.
+  const eligibleAmount = store.capital.eligibleRealizedProfit;
+  const minSweepThresholdUsd = store.sweeper.getSweepThreshold();
+  const canSweep = eligibleAmount >= minSweepThresholdUsd;
   res.json({
     success: true,
     destinationWallet: store.sweeper.getDestinationWallet(),
     sweeps: store.sweeper.getSweeps(),
-    eligibleProfitUsd: store.capital.eligibleRealizedProfit,
-    totalSweptUsd: store.capital.totalSweptProfit
+    // `history` is the name the dashboard contract uses; kept identical to `sweeps` so both
+    // consumers read the same real array.
+    history: store.sweeper.getSweeps(),
+    eligibleProfitUsd: eligibleAmount,
+    totalSweptUsd: store.capital.totalSweptProfit,
+    minSweepThresholdUsd,
+    profitReserveBufferUsd: store.sweeper.getMinSweepBufferUsd(),
+    eligibility: {
+      eligibleAmount,
+      canSweep,
+      reserveRetained: store.capital.profitReserve,
+      reason: canSweep ? undefined : `Eligible realized profit ($${eligibleAmount.toFixed(2)}) is below the $${minSweepThresholdUsd.toFixed(2)} sweep threshold.`
+    }
   });
 });
 
@@ -787,6 +804,76 @@ tradingRouter.get('/updates', (req: Request, res: Response) => {
     success: true,
     updates: globalTradingStore.monitor.getSystemUpdates()
   });
+});
+
+// 19b. Contract-completion routes.
+// These capabilities already existed on the engines but were never exposed, so the dashboard
+// fetched paths that could only ever 404. Each handler is a THIN wrapper that applies the
+// engine's own logic and returns its real result — no value is synthesised here, and every
+// failure is reported as a failure rather than as an empty success.
+tradingRouter.get('/pair/:symbol', (req: Request, res: Response) => {
+  try {
+    const pair = globalTradingStore.dataEngine.getPairData(req.params.symbol);
+    if (!pair) {
+      return res.status(404).json({
+        success: false,
+        error: `No live market data for '${req.params.symbol}'. The pair is not tracked, or the data engine feed is disabled.`
+      });
+    }
+    return res.json({ success: true, ...pair });
+  } catch (err: any) {
+    return res.status(500).json({ success: false, error: err.message || 'Internal error in pair endpoint' });
+  }
+});
+
+tradingRouter.post('/mode', requireOwnerAuth, (req: Request, res: Response) => {
+  // GigPilot is STRICTLY live-only: `tradingMode` is a readonly invariant on the store.
+  // This route therefore VERIFIES the invariant instead of mutating it, and refuses any
+  // request for a mode the execution layer does not implement.
+  const requested = (req.body || {}).mode;
+  if (requested !== undefined && requested !== 'LIVE') {
+    return res.status(400).json({
+      success: false,
+      error: `GigPilot is live-only; mode '${requested}' is not permitted.`
+    });
+  }
+  return res.json({ success: true, mode: globalTradingStore.tradingMode });
+});
+
+tradingRouter.post('/risk/config', requireOwnerAuth, (req: Request, res: Response) => {
+  try {
+    // Delegates wholly to the risk engine's own merge logic — this route adds no override
+    // path of its own, so the engine remains the single authority on its configuration.
+    const config = globalTradingStore.risk.updateConfig(req.body || {});
+    globalTradingStore.monitor.logAudit({
+      category: 'RISK_CONFIG',
+      action: 'Risk configuration updated by owner',
+      details: { updated: Object.keys(req.body || {}) }
+    });
+    return res.json({ success: true, config });
+  } catch (err: any) {
+    return res.status(400).json({ success: false, error: err.message || 'Invalid risk configuration' });
+  }
+});
+
+tradingRouter.post('/strategy/create-variant', requireOwnerAuth, (req: Request, res: Response) => {
+  try {
+    const body = req.body || {};
+    const champion = globalTradingStore.learningLoop.getChampionStrategy();
+    if (!body.name || !body.reasonForChange) {
+      return res.status(400).json({ success: false, error: 'A variant requires both a name and a reasonForChange.' });
+    }
+    const challenger = globalTradingStore.learningLoop.createStrategyVariantWithPipeline({
+      baseStrategyId: body.baseStrategyId || champion?.id,
+      name: body.name,
+      reasonForChange: body.reasonForChange,
+      parameters: body.parameters || {},
+      expectedEffect: body.expectedEffect
+    });
+    return res.json({ success: true, challenger });
+  } catch (err: any) {
+    return res.status(400).json({ success: false, error: err.message || 'Strategy variant creation failed' });
+  }
 });
 
 // 20. Single Owner Authentication & Google Authenticator (TOTP)
@@ -895,14 +982,20 @@ tradingRouter.get('/assets', requireOwnerAuth, async (req: Request, res: Respons
 tradingRouter.get('/autonomous-optimizer/status', (_req: Request, res: Response) => {
   try {
     const store = globalTradingStore;
+    const engineHealth = store.profitOptimizer.healthCheck();
+    const strategyBuilds = store.profitOptimizer.getStrategyBuilds();
     return res.json({
       success: true,
-      health: store.profitOptimizer.healthCheck(),
+      health: engineHealth,
+      // `engine` / `strategyBuilds` are the names the dashboard contract reads. They are the SAME
+      // live objects as health/builds, so the two consumers can never disagree about state.
+      engine: engineHealth,
       autoApplyEnabled: store.profitOptimizer.isAutoApplyEnabled(),
       latestAudit: store.profitOptimizer.getLatestAudit(),
       latestStrategyAllocation: store.profitOptimizer.getLatestStrategyAllocation(),
       decisions: store.profitOptimizer.getDecisions(),
-      builds: store.profitOptimizer.getStrategyBuilds(),
+      builds: strategyBuilds,
+      strategyBuilds,
       championStrategy: store.learningLoop.getChampionStrategy()
     });
   } catch (err: any) {

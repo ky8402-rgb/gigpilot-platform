@@ -78,6 +78,9 @@ export class ProfitSweepEngine implements EngineModule {
   public isAutoSweepEnabled(): boolean { return this.autoSweepEnabled; }
   public setSweepThreshold(usd: number): void { this.sweepThresholdUsd = Math.max(50, usd); }
   public getSweepThreshold(): number { return this.sweepThresholdUsd; }
+  // Exposed so the API/dashboard can report the real reserve that must stay in the account
+  // before any profit is considered sweepable. Never hardcode this in the UI.
+  public getMinSweepBufferUsd(): number { return this.minSweepBufferUsd; }
 
   private chainCode(network: string): string {
     const n = network.toUpperCase().replace(/[^A-Z0-9]/g, '');
