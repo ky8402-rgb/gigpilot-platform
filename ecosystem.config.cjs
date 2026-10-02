@@ -23,7 +23,7 @@ module.exports = {
         NODE_ENV: 'production',
       },
     },
-    ,{
+    {
       name: 'gigpilot-engine',
       script: './gigpilot.py',
       interpreter: 'python3',
