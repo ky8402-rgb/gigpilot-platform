@@ -36,11 +36,13 @@ jobs:
       # Python-side gates. test_parity enforces that the Node surface stays mapped while the
       # migration is in flight (so a new Node endpoint cannot slip past it), and refuses `removed`
       # without a proven replacement. test_execution_idempotency locks the order paths to one
-      # submission helper. Neither is optional.
-      - name: Python gates (migration parity + execution idempotency)
+      # submission helper. test_package_seams pins that re-exported symbols stay the SAME OBJECT
+      # (a duplicate BybitError class would silently break `except` across modules). None optional.
+      - name: Python gates (migration parity + execution idempotency + package seams)
         run: |
           python3 tests/test_parity.py
           python3 tests/test_execution_idempotency.py
+          python3 tests/test_package_seams.py
 
       - name: Production build
         run: npm run build

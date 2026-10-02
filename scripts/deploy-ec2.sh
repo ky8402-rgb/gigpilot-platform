@@ -130,6 +130,7 @@ npm run test:runtime
 echo "Running pre-deploy Python gates (parity + execution idempotency)..."
 "$APP_DIR/.venv/bin/python3" "$APP_DIR/tests/test_parity.py"
 "$APP_DIR/.venv/bin/python3" "$APP_DIR/tests/test_execution_idempotency.py"
+"$APP_DIR/.venv/bin/python3" "$APP_DIR/tests/test_package_seams.py"
 
 echo "Configuring and restarting PM2 backend daemon..."
 # All ecosystem apps must be recreated, not just the API. `pm2 start ecosystem.config.cjs` does

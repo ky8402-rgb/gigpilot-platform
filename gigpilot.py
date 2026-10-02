@@ -167,17 +167,8 @@ def setup_logging(level: str) -> logging.Logger:
 log = setup_logging("INFO")
 
 
-class Metrics:
-    def __init__(self): self.g: dict[str, float] = {}; self.c: dict[str, float] = {}
-    def set(self, n: str, v: float, **l: str):
-        k = n + ("{" + ",".join(f'{a}="{b}"' for a, b in sorted(l.items())) + "}" if l else "")
-        self.g[k] = v
-    def inc(self, n: str, v: float = 1.0, **l: str):
-        k = n + ("{" + ",".join(f'{a}="{b}"' for a, b in sorted(l.items())) + "}" if l else "")
-        self.c[k] = self.c.get(k, 0.0) + v
-    def render(self) -> str:
-        return "\n".join([f"{k} {v}" for k, v in sorted(self.g.items())] +
-                         [f"{k} {v}" for k, v in sorted(self.c.items())]) + "\n"
+# MIGRATED -> gpkg/core/metrics.py. Re-exported so existing references keep resolving.
+from gpkg.core.metrics import Metrics  # noqa: E402
 
 
 METRICS = Metrics()
@@ -186,17 +177,9 @@ METRICS = Metrics()
 # =============================================================================
 # 3. Bybit REST v5
 # =============================================================================
-class BybitError(Exception):
-    def __init__(self, code: int, msg: str):
-        super().__init__(f"Bybit {code}: {msg}"); self.code = code; self.msg = msg
-
-
-# Bybit answers with this code when a client order id is REUSED. It is not a failure: it means an
-# earlier attempt carrying the same orderLinkId was already accepted. Because `_req` retries network
-# errors (correctly reusing the same body, hence the same key), this is the NORMAL outcome when a
-# submission succeeded but its response was lost. Reading it as "failed" would report an order (or an
-# emergency flatten) as not-having-happened while it actually did.
-DUPLICATE_ORDER_LINK_CODE = 110072
+# MIGRATED -> gpkg/core/errors.py. Re-exported so every existing reference (and the deployed engine,
+# which imports this module) keeps resolving unchanged.
+from gpkg.core.errors import BybitError, DUPLICATE_ORDER_LINK_CODE  # noqa: E402
 
 
 class BybitREST:
