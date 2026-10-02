@@ -1,7 +1,7 @@
 import { Request, Response } from 'express';
 
 export interface FuturesMarketCandidate {
-  exchange: 'BYBIT' | 'BINANCE';
+  exchange: 'BYBIT';
   symbol: string;
   baseAsset: string;
   quoteAsset: 'USDT';
@@ -47,12 +47,9 @@ function score(volume24h: number, spreadBps: number, price: number, bid: number,
 }
 
 export async function discoverFuturesUniverse(): Promise<FuturesMarketCandidate[]> {
-  const [bybitInfo, bybitTickers, binanceInfo, binanceTickers, binanceFunding] = await Promise.allSettled([
+  const [bybitInfo, bybitTickers] = await Promise.allSettled([
     json('https://api.bybit.com/v5/market/instruments-info?category=linear&limit=1000'),
-    json('https://api.bybit.com/v5/market/tickers?category=linear'),
-    json('https://fapi.binance.com/fapi/v1/exchangeInfo'),
-    json('https://fapi.binance.com/fapi/v1/ticker/24hr'),
-    json('https://fapi.binance.com/fapi/v1/premiumIndex')
+    json('https://api.bybit.com/v5/market/tickers?category=linear')
   ]);
 
   const out: FuturesMarketCandidate[] = [];
@@ -72,32 +69,6 @@ export async function discoverFuturesUniverse(): Promise<FuturesMarketCandidate[
         status: x.status, price, volume24h: volume, change24hPct: n(t?.price24hPcnt) ? Number(t.price24hPcnt) * 100 : 0,
         fundingRate: n(t?.fundingRate), bid, ask, spreadBps,
         tickSize: n(x?.priceFilter?.tickSize), qtyStep: n(x?.lotSizeFilter?.qtyStep),
-        makerFeeBps: null, takerFeeBps: null,
-        liquidityScore: score(volume, spreadBps, price, bid, ask),
-        executionScore: score(volume, spreadBps, price, bid, ask),
-        eligible: reasons.length === 0, reasons
-      });
-    }
-  }
-
-  const binTick = new Map<string, any>((binanceTickers.status === 'fulfilled' ? binanceTickers.value || [] : []).map((x: any) => [x.symbol, x]));
-  const binFund = new Map<string, any>((binanceFunding.status === 'fulfilled' ? binanceFunding.value || [] : []).map((x: any) => [x.symbol, x]));
-  if (binanceInfo.status === 'fulfilled') {
-    for (const x of binanceInfo.value?.symbols || []) {
-      if (x.contractType !== 'PERPETUAL' || x.quoteAsset !== 'USDT' || x.status !== 'TRADING') continue;
-      const t = binTick.get(x.symbol), fnd = binFund.get(x.symbol);
-      const bid = n(t?.bidPrice) || 0, ask = n(t?.askPrice) || 0, price = n(t?.lastPrice) || 0;
-      const volume = n(t?.quoteVolume) || 0;
-      const spreadBps = bid > 0 && ask >= bid ? ((ask - bid) / ((ask + bid) / 2)) * 10000 : Infinity;
-      const reasons: string[] = [];
-      if (!(price > 0 && bid > 0 && ask >= bid)) reasons.push('INVALID_QUOTE');
-      if (!Number.isFinite(spreadBps) || spreadBps > 40) reasons.push('WIDE_SPREAD');
-      out.push({
-        exchange: 'BINANCE', symbol: x.symbol, baseAsset: x.baseAsset, quoteAsset: 'USDT', contractType: 'PERPETUAL',
-        status: x.status, price, volume24h: volume, change24hPct: n(t?.priceChangePercent) || 0,
-        fundingRate: n(fnd?.lastFundingRate), bid, ask, spreadBps,
-        tickSize: n(x?.filters?.find((f: any) => f.filterType === 'PRICE_FILTER')?.tickSize),
-        qtyStep: n(x?.filters?.find((f: any) => f.filterType === 'LOT_SIZE')?.stepSize),
         makerFeeBps: null, takerFeeBps: null,
         liquidityScore: score(volume, spreadBps, price, bid, ask),
         executionScore: score(volume, spreadBps, price, bid, ask),
