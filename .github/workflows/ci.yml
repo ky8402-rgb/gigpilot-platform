@@ -30,5 +30,17 @@ jobs:
       - name: Typecheck
         run: npm run test
 
+      - name: Install Python dependencies
+        run: python3 -m pip install --quiet -r requirements.txt
+
+      # Python-side gates. test_parity enforces that the Node surface stays mapped while the
+      # migration is in flight (so a new Node endpoint cannot slip past it), and refuses `removed`
+      # without a proven replacement. test_execution_idempotency locks the order paths to one
+      # submission helper. Neither is optional.
+      - name: Python gates (migration parity + execution idempotency)
+        run: |
+          python3 tests/test_parity.py
+          python3 tests/test_execution_idempotency.py
+
       - name: Production build
         run: npm run build

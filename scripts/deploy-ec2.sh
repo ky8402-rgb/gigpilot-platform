@@ -124,6 +124,13 @@ npm run build
 echo "Running pre-deploy runtime invariant gate..."
 npm run test:runtime
 
+# Python gates, run with the venv interpreter created above (system python3 on this host does not
+# have aiohttp/fastapi). Parity guards the migration surface; the idempotency test locks the order
+# paths to a single submission helper. `set -e` aborts the rollout if either fails.
+echo "Running pre-deploy Python gates (parity + execution idempotency)..."
+"$APP_DIR/.venv/bin/python3" "$APP_DIR/tests/test_parity.py"
+"$APP_DIR/.venv/bin/python3" "$APP_DIR/tests/test_execution_idempotency.py"
+
 echo "Configuring and restarting PM2 backend daemon..."
 # All ecosystem apps must be recreated, not just the API. `pm2 start ecosystem.config.cjs` does
 # NOT update an already-running app's loaded code or env, so a surviving "worker" would keep

@@ -191,6 +191,14 @@ class BybitError(Exception):
         super().__init__(f"Bybit {code}: {msg}"); self.code = code; self.msg = msg
 
 
+# Bybit answers with this code when a client order id is REUSED. It is not a failure: it means an
+# earlier attempt carrying the same orderLinkId was already accepted. Because `_req` retries network
+# errors (correctly reusing the same body, hence the same key), this is the NORMAL outcome when a
+# submission succeeded but its response was lost. Reading it as "failed" would report an order (or an
+# emergency flatten) as not-having-happened while it actually did.
+DUPLICATE_ORDER_LINK_CODE = 110072
+
+
 class BybitREST:
     def __init__(self, cfg: Config):
         self.cfg = cfg; self._sess: Optional[aiohttp.ClientSession] = None
@@ -487,12 +495,11 @@ class Executor:
                              position_idx: int = 0) -> dict:
         qty_s = self._round_qty(symbol, qty)
         link = f"gp-{uuid.uuid4().hex[:26]}"
-        try:
-            await self.rest.place_order(category="linear", symbol=symbol, side=side,
-                                        orderType="Market", qty=qty_s,
-                                        orderLinkId=link, positionIdx=position_idx)
-        except BybitError as e:
-            if e.code != 110072: raise
+        # The duplicate-orderLinkId rule now lives in _place_idempotent, so this path can no longer
+        # drift out of sync with the unwind/close paths (it previously inlined the check).
+        await self._place_idempotent(link, category="linear", symbol=symbol, side=side,
+                                     orderType="Market", qty=qty_s,
+                                     positionIdx=position_idx)
         try:
             await self.rest.trading_stop(category="linear", symbol=symbol, tpslMode="Full",
                                          positionIdx=position_idx,
@@ -505,22 +512,49 @@ class Executor:
         METRICS.inc("gigpilot_trades_total", side=side, result="opened")
         return {"orderLinkId": link, "qty": qty_s, "tp": tp_price, "sl": sl_price}
 
+    async def _place_idempotent(self, link: str, **kw):
+        """Submit an order, treating a DUPLICATE client order id as SUCCESS.
+
+        Bybit dedupes on orderLinkId, so a retry after a lost response is answered with
+        DUPLICATE_ORDER_LINK_CODE even though the first attempt created the order. Every order path
+        in this class therefore submits through here, so the rule is applied once instead of being
+        re-derived (and forgotten) per call site — `open_protected` had it, `close_market` had
+        nothing, and `_unwind` raised a CRITICAL "UNWIND FAILED" alarm for a flatten that had
+        actually succeeded.
+
+        Returns the exchange result for a fresh submit, or None when the order already existed.
+        Every other error is re-raised, so a genuine failure is never hidden.
+        """
+        try:
+            return await self.rest.place_order(orderLinkId=link, **kw)
+        except BybitError as e:
+            if e.code == DUPLICATE_ORDER_LINK_CODE:
+                log.warning("place_order %s: duplicate orderLinkId -> already accepted by Bybit; "
+                            "treating as submitted (not a failure)", link)
+                return None
+            raise
+
     async def _unwind(self, symbol: str, side: str, qty_s: str, position_idx: int):
         opp = "Sell" if side == "Buy" else "Buy"
         try:
-            await self.rest.place_order(category="linear", symbol=symbol, side=opp,
-                                        orderType="Market", qty=qty_s, reduceOnly=True,
-                                        orderLinkId=f"gp-unwind-{uuid.uuid4().hex[:20]}",
-                                        positionIdx=position_idx)
+            # Through the idempotent helper: a duplicate here means the flatten ALREADY happened.
+            # Raising/logging CRITICAL for that would be a false alarm in the most safety-critical
+            # path, and would misreport a flattened position as still open.
+            await self._place_idempotent(f"gp-unwind-{uuid.uuid4().hex[:20]}",
+                                         category="linear", symbol=symbol, side=opp,
+                                         orderType="Market", qty=qty_s, reduceOnly=True,
+                                         positionIdx=position_idx)
         except Exception as e:
             log.critical("UNWIND FAILED %s: %s", symbol, e)
 
     async def close_market(self, symbol: str, side: str, qty_s: str, position_idx: int = 0):
         opp = "Sell" if side == "Buy" else "Buy"
-        return await self.rest.place_order(category="linear", symbol=symbol, side=opp,
-                                           orderType="Market", qty=qty_s, reduceOnly=True,
-                                           orderLinkId=f"gp-close-{uuid.uuid4().hex[:20]}",
-                                           positionIdx=position_idx)
+        # Was a bare place_order: a lost-response duplicate raised here and reported a close as
+        # failed while the position was already flat.
+        return await self._place_idempotent(f"gp-close-{uuid.uuid4().hex[:20]}",
+                                            category="linear", symbol=symbol, side=opp,
+                                            orderType="Market", qty=qty_s, reduceOnly=True,
+                                            positionIdx=position_idx)
 
 
 # =============================================================================
