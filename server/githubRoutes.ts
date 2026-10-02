@@ -301,7 +301,7 @@ githubRoutes.post('/webhook', async (req: any, res) => {
       endpoint: '/api/github/webhook',
       statusCode: 200,
       latencyMs: Date.now() - startMs,
-      summary: `GitHub Webhook Handshake: Ping verified for hook #${req.body?.hook_id || 'test'}`,
+      summary: `GitHub Webhook Handshake: Ping signature-verified for hook #${req.body?.hook_id || 'test'}`,
       headers: {
         'x-github-event': event,
         'x-github-delivery': deliveryId,
@@ -311,19 +311,21 @@ githubRoutes.post('/webhook', async (req: any, res) => {
       requestPayload: req.body,
       responsePayload: { pong: true, hookId: req.body?.hook_id },
       signatureVerification: {
+        // Reached only after the HMAC check passed, so this claim is now earned rather than
+        // asserted. `reason` carries the verifier's own explanation.
         verified: true,
         status: 'VERIFIED',
         headerName: 'x-hub-signature-256',
         algorithm: 'HMAC-SHA256',
         receivedSignature: signature,
-        reason: 'Ping handshake verified',
+        reason: verification.reason || 'Signature verified',
       },
       tags: ['gitops', 'github', 'webhook', 'ping', 'handshake'],
     });
 
     return res.status(200).json({
       success: true,
-      message: 'Pong! GigPilot EC2 backend received and verified GitHub Webhook ping.',
+      message: 'Pong! GigPilot EC2 backend received and signature-verified GitHub Webhook ping.',
       zen: req.body?.zen,
       hookId: req.body?.hook_id,
     });

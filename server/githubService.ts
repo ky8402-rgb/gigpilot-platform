@@ -1012,21 +1012,24 @@ export function verifyGitHubSignature(
 ): { valid: boolean; reason?: string } {
   const secret = (process.env.GITHUB_WEBHOOK_SECRET || process.env.WEBHOOK_SECRET || '').trim();
 
-  // If no secret configured on server, warn and allow (or alert for setup)
+  // FAIL CLOSED when no secret is configured.
+  //
+  // This previously returned `valid: true` ("verification bypassed"), which made an unconfigured
+  // server accept ANY unsigned request as authentic — a fail-open default on a security gate.
+  // A missing secret is a misconfiguration, and the safe response to a misconfiguration is to
+  // refuse, not to trust.
   if (!secret) {
     return {
-      valid: true,
-      reason: 'No GITHUB_WEBHOOK_SECRET configured on server. Verification bypassed.',
+      valid: false,
+      reason:
+        'No GITHUB_WEBHOOK_SECRET configured on server. Refusing unauthenticated webhook (fail-closed).',
     };
   }
 
-  // Allow unauthenticated ping events (e.g. initial webhook creation test before secret setup or diagnostics)
-  if (!signatureHeader && event === 'ping') {
-    return {
-      valid: true,
-      reason: 'Ping handshake accepted without signature.',
-    };
-  }
+  // NOTE: there is deliberately no unsigned-ping bypass. GitHub signs EVERY delivery, including
+  // pings, whenever a secret is configured. The old bypass let anyone POST an unauthenticated
+  // `x-github-event: ping` and have it recorded in the audit trail as VERIFIED — a false
+  // security claim written into the security log.
 
   if (!signatureHeader) {
     return {

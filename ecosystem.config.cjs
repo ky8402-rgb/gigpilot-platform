@@ -13,6 +13,13 @@ module.exports = {
         NODE_ENV: 'production',
         PORT: 3000,
       },
+      // Mirrors `env` so `pm2 start --env production` resolves an environment for every app and
+      // pm2 stops logging "Environment [production] is not defined in process file". Purely
+      // additive: pm2 merges `env` with the selected `env_<name>` block, so no value changes.
+      env_production: {
+        NODE_ENV: 'production',
+        PORT: 3000,
+      },
     },
     {
       name: 'worker',
@@ -48,6 +55,15 @@ module.exports = {
       watch: false,
       max_memory_restart: '300M',
       env: {
+        GIGPILOT_BIND: '127.0.0.1',
+        GIGPILOT_PORT: '8001',
+        // Fail-closed: the engine must start disarmed.
+        GIGPILOT_ARM: '0',
+      },
+      // Mirrored so `--env production` resolves for this app too. GIGPILOT_ARM is repeated
+      // deliberately: if this block ever replaced the base env, the engine must still be
+      // disarmed rather than falling back to a permissive default.
+      env_production: {
         GIGPILOT_BIND: '127.0.0.1',
         GIGPILOT_PORT: '8001',
         GIGPILOT_ARM: '0',

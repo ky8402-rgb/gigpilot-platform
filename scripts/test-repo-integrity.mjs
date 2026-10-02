@@ -132,6 +132,23 @@ if (api && api.env && api.env.GIGPILOT_DISABLE_BACKGROUND_LOOPS === undefined) {
   fail('the API app disables background loops — nothing would own reconciliation or the optimizer');
 }
 
+// Every app must define env_production, or `pm2 start --env production` logs
+// "Environment [production] is not defined in process file" for the ones that don't.
+for (const app of apps) {
+  if (app.env_production && Object.keys(app.env_production).length > 0) {
+    pass(`app '${app.name}' defines env_production (no pm2 env-resolution warning)`);
+  } else {
+    fail(`app '${app.name}' has no env_production — pm2 would warn and env resolution is ambiguous`);
+  }
+}
+// The engine's disarmed flag must survive the production env path.
+const engine = apps.find((a) => a.name === 'gigpilot-engine');
+if (engine?.env_production && engine.env_production.GIGPILOT_ARM === '0') {
+  pass("engine keeps GIGPILOT_ARM='0' under env_production (cannot become armed via env resolution)");
+} else {
+  fail("engine's env_production does not pin GIGPILOT_ARM='0' — it could resolve to an armed state");
+}
+
 const workerSrc = read('server/worker.ts');
 if (workerSrc.includes('ownsBackgroundLoops()') && workerSrc.includes('process.exit(1)')) {
   pass('worker fails fast instead of silently becoming a second trading process');

@@ -117,6 +117,12 @@ npm install --prefer-offline || npm install --legacy-peer-deps
 echo "Building application bundles (Vite + esbuild)..."
 npm run build
 
+# Pre-deploy runtime gate. Runs on the host that is about to execute this code, BEFORE pm2 is
+# touched, so an ownership, fail-closed or webhook-security regression stops the deploy instead
+# of reaching production. `set -e` above makes a failure here abort the rollout.
+echo "Running pre-deploy runtime invariant gate..."
+npm run test:runtime
+
 echo "Configuring and restarting PM2 backend daemon..."
 # All ecosystem apps must be recreated, not just the API. `pm2 start ecosystem.config.cjs` does
 # NOT update an already-running app's loaded code or env, so a surviving "worker" would keep
