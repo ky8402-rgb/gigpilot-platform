@@ -855,8 +855,8 @@ export async function armGigPilot(): Promise<{ success: boolean; armed: boolean;
   });
 }
 
-export async function disarmGigPilot(): Promise<{ success: boolean; armed: boolean; message?: string }> {
-  return fetchWithFailover<{ success: boolean; armed: boolean; message?: string }>('/gigpilot/disarm', {
+export async function disarmGigPilot(): Promise<{ success: boolean; armed: boolean | null; message?: string; error?: string }> {
+  return fetchWithFailover<{ success: boolean; armed: boolean | null; message?: string; error?: string }>('/gigpilot/disarm', {
     method: 'POST'
   });
 }
