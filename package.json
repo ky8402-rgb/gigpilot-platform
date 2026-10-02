@@ -22,7 +22,7 @@
     "update-cloudflare-dns": "tsx scripts/update-cloudflare-dns.ts",
     "push": "bash ./scripts/push-and-deploy.sh",
     "lint": "tsc --noEmit",
-    "test": "tsc --noEmit && npm run test:profit && npm run test:research && npm run test:strategy && npm run test:linear && npm run test:rollback && npm run test:starvation && npm run test:cors && npm run test:bybit-retry && npm run test:reconciliation && npm run test:evaluator",
+    "test": "tsc --noEmit && npm run test:profit && npm run test:research && npm run test:strategy && npm run test:bybit-only && npm run test:linear && npm run test:rollback && npm run test:starvation && npm run test:cors && npm run test:bybit-retry && npm run test:reconciliation && npm run test:evaluator",
     "test:profit": "node scripts/test-profit-gate.mjs",
     "test:research": "node scripts/test-ai-research-agent.mjs",
     "test:strategy": "node scripts/test-strategy-builder-safety.mjs",
