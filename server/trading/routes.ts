@@ -3,6 +3,7 @@ import { globalTradingStore } from './store.js';
 import { ownerAuth, requireOwnerAuth, isOwner, extractToken } from './ownerAuth.js';
 import { bybitAdapter } from './bybitAdapter.js';
 import { EngineId, SupportedExchange } from './types.js';
+import { futuresUniverseHandler } from './futuresUniverse.js';
 
 export const tradingRouter = Router();
 
@@ -177,6 +178,9 @@ tradingRouter.get('/pairs', (req: Request, res: Response) => {
     return res.status(500).json({ success: false, error: err.message || 'Internal error in pairs endpoint' });
   }
 });
+
+// 7. Live Futures Universe (Bybit + Binance public metadata; no hardcoded pair list)
+tradingRouter.get('/futures/universe', requireOwnerAuth, futuresUniverseHandler);
 
 // 7. Pair Details & Candlesticks
 tradingRouter.get(['/pair/:symbol', '/pair/:base/:quote'], (req: Request, res: Response) => {

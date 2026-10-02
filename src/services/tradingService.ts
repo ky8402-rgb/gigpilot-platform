@@ -169,6 +169,37 @@ export async function fetchTradingState(): Promise<MasterTradingState> {
   return await fetchWithFailover<MasterTradingState>('/state');
 }
 
+
+export interface FuturesUniverseMarket {
+  exchange: 'BYBIT' | 'BINANCE';
+  symbol: string;
+  baseAsset: string;
+  quoteAsset: 'USDT';
+  contractType: 'PERPETUAL';
+  status: string;
+  price: number;
+  volume24h: number;
+  change24hPct: number;
+  fundingRate: number | null;
+  bid: number;
+  ask: number;
+  spreadBps: number;
+  tickSize: number | null;
+  qtyStep: number | null;
+  makerFeeBps: number | null;
+  takerFeeBps: number | null;
+  liquidityScore: number;
+  executionScore: number;
+  eligible: boolean;
+  reasons: string[];
+}
+
+export async function fetchFuturesUniverse(): Promise<FuturesUniverseMarket[]> {
+  const data = await fetchWithFailover<{ success: boolean; markets: FuturesUniverseMarket[] }>('/futures/universe');
+  if (!data.success || !Array.isArray(data.markets)) throw new Error('Live futures universe unavailable.');
+  return data.markets;
+}
+
 export async function fetchAllPairs(): Promise<Array<{
   symbol: string;
   price: number;
@@ -824,8 +855,8 @@ export async function armGigPilot(): Promise<{ success: boolean; armed: boolean;
   });
 }
 
-export async function disarmGigPilot(): Promise<{ success: boolean; armed: boolean; message?: string }> {
-  return fetchWithFailover<{ success: boolean; armed: boolean; message?: string }>('/gigpilot/disarm', {
+export async function disarmGigPilot(): Promise<{ success: boolean; armed: boolean | null; message?: string; error?: string }> {
+  return fetchWithFailover<{ success: boolean; armed: boolean | null; message?: string; error?: string }>('/gigpilot/disarm', {
     method: 'POST'
   });
 }
