@@ -67,6 +67,7 @@ import { OwnerAuthModal } from './OwnerAuthModal';
 import { AutonomousRevenueEngineView } from './AutonomousRevenueEngineView';
 import { GigPilotFuturesView } from './GigPilotFuturesView';
 import { ReconciliationTerminal } from './ReconciliationTerminal';
+import { FuturesCommandCenter } from './FuturesCommandCenter';
 
 import {
   BarChart2,
@@ -93,6 +94,7 @@ import { Activity, Scale, Shield, Zap } from 'lucide-react';
 
 export type ActiveTerminalTab =
   | 'TERMINAL'
+  | 'FUTURES_COMMAND'
   | 'GIGPILOT_FUTURES'
   | 'RECONCILIATION'
   | 'DECISION_PIPELINE'
@@ -114,7 +116,7 @@ export interface TradingDashboardProps {
 }
 
 export const TradingDashboard: React.FC<TradingDashboardProps> = ({ onLogout }) => {
-  const [activeTab, setActiveTab] = useState<ActiveTerminalTab>('TERMINAL');
+  const [activeTab, setActiveTab] = useState<ActiveTerminalTab>('FUTURES_COMMAND');
   // Initialize with complete, realistic master state immediately so the app never blocks on loading
   const [state, setState] = useState<MasterTradingState>(() => generateDefaultMasterState());
   const [pairs, setPairs] = useState<Array<{ symbol: string; price: number; change24hPct: number }>>(() => DEFAULT_PAIRS);
@@ -211,7 +213,11 @@ export const TradingDashboard: React.FC<TradingDashboardProps> = ({ onLogout }) 
       loadFullState();
     }, 3000);
 
-    return () => clearInterval(interval);
+    if (activeTab === 'FUTURES_COMMAND') {
+    return <FuturesCommandCenter />;
+  }
+
+  return () => clearInterval(interval);
   }, [loadFullState]);
 
   // Check and sync Owner 2FA authentication state
