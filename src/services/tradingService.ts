@@ -795,6 +795,7 @@ export interface GigPilotState {
   reachable?: boolean;
   error?: string;
   reasons?: Array<{ code: string; message: string; details?: Record<string, unknown> }>;
+  idempotent?: boolean;
   daemonRunning?: boolean;
   ts: string;
   armed: boolean;
@@ -817,8 +818,8 @@ export async function fetchGigPilotState(): Promise<GigPilotState> {
   return fetchWithFailover<GigPilotState>('/gigpilot/state');
 }
 
-export async function armGigPilot(): Promise<{ success: boolean; armed: boolean; error?: string; reasons?: Array<{ code: string; message: string; details?: Record<string, unknown> }> }> {
-  return fetchWithFailover<{ success: boolean; armed: boolean; error?: string; reasons?: Array<{ code: string; message: string; details?: Record<string, unknown> }> }>('/gigpilot/arm', {
+export async function armGigPilot(): Promise<{ success: boolean; armed: boolean; error?: string; idempotent?: boolean; reasons?: Array<{ code: string; message: string; details?: Record<string, unknown> }> }> {
+  return fetchWithFailover<{ success: boolean; armed: boolean; error?: string; idempotent?: boolean; reasons?: Array<{ code: string; message: string; details?: Record<string, unknown> }> }>('/gigpilot/arm', {
     method: 'POST'
   });
 }
