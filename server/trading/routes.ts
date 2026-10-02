@@ -1128,72 +1128,128 @@ tradingRouter.get('/gigpilot/state', async (req: Request, res: Response) => {
   }
 });
 
-tradingRouter.post('/gigpilot/arm', requireOwnerAuth, async (req: Request, res: Response) => {
-  try {
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 2000);
-    try {
-      const response = await fetch(`${GIGPILOT_URL}/api/arm`, { method: 'POST', signal: controller.signal });
-      clearTimeout(timeoutId);
-      if (response.ok) {
-        const data = await response.json();
-        return res.json({ success: true, ...data });
-      }
-    } catch {
-      clearTimeout(timeoutId);
-    }
+tradingRouter.post('/gigpilot/arm', requireOwnerAuth, async (_req: Request, res: Response) => {
+  const store = globalTradingStore;
+  const isKillActive = store.GLOBAL_KILL_SWITCH_ACTIVE || store.killSwitch.getState().isActive;
+  if (isKillActive) {
+    return res.status(403).json({
+      success: false,
+      armed: false,
+      error: 'ARM_BLOCKED',
+      reasons: [{ code: 'KILL_SWITCH_ACTIVE', message: 'Global kill switch is active; arming is prohibited until the owner deactivates it.' }]
+    });
+  }
+
+  const failClosed = store.monitor.isSystemFailClosed();
+  if (failClosed.failClosed) {
     return res.status(503).json({
       success: false,
-      error: 'GigPilot autonomous daemon is not currently responding on 127.0.0.1:8000. Launch it via `npm run start:python`.'
+      armed: false,
+      error: 'ARM_BLOCKED',
+      reasons: [{ code: 'SYSTEM_FAIL_CLOSED', message: 'Critical trading dependency is fail-closed.', details: { downEngines: failClosed.downEngines } }]
     });
-  } catch (err: any) {
-    return res.status(500).json({ success: false, error: err.message });
   }
-});
 
-tradingRouter.post('/gigpilot/disarm', requireOwnerAuth, async (req: Request, res: Response) => {
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 5000);
   try {
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 2000);
-    try {
-      const response = await fetch(`${GIGPILOT_URL}/api/disarm`, { method: 'POST', signal: controller.signal });
-      clearTimeout(timeoutId);
-      if (response.ok) {
-        const data = await response.json();
-        return res.json({ success: true, ...data });
-      }
-    } catch {
-      clearTimeout(timeoutId);
+    const response = await fetch(`${GIGPILOT_URL}/api/arm`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      signal: controller.signal
+    });
+    clearTimeout(timeoutId);
+
+    let data: any = null;
+    try { data = await response.json(); } catch { data = { success: false, error: 'Invalid ARM response from autonomous engine.' }; }
+
+    if (!response.ok) {
+      return res.status(response.status).json(data);
     }
-    return res.json({ success: true, armed: false, message: 'GigPilot disarmed locally.' });
+    return res.json({ success: true, ...data });
   } catch (err: any) {
-    return res.status(500).json({ success: false, error: err.message });
+    clearTimeout(timeoutId);
+    const aborted = err?.name === 'AbortError';
+    return res.status(503).json({
+      success: false,
+      armed: false,
+      error: 'ARM_ENGINE_UNREACHABLE',
+      reasons: [{
+        code: 'ENGINE_UNREACHABLE',
+        message: aborted
+          ? 'GigPilot autonomous engine did not respond within the ARM safety timeout.'
+          : 'GigPilot autonomous engine is not responding.',
+        details: { endpoint: GIGPILOT_URL }
+      }]
+    });
   }
 });
 
-tradingRouter.post('/gigpilot/kill', requireOwnerAuth, async (req: Request, res: Response) => {
+tradingRouter.post('/gigpilot/disarm', requireOwnerAuth, async (_req: Request, res: Response) => {
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 5000);
   try {
-    // 1. Trigger global kill switch in main store to halt all spot / linear orders
+    const response = await fetch(`${GIGPILOT_URL}/api/disarm`, { method: 'POST', signal: controller.signal });
+    clearTimeout(timeoutId);
+    let data: any = null;
+    try { data = await response.json(); } catch { data = { success: false, armed: null, error: 'Invalid DISARM response from autonomous engine.' }; }
+    if (!response.ok) return res.status(response.status).json(data);
+    if (data?.armed !== false) {
+      return res.status(502).json({
+        success: false,
+        armed: null,
+        error: 'DISARM_UNVERIFIED',
+        reasons: [{ code: 'STATE_UNVERIFIED', message: 'Autonomous engine did not confirm DISARMED state.' }]
+      });
+    }
+    return res.json({ success: true, ...data });
+  } catch (err: any) {
+    clearTimeout(timeoutId);
+    return res.status(503).json({
+      success: false,
+      armed: null,
+      error: 'DISARM_ENGINE_UNREACHABLE',
+      reasons: [{ code: 'ENGINE_UNREACHABLE', message: err?.name === 'AbortError' ? 'Autonomous engine did not respond within the DISARM safety timeout.' : 'Autonomous engine is not responding.' }]
+    });
+  }
+});
+
+tradingRouter.post('/gigpilot/kill', requireOwnerAuth, async (_req: Request, res: Response) => {
+  try {
     globalTradingStore.killSwitch.trigger('Kill switch invoked from GigPilot Futures view');
 
-    // 2. Forward to GigPilot daemon if reachable
+    let daemonAcknowledged = false;
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 2000);
+    const timeoutId = setTimeout(() => controller.abort(), 5000);
     try {
-      await fetch(`${GIGPILOT_URL}/api/kill`, { method: 'POST', signal: controller.signal });
+      const response = await fetch(`${GIGPILOT_URL}/api/kill`, { method: 'POST', signal: controller.signal });
       clearTimeout(timeoutId);
+      daemonAcknowledged = response.ok;
     } catch {
       clearTimeout(timeoutId);
     }
 
-    // 3. Cancel all exchange open orders via Bybit adapter
+    let cancelledCount = 0;
+    let cancelError: string | undefined;
     try {
-      await globalTradingStore.exchangeExec.cancelAllOrders();
-    } catch {}
+      cancelledCount = await globalTradingStore.exchangeExec.cancelAllOrders();
+    } catch (err: any) {
+      cancelError = err?.message || 'Exchange order cancellation failed';
+    }
 
-    return res.json({ success: true, killed: true, message: 'All open orders cancelled and positions flattened.' });
+    return res.json({
+      success: true,
+      killed: daemonAcknowledged && !cancelError,
+      killSwitchActive: true,
+      daemonAcknowledged,
+      cancelledCount,
+      error: cancelError,
+      message: daemonAcknowledged && !cancelError
+        ? 'Kill switch active; autonomous engine acknowledged STOP and open orders were cancelled.'
+        : 'Kill switch is active, but complete STOP verification is not available; trading remains fail-closed.'
+    });
   } catch (err: any) {
-    return res.status(500).json({ success: false, error: err.message });
+    return res.status(500).json({ success: false, killed: false, killSwitchActive: true, error: err.message });
   }
 });
 
