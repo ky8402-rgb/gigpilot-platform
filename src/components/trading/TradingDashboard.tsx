@@ -213,11 +213,7 @@ export const TradingDashboard: React.FC<TradingDashboardProps> = ({ onLogout }) 
       loadFullState();
     }, 3000);
 
-    if (activeTab === 'FUTURES_COMMAND') {
-    return <FuturesCommandCenter />;
-  }
-
-  return () => clearInterval(interval);
+    return () => clearInterval(interval);
   }, [loadFullState]);
 
   // Check and sync Owner 2FA authentication state
@@ -298,6 +294,10 @@ export const TradingDashboard: React.FC<TradingDashboardProps> = ({ onLogout }) 
   const activePrice = (pairDetails?.currentPrice && pairDetails.currentPrice > 0)
     ? pairDetails.currentPrice
     : (activePairInfo?.price || DEFAULT_PAIRS.find(p => p.symbol.replace(/[\/\-_]/g, '').toUpperCase() === state.activeSymbol.replace(/[\/\-_]/g, '').toUpperCase())?.price || 85859.20);
+
+  if (activeTab === 'FUTURES_COMMAND') {
+    return <FuturesCommandCenter />;
+  }
 
   return (
     <div className="min-h-screen bg-[#070B14] text-slate-100 flex flex-col font-sans selection:bg-emerald-500 selection:text-black">
