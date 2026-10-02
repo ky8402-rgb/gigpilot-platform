@@ -96,7 +96,7 @@ jobs:
           echo "ℹ Push to '${GITHUB_REF_NAME}' automatically triggers Amplify frontend build via amplify.yml."
 
           # If AWS CLI credentials configured, also trigger start-job for immediate dispatch
-          if command -v aws &>/dev/null && [ -n "${{ secrets.AWS_ACCESS_KEY_ID }}" ]; then
+          if command -v aws &>/dev/null && [ -n "${{ secrets.AWS_ACCESS_KEY_ID || secrets.ID }}" ]; then
             BRANCH_NAME="${GITHUB_REF_NAME}"
             echo "Initiating explicit start-job on branch $BRANCH_NAME..."
             aws amplify start-job \
@@ -289,7 +289,8 @@ jobs:
             echo "DEPLOYMENT_DELIVERY=SSH" >> "$GITHUB_ENV"
             echo "delivery=SSH" >> "$GITHUB_OUTPUT"
           else
-            echo "SSH direct connection could not be established. Falling back to signed push webhook."
+            echo "ERROR: SSH direct connection could not be established; handing control to signed push webhook."
+            exit 1
           fi
 
       - name: Trigger EC2 Push-to-Deploy Webhook (Fallback)
@@ -416,6 +417,7 @@ jobs:
           exit 1
 
       - name: Verify Production Database Connectivity and Transactions
+        if: env.DEPLOYMENT_DELIVERY == 'SSH'
         env:
           SSH_KEY: ${{ secrets.EC2_SSH_KEY || secrets.GIGPILOT_MUMBAI_EC2 }}
           EC2_HOST: ${{ secrets.EC2_HOST || '' }}
