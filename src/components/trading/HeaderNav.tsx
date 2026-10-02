@@ -170,7 +170,7 @@ export const HeaderNav: React.FC<HeaderNavProps> = ({
             {showPairDropdown && (
               <div className="absolute left-0 mt-1 w-64 bg-slate-900 border border-slate-700 rounded-lg shadow-2xl z-50 p-1 divide-y divide-slate-800">
                 <div className="px-2.5 py-1 text-[10px] font-semibold text-slate-400 uppercase tracking-wider">
-                  Supported Spot Grid Markets
+                  Supported Perpetual Futures (Linear) Markets
                 </div>
                 <div className="py-1">
                   {pairs.map(p => (

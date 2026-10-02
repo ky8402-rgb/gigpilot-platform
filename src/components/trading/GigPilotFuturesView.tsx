@@ -38,6 +38,8 @@ export const GigPilotFuturesView: React.FC = () => {
   const [actionLoading, setActionLoading] = useState<string | null>(null);
   const [actionMessage, setActionMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
   const [autoRefresh, setAutoRefresh] = useState<boolean>(true);
+  const [showArmModal, setShowArmModal] = useState<boolean>(false);
+  const [showKillModal, setShowKillModal] = useState<boolean>(false);
 
   const loadState = async () => {
     try {
@@ -57,10 +59,8 @@ export const GigPilotFuturesView: React.FC = () => {
     return () => clearInterval(interval);
   }, [autoRefresh]);
 
-  const handleArm = async () => {
-    if (!window.confirm('ARM GIGPILOT: Authorize autonomous live trading on Bybit USDT-Perp when real edge exceeds 3.0 bps?')) {
-      return;
-    }
+  const confirmAndArm = async () => {
+    setShowArmModal(false);
     try {
       setActionLoading('arm');
       setActionMessage(null);
@@ -78,6 +78,10 @@ export const GigPilotFuturesView: React.FC = () => {
     }
   };
 
+  const handleArm = () => {
+    setShowArmModal(true);
+  };
+
   const handleDisarm = async () => {
     try {
       setActionLoading('disarm');
@@ -92,10 +96,8 @@ export const GigPilotFuturesView: React.FC = () => {
     }
   };
 
-  const handleKill = async () => {
-    if (!window.confirm('EMERGENCY KILL SWITCH: Cancel ALL active orders and market-flatten ALL open futures positions immediately?')) {
-      return;
-    }
+  const confirmAndKill = async () => {
+    setShowKillModal(false);
     try {
       setActionLoading('kill');
       setActionMessage(null);
@@ -107,6 +109,10 @@ export const GigPilotFuturesView: React.FC = () => {
     } finally {
       setActionLoading(null);
     }
+  };
+
+  const handleKill = () => {
+    setShowKillModal(true);
   };
 
   const fmt = (num?: number | null, decimals = 2) => {
@@ -532,6 +538,67 @@ export const GigPilotFuturesView: React.FC = () => {
             </div>
           </div>
         </>
+      )}
+      {/* Arm Confirmation Modal */}
+      {showArmModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4 font-mono text-xs">
+          <div className="bg-zinc-900 border border-emerald-600/80 rounded-xl max-w-md w-full p-6 shadow-2xl text-slate-100">
+            <div className="flex items-center gap-2.5 mb-3 text-emerald-400">
+              <Zap className="w-5 h-5" />
+              <h3 className="font-extrabold text-base text-white">Arm Autonomous GigPilot Engine</h3>
+            </div>
+            <p className="text-xs text-slate-300 mb-4 leading-relaxed">
+              Authorize autonomous live futures execution on Bybit USDT-Perpetual when real mathematical edge strictly exceeds 3.0 bps?
+            </p>
+            <div className="flex justify-end gap-3">
+              <button
+                type="button"
+                onClick={() => setShowArmModal(false)}
+                className="px-4 py-2 rounded text-slate-400 hover:bg-zinc-800 text-xs font-semibold"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={confirmAndArm}
+                className="px-5 py-2 rounded bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs uppercase tracking-wider shadow-lg shadow-emerald-950/60"
+              >
+                Confirm Arm
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Kill Switch Confirmation Modal */}
+      {showKillModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4 font-mono text-xs">
+          <div className="bg-zinc-900 border border-rose-600/80 rounded-xl max-w-md w-full p-6 shadow-2xl text-slate-100">
+            <div className="flex items-center gap-2.5 mb-3 text-rose-400">
+              <ShieldAlert className="w-5 h-5" />
+              <h3 className="font-extrabold text-base text-white">Emergency Kill Switch</h3>
+            </div>
+            <p className="text-xs text-slate-300 mb-4 leading-relaxed">
+              EMERGENCY ACTION: Cancel ALL active orders and market-flatten ALL open futures positions immediately?
+            </p>
+            <div className="flex justify-end gap-3">
+              <button
+                type="button"
+                onClick={() => setShowKillModal(false)}
+                className="px-4 py-2 rounded text-slate-400 hover:bg-zinc-800 text-xs font-semibold"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={confirmAndKill}
+                className="px-5 py-2 rounded bg-rose-600 hover:bg-rose-500 text-white font-bold text-xs uppercase tracking-wider shadow-lg shadow-rose-950/60"
+              >
+                Confirm Emergency Kill
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );

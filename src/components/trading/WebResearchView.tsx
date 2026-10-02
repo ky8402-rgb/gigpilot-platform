@@ -29,6 +29,7 @@ export const WebResearchView: React.FC<WebResearchViewProps> = ({
   const [newContent, setNewContent] = useState('');
   const [newSource, setNewSource] = useState('CoinDesk / Regulatory Wire');
   const [isAnalyzing, setIsAnalyzing] = useState(false);
+  const [analysisError, setAnalysisError] = useState<string | null>(null);
 
   const filteredItems = activeFilter === 'ALL'
     ? items
@@ -50,6 +51,7 @@ export const WebResearchView: React.FC<WebResearchViewProps> = ({
   const handleIngestSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsAnalyzing(true);
+    setAnalysisError(null);
     try {
       await analyzeResearchIntelligence(newTitle, newContent, newSource);
       setShowIngestModal(false);
@@ -57,7 +59,7 @@ export const WebResearchView: React.FC<WebResearchViewProps> = ({
       setNewContent('');
       onRefreshItems();
     } catch (err: any) {
-      alert(`AI Analysis error: ${err.message}`);
+      setAnalysisError(`AI Analysis error: ${err.message}`);
     } finally {
       setIsAnalyzing(false);
     }
@@ -214,6 +216,12 @@ export const WebResearchView: React.FC<WebResearchViewProps> = ({
                   className="w-full bg-slate-950 border border-slate-700 rounded px-3 py-2 text-white resize-none"
                 />
               </div>
+
+              {analysisError && (
+                <div className="p-2.5 rounded bg-rose-950/80 border border-rose-800 text-rose-300 text-xs font-mono">
+                  {analysisError}
+                </div>
+              )}
 
               <div className="flex justify-end gap-3 pt-3">
                 <button

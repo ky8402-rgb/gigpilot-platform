@@ -190,12 +190,15 @@ export class TradingStore {
         const builds = this.profitOptimizer.getStrategyBuilds();
         const build = builds.find(b => b.id === decision.strategyBuildId);
         if (build && build.status === 'BUILT') {
+          const pairData = this.dataEngine.getPairData(this.activeSymbol);
           this.learningLoop.registerAndPromoteBuiltStrategy({
             id: build.id,
             strategyName: build.strategyName,
             parameters: build.parameters,
             rationale: build.rationale,
-            expectedEffect: build.expectedEffect
+            expectedEffect: build.expectedEffect,
+            candles: pairData?.candles,
+            fundingRateBps: pairData?.fundingRateBps
           });
         }
       }

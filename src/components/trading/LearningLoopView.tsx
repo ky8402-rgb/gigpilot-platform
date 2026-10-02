@@ -63,13 +63,12 @@ export const LearningLoopView: React.FC<LearningLoopViewProps> = ({
   const [rollingBack, setRollingBack] = useState(false);
   const [evalMessage, setEvalMessage] = useState<{ id: string; success: boolean; reason: string } | null>(null);
 
-  const handleRollback = async () => {
-    if (!onRollbackChampion) return;
-    const confirm = window.confirm(
-      `Are you sure you want to rollback active Champion '${champion.name}' to the previous stable version in archive?`
-    );
-    if (!confirm) return;
+  const [showConfirmRollback, setShowConfirmRollback] = useState(false);
+  const [createError, setCreateError] = useState<string | null>(null);
 
+  const executeRollback = async () => {
+    if (!onRollbackChampion) return;
+    setShowConfirmRollback(false);
     setRollingBack(true);
     setEvalMessage(null);
     try {
@@ -81,6 +80,10 @@ export const LearningLoopView: React.FC<LearningLoopViewProps> = ({
     } finally {
       setRollingBack(false);
     }
+  };
+
+  const handleRollback = () => {
+    setShowConfirmRollback(true);
   };
 
   const handleEvaluate = async (challengerId: string) => {
@@ -98,6 +101,7 @@ export const LearningLoopView: React.FC<LearningLoopViewProps> = ({
 
   const handleCreateSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    setCreateError(null);
     try {
       await onCreateVariant({
         baseStrategyId: champion.id,
@@ -112,7 +116,7 @@ export const LearningLoopView: React.FC<LearningLoopViewProps> = ({
       });
       setShowCreateModal(false);
     } catch (err: any) {
-      alert(`Error creating strategy variant: ${err.message}`);
+      setCreateError(`Error creating strategy variant: ${err.message}`);
     }
   };
 
@@ -462,6 +466,12 @@ export const LearningLoopView: React.FC<LearningLoopViewProps> = ({
                 />
               </div>
 
+              {createError && (
+                <div className="p-2.5 rounded bg-rose-950/80 border border-rose-800 text-rose-300 text-xs">
+                  {createError}
+                </div>
+              )}
+
               <div className="flex justify-end gap-3 pt-3">
                 <button
                   type="button"
@@ -478,6 +488,37 @@ export const LearningLoopView: React.FC<LearningLoopViewProps> = ({
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* Rollback Confirmation Modal (Iframe-safe) */}
+      {showConfirmRollback && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4">
+          <div className="bg-slate-900 border border-rose-700/80 rounded-xl max-w-md w-full p-6 shadow-2xl text-slate-100">
+            <div className="flex items-center gap-3 mb-3 text-rose-400">
+              <RotateCcw className="w-5 h-5" />
+              <h3 className="font-extrabold text-base text-white">Confirm Champion Rollback</h3>
+            </div>
+            <p className="text-xs text-slate-300 mb-4 leading-relaxed">
+              Are you sure you want to rollback active Champion <strong className="text-white">'{champion.name}'</strong> to the previous battle-tested version in archive?
+            </p>
+            <div className="flex justify-end gap-3">
+              <button
+                type="button"
+                onClick={() => setShowConfirmRollback(false)}
+                className="px-4 py-2 rounded text-slate-400 hover:bg-slate-800 text-xs font-semibold"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={executeRollback}
+                className="px-5 py-2 rounded bg-rose-600 hover:bg-rose-500 text-white font-bold text-xs uppercase tracking-wider shadow-lg shadow-rose-950/60"
+              >
+                Confirm Rollback
+              </button>
+            </div>
           </div>
         </div>
       )}

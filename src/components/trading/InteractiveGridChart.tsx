@@ -21,6 +21,9 @@ interface InteractiveGridChartProps {
   grid: GridConfiguration | null;
   indicators: TechnicalIndicators | null;
   currentPrice: number;
+  depthImbalanceRatio?: number;
+  fundingRateBps?: number;
+  fundingCountdownSeconds?: number;
 }
 
 const formatChartPrice = (val: number | undefined | null) => {
@@ -40,7 +43,10 @@ export const InteractiveGridChart: React.FC<InteractiveGridChartProps> = ({
   orderBook,
   grid,
   indicators,
-  currentPrice
+  currentPrice,
+  depthImbalanceRatio,
+  fundingRateBps,
+  fundingCountdownSeconds
 }) => {
   const [hoverCandle, setHoverCandle] = useState<Candle | null>(null);
   const [showIndicators, setShowIndicators] = useState(true);
@@ -90,7 +96,23 @@ export const InteractiveGridChart: React.FC<InteractiveGridChartProps> = ({
           <div className="flex items-center gap-2">
             <BarChart2 className="w-4 h-4 text-emerald-400" />
             <span className="font-extrabold text-sm text-white font-mono">{symbol}</span>
-            <span className="text-xs px-2 py-0.5 rounded bg-slate-800 text-slate-300 font-mono">1m SPOT</span>
+            <span className="text-xs px-2 py-0.5 rounded bg-amber-500/20 text-amber-300 border border-amber-500/40 font-mono font-bold">1m LINEAR PERP</span>
+            {fundingRateBps != null && (
+              <span className={`text-[11px] px-2 py-0.5 rounded font-mono font-semibold ${
+                fundingRateBps >= 0 ? 'bg-cyan-950/80 text-cyan-300 border border-cyan-800/80' : 'bg-rose-950/80 text-rose-300 border border-rose-800/80'
+              }`}>
+                Funding: {fundingRateBps >= 0 ? '+' : ''}{fundingRateBps.toFixed(2)} bps
+                {fundingCountdownSeconds ? ` (${Math.floor(fundingCountdownSeconds / 3600)}h ${Math.floor((fundingCountdownSeconds % 3600) / 60)}m)` : ''}
+              </span>
+            )}
+            {depthImbalanceRatio != null && (
+              <span className={`text-[11px] px-2 py-0.5 rounded font-mono ${
+                depthImbalanceRatio > 0.1 ? 'bg-emerald-950/80 text-emerald-300 border border-emerald-800/80' :
+                depthImbalanceRatio < -0.1 ? 'bg-rose-950/80 text-rose-300 border border-rose-800/80' : 'bg-slate-800 text-slate-300'
+              }`}>
+                Imbalance: {depthImbalanceRatio > 0 ? '+' : ''}{(depthImbalanceRatio * 100).toFixed(1)}% {depthImbalanceRatio > 0 ? '(Bids)' : '(Asks)'}
+              </span>
+            )}
           </div>
           <div className="text-xs font-mono text-slate-400 hidden sm:flex items-center gap-3">
             <span>O: <strong className="text-white">${candles[candles.length - 1]?.open != null ? formatChartPrice(candles[candles.length - 1].open) : '—'}</strong></span>

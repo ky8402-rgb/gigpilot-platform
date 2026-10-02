@@ -720,6 +720,9 @@ export const TradingDashboard: React.FC<TradingDashboardProps> = ({ onLogout }) 
                 grid={state.activeGrid}
                 indicators={state.indicators}
                 currentPrice={activePrice}
+                depthImbalanceRatio={pairDetails?.depthImbalanceRatio}
+                fundingRateBps={pairDetails?.fundingRateBps}
+                fundingCountdownSeconds={pairDetails?.fundingCountdownSeconds}
               />
             </div>
 

@@ -22,7 +22,7 @@
     "update-cloudflare-dns": "tsx scripts/update-cloudflare-dns.ts",
     "push": "bash ./scripts/push-and-deploy.sh",
     "lint": "tsc --noEmit",
-    "test": "tsc --noEmit && npm run test:profit && npm run test:research && npm run test:strategy && npm run test:linear && npm run test:rollback && npm run test:starvation && npm run test:cors && npm run test:bybit-retry && npm run test:reconciliation",
+    "test": "tsc --noEmit && npm run test:profit && npm run test:research && npm run test:strategy && npm run test:linear && npm run test:rollback && npm run test:starvation && npm run test:cors && npm run test:bybit-retry && npm run test:reconciliation && npm run test:evaluator",
     "test:profit": "node scripts/test-profit-gate.mjs",
     "test:research": "node scripts/test-ai-research-agent.mjs",
     "test:strategy": "node scripts/test-strategy-builder-safety.mjs",
@@ -32,6 +32,7 @@
     "test:cors": "node scripts/test-cors-strict.mjs",
     "test:bybit-retry": "node scripts/test-bybit-retry-logging.mjs",
     "test:reconciliation": "node scripts/test-reconciliation-self-healing.mjs",
+    "test:evaluator": "node scripts/test-strategy-evidence-evaluator.mjs",
     "test:loop": "tsx scripts/test-autonomous-loop.ts",
     "start:python": "python3 gigpilot.py",
     "postinstall": "node scripts/postinstall.js"

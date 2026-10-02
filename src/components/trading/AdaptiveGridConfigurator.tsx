@@ -51,6 +51,7 @@ export const AdaptiveGridConfigurator: React.FC<AdaptiveGridConfiguratorProps> =
   const [trendProtection, setTrendProtection] = useState(true);
   const [isApplying, setIsApplying] = useState(false);
   const [successNotice, setSuccessNotice] = useState(false);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
   // Auto-tune preset from Market Regime
   const handleRegimeAutoTune = () => {
@@ -76,6 +77,7 @@ export const AdaptiveGridConfigurator: React.FC<AdaptiveGridConfiguratorProps> =
     e.preventDefault();
     setIsApplying(true);
     setSuccessNotice(false);
+    setErrorMessage(null);
 
     try {
       await onApplyConfig({
@@ -90,7 +92,7 @@ export const AdaptiveGridConfigurator: React.FC<AdaptiveGridConfiguratorProps> =
       setSuccessNotice(true);
       setTimeout(() => setSuccessNotice(false), 4000);
     } catch (err: any) {
-      alert(`Failed to apply grid: ${err.message}`);
+      setErrorMessage(`Failed to apply grid: ${err.message}`);
     } finally {
       setIsApplying(false);
     }
@@ -132,6 +134,13 @@ export const AdaptiveGridConfigurator: React.FC<AdaptiveGridConfiguratorProps> =
       </div>
 
       <form onSubmit={handleSubmit} className="space-y-5 font-mono text-xs">
+        {errorMessage && (
+          <div className="p-3 rounded-lg bg-rose-950/80 border border-rose-700 text-rose-300 text-xs font-semibold flex items-center justify-between">
+            <span>{errorMessage}</span>
+            <button type="button" onClick={() => setErrorMessage(null)} className="text-slate-400 hover:text-white ml-2">✕</button>
+          </div>
+        )}
+
         {/* Regime Context Banner */}
         <div className="bg-slate-950/80 border border-slate-800/80 rounded-lg p-3 flex flex-wrap items-center justify-between gap-2 text-xs">
           <div className="flex items-center gap-3">

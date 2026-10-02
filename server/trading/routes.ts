@@ -516,6 +516,60 @@ tradingRouter.get('/strategy/rollback/status', (req: Request, res: Response) => 
   });
 });
 
+tradingRouter.get('/strategy/compare/:challengerId', (req: Request, res: Response) => {
+  const challengerId = req.params.challengerId;
+  const pairData = globalTradingStore.dataEngine.getPairData(globalTradingStore.activeSymbol);
+  const candles = pairData?.candles || [];
+  const fundingRateBps = pairData?.fundingRateBps ?? 1.0;
+
+  const comparison = globalTradingStore.learningLoop.compareChallengerWithChampion(challengerId, candles, fundingRateBps);
+  if (!comparison) {
+    return res.status(404).json({ success: false, error: `Challenger '${challengerId}' not found.` });
+  }
+
+  res.json({
+    success: true,
+    symbol: globalTradingStore.activeSymbol,
+    candlesCount: candles.length,
+    comparison
+  });
+});
+
+tradingRouter.post('/strategy/evaluate-evidence', requireOwnerAuth, (req: Request, res: Response) => {
+  const { challengerId } = req.body;
+  if (!challengerId) {
+    return res.status(400).json({ success: false, error: 'challengerId is required.' });
+  }
+
+  const pairData = globalTradingStore.dataEngine.getPairData(globalTradingStore.activeSymbol);
+  const candles = pairData?.candles || [];
+  const fundingRateBps = pairData?.fundingRateBps ?? 1.0;
+
+  const evalResult = globalTradingStore.learningLoop.evaluateChallengerWithRealCandles(challengerId, candles, fundingRateBps);
+  if (!evalResult.success) {
+    return res.status(400).json({ success: false, error: evalResult.reason });
+  }
+
+  globalTradingStore.monitor.logAudit({
+    category: 'CONFIG_CHANGE',
+    action: `Strategy evidence evaluated: ${challengerId}`,
+    details: {
+      challengerId,
+      isProvenSuperior: evalResult.comparison?.isProvenSuperior,
+      recommendation: evalResult.comparison?.recommendation,
+      candlesCount: candles.length
+    }
+  });
+
+  res.json({
+    success: true,
+    message: evalResult.reason,
+    challenger: evalResult.challenger,
+    comparison: evalResult.comparison,
+    tenureStatus: globalTradingStore.learningLoop.getChampionTenureStatus()
+  });
+});
+
 // 14B. 3-Way Trade Decision Architecture (BUY / SELL / DO NOTHING)
 // DO NOTHING is a legitimate optimized action: profitable automated systems trade selectively
 tradingRouter.get('/decisions', (req: Request, res: Response) => {

@@ -38,10 +38,12 @@ export const RiskAndSafetyView: React.FC<RiskAndSafetyViewProps> = ({
   const [autoKillDrawdown, setAutoKillDrawdown] = useState(config.autoKillSwitchTriggerDrawdownPct.toString());
   const [isSaving, setIsSaving] = useState(false);
   const [isResetting, setIsResetting] = useState(false);
+  const [statusNotification, setStatusNotification] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
 
   const handleSaveConfig = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsSaving(true);
+    setStatusNotification(null);
     try {
       await updateRiskConfig({
         maxPositionSizePct: Number(maxAllocation),
@@ -53,10 +55,10 @@ export const RiskAndSafetyView: React.FC<RiskAndSafetyViewProps> = ({
         minimum_edge_threshold: Number(minEdgeThreshold),
         autoKillSwitchTriggerDrawdownPct: Number(autoKillDrawdown)
       });
-      alert('Risk parameters updated and enforced across all engines!');
+      setStatusNotification({ type: 'success', message: 'Risk parameters successfully updated and enforced across all engines.' });
       onRefreshState();
     } catch (err: any) {
-      alert(`Error updating risk rules: ${err.message}`);
+      setStatusNotification({ type: 'error', message: `Error updating risk rules: ${err.message}` });
     } finally {
       setIsSaving(false);
     }
@@ -64,12 +66,13 @@ export const RiskAndSafetyView: React.FC<RiskAndSafetyViewProps> = ({
 
   const handleResetCircuitBreaker = async () => {
     setIsResetting(true);
+    setStatusNotification(null);
     try {
       await resetCircuitBreaker();
-      alert('Circuit breaker successfully unlatched.');
+      setStatusNotification({ type: 'success', message: 'Circuit breaker successfully unlatched.' });
       onRefreshState();
     } catch (err: any) {
-      alert(`Error resetting circuit breaker: ${err.message}`);
+      setStatusNotification({ type: 'error', message: `Error resetting circuit breaker: ${err.message}` });
     } finally {
       setIsResetting(false);
     }
@@ -77,6 +80,16 @@ export const RiskAndSafetyView: React.FC<RiskAndSafetyViewProps> = ({
 
   return (
     <div className="space-y-6 max-w-5xl mx-auto font-mono text-xs">
+      {statusNotification && (
+        <div className={`p-3 rounded-lg border text-xs font-semibold flex items-center justify-between ${
+          statusNotification.type === 'success'
+            ? 'bg-emerald-950/80 border-emerald-700 text-emerald-300'
+            : 'bg-rose-950/80 border-rose-700 text-rose-300'
+        }`}>
+          <span>{statusNotification.message}</span>
+          <button onClick={() => setStatusNotification(null)} className="text-slate-400 hover:text-white ml-2 text-xs">✕</button>
+        </div>
+      )}
       {/* 1. Circuit Breaker Latch Status */}
       <div className={`p-5 rounded-xl border shadow-xl flex flex-wrap items-center justify-between gap-4 ${
         circuitBreakerActive

@@ -1,4 +1,5 @@
 import {
+  Candle,
   ChampionTenureStatus,
   EngineErrorRecord,
   EngineHealth,
@@ -12,6 +13,7 @@ import {
   ValidationStage
 } from './types.js';
 import { DecisionPipelineInput, globalDecisionPipeline } from './decisionPipeline.js';
+import { globalStrategyEvaluator, HeadToHeadComparison } from './strategyEvaluator.js';
 
 export class LearningLoopEngine implements EngineModule {
   public readonly id = 'SELF_LEARN_OPTIMIZER';
@@ -71,7 +73,7 @@ export class LearningLoopEngine implements EngineModule {
       type: 'ADAPTIVE_GRID',
       status: 'CHAMPION',
       createdAt: now,
-      reasonForChange: 'No strategy is treated as proven until sufficient real Bybit Spot execution evidence exists.',
+      reasonForChange: 'No strategy is treated as proven until sufficient real Bybit Perpetual Futures (Linear) execution evidence exists.',
       parameters: {},
       backtestResults: zeroMetrics(),
       liveTradingResults: zeroMetrics(),
@@ -370,6 +372,105 @@ export class LearningLoopEngine implements EngineModule {
     };
   }
 
+  // --- Real-Candle Strategy Evaluation & Champion Comparison ---
+
+  /**
+   * Compare a candidate challenger against the active Champion on identical real Bybit candles.
+   */
+  public compareChallengerWithChampion(
+    challengerId: string,
+    candles: Candle[],
+    fundingRateBps: number = 1.0
+  ): HeadToHeadComparison | null {
+    const challenger = this.challengerStrategies.find(s => s.id === challengerId);
+    if (!challenger) return null;
+    return globalStrategyEvaluator.compareCandidateWithChampion(
+      challenger,
+      this.championStrategy,
+      candles,
+      fundingRateBps
+    );
+  }
+
+  /**
+   * Authoritative Walk-Forward & Backtest Evaluation using real Bybit candles.
+   * Updates challenger validation pipeline with true empirical evidence.
+   */
+  public evaluateChallengerWithRealCandles(
+    challengerId: string,
+    candles: Candle[],
+    fundingRateBps: number = 1.0
+  ): {
+    success: boolean;
+    comparison?: HeadToHeadComparison;
+    challenger?: StrategyVersion;
+    reason: string;
+  } {
+    const challenger = this.challengerStrategies.find(s => s.id === challengerId);
+    if (!challenger) {
+      return { success: false, reason: `Challenger '${challengerId}' not found in candidate pool.` };
+    }
+
+    if (!candles || candles.length < 5) {
+      return {
+        success: false,
+        reason: `Insufficient live candle depth (${candles?.length || 0} candles). Minimum 5 required for real evidence.`
+      };
+    }
+
+    const comparison = globalStrategyEvaluator.compareCandidateWithChampion(
+      challenger,
+      this.championStrategy,
+      candles,
+      fundingRateBps
+    );
+
+    // Update challenger metrics with real simulation results
+    challenger.backtestResults = comparison.challengerMetrics;
+
+    if (!challenger.validationPipeline) {
+      challenger.validationPipeline = this.initDefaultPipeline(challenger);
+    }
+
+    const p = challenger.validationPipeline;
+    p.trainingData.sampleSizeCandles = candles.length;
+    p.trainingData.inSampleSharpe = comparison.walkForward.inSampleMetrics.sharpeRatio;
+    p.trainingData.inSampleRoiPct = comparison.walkForward.inSampleMetrics.roiPct;
+    p.trainingData.inSampleWinRatePct = comparison.walkForward.inSampleMetrics.winRatePct;
+    p.trainingData.inSampleProfitFactor = comparison.walkForward.inSampleMetrics.profitFactor;
+
+    p.walkForward.windows = comparison.walkForward.windows;
+    p.walkForward.averageWfeRatio = comparison.walkForward.wfeRatio;
+    p.walkForward.status = comparison.walkForward.passedOverfitHurdle ? 'PASSED' : 'FAILED';
+    p.overfittingRiskPct = comparison.walkForward.overfittingRiskPct;
+
+    p.outOfSample.oosSharpe = comparison.walkForward.outOfSampleMetrics.sharpeRatio;
+    p.outOfSample.oosRoiPct = comparison.walkForward.outOfSampleMetrics.roiPct;
+    p.outOfSample.oosMaxDrawdownPct = comparison.walkForward.outOfSampleMetrics.maxDrawdownPct;
+    p.outOfSample.passedOverfitHurdle = comparison.walkForward.passedOverfitHurdle;
+    p.outOfSample.status = comparison.walkForward.passedOverfitHurdle ? 'PASSED' : 'FAILED';
+
+    if (comparison.isProvenSuperior && comparison.walkForward.passedOverfitHurdle) {
+      p.currentStage = 'ELIGIBLE_FOR_PROMOTION';
+      p.canPromote = true;
+      p.overallScore = Math.min(99, Math.round(75 + (comparison.walkForward.wfeRatio * 15) - (comparison.walkForward.overfittingRiskPct * 0.15)));
+      p.promotionBlockReason = undefined;
+      this.recordError('WARN', `Candidate '${challenger.name}' proved superior to active Champion on ${candles.length} real candles! Marked ELIGIBLE_FOR_PROMOTION.`);
+    } else {
+      p.canPromote = false;
+      p.overallScore = Math.max(10, Math.round(40 + (comparison.walkForward.wfeRatio * 20) - (comparison.walkForward.overfittingRiskPct * 0.3)));
+      p.promotionBlockReason = comparison.reason;
+      this.recordError('WARN', `Candidate '${challenger.name}' evaluated against Champion on real candles: ${comparison.reason}`);
+    }
+
+    return {
+      success: true,
+      comparison,
+      challenger,
+      reason: comparison.reason
+    };
+  }
+
   // --- Strategy Promotion & Anti-Churn Guardrails ---
 
   public promoteChallenger(
@@ -478,6 +579,8 @@ export class LearningLoopEngine implements EngineModule {
     parameters: StrategyVersion['parameters'];
     rationale: string;
     expectedEffect: string;
+    candles?: Candle[];
+    fundingRateBps?: number;
   }): StrategyVersion {
     const tenureStatus = this.getChampionTenureStatus();
 
@@ -501,75 +604,37 @@ export class LearningLoopEngine implements EngineModule {
           ...build.parameters
         },
         backtestResults: {
-          ...this.championStrategy.backtestResults,
-          sharpeRatio: Number((this.championStrategy.backtestResults.sharpeRatio + 0.12).toFixed(2)),
-          netProfit: Number((this.championStrategy.backtestResults.netProfit + 95).toFixed(2))
+          ...this.championStrategy.backtestResults
         },
-        validationPipeline: {
-          currentStage: 'WALK_FORWARD',
-          overallScore: 68,
-          overfittingRiskPct: 35,
-          canPromote: false,
-          promotionBlockReason: `Champion is frozen (${(tenureStatus.remainingFreezeSeconds / 3600).toFixed(1)}h left). Candidate routed to Walk-Forward testing to prevent overfitting.`,
-          trainingData: {
-            inSampleWindowDays: 60,
-            sampleSizeCandles: 5760,
-            inSampleSharpe: Number((this.championStrategy.backtestResults.sharpeRatio + 0.12).toFixed(2)),
-            inSampleRoiPct: 16.2,
-            inSampleWinRatePct: 80.5,
-            inSampleProfitFactor: 2.35,
-            fittedAt: new Date().toISOString()
-          },
-          candidateModel: {
-            hypothesis: build.rationale,
-            parameterDeltaSummary: build.expectedEffect,
-            complexityPenaltyBps: 2.0,
-            generatedAt: new Date().toISOString()
-          },
-          walkForward: {
-            status: 'PENDING',
-            windows: [],
-            averageWfeRatio: 0,
-            passedWindowsCount: 0,
-            totalWindowsCount: 5,
-            parameterStabilityScore: 0
-          },
-          outOfSample: {
-            status: 'PENDING',
-            heldOutDays: 30,
-            oosSharpe: 0,
-            oosRoiPct: 0,
-            oosMaxDrawdownPct: 0,
-            sharpeDegradationPct: 0,
-            maxDdDegradationPct: 0,
-            passedOverfitHurdle: false
-          },
-          paperShadow: {
-            status: 'PENDING',
-            hoursObserved: 0,
-            requiredHours: 12,
-            simulatedFillsCount: 0,
-            requiredFills: 25,
-            shadowNetProfitUsd: 0,
-            shadowFillRatePct: 0,
-            shadowSharpe: 0,
-            slippageVarianceBps: 0
-          },
-          smallCapital: {
-            status: 'PENDING',
-            canaryAllocationPct: 8.0,
-            canaryExposureUsd: 450,
-            realFillsCount: 0,
-            requiredFills: 10,
-            realizedNetProfitUsd: 0,
-            feeDragBps: 0,
-            riskRuleBreaches: 0
-          }
-        }
+        validationPipeline: this.initDefaultPipeline({
+          id: candidateId,
+          name: build.strategyName,
+          parameters: { ...this.championStrategy.parameters, ...build.parameters },
+          reasonForChange: build.rationale,
+          backtestResults: this.championStrategy.backtestResults
+        } as any)
       };
 
+      // If real candles are available, evaluate immediately on actual empirical data
+      if (build.candles && build.candles.length >= 5) {
+        const evalRes = globalStrategyEvaluator.compareCandidateWithChampion(
+          newChallenger,
+          this.championStrategy,
+          build.candles,
+          build.fundingRateBps
+        );
+        newChallenger.backtestResults = evalRes.challengerMetrics;
+        if (newChallenger.validationPipeline) {
+          newChallenger.validationPipeline.trainingData.sampleSizeCandles = build.candles.length;
+          newChallenger.validationPipeline.trainingData.inSampleSharpe = evalRes.walkForward.inSampleMetrics.sharpeRatio;
+          newChallenger.validationPipeline.walkForward.averageWfeRatio = evalRes.walkForward.wfeRatio;
+          newChallenger.validationPipeline.overfittingRiskPct = evalRes.walkForward.overfittingRiskPct;
+          newChallenger.validationPipeline.promotionBlockReason = evalRes.reason;
+        }
+      }
+
       this.challengerStrategies.unshift(newChallenger);
-      this.recordError('WARN', `Champion tenure freeze active. Prevented immediate parameter replacement! Routed candidate '${build.strategyName}' into Anti-Overfitting Pipeline instead.`);
+      this.recordError('WARN', `Champion tenure freeze active. Prevented immediate parameter replacement! Routed candidate '${build.strategyName}' into Anti-Overfitting Pipeline with empirical evidence.`);
       return this.championStrategy;
     }
 
@@ -600,16 +665,16 @@ export class LearningLoopEngine implements EngineModule {
         grossProfit: this.championStrategy.liveTradingResults?.grossProfit || 0,
         totalFees: this.championStrategy.liveTradingResults?.totalFees || 0,
         roiPct: this.championStrategy.liveTradingResults?.roiPct || 0,
-        sharpeRatio: 2.85,
-        sortinoRatio: 3.65,
-        maxDrawdownPct: this.championStrategy.liveTradingResults?.maxDrawdownPct || 0.4,
-        winRatePct: 82.5,
-        profitFactor: 2.45,
+        sharpeRatio: this.championStrategy.liveTradingResults?.sharpeRatio || 0,
+        sortinoRatio: this.championStrategy.liveTradingResults?.sortinoRatio || 0,
+        maxDrawdownPct: this.championStrategy.liveTradingResults?.maxDrawdownPct || 0,
+        winRatePct: this.championStrategy.liveTradingResults?.winRatePct || 0,
+        profitFactor: this.championStrategy.liveTradingResults?.profitFactor || 0,
         tradesCount: this.championStrategy.liveTradingResults?.tradesCount || 0,
-        avgTradeProfitUsd: 8.20,
-        avgHoldingTimeMinutes: 28,
-        orderFillRatePct: 96.0,
-        capitalUtilizationPct: 75.0
+        avgTradeProfitUsd: this.championStrategy.liveTradingResults?.avgTradeProfitUsd || 0,
+        avgHoldingTimeMinutes: this.championStrategy.liveTradingResults?.avgHoldingTimeMinutes || 0,
+        orderFillRatePct: this.championStrategy.liveTradingResults?.orderFillRatePct || 100,
+        capitalUtilizationPct: this.championStrategy.liveTradingResults?.capitalUtilizationPct || 50
       }
     };
 
@@ -623,6 +688,8 @@ export class LearningLoopEngine implements EngineModule {
     reasonForChange: string;
     parameters: Partial<StrategyVersion['parameters']>;
     expectedEffect?: string;
+    candles?: Candle[];
+    fundingRateBps?: number;
   }): StrategyVersion {
     const candidateId = `STRAT-VAR-${Date.now().toString(36).toUpperCase()}`;
     const newVariant: StrategyVersion = {
@@ -640,25 +707,36 @@ export class LearningLoopEngine implements EngineModule {
         ...params.parameters
       },
       backtestResults: {
-        ...this.championStrategy.backtestResults,
-        sharpeRatio: Number((this.championStrategy.backtestResults.sharpeRatio + 0.15).toFixed(2)),
-        netProfit: Number((this.championStrategy.backtestResults.netProfit + 120).toFixed(2)),
-        roiPct: Number((this.championStrategy.backtestResults.roiPct + 1.2).toFixed(1))
+        ...this.championStrategy.backtestResults
       },
       validationPipeline: this.initDefaultPipeline({
         id: candidateId,
         name: params.name,
         parameters: { ...this.championStrategy.parameters, ...params.parameters },
         reasonForChange: params.reasonForChange,
-        backtestResults: {
-          ...this.championStrategy.backtestResults,
-          sharpeRatio: Number((this.championStrategy.backtestResults.sharpeRatio + 0.15).toFixed(2))
-        }
+        backtestResults: this.championStrategy.backtestResults
       } as any)
     };
 
+    if (params.candles && params.candles.length >= 5) {
+      const evalRes = globalStrategyEvaluator.compareCandidateWithChampion(
+        newVariant,
+        this.championStrategy,
+        params.candles,
+        params.fundingRateBps
+      );
+      newVariant.backtestResults = evalRes.challengerMetrics;
+      if (newVariant.validationPipeline) {
+        newVariant.validationPipeline.trainingData.sampleSizeCandles = params.candles.length;
+        newVariant.validationPipeline.trainingData.inSampleSharpe = evalRes.walkForward.inSampleMetrics.sharpeRatio;
+        newVariant.validationPipeline.walkForward.averageWfeRatio = evalRes.walkForward.wfeRatio;
+        newVariant.validationPipeline.overfittingRiskPct = evalRes.walkForward.overfittingRiskPct;
+        newVariant.validationPipeline.promotionBlockReason = evalRes.reason;
+      }
+    }
+
     this.challengerStrategies.unshift(newVariant);
-    this.recordError('WARN', `Created challenger variant '${newVariant.name}'. Seeded into Anti-Overfitting Pipeline at Stage 3 (Walk-Forward).`);
+    this.recordError('WARN', `Created challenger variant '${newVariant.name}'. Seeded into Anti-Overfitting Pipeline with empirical evidence.`);
     return newVariant;
   }
 
