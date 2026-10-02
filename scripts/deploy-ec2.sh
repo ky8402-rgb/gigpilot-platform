@@ -78,14 +78,16 @@ if [ -n "${BYBIT_API_SECRET:-}" ]; then
 fi
 
 # Configure GEMINI_API_KEY if supplied
+# Use a line-rewrite instead of sed substitution so secret characters (|, &, \, etc.)
+# cannot corrupt the command or expose the value in shell parsing.
 if [ -n "${GEMINI_API_KEY:-}" ]; then
   umask 077
   touch "$APP_DIR/.env"
-  if grep -q '^GEMINI_API_KEY=' "$APP_DIR/.env"; then
-    sed -i "s|^GEMINI_API_KEY=.*|GEMINI_API_KEY=\"$GEMINI_API_KEY\"|" "$APP_DIR/.env"
-  else
-    printf '%s\n' "GEMINI_API_KEY=\"$GEMINI_API_KEY\"" >> "$APP_DIR/.env"
-  fi
+  TMP_ENV="$(mktemp)"
+  grep -v '^GEMINI_API_KEY=' "$APP_DIR/.env" > "$TMP_ENV" || true
+  printf '%s\n' "GEMINI_API_KEY=$GEMINI_API_KEY" >> "$TMP_ENV"
+  chmod 600 "$TMP_ENV"
+  mv "$TMP_ENV" "$APP_DIR/.env"
   echo "✔ GEMINI_API_KEY updated in $APP_DIR/.env"
 fi
 
