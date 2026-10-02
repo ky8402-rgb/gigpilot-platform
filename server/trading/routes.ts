@@ -1128,26 +1128,60 @@ tradingRouter.get('/gigpilot/state', async (req: Request, res: Response) => {
   }
 });
 
-tradingRouter.post('/gigpilot/arm', requireOwnerAuth, async (req: Request, res: Response) => {
-  try {
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 2000);
-    try {
-      const response = await fetch(`${GIGPILOT_URL}/api/arm`, { method: 'POST', signal: controller.signal });
-      clearTimeout(timeoutId);
-      if (response.ok) {
-        const data = await response.json();
-        return res.json({ success: true, ...data });
-      }
-    } catch {
-      clearTimeout(timeoutId);
-    }
+tradingRouter.post('/gigpilot/arm', requireOwnerAuth, async (_req: Request, res: Response) => {
+  const store = globalTradingStore;
+  const isKillActive = store.GLOBAL_KILL_SWITCH_ACTIVE || store.killSwitch.getState().isActive;
+  if (isKillActive) {
+    return res.status(403).json({
+      success: false,
+      armed: false,
+      error: 'ARM_BLOCKED',
+      reasons: [{ code: 'KILL_SWITCH_ACTIVE', message: 'Global kill switch is active; arming is prohibited until the owner deactivates it.' }]
+    });
+  }
+
+  const failClosed = store.monitor.isSystemFailClosed();
+  if (failClosed.failClosed) {
     return res.status(503).json({
       success: false,
-      error: 'GigPilot autonomous daemon is not currently responding on 127.0.0.1:8000. Launch it via `npm run start:python`.'
+      armed: false,
+      error: 'ARM_BLOCKED',
+      reasons: [{ code: 'SYSTEM_FAIL_CLOSED', message: 'Critical trading dependency is fail-closed.', details: { downEngines: failClosed.downEngines } }]
     });
+  }
+
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 5000);
+  try {
+    const response = await fetch(`${GIGPILOT_URL}/api/arm`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      signal: controller.signal
+    });
+    clearTimeout(timeoutId);
+
+    let data: any = null;
+    try { data = await response.json(); } catch { data = { success: false, error: 'Invalid ARM response from autonomous engine.' }; }
+
+    if (!response.ok) {
+      return res.status(response.status).json(data);
+    }
+    return res.json({ success: true, ...data });
   } catch (err: any) {
-    return res.status(500).json({ success: false, error: err.message });
+    clearTimeout(timeoutId);
+    const aborted = err?.name === 'AbortError';
+    return res.status(503).json({
+      success: false,
+      armed: false,
+      error: 'ARM_ENGINE_UNREACHABLE',
+      reasons: [{
+        code: 'ENGINE_UNREACHABLE',
+        message: aborted
+          ? 'GigPilot autonomous engine did not respond within the ARM safety timeout.'
+          : 'GigPilot autonomous engine is not responding.',
+        details: { endpoint: GIGPILOT_URL }
+      }]
+    });
   }
 });
 
