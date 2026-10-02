@@ -1,0 +1,889 @@
+{
+  "_status_legend": {
+    "in_progress": "Python implementation started, not verified",
+    "migrated": "Python replacement exists and is verified present by tests/test_parity.py",
+    "planned": "not yet implemented in Python",
+    "removed": "deleted from the tree; requires replacement_proven=true",
+    "waived": "deliberately NOT migrated; reason REQUIRED"
+  },
+  "dependencies": {
+    "@aws-sdk/client-s3": {
+      "python": null,
+      "reason": null,
+      "status": "planned"
+    },
+    "@google/genai": {
+      "python": null,
+      "reason": null,
+      "status": "planned"
+    },
+    "@neondatabase/serverless": {
+      "python": null,
+      "reason": null,
+      "status": "planned"
+    },
+    "@prisma/client": {
+      "python": null,
+      "reason": null,
+      "status": "planned"
+    },
+    "@tailwindcss/vite": {
+      "python": null,
+      "reason": null,
+      "status": "planned"
+    },
+    "@types/bull": {
+      "python": null,
+      "reason": null,
+      "status": "planned"
+    },
+    "@types/canvas-confetti": {
+      "python": null,
+      "reason": null,
+      "status": "planned"
+    },
+    "@types/cookie-parser": {
+      "python": null,
+      "reason": null,
+      "status": "planned"
+    },
+    "@types/jsonwebtoken": {
+      "python": null,
+      "reason": null,
+      "status": "planned"
+    },
+    "@types/node-cron": {
+      "python": null,
+      "reason": null,
+      "status": "planned"
+    },
+    "@types/qrcode": {
+      "python": null,
+      "reason": null,
+      "status": "planned"
+    },
+    "@vitejs/plugin-react": {
+      "python": null,
+      "reason": null,
+      "status": "planned"
+    },
+    "axios": {
+      "python": null,
+      "reason": null,
+      "status": "planned"
+    },
+    "bull": {
+      "python": null,
+      "reason": null,
+      "status": "planned"
+    },
+    "canvas-confetti": {
+      "python": null,
+      "reason": null,
+      "status": "planned"
+    },
+    "chart.js": {
+      "python": null,
+      "reason": null,
+      "status": "planned"
+    },
+    "cheerio": {
+      "python": null,
+      "reason": null,
+      "status": "planned"
+    },
+    "compression": {
+      "python": null,
+      "reason": null,
+      "status": "planned"
+    },
+    "cookie-parser": {
+      "python": null,
+      "reason": null,
+      "status": "planned"
+    },
+    "dotenv": {
+      "python": null,
+      "reason": null,
+      "status": "planned"
+    },
+    "express": {
+      "python": null,
+      "reason": null,
+      "status": "planned"
+    },
+    "express-rate-limit": {
+      "python": null,
+      "reason": null,
+      "status": "planned"
+    },
+    "ioredis": {
+      "python": null,
+      "reason": null,
+      "status": "planned"
+    },
+    "jsonwebtoken": {
+      "python": null,
+      "reason": null,
+      "status": "planned"
+    },
+    "lucide-react": {
+      "python": null,
+      "reason": null,
+      "status": "planned"
+    },
+    "motion": {
+      "python": null,
+      "reason": null,
+      "status": "planned"
+    },
+    "node-cron": {
+      "python": null,
+      "reason": null,
+      "status": "planned"
+    },
+    "pdf-parse": {
+      "python": null,
+      "reason": null,
+      "status": "planned"
+    },
+    "pg": {
+      "python": null,
+      "reason": null,
+      "status": "planned"
+    },
+    "playwright": {
+      "python": null,
+      "reason": null,
+      "status": "planned"
+    },
+    "qrcode": {
+      "python": null,
+      "reason": null,
+      "status": "planned"
+    },
+    "react": {
+      "python": null,
+      "reason": null,
+      "status": "planned"
+    },
+    "react-dom": {
+      "python": null,
+      "reason": null,
+      "status": "planned"
+    },
+    "recharts": {
+      "python": null,
+      "reason": null,
+      "status": "planned"
+    },
+    "ws": {
+      "python": null,
+      "reason": null,
+      "status": "planned"
+    },
+    "xlsx": {
+      "python": null,
+      "reason": null,
+      "status": "planned"
+    },
+    "zod": {
+      "python": null,
+      "reason": null,
+      "status": "planned"
+    }
+  },
+  "frontend": {
+    "python": null,
+    "reason": "React SPA (30 components). Decision required: serve a prebuilt bundle from Python (keeps a Node BUILD step) or rebuild the UI with Python-rendered templates.",
+    "status": "planned"
+  },
+  "http_endpoints": {
+    "ANY /api/trading/auth/login": {
+      "python": null,
+      "reason": null,
+      "status": "planned"
+    },
+    "ANY /api/trading/auth/login/": {
+      "python": null,
+      "reason": null,
+      "status": "planned"
+    },
+    "ANY /api/trading/auth/logout": {
+      "python": null,
+      "reason": null,
+      "status": "planned"
+    },
+    "ANY /api/trading/auth/logout/": {
+      "python": null,
+      "reason": null,
+      "status": "planned"
+    },
+    "ANY /api/trading/auth/setup-complete": {
+      "python": null,
+      "reason": null,
+      "status": "planned"
+    },
+    "ANY /api/trading/auth/setup-complete/": {
+      "python": null,
+      "reason": null,
+      "status": "planned"
+    },
+    "ANY /api/trading/auth/setup-init": {
+      "python": null,
+      "reason": null,
+      "status": "planned"
+    },
+    "ANY /api/trading/auth/setup-init/": {
+      "python": null,
+      "reason": null,
+      "status": "planned"
+    },
+    "ANY /api/trading/auth/status": {
+      "python": null,
+      "reason": null,
+      "status": "planned"
+    },
+    "ANY /api/trading/auth/status/": {
+      "python": null,
+      "reason": null,
+      "status": "planned"
+    },
+    "ANY /api/trading/login": {
+      "python": null,
+      "reason": null,
+      "status": "planned"
+    },
+    "ANY /api/trading/login/": {
+      "python": null,
+      "reason": null,
+      "status": "planned"
+    },
+    "ANY /api/trading/logout": {
+      "python": null,
+      "reason": null,
+      "status": "planned"
+    },
+    "ANY /api/trading/logout/": {
+      "python": null,
+      "reason": null,
+      "status": "planned"
+    },
+    "ANY /api/trading/setup-complete": {
+      "python": null,
+      "reason": null,
+      "status": "planned"
+    },
+    "ANY /api/trading/setup-complete/": {
+      "python": null,
+      "reason": null,
+      "status": "planned"
+    },
+    "ANY /api/trading/setup-init": {
+      "python": null,
+      "reason": null,
+      "status": "planned"
+    },
+    "ANY /api/trading/setup-init/": {
+      "python": null,
+      "reason": null,
+      "status": "planned"
+    },
+    "ANY /api/trading/status": {
+      "python": null,
+      "reason": null,
+      "status": "planned"
+    },
+    "ANY /api/trading/status/": {
+      "python": null,
+      "reason": null,
+      "status": "planned"
+    },
+    "DELETE /api/github/delete-ssh": {
+      "python": null,
+      "reason": null,
+      "status": "planned"
+    },
+    "DELETE /api/github/delete-token": {
+      "python": null,
+      "reason": null,
+      "status": "planned"
+    },
+    "GET /api/github/auth-status": {
+      "python": null,
+      "reason": null,
+      "status": "planned"
+    },
+    "GET /api/github/deployments": {
+      "python": null,
+      "reason": null,
+      "status": "planned"
+    },
+    "GET /api/github/gitops-events": {
+      "python": null,
+      "reason": null,
+      "status": "planned"
+    },
+    "GET /api/github/status": {
+      "python": null,
+      "reason": null,
+      "status": "planned"
+    },
+    "GET /api/github/webhook-info": {
+      "python": null,
+      "reason": null,
+      "status": "planned"
+    },
+    "GET /api/health": {
+      "python": null,
+      "reason": null,
+      "status": "planned"
+    },
+    "GET /api/trading/assets": {
+      "python": null,
+      "reason": null,
+      "status": "planned"
+    },
+    "GET /api/trading/audit-logs": {
+      "python": null,
+      "reason": null,
+      "status": "planned"
+    },
+    "GET /api/trading/autonomous-optimizer/status": {
+      "python": null,
+      "reason": null,
+      "status": "planned"
+    },
+    "GET /api/trading/decisions": {
+      "python": null,
+      "reason": null,
+      "status": "planned"
+    },
+    "GET /api/trading/engines/health": {
+      "python": null,
+      "reason": null,
+      "status": "planned"
+    },
+    "GET /api/trading/exchanges/credentials": {
+      "python": null,
+      "reason": null,
+      "status": "planned"
+    },
+    "GET /api/trading/futures/universe": {
+      "python": null,
+      "reason": null,
+      "status": "planned"
+    },
+    "GET /api/trading/gigpilot/health": {
+      "python": null,
+      "reason": null,
+      "status": "planned"
+    },
+    "GET /api/trading/gigpilot/state": {
+      "python": null,
+      "reason": null,
+      "status": "planned"
+    },
+    "GET /api/trading/inventory-awareness": {
+      "python": null,
+      "reason": null,
+      "status": "planned"
+    },
+    "GET /api/trading/pair/:symbol": {
+      "python": null,
+      "reason": null,
+      "status": "planned"
+    },
+    "GET /api/trading/pairs": {
+      "python": null,
+      "reason": null,
+      "status": "planned"
+    },
+    "GET /api/trading/quant/edge-breakdown": {
+      "python": null,
+      "reason": null,
+      "status": "planned"
+    },
+    "GET /api/trading/readiness": {
+      "python": null,
+      "reason": null,
+      "status": "planned"
+    },
+    "GET /api/trading/reconciliation/status": {
+      "python": null,
+      "reason": null,
+      "status": "planned"
+    },
+    "GET /api/trading/regime-transition": {
+      "python": null,
+      "reason": null,
+      "status": "planned"
+    },
+    "GET /api/trading/research": {
+      "python": null,
+      "reason": null,
+      "status": "planned"
+    },
+    "GET /api/trading/risk": {
+      "python": null,
+      "reason": null,
+      "status": "planned"
+    },
+    "GET /api/trading/state": {
+      "python": null,
+      "reason": null,
+      "status": "planned"
+    },
+    "GET /api/trading/strategies": {
+      "python": null,
+      "reason": null,
+      "status": "planned"
+    },
+    "GET /api/trading/strategy-allocator/current": {
+      "python": null,
+      "reason": null,
+      "status": "planned"
+    },
+    "GET /api/trading/strategy/compare/:challengerId": {
+      "python": null,
+      "reason": null,
+      "status": "planned"
+    },
+    "GET /api/trading/strategy/rollback/status": {
+      "python": null,
+      "reason": null,
+      "status": "planned"
+    },
+    "GET /api/trading/sweep/info": {
+      "python": null,
+      "reason": null,
+      "status": "planned"
+    },
+    "GET /api/trading/updates": {
+      "python": null,
+      "reason": null,
+      "status": "planned"
+    },
+    "POST /api/deploy": {
+      "python": null,
+      "reason": null,
+      "status": "planned"
+    },
+    "POST /api/github/configure-remote": {
+      "python": null,
+      "reason": null,
+      "status": "planned"
+    },
+    "POST /api/github/generate-ssh": {
+      "python": null,
+      "reason": null,
+      "status": "planned"
+    },
+    "POST /api/github/git-op": {
+      "python": null,
+      "reason": null,
+      "status": "planned"
+    },
+    "POST /api/github/push-and-deploy": {
+      "python": null,
+      "reason": null,
+      "status": "planned"
+    },
+    "POST /api/github/save-ssh": {
+      "python": null,
+      "reason": null,
+      "status": "planned"
+    },
+    "POST /api/github/save-token": {
+      "python": null,
+      "reason": null,
+      "status": "planned"
+    },
+    "POST /api/github/simulate-webhook": {
+      "python": null,
+      "reason": null,
+      "status": "planned"
+    },
+    "POST /api/github/test-connection": {
+      "python": null,
+      "reason": null,
+      "status": "planned"
+    },
+    "POST /api/github/trigger-deploy": {
+      "python": null,
+      "reason": null,
+      "status": "planned"
+    },
+    "POST /api/github/webhook": {
+      "python": null,
+      "reason": null,
+      "status": "planned"
+    },
+    "POST /api/trading/autonomous-optimizer/run": {
+      "python": null,
+      "reason": null,
+      "status": "planned"
+    },
+    "POST /api/trading/autonomous-optimizer/toggle": {
+      "python": null,
+      "reason": null,
+      "status": "planned"
+    },
+    "POST /api/trading/autonomy": {
+      "python": null,
+      "reason": null,
+      "status": "planned"
+    },
+    "POST /api/trading/decisions/evaluate": {
+      "python": null,
+      "reason": null,
+      "status": "planned"
+    },
+    "POST /api/trading/engines/:id/clear-errors": {
+      "python": null,
+      "reason": null,
+      "status": "planned"
+    },
+    "POST /api/trading/engines/:id/off-switch": {
+      "python": null,
+      "reason": null,
+      "status": "planned"
+    },
+    "POST /api/trading/exchanges/keys": {
+      "python": null,
+      "reason": null,
+      "status": "planned"
+    },
+    "POST /api/trading/gigpilot/arm": {
+      "python": null,
+      "reason": null,
+      "status": "planned"
+    },
+    "POST /api/trading/gigpilot/disarm": {
+      "python": null,
+      "reason": null,
+      "status": "planned"
+    },
+    "POST /api/trading/gigpilot/kill": {
+      "python": null,
+      "reason": null,
+      "status": "planned"
+    },
+    "POST /api/trading/grid/configure": {
+      "python": null,
+      "reason": null,
+      "status": "planned"
+    },
+    "POST /api/trading/kill-switch/deactivate": {
+      "python": null,
+      "reason": null,
+      "status": "planned"
+    },
+    "POST /api/trading/kill-switch/toggle": {
+      "python": null,
+      "reason": null,
+      "status": "planned"
+    },
+    "POST /api/trading/kill-switch/trigger": {
+      "python": null,
+      "reason": null,
+      "status": "planned"
+    },
+    "POST /api/trading/mode": {
+      "python": null,
+      "reason": null,
+      "status": "planned"
+    },
+    "POST /api/trading/order/cancel": {
+      "python": null,
+      "reason": null,
+      "status": "planned"
+    },
+    "POST /api/trading/order/cancel-all": {
+      "python": null,
+      "reason": null,
+      "status": "planned"
+    },
+    "POST /api/trading/order/place": {
+      "python": null,
+      "reason": null,
+      "status": "planned"
+    },
+    "POST /api/trading/pair/select": {
+      "python": null,
+      "reason": null,
+      "status": "planned"
+    },
+    "POST /api/trading/reconciliation/audit": {
+      "python": null,
+      "reason": null,
+      "status": "planned"
+    },
+    "POST /api/trading/research/analyze": {
+      "python": null,
+      "reason": null,
+      "status": "planned"
+    },
+    "POST /api/trading/risk/circuit-breaker/reset": {
+      "python": null,
+      "reason": null,
+      "status": "planned"
+    },
+    "POST /api/trading/risk/config": {
+      "python": null,
+      "reason": null,
+      "status": "planned"
+    },
+    "POST /api/trading/script/validate": {
+      "python": null,
+      "reason": null,
+      "status": "planned"
+    },
+    "POST /api/trading/strategy-allocator/reallocate": {
+      "python": null,
+      "reason": null,
+      "status": "planned"
+    },
+    "POST /api/trading/strategy/create-variant": {
+      "python": null,
+      "reason": null,
+      "status": "planned"
+    },
+    "POST /api/trading/strategy/evaluate-evidence": {
+      "python": null,
+      "reason": null,
+      "status": "planned"
+    },
+    "POST /api/trading/strategy/promote": {
+      "python": null,
+      "reason": null,
+      "status": "planned"
+    },
+    "POST /api/trading/strategy/rollback": {
+      "python": null,
+      "reason": null,
+      "status": "planned"
+    },
+    "POST /api/trading/sweep/auto": {
+      "python": null,
+      "reason": null,
+      "status": "planned"
+    },
+    "POST /api/trading/sweep/execute": {
+      "python": null,
+      "reason": null,
+      "status": "planned"
+    },
+    "POST /api/trading/sweep/wallet": {
+      "python": null,
+      "reason": null,
+      "status": "planned"
+    }
+  },
+  "other_modules": {
+    "server.ts": {
+      "python": null,
+      "reason": null,
+      "status": "planned"
+    },
+    "server/activityLogger.ts": {
+      "python": null,
+      "reason": null,
+      "status": "planned"
+    },
+    "server/corsConfig.ts": {
+      "python": null,
+      "reason": null,
+      "status": "planned"
+    },
+    "server/githubRoutes.ts": {
+      "python": null,
+      "reason": null,
+      "status": "planned"
+    },
+    "server/githubService.ts": {
+      "python": null,
+      "reason": null,
+      "status": "planned"
+    },
+    "server/worker.ts": {
+      "python": null,
+      "reason": null,
+      "status": "planned"
+    }
+  },
+  "processes": {
+    "gigpilot": {
+      "python": null,
+      "reason": null,
+      "status": "planned"
+    },
+    "gigpilot-engine": {
+      "python": null,
+      "reason": null,
+      "status": "planned"
+    },
+    "worker": {
+      "python": null,
+      "reason": null,
+      "status": "planned"
+    }
+  },
+  "trading_modules": {
+    "server/trading/adaptiveGridEngine.ts": {
+      "python": null,
+      "reason": null,
+      "status": "planned"
+    },
+    "server/trading/autonomousEngineProbe.ts": {
+      "python": null,
+      "reason": null,
+      "status": "planned"
+    },
+    "server/trading/autonomousProfitOptimizer.ts": {
+      "python": null,
+      "reason": null,
+      "status": "planned"
+    },
+    "server/trading/autonomousStrategyBuilder.ts": {
+      "python": null,
+      "reason": null,
+      "status": "planned"
+    },
+    "server/trading/backgroundOwnership.ts": {
+      "python": null,
+      "reason": null,
+      "status": "planned"
+    },
+    "server/trading/bybitAdapter.ts": {
+      "python": null,
+      "reason": null,
+      "status": "planned"
+    },
+    "server/trading/bybitErrors.ts": {
+      "python": null,
+      "reason": null,
+      "status": "planned"
+    },
+    "server/trading/dataEngine.ts": {
+      "python": null,
+      "reason": null,
+      "status": "planned"
+    },
+    "server/trading/decisionPipeline.ts": {
+      "python": null,
+      "reason": null,
+      "status": "planned"
+    },
+    "server/trading/exchangeExecutionEngine.ts": {
+      "python": null,
+      "reason": null,
+      "status": "planned"
+    },
+    "server/trading/futuresUniverse.ts": {
+      "python": null,
+      "reason": null,
+      "status": "planned"
+    },
+    "server/trading/gridEngine.ts": {
+      "python": null,
+      "reason": null,
+      "status": "planned"
+    },
+    "server/trading/indicators.ts": {
+      "python": null,
+      "reason": null,
+      "status": "planned"
+    },
+    "server/trading/killSwitch.ts": {
+      "python": null,
+      "reason": null,
+      "status": "planned"
+    },
+    "server/trading/learningLoop.ts": {
+      "python": null,
+      "reason": null,
+      "status": "planned"
+    },
+    "server/trading/marketRegime.ts": {
+      "python": null,
+      "reason": null,
+      "status": "planned"
+    },
+    "server/trading/ownerAuth.ts": {
+      "python": null,
+      "reason": null,
+      "status": "planned"
+    },
+    "server/trading/profitAccounting.ts": {
+      "python": null,
+      "reason": null,
+      "status": "planned"
+    },
+    "server/trading/profitSweep.ts": {
+      "python": null,
+      "reason": null,
+      "status": "planned"
+    },
+    "server/trading/quantEngine.ts": {
+      "python": null,
+      "reason": null,
+      "status": "planned"
+    },
+    "server/trading/regimeTransitionDetector.ts": {
+      "python": null,
+      "reason": null,
+      "status": "planned"
+    },
+    "server/trading/researchAgent.ts": {
+      "python": null,
+      "reason": null,
+      "status": "planned"
+    },
+    "server/trading/riskEngine.ts": {
+      "python": null,
+      "reason": null,
+      "status": "planned"
+    },
+    "server/trading/routes.ts": {
+      "python": null,
+      "reason": null,
+      "status": "planned"
+    },
+    "server/trading/scriptingEngine.ts": {
+      "python": null,
+      "reason": null,
+      "status": "planned"
+    },
+    "server/trading/selfUpdater.ts": {
+      "python": null,
+      "reason": null,
+      "status": "planned"
+    },
+    "server/trading/store.ts": {
+      "python": null,
+      "reason": null,
+      "status": "planned"
+    },
+    "server/trading/strategyEvaluator.ts": {
+      "python": null,
+      "reason": null,
+      "status": "planned"
+    },
+    "server/trading/systemMonitor.ts": {
+      "python": null,
+      "reason": null,
+      "status": "planned"
+    },
+    "server/trading/tradingReadiness.ts": {
+      "python": null,
+      "reason": null,
+      "status": "planned"
+    },
+    "server/trading/types.ts": {
+      "python": null,
+      "reason": null,
+      "status": "planned"
+    }
+  }
+}
