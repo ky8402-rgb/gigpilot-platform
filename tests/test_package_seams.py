@@ -43,7 +43,7 @@ def bad(msg: str) -> None:
 
 
 def main() -> int:
-    print("Package Seams (monolith <-> gp/)")
+    print("Package Seams (monolith <-> gpkg/)")
     print("================================")
 
     print("\n[1] Re-exported symbols are the SAME OBJECT, not duplicates")
