@@ -241,24 +241,41 @@ def _config_path() -> Path:
     return _data_dir() / "owner-auth-config.json"
 
 
+# Repo root derived from THIS FILE (gpkg/api/auth.py -> <repo>). Resolving `.env` from the source
+# location rather than the process CWD is deliberate; see _load_dotenv_once.
+_REPO_ROOT = Path(__file__).resolve().parents[2]
+
+
 def _load_dotenv_once() -> None:
     """Load the app's `.env` so BOTH stacks resolve the same owner secret.
 
-    The Node backend runs under pm2 with cwd = the app directory and reads `.env` (dotenv). The
-    Python engine runs beside it with the same cwd. Without this, the Node-minted owner session
-    token could not be verified by the engine, and every Node->engine proxy call would 401.
+    The Node backend reads `.env` via `dotenv.config({override: true})` from `process.cwd()`, which
+    pm2 sets to the app directory. The engine must land on the SAME file. If it does not, the two
+    stacks sign with different secrets, the engine refuses every forwarded session with 401, and the
+    Node proxy reports a perfectly healthy engine as `503 ENGINE UNREACHABLE`.
 
-    `OWNER_SESSION_SECRET` / `JWT_SECRET` therefore act as the shared signing secret across both
-    stacks, exactly as `.env.example` already implies. Failure to load is non-fatal: the persisted
-    `owner-auth-config.json` (which Node writes and this module reads) carries the fallback
-    `jwtSecret`, so the two still converge even with no `.env`.
+    Locating `.env` from `__file__` first removes a whole class of mismatch: the engine's CWD depends
+    on how pm2 was invoked (ecosystem `cwd`, a manual `pm2 start`, a systemd unit, or a debug shell),
+    while the source location does not. CWD is still consulted as a fallback so a layout that places
+    `.env` beside the process keeps working.
+
+    `override=False` leaves an explicitly-injected environment authoritative, so an operator can
+    still force the secret without editing a file.
+
+    Failure to load is non-fatal: the persisted `owner-auth-config.json`, which Node also writes and
+    this module reads, carries the fallback `jwtSecret`.
     """
     try:
         from dotenv import load_dotenv
-
-        load_dotenv(dotenv_path=Path(os.getcwd()) / ".env", override=False)
     except Exception:
-        pass
+        return
+    for candidate in (_REPO_ROOT / ".env", Path(os.getcwd()) / ".env"):
+        try:
+            if candidate.is_file():
+                load_dotenv(dotenv_path=candidate, override=False)
+                return
+        except Exception:
+            continue
 
 
 def _load_or_create_config() -> OwnerConfig:

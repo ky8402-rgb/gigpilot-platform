@@ -1217,6 +1217,7 @@ tradingRouter.get('/gigpilot/state', requireOwnerAuth, async (req: Request, res:
   try {
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 2000);
+    let engineStatus: number | null = null;
     try {
       const response = await fetch(`${GIGPILOT_URL}/api/state`, {
         headers: { ...engineAuthHeaders(req) },
@@ -1227,11 +1228,47 @@ tradingRouter.get('/gigpilot/state', requireOwnerAuth, async (req: Request, res:
         const data = await response.json();
         return res.json({ success: true, daemonRunning: true, ...data });
       }
+      // The engine ANSWERED, and refused. That is categorically different from the engine being
+      // down, and conflating the two is what made a signing-secret mismatch present in the UI as
+      // "ENGINE UNREACHABLE" while /api/health simultaneously reported the engine healthy at 2ms.
+      engineStatus = response.status;
     } catch {
       clearTimeout(timeoutId);
     }
 
-    // Engine unreachable: fail-visible. Never fabricate state or return mock numbers.
+    if (engineStatus === 401 || engineStatus === 403) {
+      // Node holds a session it considers valid; the engine disagrees. Either the two stacks have
+      // different signing secrets, or the engine restarted with a rotated one. Both are deployment
+      // faults, not user faults — say so precisely instead of blaming the engine's availability.
+      console.error(
+        `[gigpilot/state] ENGINE AUTH MISMATCH: engine returned ${engineStatus} for a session Node accepted. ` +
+          'Node and the engine are not sharing OWNER_SESSION_SECRET/JWT_SECRET.'
+      );
+      return res.status(503).json({
+        success: false,
+        reachable: true,
+        authMismatch: true,
+        error: 'ENGINE_AUTH_MISMATCH',
+        message:
+          'The autonomous engine refused this owner session. The dashboard and the engine are not sharing a signing secret; this is a deployment fault, not an outage.',
+        engineStatus,
+        ts: new Date().toISOString(),
+        armed: false,
+        host: 'https://api.bybit.com',
+        position_mode: null,
+        hurdle_bps: 3.0,
+        equity: null,
+        margin_ratio: null,
+        gross_notional: null,
+        daily_pnl: null,
+        realized_today: null,
+        positions: [],
+        signals: [],
+        markets: [],
+      });
+    }
+
+    // Engine genuinely unreachable: fail-visible. Never fabricate state or return mock numbers.
     return res.status(503).json({
       success: false,
       reachable: false,

@@ -18,14 +18,37 @@ export const FuturesCommandCenter: React.FC = () => {
   const [candles, setCandles] = useState<Candle[]>([]);
 
   const refresh = async () => {
-    setError('');
-    try {
-      const [u, s] = await Promise.all([fetchFuturesUniverse(), fetchGigPilotState()]);
-      setMarkets(u);
-      setState(s);
-      setSelected(prev => u.find(x => x.exchange === prev?.exchange && x.symbol === prev?.symbol) || u[0] || null);
-    } catch (e: any) { setError(e?.message || 'Live trading telemetry unavailable.'); }
-    finally { setLoading(false); }
+    // `Promise.all` was the wrong combinator here. The market universe and the engine state are
+    // INDEPENDENT sources, but a single rejected promise blanked BOTH: an authenticated-owner
+    // problem on /gigpilot/state also erased the live Bybit market list, so the page rendered as
+    // "everything is down" when only one half had failed. allSettled keeps each half truthful.
+    const [universeRes, stateRes] = await Promise.allSettled([fetchFuturesUniverse(), fetchGigPilotState()]);
+
+    if (universeRes.status === 'fulfilled') {
+      setMarkets(universeRes.value);
+      const list = universeRes.value;
+      setSelected(prev => list.find(x => x.exchange === prev?.exchange && x.symbol === prev?.symbol) || list[0] || null);
+    }
+
+    if (stateRes.status === 'fulfilled') {
+      setState(stateRes.value);
+      setError('');
+    } else {
+      const e: any = stateRes.reason;
+      setState(null);
+      if (e?.status === 401) {
+        // Not an outage. The owner session is missing, expired, or was signed with a secret the
+        // engine no longer holds (the signing secret was rotated). Saying "ENGINE UNREACHABLE" here
+        // sent the operator hunting for a dead engine that was in fact healthy.
+        setError('OWNER SESSION REQUIRED — the engine refused this session. Sign in again to load live state.');
+      } else if (e?.data?.error === 'ENGINE_AUTH_MISMATCH') {
+        setError('ENGINE AUTH MISMATCH — the dashboard and the engine are not sharing a signing secret. This is a deployment fault, not an outage.');
+      } else {
+        setError(e?.message || 'Live trading telemetry unavailable.');
+      }
+    }
+
+    setLoading(false);
   };
 
   useEffect(() => { refresh(); const id = window.setInterval(refresh, 5000); return () => clearInterval(id); }, []);

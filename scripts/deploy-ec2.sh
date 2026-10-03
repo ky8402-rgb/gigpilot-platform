@@ -259,6 +259,23 @@ for attempt in $(seq 1 15); do
   sleep 2
 done
 
+# --- Node <-> engine owner-session CONVERGENCE gate -------------------------------------------
+# Everything above this line checks the engine's PUBLIC /health, which by construction cannot fail
+# for an authentication reason. That blind spot is exactly how a signing-secret mismatch reached
+# production: Node authenticated the owner, forwarded the session to the engine, the engine rejected
+# it with 401, and the proxy reported a healthy engine as "ENGINE UNREACHABLE" on the dashboard.
+#
+# This probe mints a token with the resolved owner secret and proves end-to-end that (a) Node accepts
+# it, (b) the ENGINE accepts the same token, and (c) the engine still refuses anonymous and
+# wrong-secret callers. `set -e` aborts the rollout if it fails.
+echo "Verifying Node <-> engine owner-session convergence..."
+if ! node "$APP_DIR/scripts/verify-engine-auth-convergence.mjs"; then
+  echo "ERROR: Node and the autonomous engine do NOT share an owner session secret."
+  echo "       Every authenticated engine proxy would degrade to 503 ENGINE UNREACHABLE."
+  echo "       Check OWNER_SESSION_SECRET in $APP_DIR/.env and confirm BOTH processes restarted."
+  exit 1
+fi
+
 # ATTESTATION — record the deployed commit ONLY now. By this point the source is checked out, the
 # runtime invariant gate passed, the build completed, PM2 relaunched every app, the engine
 # passed its health and restart recovery gates, and /api/health is verified live.
