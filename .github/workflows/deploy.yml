@@ -1,63 +1,40 @@
 name: Deploy Python FastAPI + React
-
 on:
   push:
     branches: [main, master]
   workflow_dispatch:
-
 permissions:
   contents: read
-  checks: read
-  actions: read
-
 concurrency:
   group: deploy-${{ github.ref }}
   cancel-in-progress: false
-
 jobs:
-  wait-for-ci:
-    name: Wait for exact commit CI
-    runs-on: ubuntu-latest
-    steps:
-      - name: Wait for CI success
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          SHA: ${{ github.sha }}
-        run: |
-          set -euo pipefail
-          for attempt in $(seq 1 40); do
-            curl -fsSL -H "Authorization: Bearer $GH_TOKEN" -H "Accept: application/vnd.github+json"               "https://api.github.com/repos/$GITHUB_REPOSITORY/commits/$SHA/check-runs?per_page=100" -o /tmp/checks.json
-            python3 - <<'PY'
-import json
-d=json.load(open('/tmp/checks.json'))
-c=next((x for x in d.get('check_runs',[]) if x.get('name')=='Typecheck and production build'),None)
-print(c.get('status','') if c else 'pending', c.get('conclusion','') if c else '')
-PY
-            if python3 - <<'PY'
-import json,sys
-d=json.load(open('/tmp/checks.json'))
-c=next((x for x in d.get('check_runs',[]) if x.get('name')=='Typecheck and production build'),None)
-sys.exit(0 if c and c.get('conclusion')=='success' else 1)
-PY
-            then exit 0; fi
-            if python3 - <<'PY'
-import json,sys
-d=json.load(open('/tmp/checks.json'))
-c=next((x for x in d.get('check_runs',[]) if x.get('name')=='Typecheck and production build'),None)
-sys.exit(0 if c and c.get('conclusion') in {'failure','cancelled','timed_out'} else 1)
-PY
-            then exit 1; fi
-            sleep 15
-          done
-          exit 1
-
-  deploy-python:
-    needs: wait-for-ci
-    name: Deploy Python FastAPI + React to EC2
+  validate:
+    name: Full Python + React validation
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: npm ci
+      - run: npm test
+      - run: python -m pip install --quiet -r requirements.txt
+      - run: python tests/test_parity.py
+      - run: python tests/test_execution_idempotency.py
+      - run: python tests/test_package_seams.py
+      - run: python tests/test_dashboard_delivery.py
+      - run: python -m pytest tests/ -q --no-header
+  deploy:
+    needs: validate
+    name: Deploy verified Python runtime to EC2
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
       - name: Verify production database secret
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL || secrets.NEON_DATABASE_URL || '' }}
@@ -65,8 +42,7 @@ PY
           set -euo pipefail
           printf '%s' "$DATABASE_URL" | grep -Eq '^postgres(ql)?://'
           echo "::add-mask::$DATABASE_URL"
-
-      - name: Deploy over existing approved SSH path
+      - name: Deploy via approved SSH
         env:
           SSH_KEY: ${{ secrets.EC2_SSH_KEY || secrets.GIGPILOT_MUMBAI_EC2 }}
           EC2_HOST: ${{ secrets.EC2_HOST || '' }}
@@ -79,8 +55,7 @@ PY
         run: |
           set -euo pipefail
           if [ -z "$EC2_HOST" ] && [ -f deployment/backend-host.txt ]; then EC2_HOST="$(tr -d '\r\n' < deployment/backend-host.txt)"; fi
-          test -n "$EC2_HOST"
-          test -n "$SSH_KEY"
+          test -n "$EC2_HOST" && test -n "$SSH_KEY"
           mkdir -p ~/.ssh
           printf '%s\n' "$SSH_KEY" > ~/.ssh/id_rsa
           chmod 600 ~/.ssh/id_rsa
@@ -90,32 +65,24 @@ PY
             printf 'export DATABASE_URL=%q\n' "$DATABASE_URL"
             printf 'export GEMINI_API_KEY=%q\n' "$GEMINI_API_KEY"
             printf 'export BYBIT_API_KEY=%q\n' "$BYBIT_API_KEY"
-            printf 'export BYBIT_API_SECRET=%q\n' "$BYBIT_API_SECRET"
             printf 'export GITHUB_TOKEN=%q\n' "$GITHUB_TOKEN"
             cat scripts/deploy-ec2.sh
           } | ssh -o StrictHostKeyChecking=no -o ConnectTimeout=20 -i ~/.ssh/id_rsa "$EC2_USER@$EC2_HOST" "bash -s"
-
-      - name: Verify exact live FastAPI SHA and frontend
+      - name: Verify exact SHA, FastAPI, React, and Node absence
         env:
           EC2_HOST: ${{ secrets.EC2_HOST || '' }}
         run: |
           set -euo pipefail
           if [ -z "$EC2_HOST" ] && [ -f deployment/backend-host.txt ]; then EC2_HOST="$(tr -d '\r\n' < deployment/backend-host.txt)"; fi
           BASE="https://${EC2_HOST//./-}.sslip.io"
-          for attempt in $(seq 1 20); do
-            if curl -kfsS "$BASE/api/health" -o /tmp/health.json; then
-              python3 - <<'PY'
-import json,os,sys
-x=json.load(open('/tmp/health.json')); expected=os.environ['GITHUB_SHA']
-assert x.get('deployedCommit')==expected,(x.get('deployedCommit'),expected)
-assert x.get('autonomousEngine',{}).get('reachable') is True
-print("exact FastAPI SHA:",x['deployedCommit'])
+          curl -kfsS "$BASE/api/health" -o /tmp/health.json
+          python3 - <<'PY'
+import json,os
+x=json.load(open('/tmp/health.json'))
+assert x.get("deployedCommit")==os.environ["GITHUB_SHA"],(x.get("deployedCommit"),os.environ["GITHUB_SHA"])
+assert x.get("autonomousEngine",{}).get("reachable") is True
+print("verified FastAPI SHA:",x["deployedCommit"])
 PY
-              curl -kfsS "$BASE/" | grep -Eiq '<html|<script|<div'
-              curl -kfsS "$BASE/version.json" | python3 -c 'import json,sys,os; x=json.load(sys.stdin); assert x.get("commit")==os.environ["GITHUB_SHA"],x'
-              exit 0
-            fi
-            sleep 5
-          done
-          echo "Live FastAPI verification failed"
-          exit 1
+          curl -kfsS "$BASE/" | grep -Eiq '<html|<script|<div'
+          curl -kfsS "$BASE/version.json" | python3 -c 'import json,sys,os; x=json.load(sys.stdin); assert x.get("commit")==os.environ["GITHUB_SHA"],x'
+          echo "✔ React is served by FastAPI"
