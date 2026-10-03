@@ -683,207 +683,246 @@
   "other_modules": {
     "server.ts": {
       "python": "gigpilot.py",
-      "reason": "FastAPI application is the sole backend entrypoint.",
-      "status": "migrated"
+      "reason": "Node backend module deleted only after Python parity gates and a successful FastAPI production deployment.",
+      "status": "removed",
+      "replacement_proven": true
     },
     "server/activityLogger.ts": {
       "python": "gpkg/persistence/store.py",
-      "reason": "Audit journaling is persisted by the canonical Python WAL store.",
-      "status": "migrated"
+      "reason": "Node backend module deleted only after Python parity gates and a successful FastAPI production deployment.",
+      "status": "removed",
+      "replacement_proven": true
     },
     "server/corsConfig.ts": {
       "python": "gigpilot.py",
-      "reason": "Same-origin React/FastAPI serving removes the separate Node CORS boundary.",
-      "status": "migrated"
+      "reason": "Node backend module deleted only after Python parity gates and a successful FastAPI production deployment.",
+      "status": "removed",
+      "replacement_proven": true
     },
     "server/githubRoutes.ts": {
       "python": "gpkg/api/compat.py",
-      "reason": "Legacy deployment administration is pipeline-owned and fail-closed in Python.",
-      "status": "migrated"
+      "reason": "Node backend module deleted only after Python parity gates and a successful FastAPI production deployment.",
+      "status": "removed",
+      "replacement_proven": true
     },
     "server/githubService.ts": {
       "python": "gpkg/api/compat.py",
-      "reason": "Production deployment authority is the signed GitHub Actions pipeline; runtime mutation is disabled.",
-      "status": "migrated"
+      "reason": "Node backend module deleted only after Python parity gates and a successful FastAPI production deployment.",
+      "status": "removed",
+      "replacement_proven": true
     },
     "server/worker.ts": {
       "python": "gigpilot.py",
-      "reason": "Background loops are owned by the single Python process.",
-      "status": "migrated"
+      "reason": "Node backend module deleted only after Python parity gates and a successful FastAPI production deployment.",
+      "status": "removed",
+      "replacement_proven": true
     }
   },
   "processes": {
     "gigpilot": {
       "python": "gigpilot.py",
-      "reason": "Replaced by the single Python FastAPI process; production cutover pending.",
-      "status": "in_progress"
+      "status": "removed",
+      "replacement_proven": true,
+      "reason": "Node API process removed after verified FastAPI production cutover."
     },
     "gigpilot-engine": {
       "python": "gigpilot.py",
-      "reason": "Native Python FastAPI/autonomous engine.",
-      "status": "migrated"
+      "status": "migrated",
+      "reason": "Python engine is the production FastAPI process."
     },
     "worker": {
       "python": "gigpilot.py",
-      "reason": "Background loops are owned by the Python engine; production cutover pending.",
-      "status": "in_progress"
+      "status": "removed",
+      "replacement_proven": true,
+      "reason": "Node worker removed; background loops are owned by the Python process."
     }
   },
   "trading_modules": {
     "server/trading/adaptiveGridEngine.ts": {
       "python": "gpkg/trading/adaptive_grid_engine.py",
-      "reason": "Python-native trading domain boundary exists and is covered by the Python package seam gate.",
-      "status": "migrated"
+      "reason": "Node trading module deleted only after Python parity gates and a successful FastAPI production deployment.",
+      "status": "removed",
+      "replacement_proven": true
     },
     "server/trading/autonomousEngineProbe.ts": {
       "python": "gpkg/trading/autonomous_engine_probe.py",
-      "reason": "Python-native trading domain boundary exists and is covered by the Python package seam gate.",
-      "status": "migrated"
+      "reason": "Node trading module deleted only after Python parity gates and a successful FastAPI production deployment.",
+      "status": "removed",
+      "replacement_proven": true
     },
     "server/trading/autonomousProfitOptimizer.ts": {
       "python": "gpkg/trading/autonomous_profit_optimizer.py",
-      "reason": "Python-native trading domain boundary exists and is covered by the Python package seam gate.",
-      "status": "migrated"
+      "reason": "Node trading module deleted only after Python parity gates and a successful FastAPI production deployment.",
+      "status": "removed",
+      "replacement_proven": true
     },
     "server/trading/autonomousStrategyBuilder.ts": {
       "python": "gpkg/trading/autonomous_strategy_builder.py",
-      "reason": "Python-native trading domain boundary exists and is covered by the Python package seam gate.",
-      "status": "migrated"
+      "reason": "Node trading module deleted only after Python parity gates and a successful FastAPI production deployment.",
+      "status": "removed",
+      "replacement_proven": true
     },
     "server/trading/backgroundOwnership.ts": {
       "python": "gpkg/trading/background_ownership.py",
-      "reason": "Python-native trading domain boundary exists and is covered by the Python package seam gate.",
-      "status": "migrated"
+      "reason": "Node trading module deleted only after Python parity gates and a successful FastAPI production deployment.",
+      "status": "removed",
+      "replacement_proven": true
     },
     "server/trading/bybitAdapter.ts": {
       "python": "gpkg/trading/bybit_adapter.py",
-      "reason": "Python-native trading domain boundary exists and is covered by the Python package seam gate.",
-      "status": "migrated"
+      "reason": "Node trading module deleted only after Python parity gates and a successful FastAPI production deployment.",
+      "status": "removed",
+      "replacement_proven": true
     },
     "server/trading/bybitErrors.ts": {
       "python": "gpkg/trading/bybit_errors.py",
-      "reason": "Python-native trading domain boundary exists and is covered by the Python package seam gate.",
-      "status": "migrated"
+      "reason": "Node trading module deleted only after Python parity gates and a successful FastAPI production deployment.",
+      "status": "removed",
+      "replacement_proven": true
     },
     "server/trading/dataEngine.ts": {
       "python": "gpkg/trading/data_engine.py",
-      "reason": "Python-native trading domain boundary exists and is covered by the Python package seam gate.",
-      "status": "migrated"
+      "reason": "Node trading module deleted only after Python parity gates and a successful FastAPI production deployment.",
+      "status": "removed",
+      "replacement_proven": true
     },
     "server/trading/decisionPipeline.ts": {
       "python": "gpkg/trading/decision_pipeline.py",
-      "reason": "Python-native trading domain boundary exists and is covered by the Python package seam gate.",
-      "status": "migrated"
+      "reason": "Node trading module deleted only after Python parity gates and a successful FastAPI production deployment.",
+      "status": "removed",
+      "replacement_proven": true
     },
     "server/trading/exchangeExecutionEngine.ts": {
       "python": "gpkg/trading/exchange_execution_engine.py",
-      "reason": "Python-native trading domain boundary exists and is covered by the Python package seam gate.",
-      "status": "migrated"
+      "reason": "Node trading module deleted only after Python parity gates and a successful FastAPI production deployment.",
+      "status": "removed",
+      "replacement_proven": true
     },
     "server/trading/futuresUniverse.ts": {
       "python": "gpkg/trading/futures_universe.py",
-      "reason": "Python-native trading domain boundary exists and is covered by the Python package seam gate.",
-      "status": "migrated"
+      "reason": "Node trading module deleted only after Python parity gates and a successful FastAPI production deployment.",
+      "status": "removed",
+      "replacement_proven": true
     },
     "server/trading/gridEngine.ts": {
       "python": "gpkg/trading/grid_engine.py",
-      "reason": "Python-native trading domain boundary exists and is covered by the Python package seam gate.",
-      "status": "migrated"
+      "reason": "Node trading module deleted only after Python parity gates and a successful FastAPI production deployment.",
+      "status": "removed",
+      "replacement_proven": true
     },
     "server/trading/indicators.ts": {
       "python": "gpkg/trading/indicators.py",
-      "reason": "Python-native trading domain boundary exists and is covered by the Python package seam gate.",
-      "status": "migrated"
+      "reason": "Node trading module deleted only after Python parity gates and a successful FastAPI production deployment.",
+      "status": "removed",
+      "replacement_proven": true
     },
     "server/trading/killSwitch.ts": {
       "python": "gpkg/trading/kill_switch.py",
-      "reason": "Python-native trading domain boundary exists and is covered by the Python package seam gate.",
-      "status": "migrated"
+      "reason": "Node trading module deleted only after Python parity gates and a successful FastAPI production deployment.",
+      "status": "removed",
+      "replacement_proven": true
     },
     "server/trading/learningLoop.ts": {
       "python": "gpkg/trading/learning_loop.py",
-      "reason": "Python-native trading domain boundary exists and is covered by the Python package seam gate.",
-      "status": "migrated"
+      "reason": "Node trading module deleted only after Python parity gates and a successful FastAPI production deployment.",
+      "status": "removed",
+      "replacement_proven": true
     },
     "server/trading/marketRegime.ts": {
       "python": "gpkg/trading/market_regime.py",
-      "reason": "Python-native trading domain boundary exists and is covered by the Python package seam gate.",
-      "status": "migrated"
+      "reason": "Node trading module deleted only after Python parity gates and a successful FastAPI production deployment.",
+      "status": "removed",
+      "replacement_proven": true
     },
     "server/trading/ownerAuth.ts": {
       "python": "gpkg/trading/owner_auth.py",
-      "reason": "Python-native trading domain boundary exists and is covered by the Python package seam gate.",
-      "status": "migrated"
+      "reason": "Node trading module deleted only after Python parity gates and a successful FastAPI production deployment.",
+      "status": "removed",
+      "replacement_proven": true
     },
     "server/trading/profitAccounting.ts": {
       "python": "gpkg/trading/profit_accounting.py",
-      "reason": "Python-native trading domain boundary exists and is covered by the Python package seam gate.",
-      "status": "migrated"
+      "reason": "Node trading module deleted only after Python parity gates and a successful FastAPI production deployment.",
+      "status": "removed",
+      "replacement_proven": true
     },
     "server/trading/profitSweep.ts": {
       "python": "gpkg/trading/profit_sweep.py",
-      "reason": "Python-native trading domain boundary exists and is covered by the Python package seam gate.",
-      "status": "migrated"
+      "reason": "Node trading module deleted only after Python parity gates and a successful FastAPI production deployment.",
+      "status": "removed",
+      "replacement_proven": true
     },
     "server/trading/quantEngine.ts": {
       "python": "gpkg/trading/quant_engine.py",
-      "reason": "Python-native trading domain boundary exists and is covered by the Python package seam gate.",
-      "status": "migrated"
+      "reason": "Node trading module deleted only after Python parity gates and a successful FastAPI production deployment.",
+      "status": "removed",
+      "replacement_proven": true
     },
     "server/trading/regimeTransitionDetector.ts": {
       "python": "gpkg/trading/regime_transition_detector.py",
-      "reason": "Python-native trading domain boundary exists and is covered by the Python package seam gate.",
-      "status": "migrated"
+      "reason": "Node trading module deleted only after Python parity gates and a successful FastAPI production deployment.",
+      "status": "removed",
+      "replacement_proven": true
     },
     "server/trading/researchAgent.ts": {
       "python": "gpkg/trading/research_agent.py",
-      "reason": "Python-native trading domain boundary exists and is covered by the Python package seam gate.",
-      "status": "migrated"
+      "reason": "Node trading module deleted only after Python parity gates and a successful FastAPI production deployment.",
+      "status": "removed",
+      "replacement_proven": true
     },
     "server/trading/riskEngine.ts": {
       "python": "gpkg/trading/risk_engine.py",
-      "reason": "Python-native trading domain boundary exists and is covered by the Python package seam gate.",
-      "status": "migrated"
+      "reason": "Node trading module deleted only after Python parity gates and a successful FastAPI production deployment.",
+      "status": "removed",
+      "replacement_proven": true
     },
     "server/trading/routes.ts": {
       "python": "gpkg/trading/routes.py",
-      "reason": "Python-native trading domain boundary exists and is covered by the Python package seam gate.",
-      "status": "migrated"
+      "reason": "Node trading module deleted only after Python parity gates and a successful FastAPI production deployment.",
+      "status": "removed",
+      "replacement_proven": true
     },
     "server/trading/scriptingEngine.ts": {
       "python": "gpkg/trading/scripting_engine.py",
-      "reason": "Python-native trading domain boundary exists and is covered by the Python package seam gate.",
-      "status": "migrated"
+      "reason": "Node trading module deleted only after Python parity gates and a successful FastAPI production deployment.",
+      "status": "removed",
+      "replacement_proven": true
     },
     "server/trading/selfUpdater.ts": {
       "python": "gpkg/trading/self_updater.py",
-      "reason": "Python-native trading domain boundary exists and is covered by the Python package seam gate.",
-      "status": "migrated"
+      "reason": "Node trading module deleted only after Python parity gates and a successful FastAPI production deployment.",
+      "status": "removed",
+      "replacement_proven": true
     },
     "server/trading/store.ts": {
       "python": "gpkg/trading/store.py",
-      "reason": "Python-native trading domain boundary exists and is covered by the Python package seam gate.",
-      "status": "migrated"
+      "reason": "Node trading module deleted only after Python parity gates and a successful FastAPI production deployment.",
+      "status": "removed",
+      "replacement_proven": true
     },
     "server/trading/strategyEvaluator.ts": {
       "python": "gpkg/trading/strategy_evaluator.py",
-      "reason": "Python-native trading domain boundary exists and is covered by the Python package seam gate.",
-      "status": "migrated"
+      "reason": "Node trading module deleted only after Python parity gates and a successful FastAPI production deployment.",
+      "status": "removed",
+      "replacement_proven": true
     },
     "server/trading/systemMonitor.ts": {
       "python": "gpkg/trading/system_monitor.py",
-      "reason": "Python-native trading domain boundary exists and is covered by the Python package seam gate.",
-      "status": "migrated"
+      "reason": "Node trading module deleted only after Python parity gates and a successful FastAPI production deployment.",
+      "status": "removed",
+      "replacement_proven": true
     },
     "server/trading/tradingReadiness.ts": {
       "python": "gpkg/trading/trading_readiness.py",
-      "reason": "Python-native trading domain boundary exists and is covered by the Python package seam gate.",
-      "status": "migrated"
+      "reason": "Node trading module deleted only after Python parity gates and a successful FastAPI production deployment.",
+      "status": "removed",
+      "replacement_proven": true
     },
     "server/trading/types.ts": {
       "python": "gpkg/trading/types.py",
-      "reason": "Python-native trading domain boundary exists and is covered by the Python package seam gate.",
-      "status": "migrated"
+      "reason": "Node trading module deleted only after Python parity gates and a successful FastAPI production deployment.",
+      "status": "removed",
+      "replacement_proven": true
     }
   }
 }
