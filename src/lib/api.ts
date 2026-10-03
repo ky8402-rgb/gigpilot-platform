@@ -95,6 +95,27 @@ export function getBaseApiUrl(): string {
 }
 
 /**
+ * The ONE place the owner session token is read from.
+ *
+ * `tradingService.setStoredOwnerToken()` — what the owner login flow actually calls — persists the
+ * session under `gigpilot_owner_token`. This module previously read `gigpilot_token` / `token`
+ * instead, so every request issued through `apiClient` or `apiFetch` went out ANONYMOUS after a
+ * successful login and was refused with 401 by the owner-auth gate. The app looked broken to an
+ * owner who had just signed in correctly.
+ *
+ * Reading the canonical key first, with the legacy keys retained as fallbacks, keeps a single source
+ * of truth without invalidating any session already in a user's browser.
+ */
+export function getOwnerToken(): string | null {
+  if (typeof localStorage === 'undefined') return null;
+  return (
+    localStorage.getItem('gigpilot_owner_token') ||
+    localStorage.getItem('gigpilot_token') ||
+    localStorage.getItem('token')
+  );
+}
+
+/**
  * 1. Axios Instance configured for Cross-Domain Cookies & CORS
  */
 export const apiClient: AxiosInstance = axios.create({
@@ -111,7 +132,7 @@ export const apiClient: AxiosInstance = axios.create({
 apiClient.interceptors.request.use(
   (config) => {
     if (typeof localStorage !== 'undefined') {
-      const token = localStorage.getItem('gigpilot_token') || localStorage.getItem('token');
+      const token = getOwnerToken();
       if (token && config.headers) {
         config.headers.Authorization = `Bearer ${token}`;
       }
@@ -151,7 +172,7 @@ export async function apiFetch<T = any>(
   }
 
   if (typeof localStorage !== 'undefined') {
-    const token = localStorage.getItem('gigpilot_token') || localStorage.getItem('token');
+    const token = getOwnerToken();
     if (token && !headers.has('Authorization')) {
       headers.set('Authorization', `Bearer ${token}`);
     }
