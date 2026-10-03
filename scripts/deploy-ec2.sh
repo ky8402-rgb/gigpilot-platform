@@ -91,37 +91,64 @@ if [ -n "${GEMINI_API_KEY:-}" ]; then
   echo "✔ GEMINI_API_KEY updated in $APP_DIR/.env"
 fi
 
-# --- Shared owner-session secret (single sign-on across BOTH stacks) -------------------------
-# The Node backend mints owner session tokens and proxies /api/trading/gigpilot/{state,arm,disarm,kill}
-# to the Python engine, which now verifies them. For that to work the two processes must sign with
-# the SAME secret. The engine reads it from this .env (python-dotenv) and Node reads it via
-# dotenv.config({override:true}); the persisted .gigpilot-data/owner-auth-config.json is only the
-# fallback. Generating it here when absent makes convergence deterministic instead of incidental.
-if ! grep -qE '^OWNER_SESSION_SECRET=.+' "$APP_DIR/.env" 2>/dev/null; then
-  umask 077
-  touch "$APP_DIR/.env"
-  set_env_value "OWNER_SESSION_SECRET" "$(openssl rand -hex 32 2>/dev/null || head -c 32 /dev/urandom | od -An -tx1 | tr -d ' \n')"
-  echo "✔ OWNER_SESSION_SECRET generated in $APP_DIR/.env (shared by Node and the engine)"
-else
-  echo "✔ OWNER_SESSION_SECRET already configured; left unchanged"
-fi
-
-# --- One-shot owner-secret ROTATION -----------------------------------------------------------
-# A signing secret that has ever been rendered to a CI log must be treated as COMPROMISED. This
-# repository is public and GitHub Actions logs for public repositories are world-readable, so a
-# leaked OWNER_SESSION_SECRET lets anyone mint an `owner` session and reach every requireOwnerAuth
-# route — arm, kill, off-switch, exchange credentials, deploy.
+# --- Owner-session secret: ONE value, in BOTH stores -------------------------------------------
+# The Node backend and the Python engine must sign owner sessions with the same secret, or the engine
+# refuses every forwarded session (401) and the Node proxy reports a healthy engine as
+# "503 ENGINE UNREACHABLE" on the dashboard.
 #
-# Rotation is driven by a committed marker file, so it runs exactly once, is reviewable in git, and
-# leaves an explicit line in the deploy log. Delete the marker afterwards; a permanent rotation
-# switch would become a silent, unnoticed code path.
+# They do NOT read the secret from the same place, and that asymmetry is the actual bug:
+#   * Node reads `owner-auth-config.json`. `server.ts` calls `dotenv.config()` in its module body,
+#     but under ES module semantics every `import` is evaluated BEFORE that body runs, so
+#     `server/trading/ownerAuth.js` constructs its singleton — capturing OWNER_SESSION_SECRET — while
+#     the variable is still unset. It therefore falls back to the persisted jwtSecret. The .env value
+#     is unreachable to it no matter what .env says.
+#   * The engine reads `.env` first, then the same persisted config.
+#
+# Writing the SAME value to both stores is what makes them converge, and it is deliberately robust to
+# the load-order problem above rather than depending on it being fixed.
+OWNER_SECRET_FILE="$APP_DIR/.gigpilot-data/owner-auth-config.json"
+
+sync_owner_secret_to_config() {
+  local secret="$1"
+  node -e '
+    const fs = require("fs"), path = require("path");
+    const dir = process.env.GIGPILOT_DATA_DIR || path.join(process.cwd(), ".gigpilot-data");
+    const file = path.join(dir, "owner-auth-config.json");
+    let cfg = {};
+    try { cfg = JSON.parse(fs.readFileSync(file, "utf8")); } catch { cfg = {}; }
+    if (cfg.jwtSecret === process.argv[1]) { console.log("jwtSecret already in sync"); process.exit(0); }
+    cfg.jwtSecret = process.argv[1];
+    fs.mkdirSync(dir, { recursive: true });
+    fs.writeFileSync(file, JSON.stringify(cfg, null, 2), { mode: 0o600 });
+    console.log("jwtSecret synced into " + file);
+  ' "$secret"
+}
+
+generate_owner_secret() {
+  openssl rand -hex 32 2>/dev/null || head -c 32 /dev/urandom | od -An -tx1 | tr -d ' \n'
+}
+
+# Rotation first: a marker file makes it run exactly once and be reviewable in git.
 if [ -f "$APP_DIR/scripts/.rotate-owner-secret" ]; then
   umask 077
   touch "$APP_DIR/.env"
-  set_env_value "OWNER_SESSION_SECRET" "$(openssl rand -hex 32 2>/dev/null || head -c 32 /dev/urandom | od -An -tx1 | tr -d ' \n')"
-  echo "🔑 OWNER_SESSION_SECRET ROTATED — the compromised value is retired."
-  echo "   Every previously-issued owner session is now invalid; the owner must log in again."
-  echo "   Node and the engine both re-read the new value from $APP_DIR/.env on restart."
+  OWNER_SECRET="$(generate_owner_secret)"
+  set_env_value "OWNER_SESSION_SECRET" "$OWNER_SECRET"
+  sync_owner_secret_to_config "$OWNER_SECRET"
+  echo "🔑 OWNER_SESSION_SECRET ROTATED in BOTH stores — the previous value is retired."
+  echo "   Every previously-issued owner session is invalid; the owner must sign in again."
+elif ! grep -qE '^OWNER_SESSION_SECRET=.+' "$APP_DIR/.env" 2>/dev/null; then
+  umask 077
+  touch "$APP_DIR/.env"
+  OWNER_SECRET="$(generate_owner_secret)"
+  set_env_value "OWNER_SESSION_SECRET" "$OWNER_SECRET"
+  sync_owner_secret_to_config "$OWNER_SECRET"
+  echo "✔ OWNER_SESSION_SECRET generated in both .env and owner-auth-config.json"
+else
+  # Already present: force the persisted store to match .env so a previous divergence self-heals.
+  OWNER_SECRET="$(grep -E '^OWNER_SESSION_SECRET=' "$APP_DIR/.env" | tail -1 | cut -d= -f2-)"
+  sync_owner_secret_to_config "$OWNER_SECRET"
+  echo "✔ OWNER_SESSION_SECRET already configured; persisted store reconciled to match"
 fi
 
 # Require a production database connection for live persistence. The value is supplied
