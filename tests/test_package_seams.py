@@ -29,6 +29,7 @@ from gpkg.core import metrics as core_metrics  # noqa: E402
 from gpkg.core import clock as core_clock  # noqa: E402
 from gpkg.core import config as core_config  # noqa: E402
 from gpkg.core import logging as core_logging  # noqa: E402
+from gpkg.exchange import bybit_rest as ex_rest  # noqa: E402
 
 failures: list[str] = []
 checks = 0
@@ -63,6 +64,7 @@ def main() -> int:
         ("WS_PRIVATE", engine.WS_PRIVATE, core_config.WS_PRIVATE),
         ("JsonFormatter", engine.JsonFormatter, core_logging.JsonFormatter),
         ("setup_logging", engine.setup_logging, core_logging.setup_logging),
+        ("BybitREST", engine.BybitREST, ex_rest.BybitREST),
     ]
     for name, from_monolith, from_package in pairs:
         if from_monolith is from_package:
