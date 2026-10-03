@@ -120,6 +120,7 @@ if command -v pm2 >/dev/null 2>&1; then
   pm2 delete gigpilot 2>/dev/null || true
   pm2 delete worker 2>/dev/null || true
   pm2 save 2>/dev/null || true
+  pm2 kill 2>/dev/null || true
 fi
 
 sudo systemctl enable gigpilot.service
