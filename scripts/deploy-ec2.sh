@@ -106,6 +106,24 @@ else
   echo "✔ OWNER_SESSION_SECRET already configured; left unchanged"
 fi
 
+# --- One-shot owner-secret ROTATION -----------------------------------------------------------
+# A signing secret that has ever been rendered to a CI log must be treated as COMPROMISED. This
+# repository is public and GitHub Actions logs for public repositories are world-readable, so a
+# leaked OWNER_SESSION_SECRET lets anyone mint an `owner` session and reach every requireOwnerAuth
+# route — arm, kill, off-switch, exchange credentials, deploy.
+#
+# Rotation is driven by a committed marker file, so it runs exactly once, is reviewable in git, and
+# leaves an explicit line in the deploy log. Delete the marker afterwards; a permanent rotation
+# switch would become a silent, unnoticed code path.
+if [ -f "$APP_DIR/scripts/.rotate-owner-secret" ]; then
+  umask 077
+  touch "$APP_DIR/.env"
+  set_env_value "OWNER_SESSION_SECRET" "$(openssl rand -hex 32 2>/dev/null || head -c 32 /dev/urandom | od -An -tx1 | tr -d ' \n')"
+  echo "🔑 OWNER_SESSION_SECRET ROTATED — the compromised value is retired."
+  echo "   Every previously-issued owner session is now invalid; the owner must log in again."
+  echo "   Node and the engine both re-read the new value from $APP_DIR/.env on restart."
+fi
+
 # Require a production database connection for live persistence. The value is supplied
 # by the deployment workflow from GitHub Secrets and is never committed to source.
 if [ -n "${DATABASE_URL:-}" ]; then

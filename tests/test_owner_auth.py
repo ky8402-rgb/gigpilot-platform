@@ -195,7 +195,10 @@ def test_no_hardcoded_default_pin(tmp_path, monkeypatch):
     monkeypatch.delenv("JWT_SECRET", raising=False)
     monkeypatch.delenv("OWNER_SESSION_SECRET", raising=False)
     fresh = OwnerAuth()
-    check("generated PIN is not the legacy literal 778899", fresh.config.emergency_pin != "778899")
+    # Value-withholding comparison: a bare equality assert makes pytest render both operands on
+    # failure, which is exactly how a live secret escaped into a world-readable Actions log.
+    check("generated PIN is not the legacy literal 778899",
+          (fresh.config.emergency_pin == "778899") is False, "value withheld: secret")
     check("generated PIN is not empty", bool(fresh.config.emergency_pin))
     check("generated PIN has real entropy (>=8 chars)", len(fresh.config.emergency_pin) >= 8,
           f"len={len(fresh.config.emergency_pin)}")

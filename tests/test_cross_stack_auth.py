@@ -95,7 +95,13 @@ def test_python_loads_the_node_written_config_and_shares_its_secret(tmp_path, mo
     (tmp_path / "owner-auth-config.json").write_text(json.dumps(_node_shaped_config(secret)))
 
     auth = OwnerAuth()
-    assert auth.config.jwt_secret == secret, "engine did not adopt the Node-persisted jwtSecret"
+    # SECRET-SAFE ASSERTIONS: compare to a boolean FIRST and never let pytest render the operand.
+    # A bare `assert a == b` prints both sides on failure, which is how a live OWNER_SESSION_SECRET
+    # escaped into a world-readable Actions log on this repo. Assertions about secret material must
+    # withhold their values, on success and on failure alike.
+    assert (auth.config.jwt_secret == secret) is True, (
+        "engine did not adopt the Node-persisted jwtSecret (value withheld: secret)"
+    )
     assert auth.config.owner_email == "ky8402@gmail.com"
     assert auth.config.totp_enabled is True
 
@@ -127,7 +133,9 @@ def test_env_secret_is_honoured_and_overrides_the_file(tmp_path, monkeypatch):
     )
 
     auth = OwnerAuth()
-    assert auth.config.jwt_secret == "env-shared-secret"
+    assert (auth.config.jwt_secret == "env-shared-secret") is True, (
+        "the environment secret did not take precedence (value withheld: secret)"
+    )
     assert auth.verify(node_style_token("env-shared-secret")) is True
     assert auth.verify(node_style_token("stale-file-secret")) is False
 
@@ -200,8 +208,12 @@ def test_shared_config_file_is_not_weakened_by_the_engine(tmp_path, monkeypatch)
     OwnerAuth()
 
     reread = json.loads(cfg_path.read_text())
-    assert reread["jwtSecret"] == secret, "engine rewrote the shared signing secret"
-    assert reread["emergencyPin"] == "c0ffee42", "engine rewrote the shared break-glass PIN"
+    assert (reread["jwtSecret"] == secret) is True, (
+        "engine rewrote the shared signing secret (value withheld: secret)"
+    )
+    assert (reread["emergencyPin"] == "c0ffee42") is True, (
+        "engine rewrote the shared break-glass PIN (value withheld: secret)"
+    )
     assert reread["passwordHash"] == "b" * 128, "engine dropped the owner password hash"
     assert reread["totpSecret"] == "JBSWY3DPEHPK3PXP"
 
@@ -217,5 +229,7 @@ def test_engine_scrubs_a_weak_pin_in_the_shared_config(tmp_path, monkeypatch):
     (tmp_path / "owner-auth-config.json").write_text(json.dumps(cfg))
 
     auth = OwnerAuth()
-    assert auth.config.emergency_pin != "778899"
+    assert (auth.config.emergency_pin != "778899") is True, (
+        "the weak legacy PIN was retained (value withheld: secret)"
+    )
     assert auth.verify_emergency_pin("778899") is False
