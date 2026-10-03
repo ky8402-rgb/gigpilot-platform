@@ -29,8 +29,9 @@ from urllib.parse import urlencode
 
 import aiohttp
 import uvicorn
-from fastapi import FastAPI, Response
+from fastapi import Depends, FastAPI, Request, Response
 from fastapi.responses import HTMLResponse, JSONResponse, StreamingResponse
+from pydantic import BaseModel as _BaseModel
 
 
 # =============================================================================
@@ -108,6 +109,16 @@ from gpkg.persistence.store import Store  # noqa: E402
 
 
 # =============================================================================
+# 8b. Control-plane owner authentication (MIGRATED -> gpkg/api/auth.py)
+# =============================================================================
+# Every operational endpoint below is gated on this. The Node stack already enforced the same
+# boundary (server/trading/ownerAuth.ts); the Python control plane previously enforced NOTHING, so
+# an unauthenticated caller could arm live trading or trip the kill switch. Absence of a check is
+# not a neutral default on a control plane that can move money.
+from gpkg.api.auth import OwnerAuth, get_owner_auth, require_owner  # noqa: E402
+
+
+# =============================================================================
 # 9. Bybit WebSocket
 # =============================================================================
 class BybitWS:
@@ -121,137 +132,6 @@ class BybitWS:
         self._tasks = [asyncio.create_task(self._public_loop(), name="ws-public"),
                        asyncio.create_task(self._private_loop(), name="ws-private")]
 
-    async def arm_preflight(self) -> tuple[bool, list[dict]]:
-        """Run every safety gate required before enabling the autonomous loop.
-        This method never places an order.
-        """
-        if self.armed:
-            ok, reasons = await self._arm_gate_check()
-            return ok, reasons if not ok else [{"code": "ALREADY_ARMED", "message": "GigPilot is already armed; request is idempotent."}]
-        return await self._arm_gate_check()
-
-    async def _arm_gate_check(self) -> tuple[bool, list[dict]]:
-        reasons: list[dict] = []
-        def block(code: str, message: str, details: Optional[dict] = None):
-            item = {"code": code, "message": message}
-            if details: item["details"] = details
-            reasons.append(item)
-
-        if not self.cfg.api_key or not self.cfg.api_secret:
-            block("BYBIT_CREDENTIALS_MISSING", "Valid Bybit Linear Futures credentials are required.")
-        if self.position_mode != "one-way":
-            block("POSITION_MODE_INVALID", "Bybit account must be in one-way position mode.", {"position_mode": self.position_mode})
-
-        try:
-            wallet = await self.rest.wallet()
-            accounts = wallet.get("list", [])
-            if not accounts:
-                block("CAPITAL_UNAVAILABLE", "Bybit Unified account balance response is empty.")
-            else:
-                account = accounts[0]
-                coins = account.get("coin") or []
-                usdt = next((c for c in coins if str(c.get("coin", "")).upper() == "USDT"), None)
-                if not usdt:
-                    block("USDT_CAPITAL_UNAVAILABLE", "No eligible USDT collateral was returned by Bybit.")
-                else:
-                    usdt_equity = f(usdt.get("equity"), 0.0)
-                    usdt_wallet = f(usdt.get("walletBalance"), 0.0)
-                    available = f(usdt.get("availableToWithdraw"), usdt_equity)
-                    eligible_values = [x for x in (usdt_equity, usdt_wallet, available) if x >= 0]
-                    eligible = min(eligible_values) if eligible_values else 0.0
-                    if eligible < self.cfg.min_arm_capital_usdt:
-                        block("INSUFFICIENT_CAPITAL", "Eligible USDT capital is below the configured ARM minimum.",
-                              {"eligible_usdt": eligible, "required_usdt": self.cfg.min_arm_capital_usdt})
-                    if usdt_equity > 0:
-                        self.portfolio.equity = usdt_equity
-        except Exception as e:
-            block("BYBIT_CONNECTIVITY_INVALID", "Authenticated Bybit account connectivity failed during ARM preflight.", {"error": str(e)})
-
-        try:
-            positions = await self.rest.positions()
-            idxs = {int(p.get("positionIdx", 0)) for p in positions}
-            if idxs - {0}:
-                block("POSITION_MODE_INVALID", "Bybit returned hedge-mode position indices; one-way mode is required.", {"position_indices": sorted(idxs)})
-        except Exception as e:
-            block("BYBIT_CONNECTIVITY_INVALID", "Unable to verify Bybit Linear Futures positions.", {"error": str(e)})
-
-        for sym in self.cfg.symbols:
-            ms = self.markets.get(sym)
-            if not ms or not ms.bids or not ms.asks or ms.mid <= 0:
-                block("MARKET_DATA_INVALID", f"Live order-book data is unavailable for {sym}.")
-                continue
-            if now_ms() - ms.ts_book_ms > self.cfg.staleness_ms or now_ms() - ms.ts_tick_ms > self.cfg.staleness_ms:
-                block("MARKET_DATA_STALE", f"Live market data is stale for {sym}.")
-            if len(ms.closes_1m) < 5:
-                block("MARKET_DATA_INSUFFICIENT", f"Insufficient candle depth for {sym}.", {"candles": len(ms.closes_1m)})
-
-            try:
-                instrument = await self.rest.instrument(sym)
-                lot = instrument.get("lotSizeFilter", {})
-                price = instrument.get("priceFilter", {})
-                if f(lot.get("qtyStep"), 0.0) <= 0 or f(price.get("tickSize"), 0.0) <= 0:
-                    block("RISK_CONFIGURATION_INVALID", f"Instrument sizing configuration is invalid for {sym}.")
-                taker = f((await self.rest.fee_rate(sym)).get("takerFeeRate"), 0.0)
-                if taker <= 0:
-                    block("RISK_CONFIGURATION_INVALID", f"Bybit taker fee is unreadable for {sym}; ARM fails closed.")
-                self.fee_rate_bps[sym] = taker * 1e4
-            except Exception as e:
-                block("BYBIT_CONNECTIVITY_INVALID", f"Unable to validate instrument/fee configuration for {sym}.", {"error": str(e)})
-
-            try:
-                await self.rest.set_leverage(sym, self.cfg.max_leverage)
-                verified = next((p for p in await self.rest.positions() if p.get("symbol") == sym), None)
-                lev = f(verified.get("leverage"), 0.0) if verified else 0.0
-                if lev <= 0 or lev > self.cfg.max_leverage:
-                    block("LEVERAGE_INVALID", f"Configured leverage could not be verified for {sym}.",
-                          {"configured_max": self.cfg.max_leverage, "verified": lev})
-            except Exception as e:
-                block("LEVERAGE_INVALID", f"Bybit leverage configuration failed for {sym}.", {"error": str(e)})
-
-        if not (self.ws._public_ok and self.ws._private_ok):
-            block("BYBIT_CONNECTIVITY_INVALID", "Bybit public/private WebSocket connectivity is not healthy.",
-                  {"public_ws": self.ws._public_ok, "private_ws": self.ws._private_ok})
-
-        try:
-            await self.reconciler.run_once()
-            if not self.reconciler.healthy:
-                block("RECONCILIATION_UNHEALTHY", "Position/order reconciliation is not healthy.",
-                      {"last_error": self.reconciler.last_error})
-        except Exception as e:
-            block("RECONCILIATION_UNHEALTHY", "Reconciliation preflight failed.", {"error": str(e)})
-
-        tradable = []
-        for sym, ms in self.markets.items():
-            fee_bps = self.fee_rate_bps.get(sym, self.cfg.fee_ceiling_bps)
-            for side in ("Buy", "Sell"):
-                est = self.edge.evaluate(ms, side, fee_bps, 1.0, max(50.0, self.portfolio.equity * 0.03))
-                current = self.signals.get(sym)
-                if current is None or est.net_bps > current.net_bps:
-                    self.signals[sym] = est
-                if est.tradable:
-                    tradable.append(est)
-        if not tradable:
-            block("NET_EDGE_GATE_UNHEALTHY", "No current market has verified expected net edge above the configured hurdle.",
-                  {"hurdle_bps": self.cfg.edge_hurdle_bps})
-
-        if self.portfolio.margin_ratio > 0.6:
-            block("MARGIN_CONFIGURATION_INVALID", "Current margin utilization is above the safe ARM threshold.",
-                  {"margin_ratio": self.portfolio.margin_ratio})
-
-        if reasons:
-            self.store.journal("ARM_BLOCKED", None, {"reasons": reasons})
-            return False, reasons
-        return True, []
-
-    async def arm(self) -> tuple[bool, list[dict]]:
-        ok, reasons = await self.arm_preflight()
-        if not ok:
-            return False, reasons
-        if not self.armed:
-            self.armed = True
-            self.store.journal("ARM", None, {"hurdle_bps": self.cfg.edge_hurdle_bps})
-            log.warning("MANUAL ARM: all safety gates passed")
-        return True, reasons
 
     async def stop(self):
         self._stop.set()
@@ -510,6 +390,7 @@ class GigPilot:
         self.markets = {s: MarketState(symbol=s) for s in cfg.symbols}
         self.step_size: dict[str, float] = {}
         self.tick_size: dict[str, float] = {}
+        self.min_qty: dict[str, float] = {}
         self.executor: Optional[Executor] = None
         self.edge = EdgeEngine(cfg); self.risk = RiskGate(cfg)
         self.positions: dict[str, dict] = {}
@@ -530,6 +411,45 @@ class GigPilot:
     @staticmethod
     def _utc_date() -> str:
         return datetime.now(timezone.utc).strftime("%Y-%m-%d")
+
+    # ------------------------------------------------------------------ arm-state persistence
+    # The kill switch, and an explicit owner disarm, MUST survive a restart.
+    #
+    # Without persistence, `GIGIPILOT_ARM=1` re-arms the engine on the next boot and silently undoes
+    # an operator's kill. That is a fail-OPEN default, which is the one property a kill switch may
+    # never have: an emergency stop that a process restart clears is not an emergency stop.
+    #
+    # Precedence on boot, highest first:  killed  >  disarmed  >  GIGPILOT_ARM
+    # Clearing a kill requires a fresh ARM, which re-runs the full preflight gate — so the kill can
+    # only be lifted by an authenticated owner action that also re-proves every safety condition.
+    ARM_STATE_KEY = "arm_state"
+    ARM_ARMED = "armed"
+    ARM_DISARMED = "disarmed"
+    ARM_KILLED = "killed"
+
+    def _persist_arm_state(self, state: str) -> None:
+        self.store.kv_set(self.ARM_STATE_KEY, state)
+
+    def _restore_arm_state(self) -> tuple[bool, str]:
+        """Decide the boot arming state. Returns (armed, source) so the reason is auditable."""
+        state = (self.store.kv_get(self.ARM_STATE_KEY) or "").strip()
+        if state == self.ARM_KILLED:
+            return False, "persisted_kill_switch"
+        if state == self.ARM_DISARMED:
+            return False, "persisted_disarm"
+        return bool(self.cfg.arm), "env_GIGPILOT_ARM"
+
+    def disarm(self, reason: str) -> None:
+        self.armed = False
+        self._persist_arm_state(self.ARM_DISARMED)
+        self.store.journal("DISARM", None, {"reason": reason})
+        log.warning("DISARM: %s", reason)
+
+    def kill(self) -> None:
+        self.armed = False
+        self._persist_arm_state(self.ARM_KILLED)
+        self.store.journal("KILL", None, {})
+        log.critical("KILL SWITCH")
 
     async def _detect_position_mode(self) -> str:
         last_err = None
@@ -568,6 +488,7 @@ class GigPilot:
             lot = info.get("lotSizeFilter", {}); price = info.get("priceFilter", {})
             self.step_size[s] = f(lot.get("qtyStep"), 0.0)
             self.tick_size[s] = f(price.get("tickSize"), 0.01)
+            self.min_qty[s] = f(lot.get("minOrderQty"), 0.0)
             if self.step_size[s] <= 0:
                 log.critical("BOOT REFUSED: qtyStep missing for %s", s)
                 raise SystemExit(4)
@@ -587,7 +508,7 @@ class GigPilot:
                 log.warning("fee_rate %s: %s — ceiling applied", s, e)
                 self.fee_rate_bps[s] = self.cfg.fee_ceiling_bps
 
-        self.executor = Executor(self.cfg, self.rest, self.step_size)
+        self.executor = Executor(self.cfg, self.rest, self.step_size, min_sizes=self.min_qty)
 
         # --- Anchor day_start_equity, restore from KV if same UTC day ---
         await self._refresh_portfolio()
@@ -611,10 +532,13 @@ class GigPilot:
             try: await self.rest.set_leverage(s, self.cfg.max_leverage)
             except Exception as e: log.warning("set_leverage %s: %s", s, e)
 
-        self.armed = bool(self.cfg.arm)
-        log.info("trading %s", "ARMED" if self.armed else "DISARMED (DO NOTHING)")
+        self.armed, arm_source = self._restore_arm_state()
+        if arm_source.startswith("persisted_"):
+            log.warning("boot arm state suppressed by %s — refusing to auto-arm", arm_source)
+        log.info("trading %s (source=%s)", "ARMED" if self.armed else "DISARMED (DO NOTHING)", arm_source)
         self.store.journal("BOOT", None, {"symbols": self.cfg.symbols,
                                           "armed": self.armed,
+                                          "arm_source": arm_source,
                                           "hurdle_bps": self.cfg.edge_hurdle_bps,
                                           "position_mode": self.position_mode})
 
@@ -634,6 +558,152 @@ class GigPilot:
         await asyncio.gather(*self._tasks, return_exceptions=True)
         await self.rest.stop()
         log.info("GigPilot stopped")
+
+    async def arm_preflight(self) -> tuple[bool, list[dict]]:
+        """Run every safety gate required before enabling the autonomous loop.
+        This method never places an order.
+        """
+        if self.armed:
+            ok, reasons = await self._arm_gate_check()
+            return ok, reasons if not ok else [{"code": "ALREADY_ARMED", "message": "GigPilot is already armed; request is idempotent."}]
+        return await self._arm_gate_check()
+
+    async def _arm_gate_check(self) -> tuple[bool, list[dict]]:
+        reasons: list[dict] = []
+        def block(code: str, message: str, details: Optional[dict] = None):
+            item = {"code": code, "message": message}
+            if details: item["details"] = details
+            reasons.append(item)
+
+        if not self.cfg.api_key or not self.cfg.api_secret:
+            block("BYBIT_CREDENTIALS_MISSING", "Valid Bybit Linear Futures credentials are required.")
+        if self.position_mode != "one-way":
+            block("POSITION_MODE_INVALID", "Bybit account must be in one-way position mode.", {"position_mode": self.position_mode})
+
+        try:
+            wallet = await self.rest.wallet()
+            accounts = wallet.get("list", [])
+            if not accounts:
+                block("CAPITAL_UNAVAILABLE", "Bybit Unified account balance response is empty.")
+            else:
+                account = accounts[0]
+                coins = account.get("coin") or []
+                usdt = next((c for c in coins if str(c.get("coin", "")).upper() == "USDT"), None)
+                if not usdt:
+                    block("USDT_CAPITAL_UNAVAILABLE", "No eligible USDT collateral was returned by Bybit.")
+                else:
+                    usdt_equity = f(usdt.get("equity"), 0.0)
+                    usdt_wallet = f(usdt.get("walletBalance"), 0.0)
+                    available = f(usdt.get("availableToWithdraw"), usdt_equity)
+                    eligible_values = [x for x in (usdt_equity, usdt_wallet, available) if x >= 0]
+                    eligible = min(eligible_values) if eligible_values else 0.0
+                    if eligible < self.cfg.min_arm_capital_usdt:
+                        block("INSUFFICIENT_CAPITAL", "Eligible USDT capital is below the configured ARM minimum.",
+                              {"eligible_usdt": eligible, "required_usdt": self.cfg.min_arm_capital_usdt})
+                    if usdt_equity > 0:
+                        self.portfolio.equity = usdt_equity
+        except Exception as e:
+            block("BYBIT_CONNECTIVITY_INVALID", "Authenticated Bybit account connectivity failed during ARM preflight.", {"error": str(e)})
+
+        try:
+            positions = await self.rest.positions()
+            idxs = {int(p.get("positionIdx", 0)) for p in positions}
+            if idxs - {0}:
+                block("POSITION_MODE_INVALID", "Bybit returned hedge-mode position indices; one-way mode is required.", {"position_indices": sorted(idxs)})
+        except Exception as e:
+            block("BYBIT_CONNECTIVITY_INVALID", "Unable to verify Bybit Linear Futures positions.", {"error": str(e)})
+
+        for sym in self.cfg.symbols:
+            ms = self.markets.get(sym)
+            if not ms or not ms.bids or not ms.asks or ms.mid <= 0:
+                block("MARKET_DATA_INVALID", f"Live order-book data is unavailable for {sym}.")
+                continue
+            if now_ms() - ms.ts_book_ms > self.cfg.staleness_ms or now_ms() - ms.ts_tick_ms > self.cfg.staleness_ms:
+                block("MARKET_DATA_STALE", f"Live market data is stale for {sym}.")
+            if len(ms.closes_1m) < 5:
+                block("MARKET_DATA_INSUFFICIENT", f"Insufficient candle depth for {sym}.", {"candles": len(ms.closes_1m)})
+
+            try:
+                instrument = await self.rest.instrument(sym)
+                lot = instrument.get("lotSizeFilter", {})
+                price = instrument.get("priceFilter", {})
+                if f(lot.get("qtyStep"), 0.0) <= 0 or f(price.get("tickSize"), 0.0) <= 0:
+                    block("RISK_CONFIGURATION_INVALID", f"Instrument sizing configuration is invalid for {sym}.")
+                taker = f((await self.rest.fee_rate(sym)).get("takerFeeRate"), 0.0)
+                if taker <= 0:
+                    block("RISK_CONFIGURATION_INVALID", f"Bybit taker fee is unreadable for {sym}; ARM fails closed.")
+                self.fee_rate_bps[sym] = taker * 1e4
+            except Exception as e:
+                block("BYBIT_CONNECTIVITY_INVALID", f"Unable to validate instrument/fee configuration for {sym}.", {"error": str(e)})
+
+            try:
+                await self.rest.set_leverage(sym, self.cfg.max_leverage)
+                verified = next((p for p in await self.rest.positions() if p.get("symbol") == sym), None)
+                lev = f(verified.get("leverage"), 0.0) if verified else 0.0
+                if lev <= 0 or lev > self.cfg.max_leverage:
+                    block("LEVERAGE_INVALID", f"Configured leverage could not be verified for {sym}.",
+                          {"configured_max": self.cfg.max_leverage, "verified": lev})
+            except Exception as e:
+                block("LEVERAGE_INVALID", f"Bybit leverage configuration failed for {sym}.", {"error": str(e)})
+
+        if not (self.ws._public_ok and self.ws._private_ok):
+            block("BYBIT_CONNECTIVITY_INVALID", "Bybit public/private WebSocket connectivity is not healthy.",
+                  {"public_ws": self.ws._public_ok, "private_ws": self.ws._private_ok})
+
+        try:
+            await self.reconciler.run_once()
+            if not self.reconciler.healthy:
+                block("RECONCILIATION_UNHEALTHY", "Position/order reconciliation is not healthy.",
+                      {"last_error": self.reconciler.last_error})
+        except Exception as e:
+            block("RECONCILIATION_UNHEALTHY", "Reconciliation preflight failed.", {"error": str(e)})
+
+        # Reads succeeding is NOT the same as being allowed to trade. A key can read positions and
+        # open orders perfectly well while every order-mutating endpoint refuses it — that is
+        # precisely the production state recorded by the reconciler's permission probe. Without
+        # this check the gate would happily arm an engine that believes it is live and then fails
+        # on every single entry, which is the "authenticating is not authorising" defect that
+        # /health already reports as a readiness blocker.
+        if self.reconciler.healthy and not self.reconciler.trade_permissions_ok:
+            block(
+                "TRADE_PERMISSION_INVALID",
+                "Bybit API key authenticates but is NOT authorised to place futures orders.",
+                {"error": self.reconciler.trade_permissions_error},
+            )
+
+        tradable = []
+        for sym, ms in self.markets.items():
+            fee_bps = self.fee_rate_bps.get(sym, self.cfg.fee_ceiling_bps)
+            for side in ("Buy", "Sell"):
+                est = self.edge.evaluate(ms, side, fee_bps, 1.0, max(50.0, self.portfolio.equity * 0.03))
+                current = self.signals.get(sym)
+                if current is None or est.net_bps > current.net_bps:
+                    self.signals[sym] = est
+                if est.tradable:
+                    tradable.append(est)
+        if not tradable:
+            block("NET_EDGE_GATE_UNHEALTHY", "No current market has verified expected net edge above the configured hurdle.",
+                  {"hurdle_bps": self.cfg.edge_hurdle_bps})
+
+        if self.portfolio.margin_ratio > 0.6:
+            block("MARGIN_CONFIGURATION_INVALID", "Current margin utilization is above the safe ARM threshold.",
+                  {"margin_ratio": self.portfolio.margin_ratio})
+
+        if reasons:
+            self.store.journal("ARM_BLOCKED", None, {"reasons": reasons})
+            return False, reasons
+        return True, []
+
+    async def arm(self) -> tuple[bool, list[dict]]:
+        ok, reasons = await self.arm_preflight()
+        if not ok:
+            return False, reasons
+        if not self.armed:
+            self.armed = True
+            self._persist_arm_state(self.ARM_ARMED)
+            self.store.journal("ARM", None, {"hurdle_bps": self.cfg.edge_hurdle_bps})
+            log.warning("MANUAL ARM: all safety gates passed")
+        return True, reasons
 
     # ---------- private WS events ----------
     async def _on_private(self, msg: dict):
@@ -758,6 +828,7 @@ class GigPilot:
             if loss_pct >= self.cfg.max_daily_loss_pct:
                 log.critical("DAILY LOSS LIMIT (%.2f%%) — auto-disarm", loss_pct)
                 self.armed = False
+                self._persist_arm_state(self.ARM_DISARMED)
                 self.store.journal("AUTO_DISARM", None,
                                    {"reason": "daily_loss", "loss_pct": loss_pct})
                 METRICS.inc("gigpilot_auto_disarm_total")
@@ -804,6 +875,14 @@ class GigPilot:
         if step <= 0: return
         qty = math.floor((notional / entry_px) / step) * step
         if qty <= 0: return
+        # Entry-time minimum-size eligibility. Submitting below `minOrderQty` is guaranteed to be
+        # rejected by Bybit, so this is a clean pre-trade skip rather than a wasted round trip and a
+        # logged exchange error. It is checked on ENTRY only — never on the exit/unwind path.
+        size_ok, size_reason = self.executor.check_entry_size(symbol, qty)
+        if not size_ok:
+            log.info("skip entry %s: %s", symbol, size_reason)
+            METRICS.inc("gigpilot_entry_skips_total", reason=size_reason, symbol=symbol)
+            return
         leverage = notional / equity
         ok, reason = self.risk.check(self.portfolio, symbol, notional, leverage,
                                      self.armed, self.day_start_equity or equity)
@@ -993,7 +1072,7 @@ async def health():
     })
 
 
-@app.get("/metrics")
+@app.get("/metrics", dependencies=[Depends(require_owner)])
 async def metrics():
     gp = get_gp()
     METRICS.set("gigpilot_equity", gp.portfolio.equity)
@@ -1005,12 +1084,67 @@ async def metrics():
     return Response(content=METRICS.render(), media_type="text/plain")
 
 
-@app.get("/api/state")
+# ---------------------------------------------------------------------------
+# Authentication (gpkg/api/auth.py). These are the ONLY routes reachable without a session token:
+# they exist so the owner can obtain one. Everything operational is gated by require_owner.
+# ---------------------------------------------------------------------------
+class _LoginBody(_BaseModel):
+    email: str = ""
+    password: str = ""
+    totpCode: str = ""
+    emergencyPin: str = ""
+
+
+class _SetupBody(_BaseModel):
+    email: str = ""
+    password: str = ""
+    totpCode: str = ""
+    emergencyPin: str = ""
+
+
+@app.get("/api/auth/status")
+async def api_auth_status(request: Request):
+    auth = get_owner_auth()
+    from gpkg.api.auth import extract_token
+    return auth.status(auth.verify(extract_token(request) or ""))
+
+
+@app.post("/api/auth/login")
+async def api_auth_login(body: _LoginBody):
+    ok, token, err = get_owner_auth().login(
+        body.email, body.password, body.totpCode, body.emergencyPin
+    )
+    if not ok:
+        return JSONResponse(status_code=401, content={"success": False, "error": err})
+    return {"success": True, "token": token}
+
+
+@app.post("/api/auth/provision")
+async def api_auth_provision(body: _LoginBody):
+    """Start first-run setup. Gated on the break-glass PIN so it cannot be used to seize the account."""
+    auth = get_owner_auth()
+    if not auth.verify_emergency_pin(body.emergencyPin):
+        return JSONResponse(status_code=401, content={"success": False, "error": "Invalid break-glass PIN."})
+    return {"success": True, **auth.initiate_setup(body.email or None)}
+
+
+@app.post("/api/auth/setup")
+async def api_auth_setup(body: _SetupBody):
+    auth = get_owner_auth()
+    if not auth.verify_emergency_pin(body.emergencyPin):
+        return JSONResponse(status_code=401, content={"success": False, "error": "Invalid break-glass PIN."})
+    ok, token, err = auth.complete_setup(body.password, body.totpCode, body.email or None)
+    if not ok:
+        return JSONResponse(status_code=422, content={"success": False, "error": err})
+    return {"success": True, "token": token}
+
+
+@app.get("/api/state", dependencies=[Depends(require_owner)])
 async def api_state():
     return JSONResponse(get_gp().snapshot())
 
 
-@app.post("/api/arm")
+@app.post("/api/arm", dependencies=[Depends(require_owner)])
 async def api_arm():
     gp = get_gp()
     ok, reasons = await gp.arm()
@@ -1025,20 +1159,21 @@ async def api_arm():
     return {"success": True, "armed": True, "idempotent": any(r.get("code") == "ALREADY_ARMED" for r in reasons), "reasons": reasons, "state": gp.snapshot()}
 
 
-@app.post("/api/disarm")
+@app.post("/api/disarm", dependencies=[Depends(require_owner)])
 async def api_disarm():
     gp = get_gp()
     was_armed = gp.armed
-    gp.armed = False
-    gp.store.journal("DISARM", None, {"was_armed": was_armed})
-    log.warning("MANUAL DISARM")
+    # Sticky: a disarm must survive a restart, otherwise `GIGPILOT_ARM=1` silently undoes it.
+    gp.disarm("manual")
     return {"success": True, "armed": False, "idempotent": not was_armed}
 
 
-@app.post("/api/kill")
+@app.post("/api/kill", dependencies=[Depends(require_owner)])
 async def api_kill():
-    gp = get_gp(); gp.armed = False; gp.store.journal("KILL", None, {})
-    log.critical("KILL SWITCH")
+    gp = get_gp()
+    # Sticky: the kill switch is persisted BEFORE any unwind attempt, so a crash mid-flatten still
+    # leaves the engine disarmed on the next boot rather than re-arming it.
+    gp.kill()
     for sym in list(gp.positions.keys()):
         try: await gp._close_position(sym, reason="kill_switch")
         except Exception as e: log.error("kill close %s: %s", sym, e)
@@ -1048,7 +1183,7 @@ async def api_kill():
     return {"killed": True}
 
 
-@app.get("/events")
+@app.get("/events", dependencies=[Depends(require_owner)])
 async def events():
     async def stream() -> AsyncIterator[bytes]:
         while True:

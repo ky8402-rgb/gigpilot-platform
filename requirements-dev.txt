@@ -1,0 +1,7 @@
+# Test-only dependencies. Kept out of requirements.txt so the runtime image of a process holding
+# live exchange credentials does not carry a test framework.
+#
+# Installed by scripts/deploy-ec2.sh, which runs the Python safety gates on the deploy host before
+# pm2 is restarted (fail-closed: a red gate aborts the rollout).
+pytest>=8.0.0
+pytest-asyncio>=0.23.0

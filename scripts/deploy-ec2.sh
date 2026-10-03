@@ -118,6 +118,9 @@ if [ ! -x "$APP_DIR/.venv/bin/python3" ]; then
   python3 -m venv "$APP_DIR/.venv"
 fi
 "$APP_DIR/.venv/bin/pip" install --disable-pip-version-check --no-input -r "$APP_DIR/requirements.txt"
+if [ -f "$APP_DIR/requirements-dev.txt" ]; then
+  "$APP_DIR/.venv/bin/pip" install --disable-pip-version-check --no-input -r "$APP_DIR/requirements-dev.txt"
+fi
 if ! "$APP_DIR/.venv/bin/python3" -c "import aiohttp, fastapi, uvicorn; print('Python venv verified OK')" 2>/dev/null; then
   echo "ERROR: Python dependencies failed verification in $APP_DIR/.venv"
   exit 1
@@ -138,10 +141,24 @@ npm run test:runtime
 # Python gates, run with the venv interpreter created above (system python3 on this host does not
 # have aiohttp/fastapi). Parity guards the migration surface; the idempotency test locks the order
 # paths to a single submission helper. `set -e` aborts the rollout if either fails.
-echo "Running pre-deploy Python gates (parity + execution idempotency)..."
+#
+# The control-plane gates below are the ones that protect live capital, so they run on the deploy
+# host immediately before pm2 is touched:
+#   test_owner_auth             - the session credential cannot be forged (alg confusion, tamper,
+#                                 expiry, wrong role)
+#   test_control_plane_auth     - no operational endpoint is reachable anonymously
+#   test_kill_switch_persistence- a kill/disarm survives a restart instead of silently re-arming
+#   test_arm_gate               - the preflight refuses to arm on staleness, no edge, revoked trade
+#                                 permission or insufficient capital
+#   test_entry_sizing           - lot-step rounding and minOrderQty, with exits never blocked
+#   test_paper_lifecycle        - end-to-end dry run: entry -> native TP/SL -> verified accounting
+echo "Running pre-deploy Python gates (parity, idempotency, seams)..."
 "$APP_DIR/.venv/bin/python3" "$APP_DIR/tests/test_parity.py"
 "$APP_DIR/.venv/bin/python3" "$APP_DIR/tests/test_execution_idempotency.py"
 "$APP_DIR/.venv/bin/python3" "$APP_DIR/tests/test_package_seams.py"
+
+echo "Running pre-deploy control-plane and trading-safety gates..."
+"$APP_DIR/.venv/bin/python3" -m pytest "$APP_DIR/tests/" -q --no-header
 
 echo "Configuring and restarting PM2 backend daemon..."
 # All ecosystem apps must be recreated, not just the API. `pm2 start ecosystem.config.cjs` does

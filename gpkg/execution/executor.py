@@ -21,13 +21,28 @@ log = logging.getLogger("gigpilot")
 
 
 class Executor:
-    def __init__(self, cfg: Config, rest: BybitREST, step_sizes: dict[str, float], metrics: Metrics | None = None):
+    def __init__(
+        self,
+        cfg: Config,
+        rest: BybitREST,
+        step_sizes: dict[str, float],
+        metrics: Metrics | None = None,
+        min_sizes: dict[str, float] | None = None,
+    ):
         self.cfg = cfg
         self.rest = rest
         self.step_size = step_sizes
+        self.min_size = min_sizes or {}
         self._metrics = metrics
 
     def _round_qty(self, symbol: str, qty: float) -> str:
+        """Round DOWN to the contract lot step. Used by BOTH entry and exit paths.
+
+        Deliberately does NOT enforce `minOrderQty`: this method is on the emergency unwind and
+        close paths, and a size guard there could refuse to flatten a position that has become
+        smaller than the entry minimum — turning a protective action into a stuck position. The
+        minimum is enforced on ENTRY only, by `check_entry_size` below.
+        """
         step = self.step_size.get(symbol, 0.0)
         if step <= 0:
             raise RuntimeError(f"step size unknown for {symbol} — refusing to trade")
@@ -35,6 +50,21 @@ class Executor:
         if v <= 0:
             raise RuntimeError(f"qty {qty} rounds to 0 at step {step} for {symbol}")
         return f"{v:.10f}".rstrip("0").rstrip(".")
+
+    def check_entry_size(self, symbol: str, qty: float) -> tuple[bool, str]:
+        """Entry-time eligibility: the rounded quantity must satisfy the instrument minimum.
+
+        Submitting below `minOrderQty` is rejected by Bybit, so catching it here turns a guaranteed
+        exchange error into a clean, metric-visible skip. Returns (ok, reason).
+        """
+        try:
+            qty_s = self._round_qty(symbol, qty)
+        except RuntimeError as e:
+            return False, str(e)
+        mn = self.min_size.get(symbol, 0.0)
+        if mn > 0 and float(qty_s) < mn:
+            return False, f"qty_{qty_s}_below_min_{mn}"
+        return True, "ok"
 
     async def open_protected(
         self,
