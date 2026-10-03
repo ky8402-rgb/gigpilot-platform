@@ -49,6 +49,10 @@ def _isolate_from_the_ambient_dotenv(tmp_path, monkeypatch):
     the code, so it is fixed here rather than by weakening the gate.
     """
     monkeypatch.chdir(tmp_path)
+    # `_load_dotenv_once` now prefers `_REPO_ROOT/.env` over `$CWD/.env` (deliberately: the
+    # engine's CWD depends on how pm2 was invoked). chdir alone therefore no longer isolates a
+    # test from a production .env sitting beside the source — the root is redirected too.
+    monkeypatch.setattr(auth_mod, "_REPO_ROOT", tmp_path, raising=False)
     # Belt and braces: clear anything an outer environment may already have exported.
     for var in ("OWNER_SESSION_SECRET", "JWT_SECRET", "OWNER_AUTH_PIN"):
         monkeypatch.delenv(var, raising=False)
@@ -99,9 +103,8 @@ def test_python_loads_the_node_written_config_and_shares_its_secret(tmp_path, mo
     # A bare `assert a == b` prints both sides on failure, which is how a live OWNER_SESSION_SECRET
     # escaped into a world-readable Actions log on this repo. Assertions about secret material must
     # withhold their values, on success and on failure alike.
-    assert (auth.config.jwt_secret == secret) is True, (
-        "engine did not adopt the Node-persisted jwtSecret (value withheld: secret)"
-    )
+    adopted = auth.config.jwt_secret == secret
+    assert adopted, "engine did not adopt the Node-persisted jwtSecret (value withheld: secret)"
     assert auth.config.owner_email == "ky8402@gmail.com"
     assert auth.config.totp_enabled is True
 
@@ -133,9 +136,8 @@ def test_env_secret_is_honoured_and_overrides_the_file(tmp_path, monkeypatch):
     )
 
     auth = OwnerAuth()
-    assert (auth.config.jwt_secret == "env-shared-secret") is True, (
-        "the environment secret did not take precedence (value withheld: secret)"
-    )
+    took_precedence = auth.config.jwt_secret == "env-shared-secret"
+    assert took_precedence, "the environment secret did not take precedence (value withheld: secret)"
     assert auth.verify(node_style_token("env-shared-secret")) is True
     assert auth.verify(node_style_token("stale-file-secret")) is False
 
@@ -208,12 +210,10 @@ def test_shared_config_file_is_not_weakened_by_the_engine(tmp_path, monkeypatch)
     OwnerAuth()
 
     reread = json.loads(cfg_path.read_text())
-    assert (reread["jwtSecret"] == secret) is True, (
-        "engine rewrote the shared signing secret (value withheld: secret)"
-    )
-    assert (reread["emergencyPin"] == "c0ffee42") is True, (
-        "engine rewrote the shared break-glass PIN (value withheld: secret)"
-    )
+    unchanged = reread["jwtSecret"] == secret
+    assert unchanged, "engine rewrote the shared signing secret (value withheld: secret)"
+    pin_unchanged = reread["emergencyPin"] == "c0ffee42"
+    assert pin_unchanged, "engine rewrote the shared break-glass PIN (value withheld: secret)"
     assert reread["passwordHash"] == "b" * 128, "engine dropped the owner password hash"
     assert reread["totpSecret"] == "JBSWY3DPEHPK3PXP"
 
@@ -229,7 +229,6 @@ def test_engine_scrubs_a_weak_pin_in_the_shared_config(tmp_path, monkeypatch):
     (tmp_path / "owner-auth-config.json").write_text(json.dumps(cfg))
 
     auth = OwnerAuth()
-    assert (auth.config.emergency_pin != "778899") is True, (
-        "the weak legacy PIN was retained (value withheld: secret)"
-    )
+    scrubbed = auth.config.emergency_pin != "778899"
+    assert scrubbed, "the weak legacy PIN was retained (value withheld: secret)"
     assert auth.verify_emergency_pin("778899") is False

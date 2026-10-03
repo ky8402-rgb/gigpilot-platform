@@ -63,7 +63,7 @@ set_env_value() {
   local tmp_env
   tmp_env="$(mktemp)"
   grep -v "^\${key}=" "$APP_DIR/.env" > "$tmp_env" || true
-  printf '%s=%s\\n' "$key" "$value" >> "$tmp_env"
+  printf '%s=%s\n' "$key" "$value" >> "$tmp_env"
   chmod 600 "$tmp_env"
   mv "$tmp_env" "$APP_DIR/.env"
 }
