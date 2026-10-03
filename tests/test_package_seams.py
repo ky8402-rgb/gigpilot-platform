@@ -26,6 +26,9 @@ import gigpilot as engine  # noqa: E402
 import gpkg.core  # noqa: E402
 from gpkg.core import errors as core_errors  # noqa: E402
 from gpkg.core import metrics as core_metrics  # noqa: E402
+from gpkg.core import clock as core_clock  # noqa: E402
+from gpkg.core import config as core_config  # noqa: E402
+from gpkg.core import logging as core_logging  # noqa: E402
 
 failures: list[str] = []
 checks = 0
@@ -51,6 +54,15 @@ def main() -> int:
         ("BybitError", engine.BybitError, core_errors.BybitError),
         ("DUPLICATE_ORDER_LINK_CODE", engine.DUPLICATE_ORDER_LINK_CODE, core_errors.DUPLICATE_ORDER_LINK_CODE),
         ("Metrics", engine.Metrics, core_metrics.Metrics),
+        ("now_ms", engine.now_ms, core_clock.now_ms),
+        ("now_iso", engine.now_iso, core_clock.now_iso),
+        ("f", engine.f, core_clock.f),
+        ("Config", engine.Config, core_config.Config),
+        ("LIVE_HOST", engine.LIVE_HOST, core_config.LIVE_HOST),
+        ("WS_PUBLIC", engine.WS_PUBLIC, core_config.WS_PUBLIC),
+        ("WS_PRIVATE", engine.WS_PRIVATE, core_config.WS_PRIVATE),
+        ("JsonFormatter", engine.JsonFormatter, core_logging.JsonFormatter),
+        ("setup_logging", engine.setup_logging, core_logging.setup_logging),
     ]
     for name, from_monolith, from_package in pairs:
         if from_monolith is from_package:
@@ -75,7 +87,13 @@ def main() -> int:
     print("\n[3] The package imports without touching the network or starting anything")
     # Importing must not connect: the modules under gp/core are pure. If someone adds an import-time
     # side effect (a session, a scheduler, a loop) this check is the tripwire.
-    for mod, name in ((core_errors, "gpkg.core.errors"), (core_metrics, "gpkg.core.metrics")):
+    for mod, name in (
+        (core_errors, "gpkg.core.errors"),
+        (core_metrics, "gpkg.core.metrics"),
+        (core_clock, "gpkg.core.clock"),
+        (core_config, "gpkg.core.config"),
+        (core_logging, "gpkg.core.logging"),
+    ):
         if getattr(mod, "__file__", "").endswith(".py"):
             ok(f"{name} is a plain module with no runtime dependency")
         else:
