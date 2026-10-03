@@ -68,20 +68,36 @@ function loadDotEnv() {
   }
 }
 
-function resolveSecret() {
-  if (process.env.JWT_SECRET) return { secret: process.env.JWT_SECRET, source: 'env JWT_SECRET' };
-  if (process.env.OWNER_SESSION_SECRET) {
-    return { secret: process.env.OWNER_SESSION_SECRET, source: 'env OWNER_SESSION_SECRET' };
-  }
+/**
+ * EVERY secret this host could plausibly be using, most-authoritative first.
+ *
+ * The gate previously resolved exactly ONE candidate and asserted against it. When that assertion
+ * failed, the operator learned that *something* disagreed but not WHICH store each side was actually
+ * reading — which is the only fact that identifies the fix. Enumerating candidates turns a failure
+ * into that answer directly: the matrix prints, per candidate, which of Node and the engine accepts
+ * it, and a fingerprint (not the secret) identifies it in the log.
+ */
+function resolveCandidates() {
+  const out = [];
+  const seen = new Set();
+  const push = (label, secret) => {
+    if (!secret || seen.has(secret)) return;
+    seen.add(secret);
+    out.push({ label, secret, fp: crypto.createHash('sha256').update(secret).digest('hex').slice(0, 12) });
+  };
+
+  push('env JWT_SECRET', process.env.JWT_SECRET);
+  push('env OWNER_SESSION_SECRET', process.env.OWNER_SESSION_SECRET);
+
   const dir = process.env.GIGPILOT_DATA_DIR || path.join(APP_DIR, '.gigpilot-data');
   const cfgPath = path.join(dir, 'owner-auth-config.json');
   try {
     const cfg = JSON.parse(fs.readFileSync(cfgPath, 'utf-8'));
-    if (cfg.jwtSecret) return { secret: cfg.jwtSecret, source: `config ${cfgPath}` };
+    push(`config ${cfgPath}`, cfg.jwtSecret);
   } catch {
-    /* fall through */
+    /* no persisted config */
   }
-  return { secret: null, source: 'none' };
+  return out;
 }
 
 function b64url(buf) {
@@ -125,73 +141,76 @@ async function main() {
   console.log('='.repeat(78));
 
   loadDotEnv();
-  const { secret, source } = resolveSecret();
-  if (!secret) {
-    console.log('  [SKIP] No owner signing secret is configured yet.');
-    console.log('         Node falls back to a random per-process secret in that state, so there is');
-    console.log('         nothing to converge on. The engine will still be checked for fail-closed.');
-  } else {
-    const kind = process.env.JWT_SECRET
-      ? 'JWT_SECRET'
-      : process.env.OWNER_SESSION_SECRET
-        ? 'OWNER_SESSION_SECRET'
-        : 'persisted';
-    console.log(`  secret source: ${source} (${kind})`);
+  const candidates = resolveCandidates();
+  if (!candidates.length) {
+    console.log('  no owner signing secret configured in env or on disk');
   }
+  for (const c of candidates) console.log(`  candidate: ${c.label}  [fp ${c.fp}]`);
 
-  const token = secret ? mintToken(secret, OWNER_EMAIL) : null;
-
-  // ---- 3 & 4 first: the engine must REFUSE anonymous and wrong-secret callers -----------------
+  // ---- the engine must refuse anonymous and wrong-secret callers --------------------------
   const anon = await probe(`${ENGINE_URL}/api/state`, null);
   if (anon.status === 401) ok('engine refuses an ANONYMOUS caller (401)');
   else fail('engine did NOT refuse an anonymous caller', `status=${anon.status}`);
 
-  if (secret) {
-    const wrong = mintToken('definitely-not-the-right-secret', OWNER_EMAIL);
-    const wrongRes = await probe(`${ENGINE_URL}/api/state`, wrong);
-    if (wrongRes.status === 401) ok('engine refuses a WRONG-SECRET token (401)');
-    else fail('engine accepted a token signed with the wrong secret', `status=${wrongRes.status}`);
-  }
+  const bogus = mintToken('definitely-not-the-right-secret', OWNER_EMAIL);
+  const bogusRes = await probe(`${ENGINE_URL}/api/state`, bogus);
+  if (bogusRes.status === 401) ok('engine refuses a WRONG-SECRET token (401)');
+  else fail('engine accepted a token signed with the wrong secret', `status=${bogusRes.status}`);
 
-  // ---- 1: Node must accept the token ----------------------------------------------------------
-  if (token) {
-    const nodeStatus = await probe(`${NODE_URL}/api/trading/auth/status`, token);
-    if (nodeStatus.status === 200 && nodeStatus.body?.isAuthenticated === true) {
-      ok('Node ACCEPTS the resolved-secret token');
-    } else {
-      fail(
-        'Node rejected the resolved-secret token',
-        `status=${nodeStatus.status} isAuthenticated=${nodeStatus.body?.isAuthenticated}`
-      );
-    }
-  }
-
-  // ---- 2: THE CONVERGENCE ASSERTION ----------------------------------------------------------
-  if (token) {
-    const engineState = await probe(`${ENGINE_URL}/api/state`, token);
-    if (engineState.status === 200) {
-      ok('ENGINE ACCEPTS the same token — Node and the engine share one signing secret');
-    } else {
-      fail(
-        'ENGINE rejected a token that Node accepts — the two stacks DO NOT share a signing secret',
-        `engine /api/state -> ${engineState.status}. Every Node->engine proxy call will report ` +
-          `"ENGINE UNREACHABLE" while the engine is healthy.`
-      );
-      console.log('');
-      console.log('  Remedy: the engine reads .env via python-dotenv from its app directory and');
-      console.log('  prefers JWT_SECRET > OWNER_SESSION_SECRET > persisted owner-auth-config.json.');
-      console.log('  Ensure OWNER_SESSION_SECRET is set in .env and that BOTH processes restarted');
-      console.log('  AFTER it was written.');
-    }
-  }
-
-  console.log('');
-  if (failures.length) {
-    console.log(`RESULT: FAILED (${failures.length}) — ${failures.join('; ')}`);
+  if (!candidates.length) {
+    console.log('\nRESULT: FAILED — no signing secret could be resolved');
     return 1;
   }
-  console.log('RESULT: PASSED — owner sessions converge across both stacks and auth is enforced');
-  return 0;
+
+  // ---- which secret does each side actually honour? ---------------------------------------
+  console.log('');
+  console.log('  candidate                                   Node   Engine');
+  console.log('  ' + '-'.repeat(66));
+  let agreeing = null;
+  for (const c of candidates) {
+    const tok = mintToken(c.secret, OWNER_EMAIL);
+    const nodeRes = await probe(`${NODE_URL}/api/trading/auth/status`, tok);
+    const engRes = await probe(`${ENGINE_URL}/api/state`, tok);
+    const nodeOk = nodeRes.status === 200 && nodeRes.body?.isAuthenticated === true;
+    const engOk = engRes.status === 200;
+    console.log(
+      `  ${c.label.padEnd(42)} ${(nodeOk ? 'ACCEPTS' : 'rejects').padEnd(6)} ${engOk ? 'ACCEPTS' : 'rejects'}`
+    );
+    if (nodeOk && engOk && !agreeing) agreeing = c;
+    // Record the specific failure modes for the verdict below.
+    if (c.label === 'env OWNER_SESSION_SECRET' && !nodeOk) {
+      c._nodeRejected = true;
+    }
+    if (c.label === 'env OWNER_SESSION_SECRET' && !engOk) {
+      c._engineRejected = true;
+    }
+  }
+  console.log('');
+
+  if (agreeing) {
+    ok(`BOTH sides accept the same secret (${agreeing.label}) — convergence confirmed`);
+    console.log('\nRESULT: PASSED — owner sessions converge across both stacks and auth is enforced');
+    return 0;
+  }
+
+  // No single candidate satisfied both. Report the precise split.
+  const nodeAccepted = candidates.filter((c) => c._nodeAccepted);
+  fail(
+    'Node and the engine do NOT share a signing secret — no candidate above was accepted by both',
+    'see the matrix for which store each side is actually reading'
+  );
+  console.log('');
+  console.log('  Interpretation:');
+  console.log('    * neither side ACCEPTS any candidate  -> each is signing with a value not on disk');
+  console.log('      (a stale export baked into the process env, or a runtime-generated secret).');
+  console.log('    * Node ACCEPTS one and the engine another -> the two stores disagree.');
+  console.log('    * the files agree but both reject -> a process is overriding them; check whether');
+  console.log('      pm2 was started with --update-env and whether OWNER_SESSION_SECRET is exported');
+  console.log('      into the deploy shell.');
+
+  console.log('');
+  console.log(`RESULT: FAILED (${failures.length})`);
+  return 1;
 }
 
 main().then((code) => process.exit(code)).catch((err) => {

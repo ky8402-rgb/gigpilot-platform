@@ -151,6 +151,16 @@ else
   echo "✔ OWNER_SESSION_SECRET already configured; persisted store reconciled to match"
 fi
 
+# The deploy shell becomes the single authority for this value.
+#
+# Writing the two stores is not sufficient on its own: `pm2 delete` + `pm2 start` re-captures the
+# SHELL environment, and a value already exported into this SSH session (e.g. from a GitHub secret)
+# would be inherited by every app and silently outrank both files. Exporting here makes the value
+# that is actually written to disk the same value every process receives, so the convergence probe
+# below, the Node API and the Python engine cannot disagree about which secret is in force.
+export OWNER_SESSION_SECRET="$OWNER_SECRET"
+echo "✔ OWNER_SESSION_SECRET exported to the pm2 environment for this deploy"
+
 # Require a production database connection for live persistence. The value is supplied
 # by the deployment workflow from GitHub Secrets and is never committed to source.
 if [ -n "${DATABASE_URL:-}" ]; then
@@ -256,7 +266,7 @@ if [ "$ENGINE_HEALTHY" -ne 1 ]; then
 fi
 
 echo "Verifying gigpilot-engine restart recovery (real restart test)..."
-pm2 restart gigpilot-engine
+pm2 restart gigpilot-engine --update-env
 sleep 3
 ENGINE_RESTART_HEALTHY=0
 for attempt in $(seq 1 10); do
