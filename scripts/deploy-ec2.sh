@@ -173,4 +173,18 @@ if command -v pm2 >/dev/null 2>&1 && pm2 jlist >/tmp/pm2.json 2>/dev/null; then
 fi
 
 sudo systemctl reload nginx 2>/dev/null || true
+if [ -f "$APP_DIR/ecosystem.config.cjs" ]; then
+  echo "ERROR: legacy Node PM2 ecosystem configuration still exists."
+  exit 1
+fi
+if pgrep -x node >/dev/null 2>&1 || pgrep -x npm >/dev/null 2>&1; then
+  echo "ERROR: a Node/npm production process is still running."
+  ps -eo pid,comm,args | grep -E '(^|[[:space:]])(node|npm)([[:space:]]|$)' || true
+  exit 1
+fi
+sudo systemctl is-active --quiet gigpilot.service || {
+  echo "ERROR: Python FastAPI systemd service is not active."
+  exit 1
+}
+
 echo "=== Python production deployment verified: $DEPLOYED_COMMIT ==="
