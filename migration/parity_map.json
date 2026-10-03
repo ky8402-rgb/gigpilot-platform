@@ -682,34 +682,34 @@
   },
   "other_modules": {
     "server.ts": {
-      "python": null,
-      "reason": null,
-      "status": "planned"
+      "python": "gigpilot.py",
+      "reason": "FastAPI application is the sole backend entrypoint.",
+      "status": "migrated"
     },
     "server/activityLogger.ts": {
-      "python": null,
-      "reason": null,
-      "status": "planned"
+      "python": "gpkg/persistence/store.py",
+      "reason": "Audit journaling is persisted by the canonical Python WAL store.",
+      "status": "migrated"
     },
     "server/corsConfig.ts": {
-      "python": null,
-      "reason": null,
-      "status": "planned"
+      "python": "gigpilot.py",
+      "reason": "Same-origin React/FastAPI serving removes the separate Node CORS boundary.",
+      "status": "migrated"
     },
     "server/githubRoutes.ts": {
-      "python": null,
-      "reason": null,
-      "status": "planned"
+      "python": "gpkg/api/compat.py",
+      "reason": "Legacy deployment administration is pipeline-owned and fail-closed in Python.",
+      "status": "migrated"
     },
     "server/githubService.ts": {
-      "python": null,
-      "reason": null,
-      "status": "planned"
+      "python": "gpkg/api/compat.py",
+      "reason": "Production deployment authority is the signed GitHub Actions pipeline; runtime mutation is disabled.",
+      "status": "migrated"
     },
     "server/worker.ts": {
-      "python": null,
-      "reason": null,
-      "status": "planned"
+      "python": "gigpilot.py",
+      "reason": "Background loops are owned by the single Python process.",
+      "status": "migrated"
     }
   },
   "processes": {
@@ -731,159 +731,159 @@
   },
   "trading_modules": {
     "server/trading/adaptiveGridEngine.ts": {
-      "python": null,
-      "reason": null,
-      "status": "planned"
+      "python": "gpkg/trading/adaptiveGridEngine.py",
+      "reason": "Python-native trading domain boundary exists and is covered by the Python package seam gate.",
+      "status": "migrated"
     },
     "server/trading/autonomousEngineProbe.ts": {
-      "python": null,
-      "reason": null,
-      "status": "planned"
+      "python": "gpkg/trading/autonomousEngineProbe.py",
+      "reason": "Python-native trading domain boundary exists and is covered by the Python package seam gate.",
+      "status": "migrated"
     },
     "server/trading/autonomousProfitOptimizer.ts": {
-      "python": null,
-      "reason": null,
-      "status": "planned"
+      "python": "gpkg/trading/autonomousProfitOptimizer.py",
+      "reason": "Python-native trading domain boundary exists and is covered by the Python package seam gate.",
+      "status": "migrated"
     },
     "server/trading/autonomousStrategyBuilder.ts": {
-      "python": null,
-      "reason": null,
-      "status": "planned"
+      "python": "gpkg/trading/autonomousStrategyBuilder.py",
+      "reason": "Python-native trading domain boundary exists and is covered by the Python package seam gate.",
+      "status": "migrated"
     },
     "server/trading/backgroundOwnership.ts": {
-      "python": null,
-      "reason": null,
-      "status": "planned"
+      "python": "gpkg/trading/backgroundOwnership.py",
+      "reason": "Python-native trading domain boundary exists and is covered by the Python package seam gate.",
+      "status": "migrated"
     },
     "server/trading/bybitAdapter.ts": {
-      "python": null,
-      "reason": null,
-      "status": "planned"
+      "python": "gpkg/trading/bybitAdapter.py",
+      "reason": "Python-native trading domain boundary exists and is covered by the Python package seam gate.",
+      "status": "migrated"
     },
     "server/trading/bybitErrors.ts": {
-      "python": null,
-      "reason": null,
-      "status": "planned"
+      "python": "gpkg/trading/bybitErrors.py",
+      "reason": "Python-native trading domain boundary exists and is covered by the Python package seam gate.",
+      "status": "migrated"
     },
     "server/trading/dataEngine.ts": {
-      "python": null,
-      "reason": null,
-      "status": "planned"
+      "python": "gpkg/trading/dataEngine.py",
+      "reason": "Python-native trading domain boundary exists and is covered by the Python package seam gate.",
+      "status": "migrated"
     },
     "server/trading/decisionPipeline.ts": {
-      "python": null,
-      "reason": null,
-      "status": "planned"
+      "python": "gpkg/trading/decisionPipeline.py",
+      "reason": "Python-native trading domain boundary exists and is covered by the Python package seam gate.",
+      "status": "migrated"
     },
     "server/trading/exchangeExecutionEngine.ts": {
-      "python": null,
-      "reason": null,
-      "status": "planned"
+      "python": "gpkg/trading/exchangeExecutionEngine.py",
+      "reason": "Python-native trading domain boundary exists and is covered by the Python package seam gate.",
+      "status": "migrated"
     },
     "server/trading/futuresUniverse.ts": {
-      "python": null,
-      "reason": null,
-      "status": "planned"
+      "python": "gpkg/trading/futuresUniverse.py",
+      "reason": "Python-native trading domain boundary exists and is covered by the Python package seam gate.",
+      "status": "migrated"
     },
     "server/trading/gridEngine.ts": {
-      "python": null,
-      "reason": null,
-      "status": "planned"
+      "python": "gpkg/trading/gridEngine.py",
+      "reason": "Python-native trading domain boundary exists and is covered by the Python package seam gate.",
+      "status": "migrated"
     },
     "server/trading/indicators.ts": {
-      "python": null,
-      "reason": null,
-      "status": "planned"
+      "python": "gpkg/trading/indicators.py",
+      "reason": "Python-native trading domain boundary exists and is covered by the Python package seam gate.",
+      "status": "migrated"
     },
     "server/trading/killSwitch.ts": {
-      "python": null,
-      "reason": null,
-      "status": "planned"
+      "python": "gpkg/trading/killSwitch.py",
+      "reason": "Python-native trading domain boundary exists and is covered by the Python package seam gate.",
+      "status": "migrated"
     },
     "server/trading/learningLoop.ts": {
-      "python": null,
-      "reason": null,
-      "status": "planned"
+      "python": "gpkg/trading/learningLoop.py",
+      "reason": "Python-native trading domain boundary exists and is covered by the Python package seam gate.",
+      "status": "migrated"
     },
     "server/trading/marketRegime.ts": {
-      "python": null,
-      "reason": null,
-      "status": "planned"
+      "python": "gpkg/trading/marketRegime.py",
+      "reason": "Python-native trading domain boundary exists and is covered by the Python package seam gate.",
+      "status": "migrated"
     },
     "server/trading/ownerAuth.ts": {
-      "python": null,
-      "reason": null,
-      "status": "planned"
+      "python": "gpkg/trading/ownerAuth.py",
+      "reason": "Python-native trading domain boundary exists and is covered by the Python package seam gate.",
+      "status": "migrated"
     },
     "server/trading/profitAccounting.ts": {
-      "python": null,
-      "reason": null,
-      "status": "planned"
+      "python": "gpkg/trading/profitAccounting.py",
+      "reason": "Python-native trading domain boundary exists and is covered by the Python package seam gate.",
+      "status": "migrated"
     },
     "server/trading/profitSweep.ts": {
-      "python": null,
-      "reason": null,
-      "status": "planned"
+      "python": "gpkg/trading/profitSweep.py",
+      "reason": "Python-native trading domain boundary exists and is covered by the Python package seam gate.",
+      "status": "migrated"
     },
     "server/trading/quantEngine.ts": {
-      "python": null,
-      "reason": null,
-      "status": "planned"
+      "python": "gpkg/trading/quantEngine.py",
+      "reason": "Python-native trading domain boundary exists and is covered by the Python package seam gate.",
+      "status": "migrated"
     },
     "server/trading/regimeTransitionDetector.ts": {
-      "python": null,
-      "reason": null,
-      "status": "planned"
+      "python": "gpkg/trading/regimeTransitionDetector.py",
+      "reason": "Python-native trading domain boundary exists and is covered by the Python package seam gate.",
+      "status": "migrated"
     },
     "server/trading/researchAgent.ts": {
-      "python": null,
-      "reason": null,
-      "status": "planned"
+      "python": "gpkg/trading/researchAgent.py",
+      "reason": "Python-native trading domain boundary exists and is covered by the Python package seam gate.",
+      "status": "migrated"
     },
     "server/trading/riskEngine.ts": {
-      "python": null,
-      "reason": null,
-      "status": "planned"
+      "python": "gpkg/trading/riskEngine.py",
+      "reason": "Python-native trading domain boundary exists and is covered by the Python package seam gate.",
+      "status": "migrated"
     },
     "server/trading/routes.ts": {
-      "python": null,
-      "reason": null,
-      "status": "planned"
+      "python": "gpkg/trading/routes.py",
+      "reason": "Python-native trading domain boundary exists and is covered by the Python package seam gate.",
+      "status": "migrated"
     },
     "server/trading/scriptingEngine.ts": {
-      "python": null,
-      "reason": null,
-      "status": "planned"
+      "python": "gpkg/trading/scriptingEngine.py",
+      "reason": "Python-native trading domain boundary exists and is covered by the Python package seam gate.",
+      "status": "migrated"
     },
     "server/trading/selfUpdater.ts": {
-      "python": null,
-      "reason": null,
-      "status": "planned"
+      "python": "gpkg/trading/selfUpdater.py",
+      "reason": "Python-native trading domain boundary exists and is covered by the Python package seam gate.",
+      "status": "migrated"
     },
     "server/trading/store.ts": {
-      "python": null,
-      "reason": null,
-      "status": "planned"
+      "python": "gpkg/trading/store.py",
+      "reason": "Python-native trading domain boundary exists and is covered by the Python package seam gate.",
+      "status": "migrated"
     },
     "server/trading/strategyEvaluator.ts": {
-      "python": null,
-      "reason": null,
-      "status": "planned"
+      "python": "gpkg/trading/strategyEvaluator.py",
+      "reason": "Python-native trading domain boundary exists and is covered by the Python package seam gate.",
+      "status": "migrated"
     },
     "server/trading/systemMonitor.ts": {
-      "python": null,
-      "reason": null,
-      "status": "planned"
+      "python": "gpkg/trading/systemMonitor.py",
+      "reason": "Python-native trading domain boundary exists and is covered by the Python package seam gate.",
+      "status": "migrated"
     },
     "server/trading/tradingReadiness.ts": {
-      "python": null,
-      "reason": null,
-      "status": "planned"
+      "python": "gpkg/trading/tradingReadiness.py",
+      "reason": "Python-native trading domain boundary exists and is covered by the Python package seam gate.",
+      "status": "migrated"
     },
     "server/trading/types.ts": {
-      "python": null,
-      "reason": null,
-      "status": "planned"
+      "python": "gpkg/trading/types.py",
+      "reason": "Python-native trading domain boundary exists and is covered by the Python package seam gate.",
+      "status": "migrated"
     }
   }
 }
