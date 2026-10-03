@@ -19,11 +19,17 @@ DIST_DIR = ROOT_DIR / "dist"
 INDEX_PATH = DIST_DIR / "index.html"
 
 
+DEFAULT_FALLBACK_HTML = """<!doctype html>
+<html><head><meta charset="utf-8"><title>GigPilot Platform</title></head>
+<body><div id="root"><h1>GigPilot Platform</h1><p>Initializing dashboard...</p></div></body></html>"""
+
+
 def mount_dashboard(app: FastAPI, dist_dir: Optional[Path] = None, fallback_html: Optional[str] = None) -> None:
     """Mounts static asset serving and SPA routing onto the FastAPI application."""
     target_dist = dist_dir or DIST_DIR
     target_index = target_dist / "index.html"
     assets_dir = target_dist / "assets"
+    effective_fallback = fallback_html or DEFAULT_FALLBACK_HTML
 
     if assets_dir.is_dir():
         app.mount("/assets", StaticFiles(directory=str(assets_dir)), name="assets")
@@ -66,9 +72,7 @@ def mount_dashboard(app: FastAPI, dist_dir: Optional[Path] = None, fallback_html
     async def get_index():
         if target_index.is_file():
             return HTMLResponse(content=target_index.read_text(encoding="utf-8"), status_code=200)
-        if fallback_html:
-            return HTMLResponse(content=fallback_html, status_code=200)
-        return HTMLResponse(content="<h1>GigPilot Platform</h1><p>Dashboard bundle building or not present.</p>", status_code=200)
+        return HTMLResponse(content=effective_fallback, status_code=200)
 
     @app.get("/{full_path:path}", response_class=HTMLResponse)
     async def spa_fallback(full_path: str):
@@ -80,8 +84,9 @@ def mount_dashboard(app: FastAPI, dist_dir: Optional[Path] = None, fallback_html
         if direct_file.is_file() and not full_path.endswith(".html"):
             return FileResponse(str(direct_file))
 
+        if full_path.startswith("assets/"):
+            return JSONResponse(status_code=404, content={"error": f"Asset not found: /{full_path}"})
+
         if target_index.is_file():
             return HTMLResponse(content=target_index.read_text(encoding="utf-8"), status_code=200)
-        if fallback_html:
-            return HTMLResponse(content=fallback_html, status_code=200)
-        return JSONResponse(status_code=404, content={"error": f"Resource not found: /{full_path}"})
+        return HTMLResponse(content=effective_fallback, status_code=200)

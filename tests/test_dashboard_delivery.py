@@ -77,6 +77,18 @@ class TestDashboardDelivery(unittest.TestCase):
         self.assertEqual(resp.status_code, 200)
         self.assertIn("text/html", resp.headers.get("content-type", ""))
 
+    def test_spa_fallback_when_dist_empty(self):
+        # Verifies that even if dist/ has not been built yet, mount_dashboard serves fallback HTML
+        import tempfile
+        with tempfile.TemporaryDirectory() as tmpdir:
+            empty_app = FastAPI()
+            mount_dashboard(empty_app, dist_dir=Path(tmpdir))
+            empty_client = TestClient(empty_app)
+            resp = empty_client.get("/cockpit")
+            self.assertEqual(resp.status_code, 200)
+            self.assertIn("text/html", resp.headers.get("content-type", ""))
+            self.assertIn("GigPilot Platform", resp.text)
+
     def test_static_assets_mounted(self):
         assets_dir = DIST_DIR / "assets"
         if assets_dir.is_dir():
