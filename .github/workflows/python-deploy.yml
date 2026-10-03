@@ -1,0 +1,102 @@
+name: Python FastAPI Production Deploy
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+permissions:
+  contents: read
+  checks: read
+jobs:
+  validate:
+    name: Python and React validation
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Setup Node for React build only
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install frontend build dependencies
+        run: npm ci
+      - name: React typecheck and production build
+        run: npm test
+      - name: Install Python dependencies
+        run: python -m pip install --quiet -r requirements.txt
+      - name: Python migration parity
+        run: python tests/test_parity.py
+      - name: Python execution idempotency
+        run: python tests/test_execution_idempotency.py
+      - name: Python package seams
+        run: python tests/test_package_seams.py
+      - name: Python dashboard delivery
+        run: python tests/test_dashboard_delivery.py
+      - name: Full Python tests
+        run: python -m pytest tests/ -q --no-header
+  deploy:
+    name: Deploy FastAPI runtime to EC2
+    needs: validate
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Verify database secret
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL || secrets.NEON_DATABASE_URL }}
+        run: |
+          set -euo pipefail
+          test -n "$DATABASE_URL"
+          printf '%s' "$DATABASE_URL" | grep -Eq '^postgres(ql)?://'
+          echo "::add-mask::$DATABASE_URL"
+      - name: Deploy over approved SSH
+        env:
+          SSH_KEY: ${{ secrets.EC2_SSH_KEY || secrets.GIGPILOT_MUMBAI_EC2 }}
+          EC2_HOST: ${{ secrets.EC2_HOST || '' }}
+          EC2_USER: ${{ secrets.EC2_USER || 'ubuntu' }}
+          DATABASE_URL: ${{ secrets.DATABASE_URL || secrets.NEON_DATABASE_URL }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY || '' }}
+          BYBIT_API_KEY: ${{ secrets.BYBIT_API_KEY || '' }}
+          BYBIT_API_SECRET: ${{ secrets.BYBIT_API_SECRET || '' }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          if [ -z "$EC2_HOST" ] && [ -f deployment/backend-host.txt ]; then EC2_HOST="$(tr -d '\r\n' < deployment/backend-host.txt)"; fi
+          test -n "$EC2_HOST"
+          test -n "$SSH_KEY"
+          mkdir -p ~/.ssh
+          printf '%s\n' "$SSH_KEY" > ~/.ssh/id_rsa
+          chmod 600 ~/.ssh/id_rsa
+          ssh-keygen -y -f ~/.ssh/id_rsa >/dev/null
+          ssh -o StrictHostKeyChecking=no -o ConnectTimeout=20 -i ~/.ssh/id_rsa "$EC2_USER@$EC2_HOST" "echo SSH_OK"
+          {
+            printf 'export DATABASE_URL=%q\n' "$DATABASE_URL"
+            printf 'export GEMINI_API_KEY=%q\n' "$GEMINI_API_KEY"
+            printf 'export BYBIT_API_KEY=%q\n' "$BYBIT_API_KEY"
+            printf 'export BYBIT_API_SECRET=%q\n' "$BYBIT_API_SECRET"
+            printf 'export GITHUB_TOKEN=%q\n' "$GITHUB_TOKEN"
+            cat scripts/deploy-ec2.sh
+          } | ssh -o StrictHostKeyChecking=no -o ConnectTimeout=20 -i ~/.ssh/id_rsa "$EC2_USER@$EC2_HOST" "bash -s"
+      - name: Verify exact deployed SHA and FastAPI
+        env:
+          EC2_HOST: ${{ secrets.EC2_HOST || '' }}
+        run: |
+          set -euo pipefail
+          if [ -z "$EC2_HOST" ] && [ -f deployment/backend-host.txt ]; then EC2_HOST="$(tr -d '\r\n' < deployment/backend-host.txt)"; fi
+          BASE="https://$(printf '%s' "$EC2_HOST" | tr '.' '-').sslip.io"
+          curl -kfsS "$BASE/api/health" -o /tmp/health.json
+          python3 - <<'PY'
+import json, os
+x=json.load(open('/tmp/health.json'))
+assert x.get('deployedCommit') == os.environ['GITHUB_SHA']
+assert x.get('autonomousEngine',{}).get('reachable') is True
+print('FastAPI exact SHA verified:', x['deployedCommit'])
+PY
+          curl -kfsS "$BASE/" | grep -Eiq '<html|<script|<div'
+          curl -kfsS "$BASE/version.json" | python3 -c 'import json,sys,os; x=json.load(sys.stdin); assert x.get("commit")==os.environ["GITHUB_SHA"]'
+          echo "React is being served by FastAPI"
