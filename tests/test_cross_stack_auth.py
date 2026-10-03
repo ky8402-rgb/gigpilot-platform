@@ -36,6 +36,24 @@ from gpkg.api import auth as auth_mod  # noqa: E402
 from gpkg.api.auth import OwnerAuth  # noqa: E402
 
 
+@pytest.fixture(autouse=True)
+def _isolate_from_the_ambient_dotenv(tmp_path, monkeypatch):
+    """Run every test from an EMPTY directory.
+
+    `_load_dotenv_once()` reads `os.getcwd()/.env` — on a real host that is the *production* .env.
+    Without this fixture the tests silently picked up the live `OWNER_SESSION_SECRET` and asserted
+    against production configuration instead of the values under test.
+
+    This is not hypothetical: it failed the deploy gate on EC2 the first time it ran, which is
+    exactly the behaviour a fail-closed gate is supposed to have — but the bug was in the test, not
+    the code, so it is fixed here rather than by weakening the gate.
+    """
+    monkeypatch.chdir(tmp_path)
+    # Belt and braces: clear anything an outer environment may already have exported.
+    for var in ("OWNER_SESSION_SECRET", "JWT_SECRET", "OWNER_AUTH_PIN"):
+        monkeypatch.delenv(var, raising=False)
+
+
 def _b64url(raw: bytes) -> str:
     return base64.urlsafe_b64encode(raw).rstrip(b"=").decode()
 
