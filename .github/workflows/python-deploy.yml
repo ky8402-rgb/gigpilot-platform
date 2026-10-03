@@ -93,4 +93,5 @@ jobs:
           printf '%s\\n' "$SSH_KEY" > ~/.ssh/id_rsa
           chmod 600 ~/.ssh/id_rsa
           ssh-keygen -y -f ~/.ssh/id_rsa >/dev/null
-          ssh -o StrictHostKeyChecking=no -o ConnectTimeout=20 -i ~/.ssh/id_rsa "$EC2_USER@$EC2_HOST" "test ! -f /home/ubuntu/gigpilot/ecosystem.config.cjs; ! pgrep -af 'node|npm|pm2' >/dev/null; systemctl is-active --quiet gigpilot.service"
+          ssh -o StrictHostKeyChecking=no -o ConnectTimeout=20 -i ~/.ssh/id_rsa "$EC2_USER@$EC2_HOST" "test ! -f /home/ubuntu/gigpilot/ecosystem.config.cjs; ! ps -eo comm= | grep -Eq '^(node|npm)"
+; systemctl is-active --quiet gigpilot.service"
