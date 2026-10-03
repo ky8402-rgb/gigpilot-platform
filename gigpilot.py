@@ -18,6 +18,7 @@ Invariants
 
 from __future__ import annotations
 import asyncio, hashlib, hmac, json, logging, math, os, sys, time, uuid
+from pathlib import Path
 import sqlite3
 from collections import deque
 from contextlib import asynccontextmanager
@@ -1432,6 +1433,8 @@ app = FastAPI(title="GigPilot", lifespan=lifespan)
 
 
 @app.get("/health")
+@app.get("/api/health")
+@app.get("/api/trading/gigpilot/health")
 async def health():
     gp = get_gp()
     fresh = all((now_ms() - ms.ts_book_ms) < gp.cfg.staleness_ms
@@ -1481,11 +1484,29 @@ async def health():
     if gp.position_mode != "one-way":
         blockers.append(f"position mode is '{gp.position_mode}', expected 'one-way'")
 
+    deployed_file = Path(".gigpilot-data/deployed-commit.txt")
+    commit_sha = ""
+    if deployed_file.is_file():
+        commit_sha = deployed_file.read_text(encoding="utf-8").strip()
+    if not commit_sha:
+        commit_sha = os.getenv("DEPLOYED_COMMIT", os.getenv("GITHUB_SHA", ""))
+
     return JSONResponse(status_code=200 if healthy else 503, content={
+        "status": "ok" if healthy else "degraded",
+        "service": "Autonomous Crypto Grid Trading Platform",
         "healthy": healthy, "public_ws": public_ok,
         "private_ws": private_ok, "feed_fresh": fresh,
         "armed": gp.armed, "host": gp.cfg.host,
         "position_mode": gp.position_mode,
+        "deployedCommit": commit_sha,
+        "autonomousEngine": {
+            "status": "healthy" if healthy else "unhealthy",
+            "reachable": True,
+            "publicWs": public_ok,
+            "privateWs": private_ok,
+            "feedFresh": fresh,
+            "armed": gp.armed,
+        },
         # ---- authoritative trading-readiness signal ----
         "trading_ready": len(blockers) == 0,
         "credentials_ok": credentials_ok,
@@ -1631,8 +1652,9 @@ new EventSource('/events').onmessage=e=>{try{upd(JSON.parse(e.data))}catch(_){}}
 </script></body></html>"""
 
 
-@app.get("/", response_class=HTMLResponse)
-async def dashboard(): return DASHBOARD_HTML
+from gpkg.web.dashboard import mount_dashboard
+
+mount_dashboard(app, fallback_html=DASHBOARD_HTML)
 
 
 # =============================================================================

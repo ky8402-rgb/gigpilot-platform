@@ -38,11 +38,12 @@ jobs:
       # without a proven replacement. test_execution_idempotency locks the order paths to one
       # submission helper. test_package_seams pins that re-exported symbols stay the SAME OBJECT
       # (a duplicate BybitError class would silently break `except` across modules). None optional.
-      - name: Python gates (migration parity + execution idempotency + package seams)
+      - name: Python gates (migration parity + execution idempotency + package seams + dashboard delivery)
         run: |
           python3 tests/test_parity.py
           python3 tests/test_execution_idempotency.py
           python3 tests/test_package_seams.py
+          python3 tests/test_dashboard_delivery.py
 
       - name: Production build
         run: npm run build

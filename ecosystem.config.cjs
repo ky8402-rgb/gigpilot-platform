@@ -1,4 +1,11 @@
 const path = require('path');
+const fs = require('fs');
+
+const projectVenvPython3 = path.resolve(__dirname, '.venv', 'bin', 'python3');
+const projectVenvPython = path.resolve(__dirname, '.venv', 'bin', 'python');
+const pythonInterpreter = fs.existsSync(projectVenvPython3)
+  ? projectVenvPython3
+  : (fs.existsSync(projectVenvPython) ? projectVenvPython : projectVenvPython3);
 
 module.exports = {
   apps: [
@@ -48,7 +55,7 @@ module.exports = {
       script: './gigpilot.py',
       // requirements.txt is installed into .venv by scripts/deploy-ec2.sh. Running the
       // system python3 cannot import those deps (aiohttp) and crash-loops the engine.
-      interpreter: path.join(__dirname, '.venv', 'bin', 'python3'),
+      interpreter: pythonInterpreter,
       cwd: __dirname,
       instances: 1,
       autorestart: true,

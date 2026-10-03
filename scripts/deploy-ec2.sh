@@ -109,8 +109,19 @@ echo "Installing GigPilot Python engine dependencies..."
 if ! command -v python3 >/dev/null 2>&1; then
   echo "ERROR: python3 is required for the autonomous futures engine."; exit 1
 fi
-python3 -m venv "$APP_DIR/.venv"
+if ! python3 -c "import venv, ensurepip" 2>/dev/null; then
+  echo "Installing python3-venv and python3-pip system packages..."
+  sudo apt-get update -qq && sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq python3-venv python3-pip 2>/dev/null || true
+fi
+if [ ! -x "$APP_DIR/.venv/bin/python3" ]; then
+  echo "Creating Python virtual environment at $APP_DIR/.venv..."
+  python3 -m venv "$APP_DIR/.venv"
+fi
 "$APP_DIR/.venv/bin/pip" install --disable-pip-version-check --no-input -r "$APP_DIR/requirements.txt"
+if ! "$APP_DIR/.venv/bin/python3" -c "import aiohttp, fastapi, uvicorn; print('Python venv verified OK')" 2>/dev/null; then
+  echo "ERROR: Python dependencies failed verification in $APP_DIR/.venv"
+  exit 1
+fi
 
 echo "Installing production build dependencies..."
 npm install --prefer-offline || npm install --legacy-peer-deps
@@ -151,39 +162,65 @@ fi
 
 pm2 save
 
-echo "Waiting for Node and GigPilot engine processes to initialize..."
-sleep 3
-if curl -fsS -m 5 http://127.0.0.1:8001/health >/tmp/gigpilot-engine-health.json 2>/dev/null; then
-  echo "✔ GigPilot autonomous engine health check passed on 127.0.0.1:8001."
-else
+echo "Waiting for GigPilot engine process to initialize on port 8001..."
+ENGINE_HEALTHY=0
+for attempt in $(seq 1 15); do
+  if curl -fsS -m 5 http://127.0.0.1:8001/health >/tmp/gigpilot-engine-health.json 2>/dev/null; then
+    echo "✔ GigPilot autonomous engine health check passed on 127.0.0.1:8001 (attempt $attempt)."
+    ENGINE_HEALTHY=1
+    break
+  fi
+  sleep 2
+done
+if [ "$ENGINE_HEALTHY" -ne 1 ]; then
   echo "ERROR: GigPilot autonomous engine failed to become healthy on port 8001."
   pm2 logs gigpilot-engine --lines 80 --nostream || true
   exit 1
 fi
 
-echo "Waiting for process to initialize on port 3000..."
+echo "Verifying gigpilot-engine restart recovery (real restart test)..."
+pm2 restart gigpilot-engine
 sleep 3
-
-# Local health verification
-HEALTH_OK=0
-if curl -sS -m 5 http://127.0.0.1:3000/api/health >/dev/null 2>&1; then
-  echo "✔ Local health check passed (http://127.0.0.1:3000/api/health: OK)"
-  HEALTH_OK=1
-else
-  echo "Notice: Service starting up or warming cache."
+ENGINE_RESTART_HEALTHY=0
+for attempt in $(seq 1 10); do
+  if curl -fsS -m 5 http://127.0.0.1:8001/health >/dev/null 2>&1; then
+    echo "✔ GigPilot autonomous engine verified healthy after real restart."
+    ENGINE_RESTART_HEALTHY=1
+    break
+  fi
+  sleep 2
+done
+if [ "$ENGINE_RESTART_HEALTHY" -ne 1 ]; then
+  echo "ERROR: GigPilot autonomous engine failed to recover after pm2 restart!"
+  pm2 logs gigpilot-engine --lines 80 --nostream || true
+  exit 1
 fi
 
+echo "Waiting for backend process to initialize on port 3000..."
+HEALTH_OK=0
+for attempt in $(seq 1 15); do
+  if curl -sS -m 5 http://127.0.0.1:3000/api/health >/tmp/node-health.json 2>&1; then
+    if grep -q '"status":"ok"' /tmp/node-health.json; then
+      echo "✔ Local health check passed (http://127.0.0.1:3000/api/health: OK)"
+      HEALTH_OK=1
+      break
+    fi
+  fi
+  sleep 2
+done
+
 # ATTESTATION — record the deployed commit ONLY now. By this point the source is checked out, the
-# runtime invariant gate passed, the build completed, PM2 relaunched every app, and the engine
-# passed its own health gate. Recording it any earlier would let a stale process report a release
-# that is not running.
+# runtime invariant gate passed, the build completed, PM2 relaunched every app, the engine
+# passed its health and restart recovery gates, and /api/health is verified live.
 if [ "$HEALTH_OK" = "1" ]; then
   printf '%s\n' "$DEPLOYED_COMMIT" > "$APP_DIR/.gigpilot-data/deployed-commit.txt"
   chmod 600 "$APP_DIR/.gigpilot-data/deployed-commit.txt"
   echo "✔ Deployed commit attested after verified restart: $DEPLOYED_COMMIT"
 else
-  echo "WARNING: local /api/health did not respond, so the deployed-commit attestation was NOT updated."
-  echo "         /api/health will keep reporting the previous revision, which is the truthful value."
+  echo "ERROR: local /api/health did not respond with 200 OK after deployment!"
+  pm2 status
+  pm2 logs --lines 80 --nostream || true
+  exit 1
 fi
 
 echo "Reloading Nginx reverse proxy..."

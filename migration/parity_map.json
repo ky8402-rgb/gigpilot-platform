@@ -194,9 +194,9 @@
     }
   },
   "frontend": {
-    "python": null,
-    "reason": "React SPA (30 components). Decision required: serve a prebuilt bundle from Python (keeps a Node BUILD step) or rebuild the UI with Python-rendered templates.",
-    "status": "planned"
+    "python": "gpkg/web/dashboard.py",
+    "reason": "D1 decision executed: FastAPI serves verified prebuilt React bundle from dist/ via gpkg.web.dashboard. Zero Node runtime in production.",
+    "status": "migrated"
   },
   "http_endpoints": {
     "ANY /api/trading/auth/login": {

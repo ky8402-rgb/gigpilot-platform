@@ -227,7 +227,6 @@ jobs:
 
       - name: Deploy via SSH (Direct EC2 Execution)
         id: ec2_ssh
-        continue-on-error: true
         env:
           SSH_KEY: ${{ secrets.EC2_SSH_KEY || secrets.GIGPILOT_MUMBAI_EC2 }}
           EC2_HOST: ${{ secrets.EC2_HOST || '' }}
@@ -365,15 +364,14 @@ jobs:
             cat /tmp/resp.json 2>/dev/null || true
           fi
 
-          if [ "$HTTP_CODE" = "200" ] || [ "$HTTP_CODE" = "202" ]; then
-            echo "✔ EC2 backend webhook delivery succeeded (HTTP $HTTP_CODE)."
+          # HTTP 202 means push was acknowledged but webhook deployment is disabled.
+          # Only HTTP 200 represents an actual executed deployment.
+          if [ "$HTTP_CODE" = "200" ]; then
+            echo "✔ EC2 backend webhook deployment succeeded (HTTP $HTTP_CODE)."
             echo "DEPLOYMENT_DELIVERY=WEBHOOK" >> "$GITHUB_ENV"
           else
-            echo "EC2 webhook delivery failed with HTTP $HTTP_CODE."
-            if [ "${DEPLOYMENT_DELIVERY:-NONE}" = "NONE" ]; then
-              echo "ERROR: Neither SSH nor webhook delivered this commit to EC2."
-              exit 1
-            fi
+            echo "ERROR: EC2 backend webhook did not execute deployment (HTTP $HTTP_CODE)."
+            exit 1
           fi
 
       - name: Verify EC2 Backend Health
