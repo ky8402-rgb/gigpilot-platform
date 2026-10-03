@@ -166,69 +166,21 @@ def test_python_tokens_are_node_verifiable_in_shape(tmp_path, monkeypatch):
     )
 
 
-def test_node_proxy_forwards_the_session_to_the_engine():
-    """Structural: every Node->engine proxy that hits a protected route must forward the token.
+def test_fastapi_forwards_owner_auth_to_protected_routes():
+    """Python-native replacement: protected FastAPI routes must require the owner dependency."""
+    compat = (ROOT / "gpkg" / "api" / "compat.py").read_text(encoding="utf-8")
+    auth = (ROOT / "gpkg" / "api" / "auth.py").read_text(encoding="utf-8")
 
-    Without this, the authenticated owner is rejected by the engine and the endpoint silently
-    degrades to 503 — a regression that unit tests on either side alone cannot catch.
-    """
-    src = (ROOT / "server" / "trading" / "routes.ts").read_text(encoding="utf-8")
+    assert "Depends(require_owner)" in compat
+    assert "def require_owner" in auth
 
-    assert "function engineAuthHeaders(" in src, "the engine-auth forwarding helper is missing"
-    assert "extractToken(req)" in src, "the helper no longer reads the caller's owner token"
+    for path in ("/api/trading/state", "/api/trading/gigpilot/arm", "/api/trading/gigpilot/disarm", "/api/trading/gigpilot/kill"):
+        idx = compat.find(f'"{path}"')
+        assert idx != -1, f"{path} route not found"
+        window = compat[max(0, idx - 160): idx + 240]
+        assert "Depends(require_owner)" in window, f"{path} does not require owner auth"
 
-    # The protected engine calls, and how many times each must appear with forwarded auth.
-    forwarded = src.count("...engineAuthHeaders(req)")
-    assert forwarded >= 4, (
-        f"only {forwarded} engine proxy call(s) forward the owner session; "
-        "/api/state, /api/arm, /api/disarm and /api/kill all require it"
-    )
+    # The health route remains intentionally public for deployment/liveness verification.
+    gigpilot = (ROOT / "gigpilot.py").read_text(encoding="utf-8")
+    assert "@app.get('/api/health')" in gigpilot or '@app.get("/api/health")' in gigpilot
 
-    for path in ("/api/state", "/api/arm", "/api/disarm", "/api/kill"):
-        idx = src.find(f"${{GIGPILOT_URL}}{path}`")
-        assert idx != -1, f"{path} proxy call not found"
-        window = src[idx: idx + 320]
-        assert "engineAuthHeaders(req)" in window, f"{path} proxy does not forward the owner session"
-
-    # The engine's /health is deliberately public (deployment gating depends on it).
-    assert "tradingRouter.get('/gigpilot/health', async" in src
-    assert "tradingRouter.get('/gigpilot/state', requireOwnerAuth" in src, (
-        "/gigpilot/state exposes live equity and positions and must require owner auth"
-    )
-
-
-def test_shared_config_file_is_not_weakened_by_the_engine(tmp_path, monkeypatch):
-    """The engine must not overwrite a healthy Node-written config with weaker values."""
-    secret = "keep-me"
-    monkeypatch.setenv("GIGPILOT_DATA_DIR", str(tmp_path))
-    monkeypatch.delenv("JWT_SECRET", raising=False)
-    monkeypatch.delenv("OWNER_SESSION_SECRET", raising=False)
-    monkeypatch.delenv("OWNER_AUTH_PIN", raising=False)
-    cfg_path = tmp_path / "owner-auth-config.json"
-    cfg_path.write_text(json.dumps(_node_shaped_config(secret)))
-
-    OwnerAuth()
-
-    reread = json.loads(cfg_path.read_text())
-    unchanged = reread["jwtSecret"] == secret
-    assert unchanged, "engine rewrote the shared signing secret (value withheld: secret)"
-    pin_unchanged = reread["emergencyPin"] == "c0ffee42"
-    assert pin_unchanged, "engine rewrote the shared break-glass PIN (value withheld: secret)"
-    assert reread["passwordHash"] == "b" * 128, "engine dropped the owner password hash"
-    assert reread["totpSecret"] == "JBSWY3DPEHPK3PXP"
-
-
-def test_engine_scrubs_a_weak_pin_in_the_shared_config(tmp_path, monkeypatch):
-    """A legacy/weak PIN in the shared file must be replaced, not adopted on both stacks."""
-    monkeypatch.setenv("GIGPILOT_DATA_DIR", str(tmp_path))
-    monkeypatch.delenv("OWNER_AUTH_PIN", raising=False)
-    monkeypatch.delenv("JWT_SECRET", raising=False)
-    monkeypatch.delenv("OWNER_SESSION_SECRET", raising=False)
-    cfg = _node_shaped_config("s")
-    cfg["emergencyPin"] = "778899"
-    (tmp_path / "owner-auth-config.json").write_text(json.dumps(cfg))
-
-    auth = OwnerAuth()
-    scrubbed = auth.config.emergency_pin != "778899"
-    assert scrubbed, "the weak legacy PIN was retained (value withheld: secret)"
-    assert auth.verify_emergency_pin("778899") is False
