@@ -1259,6 +1259,9 @@ new EventSource('/events').onmessage=e=>{try{upd(JSON.parse(e.data))}catch(_){}}
 </script></body></html>"""
 
 
+from gpkg.api.compat import register_compat_routes
+register_compat_routes(app, get_gp)
+
 from gpkg.web.dashboard import mount_dashboard
 
 mount_dashboard(app, fallback_html=DASHBOARD_HTML)
