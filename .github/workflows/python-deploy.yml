@@ -19,6 +19,12 @@ jobs:
           python-version: "3.12"
       - run: npm ci
       - run: npm test
+      - name: Upload verified React build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: react-dist
+          path: dist
+          retention-days: 3
       - run: python -m pip install --quiet -r requirements.txt
       - run: python tests/test_parity.py
       - run: python tests/test_execution_idempotency.py
@@ -31,6 +37,11 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - name: Download verified React build artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: react-dist
+          path: dist
       - name: Verify database secret
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL || secrets.NEON_DATABASE_URL }}
@@ -54,6 +65,7 @@ jobs:
           chmod 600 ~/.ssh/id_rsa
           ssh-keygen -y -f ~/.ssh/id_rsa >/dev/null
           ssh -o StrictHostKeyChecking=no -o ConnectTimeout=20 -i ~/.ssh/id_rsa "$EC2_USER@$EC2_HOST" "echo SSH_OK"
+          tar -C dist -czf - . | ssh -o StrictHostKeyChecking=no -o ConnectTimeout=20 -i ~/.ssh/id_rsa "$EC2_USER@$EC2_HOST" "mkdir -p /home/ubuntu/gigpilot/dist && tar -xzf - -C /home/ubuntu/gigpilot/dist"
           { printf 'export DATABASE_URL=%q\n' "$DATABASE_URL"; printf 'export GEMINI_API_KEY=%q\n' "$GEMINI_API_KEY"; printf 'export BYBIT_API_KEY=%q\n' "$BYBIT_API_KEY"; printf 'export BYBIT_API_SECRET=%q\n' "$BYBIT_API_SECRET"; printf 'export GITHUB_TOKEN=%q\n' "$GITHUB_TOKEN"; cat scripts/deploy-ec2.sh; } | ssh -o StrictHostKeyChecking=no -o ConnectTimeout=20 -i ~/.ssh/id_rsa "$EC2_USER@$EC2_HOST" "bash -s"
       - name: Verify exact deployed SHA and FastAPI
         env:
