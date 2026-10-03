@@ -34,6 +34,7 @@ from gpkg.market import state as mkt_state  # noqa: E402
 from gpkg.strategy import edge as strat_edge  # noqa: E402
 from gpkg.risk import gate as risk_gate  # noqa: E402
 from gpkg.execution import executor as exec_module  # noqa: E402
+from gpkg.persistence import store as persist_store  # noqa: E402
 
 failures: list[str] = []
 checks = 0
@@ -75,6 +76,7 @@ def main() -> int:
         ("Portfolio", engine.Portfolio, risk_gate.Portfolio),
         ("RiskGate", engine.RiskGate, risk_gate.RiskGate),
         ("Executor", engine.Executor, exec_module.Executor),
+        ("Store", engine.Store, persist_store.Store),
     ]
     for name, from_monolith, from_package in pairs:
         if from_monolith is from_package:
@@ -110,6 +112,7 @@ def main() -> int:
         (strat_edge, "gpkg.strategy.edge"),
         (risk_gate, "gpkg.risk.gate"),
         (exec_module, "gpkg.execution.executor"),
+        (persist_store, "gpkg.persistence.store"),
     ):
         if getattr(mod, "__file__", "").endswith(".py"):
             ok(f"{name} is a plain module with no runtime dependency")
