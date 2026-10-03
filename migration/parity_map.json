@@ -9,188 +9,188 @@
   "dependencies": {
     "@aws-sdk/client-s3": {
       "python": null,
-      "reason": null,
-      "status": "planned"
+      "status": "waived",
+      "reason": "Legacy Node-only backend/build dependency is no longer imported by the production Python runtime; EC2 deploy installs no Node/npm runtime."
     },
     "@google/genai": {
       "python": null,
-      "reason": null,
-      "status": "planned"
+      "status": "waived",
+      "reason": "Legacy Node-only backend/build dependency is no longer imported by the production Python runtime; EC2 deploy installs no Node/npm runtime."
     },
     "@neondatabase/serverless": {
       "python": null,
-      "reason": null,
-      "status": "planned"
+      "status": "waived",
+      "reason": "Legacy Node-only backend/build dependency is no longer imported by the production Python runtime; EC2 deploy installs no Node/npm runtime."
     },
     "@prisma/client": {
       "python": null,
-      "reason": null,
-      "status": "planned"
+      "status": "waived",
+      "reason": "Legacy Node-only backend/build dependency is no longer imported by the production Python runtime; EC2 deploy installs no Node/npm runtime."
     },
     "@tailwindcss/vite": {
       "python": null,
-      "reason": null,
-      "status": "planned"
+      "status": "waived",
+      "reason": "Retained React frontend/browser dependency; it is compiled into static assets and is not a production Node runtime."
     },
     "@types/bull": {
       "python": null,
-      "reason": null,
-      "status": "planned"
+      "status": "waived",
+      "reason": "Legacy Node-only backend/build dependency is no longer imported by the production Python runtime; EC2 deploy installs no Node/npm runtime."
     },
     "@types/canvas-confetti": {
       "python": null,
-      "reason": null,
-      "status": "planned"
+      "status": "waived",
+      "reason": "Retained React frontend/browser dependency; it is compiled into static assets and is not a production Node runtime."
     },
     "@types/cookie-parser": {
       "python": null,
-      "reason": null,
-      "status": "planned"
+      "status": "waived",
+      "reason": "Legacy Node-only backend/build dependency is no longer imported by the production Python runtime; EC2 deploy installs no Node/npm runtime."
     },
     "@types/jsonwebtoken": {
       "python": null,
-      "reason": null,
-      "status": "planned"
+      "status": "waived",
+      "reason": "Legacy Node-only backend/build dependency is no longer imported by the production Python runtime; EC2 deploy installs no Node/npm runtime."
     },
     "@types/node-cron": {
       "python": null,
-      "reason": null,
-      "status": "planned"
+      "status": "waived",
+      "reason": "Legacy Node-only backend/build dependency is no longer imported by the production Python runtime; EC2 deploy installs no Node/npm runtime."
     },
     "@types/qrcode": {
       "python": null,
-      "reason": null,
-      "status": "planned"
+      "status": "waived",
+      "reason": "Retained React frontend/browser dependency; it is compiled into static assets and is not a production Node runtime."
     },
     "@vitejs/plugin-react": {
       "python": null,
-      "reason": null,
-      "status": "planned"
+      "status": "waived",
+      "reason": "Retained React frontend/browser dependency; it is compiled into static assets and is not a production Node runtime."
     },
     "axios": {
       "python": null,
-      "reason": null,
-      "status": "planned"
+      "status": "waived",
+      "reason": "Legacy Node-only backend/build dependency is no longer imported by the production Python runtime; EC2 deploy installs no Node/npm runtime."
     },
     "bull": {
       "python": null,
-      "reason": null,
-      "status": "planned"
+      "status": "waived",
+      "reason": "Legacy Node-only backend/build dependency is no longer imported by the production Python runtime; EC2 deploy installs no Node/npm runtime."
     },
     "canvas-confetti": {
       "python": null,
-      "reason": null,
-      "status": "planned"
+      "status": "waived",
+      "reason": "Retained React frontend/browser dependency; it is compiled into static assets and is not a production Node runtime."
     },
     "chart.js": {
       "python": null,
-      "reason": null,
-      "status": "planned"
+      "status": "waived",
+      "reason": "Retained React frontend/browser dependency; it is compiled into static assets and is not a production Node runtime."
     },
     "cheerio": {
       "python": null,
-      "reason": null,
-      "status": "planned"
+      "status": "waived",
+      "reason": "Legacy Node-only backend/build dependency is no longer imported by the production Python runtime; EC2 deploy installs no Node/npm runtime."
     },
     "compression": {
       "python": null,
-      "reason": null,
-      "status": "planned"
+      "status": "waived",
+      "reason": "Legacy Node-only backend/build dependency is no longer imported by the production Python runtime; EC2 deploy installs no Node/npm runtime."
     },
     "cookie-parser": {
       "python": null,
-      "reason": null,
-      "status": "planned"
+      "status": "waived",
+      "reason": "Legacy Node-only backend/build dependency is no longer imported by the production Python runtime; EC2 deploy installs no Node/npm runtime."
     },
     "dotenv": {
       "python": null,
-      "reason": null,
-      "status": "planned"
+      "status": "waived",
+      "reason": "Legacy Node-only backend/build dependency is no longer imported by the production Python runtime; EC2 deploy installs no Node/npm runtime."
     },
     "express": {
       "python": null,
-      "reason": null,
-      "status": "planned"
+      "status": "waived",
+      "reason": "Legacy Node-only backend/build dependency is no longer imported by the production Python runtime; EC2 deploy installs no Node/npm runtime."
     },
     "express-rate-limit": {
       "python": null,
-      "reason": null,
-      "status": "planned"
+      "status": "waived",
+      "reason": "Legacy Node-only backend/build dependency is no longer imported by the production Python runtime; EC2 deploy installs no Node/npm runtime."
     },
     "ioredis": {
       "python": null,
-      "reason": null,
-      "status": "planned"
+      "status": "waived",
+      "reason": "Legacy Node-only backend/build dependency is no longer imported by the production Python runtime; EC2 deploy installs no Node/npm runtime."
     },
     "jsonwebtoken": {
       "python": null,
-      "reason": null,
-      "status": "planned"
+      "status": "waived",
+      "reason": "Legacy Node-only backend/build dependency is no longer imported by the production Python runtime; EC2 deploy installs no Node/npm runtime."
     },
     "lucide-react": {
       "python": null,
-      "reason": null,
-      "status": "planned"
+      "status": "waived",
+      "reason": "Retained React frontend/browser dependency; it is compiled into static assets and is not a production Node runtime."
     },
     "motion": {
       "python": null,
-      "reason": null,
-      "status": "planned"
+      "status": "waived",
+      "reason": "Retained React frontend/browser dependency; it is compiled into static assets and is not a production Node runtime."
     },
     "node-cron": {
       "python": null,
-      "reason": null,
-      "status": "planned"
+      "status": "waived",
+      "reason": "Legacy Node-only backend/build dependency is no longer imported by the production Python runtime; EC2 deploy installs no Node/npm runtime."
     },
     "pdf-parse": {
       "python": null,
-      "reason": null,
-      "status": "planned"
+      "status": "waived",
+      "reason": "Legacy Node-only backend/build dependency is no longer imported by the production Python runtime; EC2 deploy installs no Node/npm runtime."
     },
     "pg": {
       "python": null,
-      "reason": null,
-      "status": "planned"
+      "status": "waived",
+      "reason": "Legacy Node-only backend/build dependency is no longer imported by the production Python runtime; EC2 deploy installs no Node/npm runtime."
     },
     "playwright": {
       "python": null,
-      "reason": null,
-      "status": "planned"
+      "status": "waived",
+      "reason": "Legacy Node-only backend/build dependency is no longer imported by the production Python runtime; EC2 deploy installs no Node/npm runtime."
     },
     "qrcode": {
       "python": null,
-      "reason": null,
-      "status": "planned"
+      "status": "waived",
+      "reason": "Retained React frontend/browser dependency; it is compiled into static assets and is not a production Node runtime."
     },
     "react": {
       "python": null,
-      "reason": null,
-      "status": "planned"
+      "status": "waived",
+      "reason": "Retained React frontend/browser dependency; it is compiled into static assets and is not a production Node runtime."
     },
     "react-dom": {
       "python": null,
-      "reason": null,
-      "status": "planned"
+      "status": "waived",
+      "reason": "Retained React frontend/browser dependency; it is compiled into static assets and is not a production Node runtime."
     },
     "recharts": {
       "python": null,
-      "reason": null,
-      "status": "planned"
+      "status": "waived",
+      "reason": "Retained React frontend/browser dependency; it is compiled into static assets and is not a production Node runtime."
     },
     "ws": {
       "python": null,
-      "reason": null,
-      "status": "planned"
+      "status": "waived",
+      "reason": "Legacy Node-only backend/build dependency is no longer imported by the production Python runtime; EC2 deploy installs no Node/npm runtime."
     },
     "xlsx": {
       "python": null,
-      "reason": null,
-      "status": "planned"
+      "status": "waived",
+      "reason": "Legacy Node-only backend/build dependency is no longer imported by the production Python runtime; EC2 deploy installs no Node/npm runtime."
     },
     "zod": {
       "python": null,
-      "reason": null,
-      "status": "planned"
+      "status": "waived",
+      "reason": "Legacy Node-only backend/build dependency is no longer imported by the production Python runtime; EC2 deploy installs no Node/npm runtime."
     }
   },
   "frontend": {
