@@ -4,6 +4,9 @@ on:
     branches:
       - main
   workflow_dispatch:
+concurrency:
+  group: production-deploy-main
+  cancel-in-progress: true
 jobs:
   validate:
     name: Python and React validation
