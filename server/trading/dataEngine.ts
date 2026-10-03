@@ -1,5 +1,6 @@
 import WebSocket from 'ws';
 import { Candle, EngineErrorRecord, EngineHealth, EngineModule, OrderBook, OrderBookLevel } from './types.js';
+import { ownsBackgroundLoops, backgroundLoopsDisabledReason } from './backgroundOwnership.js';
 
 export interface LivePairMarketData {
   symbol: string;
@@ -72,7 +73,14 @@ export class DataEngine implements EngineModule {
   ];
 
   constructor() {
-    this.startLiveIngestion();
+    // Auto-start only in the process that owns background work. Without this guard a second
+    // process that merely imports the store would open its own duplicate twin of the Bybit
+    // market-data feeds. See backgroundOwnership.ts.
+    if (ownsBackgroundLoops()) {
+      this.startLiveIngestion();
+    } else {
+      console.log(`[DataEngine] Live ingestion NOT started: ${backgroundLoopsDisabledReason()}.`);
+    }
   }
 
   public healthCheck(): EngineHealth {

@@ -53,6 +53,9 @@ export async function discoverFuturesUniverse(): Promise<FuturesMarketCandidate[
   ]);
 
   const out: FuturesMarketCandidate[] = [];
+  if (bybitInfo.status === 'rejected' && bybitTickers.status === 'rejected') {
+    throw new Error('Bybit futures metadata unavailable; live universe is fail-closed.');
+  }
   const bTick = new Map<string, any>((bybitTickers.status === 'fulfilled' ? (bybitTickers.value?.result?.list || []) : []).map((x: any) => [x.symbol, x]));
   if (bybitInfo.status === 'fulfilled') {
     for (const x of bybitInfo.value?.result?.list || []) {

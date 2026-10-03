@@ -1,6 +1,7 @@
 import crypto from 'crypto';
 import fs from 'fs';
 import path from 'path';
+import { ownsBackgroundLoops, backgroundLoopsDisabledReason } from './backgroundOwnership.js';
 import {
   EngineErrorRecord,
   EngineHealth,
@@ -8,6 +9,7 @@ import {
   ExpectedNetEdgeBreakdown,
   Fill,
   Order,
+  OrderStatus,
   Position,
   PositionDriftRecord,
   ReconciliationAuditEvent,
@@ -55,7 +57,15 @@ export class ExchangeExecutionEngine implements EngineModule {
 
   constructor() {
     this.initCredentials();
-    this.startReconciliationLoop();
+    // Auto-start only in the process that owns background work. Ungated, a second process that
+    // merely imports the store would run a duplicate reconciliation loop against the same live
+    // account and could drive the same fail-closed/kill-switch state from stale local state.
+    // See backgroundOwnership.ts. Operator toggles (setOffSwitch) are intentionally unaffected.
+    if (ownsBackgroundLoops()) {
+      this.startReconciliationLoop();
+    } else {
+      console.log(`[ExchangeExecutionEngine] Reconciliation loop NOT started: ${backgroundLoopsDisabledReason()}.`);
+    }
   }
 
   private initCredentials() {
@@ -224,10 +234,14 @@ export class ExchangeExecutionEngine implements EngineModule {
     }
 
     const id = `ord_${targetExchange.toLowerCase()}_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
+    // Idempotency key, created BEFORE submission and persisted on the order, so that a submission
+    // whose response was lost can be looked up on the exchange instead of being re-sent.
+    const clientOrderId = `gp_${Date.now()}_${Math.random().toString(36).substring(2, 10)}`;
     const costUsd = Number((spec.price * spec.amount).toFixed(2));
 
     const order: Order = {
       id,
+      clientOrderId,
       symbol: spec.symbol,
       side: spec.side,
       type: spec.type,
@@ -250,11 +264,30 @@ export class ExchangeExecutionEngine implements EngineModule {
 
     // Dispatch directly to Bybit using signed HMAC-SHA256
     try {
-      const bybitResult = await this.dispatchBybitOrder(cred, spec);
+      const bybitResult = await this.dispatchBybitOrder(cred, spec, clientOrderId);
       if (!bybitResult.success) {
+        // Distinguish a definitive refusal from an unknown outcome.
+        //
+        // A network failure or timeout may still have created the order on the exchange. Recording
+        // that as REJECTED is a false negative: the platform would believe nothing exists while a
+        // live position does, and any retry would double it. Unknown outcomes are therefore kept
+        // visible (in open orders + history) as UNKNOWN so reconciliation resolves them against the
+        // exchange before any resubmission is considered.
+        if (bybitResult.indeterminate) {
+          order.status = 'UNKNOWN';
+          order.rejectionReason = bybitResult.error;
+          this.openOrders.set(order.id, order);
+          this.orderHistory.unshift(order);
+          this.recordError(
+            'ERROR',
+            `Order outcome UNKNOWN (clientOrderId=${clientOrderId}): ${bybitResult.error}. ` +
+            'Do NOT resubmit; the idempotency key makes a retry safe only once this is reconciled.'
+          );
+          return { success: false, order, error: bybitResult.error };
+        }
         order.status = 'REJECTED';
         order.rejectionReason = bybitResult.error;
-        this.recordError('ERROR', `Bybit live order rejected: ${bybitResult.error}`);
+        this.recordError('ERROR', `Bybit live order rejected (clientOrderId=${clientOrderId}): ${bybitResult.error}`);
         return { success: false, order, error: bybitResult.error };
       }
       if (bybitResult.orderId) order.id = bybitResult.orderId;
@@ -275,7 +308,37 @@ export class ExchangeExecutionEngine implements EngineModule {
     }
   }
 
-  private async dispatchBybitOrder(cred: ExchangeApiCredentials, spec: any): Promise<{ success: boolean; orderId?: string; error?: string }> {
+  /**
+   * Read a JSON response defensively.
+   *
+   * A bare `await res.json()` throws "Unexpected end of JSON input" whenever the body is empty or
+   * not JSON — a proxy 502 page, a truncated response, a rate-limit page. That message tells an
+   * operator nothing about what happened, and it is precisely what filled this engine's error
+   * surface with 18 unhelpful "Order reconciliation failed: Unexpected end of JSON input" entries
+   * while the real cause (a rejected API key) was elsewhere.
+   */
+  private async readJson(res: any): Promise<{ ok: boolean; json: any; error?: string }> {
+    let text = '';
+    try {
+      text = await res.text();
+    } catch (err: any) {
+      return { ok: false, json: null, error: `could not read response body (${err?.message || err})` };
+    }
+    if (!text || !text.trim()) {
+      return { ok: false, json: null, error: `HTTP ${res.status} returned an EMPTY body where JSON was expected` };
+    }
+    try {
+      return { ok: true, json: JSON.parse(text) };
+    } catch {
+      return { ok: false, json: null, error: `HTTP ${res.status} returned a non-JSON body: ${text.slice(0, 120)}` };
+    }
+  }
+
+  private async dispatchBybitOrder(
+    cred: ExchangeApiCredentials,
+    spec: any,
+    orderLinkId: string
+  ): Promise<{ success: boolean; orderId?: string; error?: string; indeterminate?: boolean }> {
     const rawSymbol = spec.symbol.replace(/[\/\-_]/g, '').toUpperCase();
     const timestamp = Date.now().toString();
     const endpoint = 'https://api.bybit.com/v5/order/create';
@@ -288,6 +351,10 @@ export class ExchangeExecutionEngine implements EngineModule {
       qty: spec.amount.toString(),
       price: spec.type === 'LIMIT' ? spec.price.toString() : undefined,
       timeInForce: 'GTC',
+      // Client-side idempotency key. Bybit rejects a second create carrying the same orderLinkId,
+      // so this is what makes a retry after a lost response safe instead of silently doubling the
+      // position. It was missing entirely from this path (the bybitAdapter path already had it).
+      orderLinkId,
       positionIdx: 0 // One-way mode in Bybit Linear Futures
     };
 
@@ -295,21 +362,63 @@ export class ExchangeExecutionEngine implements EngineModule {
     const signPayload = `${timestamp}${cred.apiKey}5000${bodyStr}`;
     const signature = crypto.createHmac('sha256', cred.apiSecret).update(signPayload).digest('hex');
 
-    const res = await fetch(endpoint, {
-      method: 'POST',
-      headers: {
-        'X-BAPI-API-KEY': cred.apiKey,
-        'X-BAPI-SIGN': signature,
-        'X-BAPI-TIMESTAMP': timestamp,
-        'X-BAPI-RECV-WINDOW': '5000',
-        'Content-Type': 'application/json'
-      },
-      body: bodyStr
-    });
+    // Bounded submission: an unbounded fetch can hang the execution path indefinitely, and a hung
+    // submission is indistinguishable from a lost one.
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 10000);
+    let res: any;
+    try {
+      res = await fetch(endpoint, {
+        method: 'POST',
+        headers: {
+          'X-BAPI-API-KEY': cred.apiKey,
+          'X-BAPI-SIGN': signature,
+          'X-BAPI-TIMESTAMP': timestamp,
+          'X-BAPI-RECV-WINDOW': '5000',
+          'Content-Type': 'application/json'
+        },
+        body: bodyStr,
+        signal: controller.signal
+      });
+    } catch (netErr: any) {
+      // No response at all => INDETERMINATE, never "rejected". The order may have been accepted;
+      // reporting rejection here is exactly what permits a duplicate submission.
+      const reason = netErr?.name === 'AbortError'
+        ? 'submission timed out after 10000ms'
+        : (netErr?.message || 'network error');
+      return {
+        success: false,
+        indeterminate: true,
+        error: `Indeterminate submission outcome (${reason}); order may exist on the exchange`
+      };
+    } finally {
+      clearTimeout(timer);
+    }
 
-    const json = (await res.json()) as any;
-    if (!res.ok || json.retCode !== 0) {
-      return { success: false, error: json.retMsg || `Bybit HTTP ${res.status}` };
+    let json: any;
+    try {
+      json = await res.json();
+    } catch {
+      return {
+        success: false,
+        indeterminate: true,
+        error: `Indeterminate submission outcome (HTTP ${res.status}, unparseable body); order may exist on the exchange`
+      };
+    }
+
+    if (!res.ok) {
+      // A transport-level failure (5xx / gateway): the body cannot be trusted to say whether the
+      // order was created, so this is indeterminate rather than rejected.
+      return {
+        success: false,
+        indeterminate: true,
+        error: `Indeterminate submission outcome (HTTP ${res.status}); order may exist on the exchange`
+      };
+    }
+
+    if (json.retCode !== 0) {
+      // Bybit answered with a real error code on a 200 => a definitive refusal.
+      return { success: false, error: json.retMsg || `Bybit retCode ${json.retCode}` };
     }
 
     return { success: true, orderId: json.result?.orderId };
@@ -343,7 +452,11 @@ export class ExchangeExecutionEngine implements EngineModule {
         body: bodyStr
       });
 
-      const json = (await res.json()) as any;
+      const parsed = await this.readJson(res);
+      if (!parsed.ok) {
+        return { success: false, error: parsed.error };
+      }
+      const json = parsed.json as any;
       if (!res.ok || json.retCode !== 0) {
         return { success: false, error: json.retMsg || `Bybit HTTP ${res.status}` };
       }
@@ -377,7 +490,11 @@ export class ExchangeExecutionEngine implements EngineModule {
         body: bodyStr
       });
 
-      const json = (await res.json()) as any;
+      const parsed = await this.readJson(res);
+      if (!parsed.ok) {
+        return { success: false, error: parsed.error };
+      }
+      const json = parsed.json as any;
       if (!res.ok || json.retCode !== 0) {
         return { success: false, error: json.retMsg || `Bybit HTTP ${res.status}` };
       }
@@ -391,11 +508,111 @@ export class ExchangeExecutionEngine implements EngineModule {
    * Reconcile in-memory state with Bybit live perpetual futures orders on startup and periodic sync
    * Prevents orphaned orders after container restart or network glitch
    */
+  /**
+   * Resolve orders whose submission outcome is UNKNOWN by asking Bybit directly, keyed by the
+   * clientOrderId (Bybit `orderLinkId`).
+   *
+   * Without this, an indeterminate submission is a permanent blind spot: the platform can neither
+   * safely retry (the order might exist) nor safely ignore it (the order might exist). This is the
+   * ONLY code permitted to close out an UNKNOWN order, and it closes one out only with evidence:
+   *   - found in Bybit order history -> adopt the exchange's real status/id/fill
+   *   - absent from order history    -> a VERIFIED absence, so it was never created
+   */
+  public async resolveUnknownOrders(maxPerPass: number = 20): Promise<{ resolved: number; errors: number }> {
+    const unknown = this.orderHistory.filter((o) => o.status === 'UNKNOWN').slice(0, maxPerPass);
+    if (unknown.length === 0) return { resolved: 0, errors: 0 };
+
+    const cred = this.credentials.get('BYBIT');
+    if (!cred || !cred.isConfigured) return { resolved: 0, errors: 0 };
+
+    let resolved = 0;
+    let errors = 0;
+
+    for (const order of unknown) {
+      const key = order.clientOrderId;
+      if (!key) {
+        errors++;
+        continue;
+      }
+      try {
+        const timestamp = Date.now().toString();
+        const query = new URLSearchParams({ category: 'linear', orderLinkId: key });
+        const signPayload = `${timestamp}${cred.apiKey}5000${query.toString()}`;
+        const signature = crypto.createHmac('sha256', cred.apiSecret).update(signPayload).digest('hex');
+
+        const res = await fetch(`https://api.bybit.com/v5/order/history?${query.toString()}`, {
+          method: 'GET',
+          headers: {
+            'X-BAPI-API-KEY': cred.apiKey,
+            'X-BAPI-SIGN': signature,
+            'X-BAPI-TIMESTAMP': timestamp,
+            'X-BAPI-RECV-WINDOW': '5000'
+          }
+        });
+        const parsed = await this.readJson(res);
+        if (!parsed.ok) {
+          errors++;
+          this.recordError('WARN', `Could not resolve UNKNOWN order ${key}: ${parsed.error}`);
+          continue;
+        }
+        const json: any = parsed.json;
+        if (!res.ok || json.retCode !== 0) {
+          errors++;
+          continue;
+        }
+
+        const list: any[] = json.result?.list || [];
+        if (list.length === 0) {
+          // Verified absence — the submission never created an order.
+          order.status = 'REJECTED';
+          order.rejectionReason = 'Confirmed absent from Bybit order history; the submission did not create an order.';
+          this.openOrders.delete(order.id);
+          resolved++;
+          this.recordError('WARN', `Resolved UNKNOWN order ${key}: verified absent from Bybit (no order was created).`);
+          continue;
+        }
+
+        const b = list[0];
+        const mapped: OrderStatus =
+          b.orderStatus === 'Filled' ? 'FILLED'
+          : b.orderStatus === 'PartiallyFilled' ? 'PARTIALLY_FILLED'
+          : b.orderStatus === 'Cancelled' ? 'CANCELLED'
+          : b.orderStatus === 'Rejected' ? 'REJECTED'
+          : b.orderStatus === 'New' ? 'OPEN'
+          : 'UNKNOWN';
+
+        this.openOrders.delete(order.id);
+        order.id = b.orderId || order.id;
+        order.status = mapped;
+        order.filledAmount = parseFloat(b.cumExecQty) || order.filledAmount;
+        order.remainingAmount = Number.isFinite(parseFloat(b.leavesQty)) ? parseFloat(b.leavesQty) : order.remainingAmount;
+        order.feesPaid = parseFloat(b.cumExecFee) || order.feesPaid;
+        order.rejectionReason = mapped === 'REJECTED' ? (b.cancelType || 'Rejected by exchange') : undefined;
+
+        // Only still-live states belong in open orders.
+        if (mapped === 'OPEN' || mapped === 'PARTIALLY_FILLED') this.openOrders.set(order.id, order);
+        resolved++;
+        this.recordError('WARN', `Resolved UNKNOWN order ${key}: Bybit reports ${b.orderStatus} (orderId ${b.orderId}).`);
+      } catch (err: any) {
+        errors++;
+        this.recordError('WARN', `Could not resolve UNKNOWN order ${key}: ${err?.message || err}`);
+      }
+    }
+
+    return { resolved, errors };
+  }
+
   public async reconcileOpenOrders(targetSymbol?: string): Promise<{ reconciledCount: number; error?: string }> {
     const cred = this.credentials.get('BYBIT');
     if (!cred || !cred.isConfigured) {
       return { reconciledCount: 0 };
     }
+
+    // Resolve indeterminate submissions FIRST, so the rest of reconciliation proceeds from a state
+    // where every order's existence is actually known.
+    await this.resolveUnknownOrders().catch((err: any) => {
+      this.recordError('WARN', `UNKNOWN-order resolution failed: ${err?.message || err}`);
+    });
 
     try {
       const timestamp = Date.now().toString();
@@ -416,7 +633,11 @@ export class ExchangeExecutionEngine implements EngineModule {
         }
       });
 
-      const json = (await res.json()) as any;
+      const parsed = await this.readJson(res);
+      if (!parsed.ok) {
+        return { reconciledCount: 0, error: parsed.error };
+      }
+      const json = parsed.json as any;
       if (!res.ok || json.retCode !== 0) {
         return { reconciledCount: 0, error: json.retMsg };
       }
@@ -429,6 +650,9 @@ export class ExchangeExecutionEngine implements EngineModule {
           if (!this.openOrders.has(orderId)) {
             const matchedOrder: Order = {
               id: orderId,
+              // Carry the exchange's orderLinkId back onto the local record, so a locally-known
+              // order and an exchange order can be correlated by the SAME idempotency key.
+              clientOrderId: bOrder.orderLinkId,
               symbol: bOrder.symbol,
               side: bOrder.side === 'Buy' ? 'BUY' : 'SELL',
               type: bOrder.orderType === 'Limit' ? 'LIMIT' : 'MARKET',
@@ -492,7 +716,11 @@ export class ExchangeExecutionEngine implements EngineModule {
         }
       });
 
-      const json = (await res.json()) as any;
+      const parsed = await this.readJson(res);
+      if (!parsed.ok) {
+        return { activePositionsCount: 0, error: parsed.error };
+      }
+      const json = parsed.json as any;
       if (!res.ok || json.retCode !== 0) {
         return { activePositionsCount: 0, error: json.retMsg };
       }
@@ -757,7 +985,12 @@ export class ExchangeExecutionEngine implements EngineModule {
         signal: AbortSignal.timeout(5000)
       });
 
-      const json = (await res.json()) as any;
+      const parsed = await this.readJson(res);
+      // A non-JSON body becomes a structured request error here rather than throwing
+      // "Unexpected end of JSON input" out of a reconciliation path.
+      const json: any = parsed.ok
+        ? parsed.json
+        : { retCode: -1, retMsg: parsed.error || 'unparseable response body' };
       if (!res.ok || json.retCode !== 0) {
         const errorMsg = json.retMsg || `Bybit HTTP ${res.status}`;
         this.recordReconciliationEvent({

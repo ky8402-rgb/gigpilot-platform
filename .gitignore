@@ -28,3 +28,5 @@ mlruns/
 data/snapshots/
 data/deliverables/
 .gigpilot-data/
+.runtime-test/
+.venv/

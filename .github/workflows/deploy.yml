@@ -173,6 +173,8 @@ jobs:
 
           ASSETS_CODE="$(curl -sS -o /tmp/assets.json -w '%{http_code}' -H 'Accept: application/json' "$BACKEND/api/trading/assets" --max-time 10)"
           case "$ASSETS_CODE" in 401|403) echo "✔ Private asset data rejects unauthenticated access with HTTP $ASSETS_CODE.";; *) echo "ERROR: Private assets endpoint returned HTTP $ASSETS_CODE"; cat /tmp/assets.json; exit 1;; esac
+          FUTURES_UNIVERSE_CODE="$(curl -sS -o /tmp/futures-universe.json -w '%{http_code}' -H 'Accept: application/json' "$BACKEND/api/trading/futures/universe" --max-time 10)"
+          case "$FUTURES_UNIVERSE_CODE" in 401|403) echo "✔ Futures universe route is registered and protected (HTTP $FUTURES_UNIVERSE_CODE).";; *) echo "ERROR: Live futures universe route is missing or unexpectedly exposed (HTTP $FUTURES_UNIVERSE_CODE)."; cat /tmp/futures-universe.json; exit 1;; esac
           RISK_CODE="$(curl -sS -o /tmp/risk.json -w '%{http_code}' -H 'Accept: application/json' "$BACKEND/api/trading/risk" --max-time 10)"
           case "$RISK_CODE" in 401|403|200) echo "✔ Private risk endpoint secured with HTTP $RISK_CODE.";; *) echo "ERROR: Live risk endpoint returned HTTP $RISK_CODE"; cat /tmp/risk.json; exit 1;; esac
           AUTH_STATUS="$(curl -sS -o /tmp/auth-status.json -w '%{http_code}' -H "Origin: $FRONTEND" -H 'Accept: application/json' "$BACKEND/api/auth/status" --max-time 10)"
@@ -225,7 +227,6 @@ jobs:
 
       - name: Deploy via SSH (Direct EC2 Execution)
         id: ec2_ssh
-        continue-on-error: true
         env:
           SSH_KEY: ${{ secrets.EC2_SSH_KEY || secrets.GIGPILOT_MUMBAI_EC2 }}
           EC2_HOST: ${{ secrets.EC2_HOST || '' }}
@@ -363,15 +364,14 @@ jobs:
             cat /tmp/resp.json 2>/dev/null || true
           fi
 
-          if [ "$HTTP_CODE" = "200" ] || [ "$HTTP_CODE" = "202" ]; then
-            echo "✔ EC2 backend webhook delivery succeeded (HTTP $HTTP_CODE)."
+          # HTTP 202 means push was acknowledged but webhook deployment is disabled.
+          # Only HTTP 200 represents an actual executed deployment.
+          if [ "$HTTP_CODE" = "200" ]; then
+            echo "✔ EC2 backend webhook deployment succeeded (HTTP $HTTP_CODE)."
             echo "DEPLOYMENT_DELIVERY=WEBHOOK" >> "$GITHUB_ENV"
           else
-            echo "EC2 webhook delivery failed with HTTP $HTTP_CODE."
-            if [ "${DEPLOYMENT_DELIVERY:-NONE}" = "NONE" ]; then
-              echo "ERROR: Neither SSH nor webhook delivered this commit to EC2."
-              exit 1
-            fi
+            echo "ERROR: EC2 backend webhook did not execute deployment (HTTP $HTTP_CODE)."
+            exit 1
           fi
 
       - name: Verify EC2 Backend Health
@@ -395,25 +395,31 @@ jobs:
             if [ -n "$HEALTH_JSON" ]; then
               HEALTH_STATUS=$(node -e "try { const x=JSON.parse(process.argv[1]); process.stdout.write(x.status || '') } catch { process.stdout.write('') }" "$HEALTH_JSON")
               RUNNING_COMMIT=$(node -e "try { const x=JSON.parse(process.argv[1]); process.stdout.write(x.deployedCommit || '') } catch { process.stdout.write('') }" "$HEALTH_JSON")
-              if [ "$HEALTH_STATUS" = "ok" ] && [ "$RUNNING_COMMIT" = "$GITHUB_SHA" ]; then
+              ENGINE_STATUS=$(node -e "try { const x=JSON.parse(process.argv[1]); process.stdout.write((x.autonomousEngine && x.autonomousEngine.status) || 'missing') } catch { process.stdout.write('unparsed') }" "$HEALTH_JSON")
+              if [ "$HEALTH_STATUS" = "ok" ] && [ "$RUNNING_COMMIT" = "$GITHUB_SHA" ] && [ "$ENGINE_STATUS" = "healthy" ]; then
                 echo "✔ EC2 backend is healthy and running the exact GitHub SHA: $RUNNING_COMMIT"
+                echo "✔ Autonomous engine is healthy (autonomousEngine.status=$ENGINE_STATUS)"
                 exit 0
               fi
-              echo "Health responded, but exact commit verification failed. status=$HEALTH_STATUS runningCommit=$RUNNING_COMMIT expected=$GITHUB_SHA"
+              echo "Health responded, but verification failed. status=$HEALTH_STATUS runningCommit=$RUNNING_COMMIT engine=$ENGINE_STATUS expected=$GITHUB_SHA"
             fi
 
             FALLBACK_JSON=$(curl -sS "$FALLBACK_URL" --max-time 5 || true)
             if [ -n "$FALLBACK_JSON" ]; then
               HEALTH_STATUS=$(node -e "try { const x=JSON.parse(process.argv[1]); process.stdout.write(x.status || '') } catch { process.stdout.write('') }" "$FALLBACK_JSON")
               RUNNING_COMMIT=$(node -e "try { const x=JSON.parse(process.argv[1]); process.stdout.write(x.deployedCommit || '') } catch { process.stdout.write('') }" "$FALLBACK_JSON")
-              if [ "$HEALTH_STATUS" = "ok" ] && [ "$RUNNING_COMMIT" = "$GITHUB_SHA" ]; then
+              ENGINE_STATUS=$(node -e "try { const x=JSON.parse(process.argv[1]); process.stdout.write((x.autonomousEngine && x.autonomousEngine.status) || 'missing') } catch { process.stdout.write('unparsed') }" "$FALLBACK_JSON")
+              if [ "$HEALTH_STATUS" = "ok" ] && [ "$RUNNING_COMMIT" = "$GITHUB_SHA" ] && [ "$ENGINE_STATUS" = "healthy" ]; then
                 echo "✔ EC2 backend HTTP:3000 is healthy and running the exact GitHub SHA: $RUNNING_COMMIT"
+                echo "✔ Autonomous engine is healthy (autonomousEngine.status=$ENGINE_STATUS)"
                 exit 0
               fi
             fi
             sleep 3
           done
-          echo "ERROR: EC2 backend health/commit verification failed after deployment delivery."
+          echo "ERROR: EC2 backend health/commit/autonomous-engine verification failed after deployment delivery."
+          echo "The pipeline deliberately fails closed here: a green deploy must mean the Node API,"
+          echo "the exact commit, AND the autonomous engine are all verified live."
           exit 1
 
       - name: Verify Production Database Connectivity and Transactions

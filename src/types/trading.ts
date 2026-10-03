@@ -213,10 +213,13 @@ export interface GridConfiguration {
 
 export type OrderSide = 'BUY' | 'SELL';
 export type OrderType = 'LIMIT' | 'MARKET' | 'GRID_LIMIT';
-export type OrderStatus = 'NEW' | 'OPEN' | 'FILLED' | 'PARTIALLY_FILLED' | 'CANCELLED' | 'REJECTED';
+/** 'UNKNOWN' = submission outcome undetermined; the order MAY exist. Not the same as REJECTED. */
+export type OrderStatus = 'NEW' | 'OPEN' | 'FILLED' | 'PARTIALLY_FILLED' | 'CANCELLED' | 'REJECTED' | 'UNKNOWN';
 
 export interface Order {
   id: string;
+  /** Idempotency key sent to the exchange as `orderLinkId`; assigned before submission. */
+  clientOrderId?: string;
   symbol: string;
   side: OrderSide;
   type: OrderType;

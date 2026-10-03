@@ -11,6 +11,8 @@ import { pushAndDeployAll } from "./server/githubService.js";
 import { globalTradingStore } from "./server/trading/store.js";
 import { requireOwnerAuth } from "./server/trading/ownerAuth.js";
 import { corsMiddleware } from "./server/corsConfig.js";
+import { futuresUniverseHandler } from "./server/trading/futuresUniverse.js";
+import { probeAutonomousEngine } from "./server/trading/autonomousEngineProbe.js";
 
 const app = express();
 const PORT = 3000;
@@ -27,8 +29,11 @@ app.use(corsMiddleware);
 // -------------------- CORE API ROUTES --------------------
 
 // 1. Healthcheck Endpoint (for AWS EC2, Amplify, Load Balancer, and Health Monitors)
-app.get("/api/health", (req, res) => {
+app.get("/api/health", async (req, res) => {
   const store = globalTradingStore;
+  const autonomousEngine = await probeAutonomousEngine();
+  // Reuses the probe above so one health request does not hit the engine twice.
+  const tradingReadiness = await store.getTradingReadiness(autonomousEngine);
   const mem = process.memoryUsage();
   const deployedCommitPath = process.env.GIGPILOT_DEPLOYED_COMMIT_FILE || path.join(process.cwd(), ".gigpilot-data", "deployed-commit.txt");
   let deployedCommit: string | null = null;
@@ -60,6 +65,13 @@ app.get("/api/health", (req, res) => {
     uptimeSeconds: Math.floor(process.uptime()),
     timestamp: new Date().toISOString(),
     environment: process.env.NODE_ENV || "development",
+    // Aggregate flag so monitors and the deploy gate can treat a down engine as a failure.
+    degraded: autonomousEngine.status !== "healthy",
+    autonomousEngine,
+    // THE authoritative answer to "can this platform trade right now?". Deliberately separate from
+    // `degraded`: a rejected API key makes trading impossible without making the process unhealthy,
+    // and the deploy gate must not depend on an owner-side credential problem.
+    tradingReadiness,
     tradingEngine: {
       activeSymbol: store.activeSymbol,
       autonomyLevel: store.autonomyLevel,
@@ -79,6 +91,7 @@ app.get("/api/health", (req, res) => {
 
 // 2. Autonomous Crypto Grid Trading Platform Router
 app.use("/api/trading", tradingRouter);
+app.get("/api/trading/futures/universe", requireOwnerAuth, futuresUniverseHandler);
 
 // Authentication Route Aliases (Ensures all variations like /api/auth/login and /auth/login guarantee JSON responses)
 app.use("/api/auth", tradingRouter);

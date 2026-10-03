@@ -1,0 +1,1197 @@
+{
+  "generated_by": "migration/extract_node_surface.py",
+  "note": "Read-only enumeration of the Node surface. tests/test_parity.py enforces that every entry is mapped or waived before any deletion.",
+  "http": {
+    "count": 96,
+    "endpoints": [
+      {
+        "method": "POST",
+        "path": "/api/deploy",
+        "mount": "",
+        "source": "server.ts"
+      },
+      {
+        "method": "GET",
+        "path": "/api/health",
+        "mount": "",
+        "source": "server.ts"
+      },
+      {
+        "method": "GET",
+        "path": "/auth-status",
+        "mount": "/api/github",
+        "source": "server/githubRoutes.ts"
+      },
+      {
+        "method": "POST",
+        "path": "/configure-remote",
+        "mount": "/api/github",
+        "source": "server/githubRoutes.ts"
+      },
+      {
+        "method": "DELETE",
+        "path": "/delete-ssh",
+        "mount": "/api/github",
+        "source": "server/githubRoutes.ts"
+      },
+      {
+        "method": "DELETE",
+        "path": "/delete-token",
+        "mount": "/api/github",
+        "source": "server/githubRoutes.ts"
+      },
+      {
+        "method": "GET",
+        "path": "/deployments",
+        "mount": "/api/github",
+        "source": "server/githubRoutes.ts"
+      },
+      {
+        "method": "POST",
+        "path": "/generate-ssh",
+        "mount": "/api/github",
+        "source": "server/githubRoutes.ts"
+      },
+      {
+        "method": "POST",
+        "path": "/git-op",
+        "mount": "/api/github",
+        "source": "server/githubRoutes.ts"
+      },
+      {
+        "method": "GET",
+        "path": "/gitops-events",
+        "mount": "/api/github",
+        "source": "server/githubRoutes.ts"
+      },
+      {
+        "method": "POST",
+        "path": "/push-and-deploy",
+        "mount": "/api/github",
+        "source": "server/githubRoutes.ts"
+      },
+      {
+        "method": "POST",
+        "path": "/save-ssh",
+        "mount": "/api/github",
+        "source": "server/githubRoutes.ts"
+      },
+      {
+        "method": "POST",
+        "path": "/save-token",
+        "mount": "/api/github",
+        "source": "server/githubRoutes.ts"
+      },
+      {
+        "method": "POST",
+        "path": "/simulate-webhook",
+        "mount": "/api/github",
+        "source": "server/githubRoutes.ts"
+      },
+      {
+        "method": "GET",
+        "path": "/status",
+        "mount": "/api/github",
+        "source": "server/githubRoutes.ts"
+      },
+      {
+        "method": "POST",
+        "path": "/test-connection",
+        "mount": "/api/github",
+        "source": "server/githubRoutes.ts"
+      },
+      {
+        "method": "POST",
+        "path": "/trigger-deploy",
+        "mount": "/api/github",
+        "source": "server/githubRoutes.ts"
+      },
+      {
+        "method": "POST",
+        "path": "/webhook",
+        "mount": "/api/github",
+        "source": "server/githubRoutes.ts"
+      },
+      {
+        "method": "GET",
+        "path": "/webhook-info",
+        "mount": "/api/github",
+        "source": "server/githubRoutes.ts"
+      },
+      {
+        "method": "GET",
+        "path": "/assets",
+        "mount": "/api/trading",
+        "source": "server/trading/routes.ts"
+      },
+      {
+        "method": "GET",
+        "path": "/audit-logs",
+        "mount": "/api/trading",
+        "source": "server/trading/routes.ts"
+      },
+      {
+        "method": "ANY",
+        "path": "/auth/login",
+        "mount": "/api/trading",
+        "source": "server/trading/routes.ts (.all)"
+      },
+      {
+        "method": "ANY",
+        "path": "/auth/login/",
+        "mount": "/api/trading",
+        "source": "server/trading/routes.ts (.all)"
+      },
+      {
+        "method": "ANY",
+        "path": "/auth/logout",
+        "mount": "/api/trading",
+        "source": "server/trading/routes.ts (.all)"
+      },
+      {
+        "method": "ANY",
+        "path": "/auth/logout/",
+        "mount": "/api/trading",
+        "source": "server/trading/routes.ts (.all)"
+      },
+      {
+        "method": "ANY",
+        "path": "/auth/setup-complete",
+        "mount": "/api/trading",
+        "source": "server/trading/routes.ts (.all)"
+      },
+      {
+        "method": "ANY",
+        "path": "/auth/setup-complete/",
+        "mount": "/api/trading",
+        "source": "server/trading/routes.ts (.all)"
+      },
+      {
+        "method": "ANY",
+        "path": "/auth/setup-init",
+        "mount": "/api/trading",
+        "source": "server/trading/routes.ts (.all)"
+      },
+      {
+        "method": "ANY",
+        "path": "/auth/setup-init/",
+        "mount": "/api/trading",
+        "source": "server/trading/routes.ts (.all)"
+      },
+      {
+        "method": "ANY",
+        "path": "/auth/status",
+        "mount": "/api/trading",
+        "source": "server/trading/routes.ts (.all)"
+      },
+      {
+        "method": "ANY",
+        "path": "/auth/status/",
+        "mount": "/api/trading",
+        "source": "server/trading/routes.ts (.all)"
+      },
+      {
+        "method": "POST",
+        "path": "/autonomous-optimizer/run",
+        "mount": "/api/trading",
+        "source": "server/trading/routes.ts"
+      },
+      {
+        "method": "GET",
+        "path": "/autonomous-optimizer/status",
+        "mount": "/api/trading",
+        "source": "server/trading/routes.ts"
+      },
+      {
+        "method": "POST",
+        "path": "/autonomous-optimizer/toggle",
+        "mount": "/api/trading",
+        "source": "server/trading/routes.ts"
+      },
+      {
+        "method": "POST",
+        "path": "/autonomy",
+        "mount": "/api/trading",
+        "source": "server/trading/routes.ts"
+      },
+      {
+        "method": "GET",
+        "path": "/decisions",
+        "mount": "/api/trading",
+        "source": "server/trading/routes.ts"
+      },
+      {
+        "method": "POST",
+        "path": "/decisions/evaluate",
+        "mount": "/api/trading",
+        "source": "server/trading/routes.ts"
+      },
+      {
+        "method": "POST",
+        "path": "/engines/:id/clear-errors",
+        "mount": "/api/trading",
+        "source": "server/trading/routes.ts"
+      },
+      {
+        "method": "POST",
+        "path": "/engines/:id/off-switch",
+        "mount": "/api/trading",
+        "source": "server/trading/routes.ts"
+      },
+      {
+        "method": "GET",
+        "path": "/engines/health",
+        "mount": "/api/trading",
+        "source": "server/trading/routes.ts"
+      },
+      {
+        "method": "GET",
+        "path": "/exchanges/credentials",
+        "mount": "/api/trading",
+        "source": "server/trading/routes.ts"
+      },
+      {
+        "method": "POST",
+        "path": "/exchanges/keys",
+        "mount": "/api/trading",
+        "source": "server/trading/routes.ts"
+      },
+      {
+        "method": "GET",
+        "path": "/futures/universe",
+        "mount": "/api/trading",
+        "source": "server/trading/routes.ts"
+      },
+      {
+        "method": "POST",
+        "path": "/gigpilot/arm",
+        "mount": "/api/trading",
+        "source": "server/trading/routes.ts"
+      },
+      {
+        "method": "POST",
+        "path": "/gigpilot/disarm",
+        "mount": "/api/trading",
+        "source": "server/trading/routes.ts"
+      },
+      {
+        "method": "GET",
+        "path": "/gigpilot/health",
+        "mount": "/api/trading",
+        "source": "server/trading/routes.ts"
+      },
+      {
+        "method": "POST",
+        "path": "/gigpilot/kill",
+        "mount": "/api/trading",
+        "source": "server/trading/routes.ts"
+      },
+      {
+        "method": "GET",
+        "path": "/gigpilot/state",
+        "mount": "/api/trading",
+        "source": "server/trading/routes.ts"
+      },
+      {
+        "method": "POST",
+        "path": "/grid/configure",
+        "mount": "/api/trading",
+        "source": "server/trading/routes.ts"
+      },
+      {
+        "method": "GET",
+        "path": "/inventory-awareness",
+        "mount": "/api/trading",
+        "source": "server/trading/routes.ts"
+      },
+      {
+        "method": "POST",
+        "path": "/kill-switch/deactivate",
+        "mount": "/api/trading",
+        "source": "server/trading/routes.ts"
+      },
+      {
+        "method": "POST",
+        "path": "/kill-switch/toggle",
+        "mount": "/api/trading",
+        "source": "server/trading/routes.ts"
+      },
+      {
+        "method": "POST",
+        "path": "/kill-switch/trigger",
+        "mount": "/api/trading",
+        "source": "server/trading/routes.ts"
+      },
+      {
+        "method": "ANY",
+        "path": "/login",
+        "mount": "/api/trading",
+        "source": "server/trading/routes.ts (.all)"
+      },
+      {
+        "method": "ANY",
+        "path": "/login/",
+        "mount": "/api/trading",
+        "source": "server/trading/routes.ts (.all)"
+      },
+      {
+        "method": "ANY",
+        "path": "/logout",
+        "mount": "/api/trading",
+        "source": "server/trading/routes.ts (.all)"
+      },
+      {
+        "method": "ANY",
+        "path": "/logout/",
+        "mount": "/api/trading",
+        "source": "server/trading/routes.ts (.all)"
+      },
+      {
+        "method": "POST",
+        "path": "/mode",
+        "mount": "/api/trading",
+        "source": "server/trading/routes.ts"
+      },
+      {
+        "method": "POST",
+        "path": "/order/cancel",
+        "mount": "/api/trading",
+        "source": "server/trading/routes.ts"
+      },
+      {
+        "method": "POST",
+        "path": "/order/cancel-all",
+        "mount": "/api/trading",
+        "source": "server/trading/routes.ts"
+      },
+      {
+        "method": "POST",
+        "path": "/order/place",
+        "mount": "/api/trading",
+        "source": "server/trading/routes.ts"
+      },
+      {
+        "method": "GET",
+        "path": "/pair/:symbol",
+        "mount": "/api/trading",
+        "source": "server/trading/routes.ts"
+      },
+      {
+        "method": "POST",
+        "path": "/pair/select",
+        "mount": "/api/trading",
+        "source": "server/trading/routes.ts"
+      },
+      {
+        "method": "GET",
+        "path": "/pairs",
+        "mount": "/api/trading",
+        "source": "server/trading/routes.ts"
+      },
+      {
+        "method": "GET",
+        "path": "/quant/edge-breakdown",
+        "mount": "/api/trading",
+        "source": "server/trading/routes.ts"
+      },
+      {
+        "method": "GET",
+        "path": "/readiness",
+        "mount": "/api/trading",
+        "source": "server/trading/routes.ts"
+      },
+      {
+        "method": "POST",
+        "path": "/reconciliation/audit",
+        "mount": "/api/trading",
+        "source": "server/trading/routes.ts"
+      },
+      {
+        "method": "GET",
+        "path": "/reconciliation/status",
+        "mount": "/api/trading",
+        "source": "server/trading/routes.ts"
+      },
+      {
+        "method": "GET",
+        "path": "/regime-transition",
+        "mount": "/api/trading",
+        "source": "server/trading/routes.ts"
+      },
+      {
+        "method": "GET",
+        "path": "/research",
+        "mount": "/api/trading",
+        "source": "server/trading/routes.ts"
+      },
+      {
+        "method": "POST",
+        "path": "/research/analyze",
+        "mount": "/api/trading",
+        "source": "server/trading/routes.ts"
+      },
+      {
+        "method": "GET",
+        "path": "/risk",
+        "mount": "/api/trading",
+        "source": "server/trading/routes.ts"
+      },
+      {
+        "method": "POST",
+        "path": "/risk/circuit-breaker/reset",
+        "mount": "/api/trading",
+        "source": "server/trading/routes.ts"
+      },
+      {
+        "method": "POST",
+        "path": "/risk/config",
+        "mount": "/api/trading",
+        "source": "server/trading/routes.ts"
+      },
+      {
+        "method": "POST",
+        "path": "/script/validate",
+        "mount": "/api/trading",
+        "source": "server/trading/routes.ts"
+      },
+      {
+        "method": "ANY",
+        "path": "/setup-complete",
+        "mount": "/api/trading",
+        "source": "server/trading/routes.ts (.all)"
+      },
+      {
+        "method": "ANY",
+        "path": "/setup-complete/",
+        "mount": "/api/trading",
+        "source": "server/trading/routes.ts (.all)"
+      },
+      {
+        "method": "ANY",
+        "path": "/setup-init",
+        "mount": "/api/trading",
+        "source": "server/trading/routes.ts (.all)"
+      },
+      {
+        "method": "ANY",
+        "path": "/setup-init/",
+        "mount": "/api/trading",
+        "source": "server/trading/routes.ts (.all)"
+      },
+      {
+        "method": "GET",
+        "path": "/state",
+        "mount": "/api/trading",
+        "source": "server/trading/routes.ts"
+      },
+      {
+        "method": "ANY",
+        "path": "/status",
+        "mount": "/api/trading",
+        "source": "server/trading/routes.ts (.all)"
+      },
+      {
+        "method": "ANY",
+        "path": "/status/",
+        "mount": "/api/trading",
+        "source": "server/trading/routes.ts (.all)"
+      },
+      {
+        "method": "GET",
+        "path": "/strategies",
+        "mount": "/api/trading",
+        "source": "server/trading/routes.ts"
+      },
+      {
+        "method": "GET",
+        "path": "/strategy-allocator/current",
+        "mount": "/api/trading",
+        "source": "server/trading/routes.ts"
+      },
+      {
+        "method": "POST",
+        "path": "/strategy-allocator/reallocate",
+        "mount": "/api/trading",
+        "source": "server/trading/routes.ts"
+      },
+      {
+        "method": "GET",
+        "path": "/strategy/compare/:challengerId",
+        "mount": "/api/trading",
+        "source": "server/trading/routes.ts"
+      },
+      {
+        "method": "POST",
+        "path": "/strategy/create-variant",
+        "mount": "/api/trading",
+        "source": "server/trading/routes.ts"
+      },
+      {
+        "method": "POST",
+        "path": "/strategy/evaluate-evidence",
+        "mount": "/api/trading",
+        "source": "server/trading/routes.ts"
+      },
+      {
+        "method": "POST",
+        "path": "/strategy/promote",
+        "mount": "/api/trading",
+        "source": "server/trading/routes.ts"
+      },
+      {
+        "method": "POST",
+        "path": "/strategy/rollback",
+        "mount": "/api/trading",
+        "source": "server/trading/routes.ts"
+      },
+      {
+        "method": "GET",
+        "path": "/strategy/rollback/status",
+        "mount": "/api/trading",
+        "source": "server/trading/routes.ts"
+      },
+      {
+        "method": "POST",
+        "path": "/sweep/auto",
+        "mount": "/api/trading",
+        "source": "server/trading/routes.ts"
+      },
+      {
+        "method": "POST",
+        "path": "/sweep/execute",
+        "mount": "/api/trading",
+        "source": "server/trading/routes.ts"
+      },
+      {
+        "method": "GET",
+        "path": "/sweep/info",
+        "mount": "/api/trading",
+        "source": "server/trading/routes.ts"
+      },
+      {
+        "method": "POST",
+        "path": "/sweep/wallet",
+        "mount": "/api/trading",
+        "source": "server/trading/routes.ts"
+      },
+      {
+        "method": "GET",
+        "path": "/updates",
+        "mount": "/api/trading",
+        "source": "server/trading/routes.ts"
+      }
+    ]
+  },
+  "modules": {
+    "trading_modules": [
+      {
+        "name": "adaptiveGridEngine",
+        "path": "server/trading/adaptiveGridEngine.ts",
+        "lines": 127,
+        "exports": [
+          "GridParamsInput",
+          "checkRebalanceNeeded",
+          "generateAdaptiveGrid"
+        ]
+      },
+      {
+        "name": "autonomousEngineProbe",
+        "path": "server/trading/autonomousEngineProbe.ts",
+        "lines": 164,
+        "exports": [
+          "AUTONOMOUS_ENGINE_URL",
+          "AutonomousEngineHealth",
+          "probeAutonomousEngine",
+          "toEngineCard"
+        ]
+      },
+      {
+        "name": "autonomousProfitOptimizer",
+        "path": "server/trading/autonomousProfitOptimizer.ts",
+        "lines": 699,
+        "exports": [
+          "AutonomousProfitOptimizer"
+        ]
+      },
+      {
+        "name": "autonomousStrategyBuilder",
+        "path": "server/trading/autonomousStrategyBuilder.ts",
+        "lines": 235,
+        "exports": [
+          "AutonomousStrategyBuilder"
+        ]
+      },
+      {
+        "name": "backgroundOwnership",
+        "path": "server/trading/backgroundOwnership.ts",
+        "lines": 33,
+        "exports": [
+          "BACKGROUND_LOOPS_ENV_FLAG",
+          "backgroundLoopsDisabledReason",
+          "globalTradingStore",
+          "ownsBackgroundLoops"
+        ]
+      },
+      {
+        "name": "bybitAdapter",
+        "path": "server/trading/bybitAdapter.ts",
+        "lines": 1114,
+        "exports": [
+          "BybitAccountState",
+          "BybitAdapter",
+          "BybitAssetWithUsd",
+          "BybitBalanceItem",
+          "bybitAdapter"
+        ]
+      },
+      {
+        "name": "bybitErrors",
+        "path": "server/trading/bybitErrors.ts",
+        "lines": 188,
+        "exports": [
+          "BYBIT_ERROR_MAP",
+          "BybitErrorDetail",
+          "formatBybitError"
+        ]
+      },
+      {
+        "name": "dataEngine",
+        "path": "server/trading/dataEngine.ts",
+        "lines": 682,
+        "exports": [
+          "DataEngine",
+          "LivePairMarketData"
+        ]
+      },
+      {
+        "name": "decisionPipeline",
+        "path": "server/trading/decisionPipeline.ts",
+        "lines": 515,
+        "exports": [
+          "DecisionPipelineEngine",
+          "DecisionPipelineInput",
+          "globalDecisionPipeline"
+        ]
+      },
+      {
+        "name": "exchangeExecutionEngine",
+        "path": "server/trading/exchangeExecutionEngine.ts",
+        "lines": 1179,
+        "exports": [
+          "ExchangeApiCredentials",
+          "ExchangeExecutionEngine"
+        ]
+      },
+      {
+        "name": "futuresUniverse",
+        "path": "server/trading/futuresUniverse.ts",
+        "lines": 97,
+        "exports": [
+          "FuturesMarketCandidate",
+          "discoverFuturesUniverse",
+          "futuresUniverseHandler"
+        ]
+      },
+      {
+        "name": "gridEngine",
+        "path": "server/trading/gridEngine.ts",
+        "lines": 559,
+        "exports": [
+          "GridEngine",
+          "GridParams"
+        ]
+      },
+      {
+        "name": "indicators",
+        "path": "server/trading/indicators.ts",
+        "lines": 292,
+        "exports": [
+          "calculateADX",
+          "calculateATR",
+          "calculateBollingerBands",
+          "calculateEMA",
+          "calculateMACD",
+          "calculateOrderBookImbalance",
+          "calculateRSI",
+          "calculateSMA",
+          "calculateVWAP",
+          "computeAllIndicators"
+        ]
+      },
+      {
+        "name": "killSwitch",
+        "path": "server/trading/killSwitch.ts",
+        "lines": 53,
+        "exports": [
+          "EmergencyKillSwitch",
+          "KillSwitchState"
+        ]
+      },
+      {
+        "name": "learningLoop",
+        "path": "server/trading/learningLoop.ts",
+        "lines": 1047,
+        "exports": [
+          "LearningLoopEngine"
+        ]
+      },
+      {
+        "name": "marketRegime",
+        "path": "server/trading/marketRegime.ts",
+        "lines": 111,
+        "exports": [
+          "detectMarketRegime"
+        ]
+      },
+      {
+        "name": "ownerAuth",
+        "path": "server/trading/ownerAuth.ts",
+        "lines": 353,
+        "exports": [
+          "extractToken",
+          "generateTOTP",
+          "isOwner",
+          "ownerAuth",
+          "requireOwnerAuth",
+          "verifyTOTP"
+        ]
+      },
+      {
+        "name": "profitAccounting",
+        "path": "server/trading/profitAccounting.ts",
+        "lines": 169,
+        "exports": [
+          "ProfitAccountingEngine"
+        ]
+      },
+      {
+        "name": "profitSweep",
+        "path": "server/trading/profitSweep.ts",
+        "lines": 165,
+        "exports": [
+          "ProfitSweepEngine"
+        ]
+      },
+      {
+        "name": "quantEngine",
+        "path": "server/trading/quantEngine.ts",
+        "lines": 519,
+        "exports": [
+          "QuantEngine"
+        ]
+      },
+      {
+        "name": "regimeTransitionDetector",
+        "path": "server/trading/regimeTransitionDetector.ts",
+        "lines": 372,
+        "exports": [
+          "RegimeTransitionDetector",
+          "regimeTransitionDetector"
+        ]
+      },
+      {
+        "name": "researchAgent",
+        "path": "server/trading/researchAgent.ts",
+        "lines": 247,
+        "exports": [
+          "AutonomousResearchAgent"
+        ]
+      },
+      {
+        "name": "riskEngine",
+        "path": "server/trading/riskEngine.ts",
+        "lines": 443,
+        "exports": [
+          "RiskEngine"
+        ]
+      },
+      {
+        "name": "routes",
+        "path": "server/trading/routes.ts",
+        "lines": 1406,
+        "exports": [
+          "tradingRouter"
+        ]
+      },
+      {
+        "name": "scriptingEngine",
+        "path": "server/trading/scriptingEngine.ts",
+        "lines": 97,
+        "exports": [
+          "StrategyValidatorEngine"
+        ]
+      },
+      {
+        "name": "selfUpdater",
+        "path": "server/trading/selfUpdater.ts",
+        "lines": 75,
+        "exports": [
+          "SelfUpdaterManager"
+        ]
+      },
+      {
+        "name": "store",
+        "path": "server/trading/store.ts",
+        "lines": 695,
+        "exports": [
+          "TradingStore",
+          "globalTradingStore"
+        ]
+      },
+      {
+        "name": "strategyEvaluator",
+        "path": "server/trading/strategyEvaluator.ts",
+        "lines": 362,
+        "exports": [
+          "HeadToHeadComparison",
+          "StrategyEvaluator",
+          "StrategySimulationResult",
+          "WalkForwardEvaluation",
+          "globalStrategyEvaluator"
+        ]
+      },
+      {
+        "name": "systemMonitor",
+        "path": "server/trading/systemMonitor.ts",
+        "lines": 225,
+        "exports": [
+          "SystemMonitorSecurity"
+        ]
+      },
+      {
+        "name": "tradingReadiness",
+        "path": "server/trading/tradingReadiness.ts",
+        "lines": 187,
+        "exports": [
+          "ReadinessInputs",
+          "ReadinessSignal",
+          "TradingReadiness",
+          "assessTradingReadiness"
+        ]
+      },
+      {
+        "name": "types",
+        "path": "server/trading/types.ts",
+        "lines": 1160,
+        "exports": [
+          "AdverseSelectionMarkout",
+          "AdverseSelectionMetrics",
+          "AuditLog",
+          "AuditLogEntry",
+          "AutonomousOptimizationDecision",
+          "AutonomousStrategyBuild",
+          "AutonomyLevel",
+          "BacktestRun",
+          "Candle",
+          "CapitalAccounting",
+          "ChampionTenureStatus",
+          "DecisionGateName"
+        ]
+      }
+    ],
+    "other_modules": [
+      {
+        "name": "server",
+        "path": "server.ts",
+        "lines": 205
+      },
+      {
+        "name": "worker",
+        "path": "server/worker.ts",
+        "lines": 70
+      },
+      {
+        "name": "githubRoutes",
+        "path": "server/githubRoutes.ts",
+        "lines": 803
+      },
+      {
+        "name": "githubService",
+        "path": "server/githubService.ts",
+        "lines": 1632
+      },
+      {
+        "name": "activityLogger",
+        "path": "server/activityLogger.ts",
+        "lines": 245
+      },
+      {
+        "name": "corsConfig",
+        "path": "server/corsConfig.ts",
+        "lines": 126
+      }
+    ]
+  },
+  "processes": {
+    "apps": [
+      {
+        "name": "gigpilot",
+        "script": "./dist/server.cjs",
+        "runtime": "node"
+      },
+      {
+        "name": "worker",
+        "script": "./dist/worker.cjs",
+        "runtime": "node"
+      },
+      {
+        "name": "gigpilot-engine",
+        "script": "./gigpilot.py",
+        "runtime": "python"
+      }
+    ]
+  },
+  "node_dependencies": {
+    "prod_count": 37,
+    "declared_but_unimported": [
+      "@aws-sdk/client-s3",
+      "@neondatabase/serverless",
+      "@types/bull",
+      "@types/canvas-confetti",
+      "@types/cookie-parser",
+      "@types/jsonwebtoken",
+      "@types/node-cron",
+      "@types/qrcode",
+      "cheerio",
+      "express-rate-limit",
+      "ioredis",
+      "node-cron",
+      "pdf-parse",
+      "playwright",
+      "xlsx",
+      "zod"
+    ],
+    "imported_counts": {
+      "@aws-sdk/client-s3": 0,
+      "@google/genai": 7,
+      "@neondatabase/serverless": 0,
+      "@prisma/client": 1,
+      "@tailwindcss/vite": 1,
+      "@types/bull": 0,
+      "@types/canvas-confetti": 0,
+      "@types/cookie-parser": 0,
+      "@types/jsonwebtoken": 0,
+      "@types/node-cron": 0,
+      "@types/qrcode": 0,
+      "@vitejs/plugin-react": 1,
+      "axios": 1,
+      "bull": 6,
+      "canvas-confetti": 1,
+      "chart.js": 1,
+      "cheerio": 0,
+      "compression": 2,
+      "cookie-parser": 2,
+      "dotenv": 2,
+      "express": 9,
+      "express-rate-limit": 0,
+      "ioredis": 0,
+      "jsonwebtoken": 2,
+      "lucide-react": 28,
+      "motion": 11,
+      "node-cron": 0,
+      "pdf-parse": 0,
+      "pg": 1,
+      "playwright": 0,
+      "qrcode": 2,
+      "react": 31,
+      "react-dom": 2,
+      "recharts": 1,
+      "ws": 32,
+      "xlsx": 0,
+      "zod": 0
+    }
+  },
+  "frontend": {
+    "component_count": 30,
+    "total_lines": 14151,
+    "components": [
+      "AdaptiveGridConfigurator.tsx",
+      "App.tsx",
+      "AssetDashboard.tsx",
+      "AutonomousProfitOptimizerView.tsx",
+      "AutonomousRevenueEngineView.tsx",
+      "CanaryAndAuditView.tsx",
+      "CapitalMetricsBar.tsx",
+      "DecisionPipelineVisualizer.tsx",
+      "EngineHealthView.tsx",
+      "ErrorBoundary.tsx",
+      "FuturesCommandCenter.tsx",
+      "GigPilotFuturesView.tsx",
+      "GridMatrixAndOrders.tsx",
+      "HeaderNav.tsx",
+      "InteractiveGridChart.tsx",
+      "InventoryAwareGridView.tsx",
+      "LearningLoopView.tsx",
+      "OwnerAuthModal.tsx",
+      "OwnerLoginScreen.tsx",
+      "ProfitSweepView.tsx",
+      "ReconciliationTerminal.tsx",
+      "RegimeTransitionView.tsx",
+      "RiskAndSafetyView.tsx",
+      "ScriptingIdeView.tsx",
+      "StrategyAllocatorView.tsx",
+      "SystemArchitectureTopology.tsx",
+      "TradingDashboard.tsx",
+      "TradingReadinessBanner.tsx",
+      "WebResearchView.tsx",
+      "main.tsx"
+    ]
+  },
+  "scripts": {
+    "count": 38,
+    "scripts": [
+      {
+        "name": "add-amplify-domain.sh",
+        "lines": 292
+      },
+      {
+        "name": "aws_login_daemon.py",
+        "lines": 114
+      },
+      {
+        "name": "aws_login_helper.py",
+        "lines": 46
+      },
+      {
+        "name": "check-deployment-env.js",
+        "lines": 110
+      },
+      {
+        "name": "deploy-ec2.sh",
+        "lines": 187
+      },
+      {
+        "name": "deploy.sh",
+        "lines": 267
+      },
+      {
+        "name": "ec2-diagnostic.sh",
+        "lines": 307
+      },
+      {
+        "name": "ec2-free-tier-setup.sh",
+        "lines": 103
+      },
+      {
+        "name": "heal-worker.js",
+        "lines": 173
+      },
+      {
+        "name": "heal-worker.sh",
+        "lines": 169
+      },
+      {
+        "name": "master-deploy.sh",
+        "lines": 277
+      },
+      {
+        "name": "migrate-amplify-backend.sh",
+        "lines": 561
+      },
+      {
+        "name": "postinstall.js",
+        "lines": 47
+      },
+      {
+        "name": "prepare_ec2_key.py",
+        "lines": 127
+      },
+      {
+        "name": "push-and-deploy.sh",
+        "lines": 337
+      },
+      {
+        "name": "set-github-secret.cjs",
+        "lines": 91
+      },
+      {
+        "name": "setup-ec2.sh",
+        "lines": 400
+      },
+      {
+        "name": "setup-github-webhook.sh",
+        "lines": 331
+      },
+      {
+        "name": "switch-to-mumbai-ip.sh",
+        "lines": 96
+      },
+      {
+        "name": "test-ai-research-agent.mjs",
+        "lines": 67
+      },
+      {
+        "name": "test-api-shape-contract.mjs",
+        "lines": 321
+      },
+      {
+        "name": "test-bybit-linear-engine.mjs",
+        "lines": 218
+      },
+      {
+        "name": "test-bybit-only.mjs",
+        "lines": 25
+      },
+      {
+        "name": "test-bybit-retry-logging.mjs",
+        "lines": 102
+      },
+      {
+        "name": "test-candle-starvation-isolation.mjs",
+        "lines": 148
+      },
+      {
+        "name": "test-champion-challenger-rollback.mjs",
+        "lines": 183
+      },
+      {
+        "name": "test-cors-strict.mjs",
+        "lines": 94
+      },
+      {
+        "name": "test-profit-gate.mjs",
+        "lines": 273
+      },
+      {
+        "name": "test-reconciliation-self-healing.mjs",
+        "lines": 156
+      },
+      {
+        "name": "test-repo-integrity.mjs",
+        "lines": 261
+      },
+      {
+        "name": "test-runtime-invariants.ts",
+        "lines": 437
+      },
+      {
+        "name": "test-strategy-builder-safety.mjs",
+        "lines": 38
+      },
+      {
+        "name": "test-strategy-evidence-evaluator.mjs",
+        "lines": 170
+      },
+      {
+        "name": "test-ui-api-contract.mjs",
+        "lines": 258
+      },
+      {
+        "name": "transfer-ec2-to-mumbai.sh",
+        "lines": 98
+      },
+      {
+        "name": "update-mumbai-instance.sh",
+        "lines": 150
+      },
+      {
+        "name": "verify-ec2-db.cjs",
+        "lines": 78
+      },
+      {
+        "name": "verify-production.sh",
+        "lines": 453
+      }
+    ]
+  }
+}

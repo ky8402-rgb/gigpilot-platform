@@ -23,6 +23,9 @@ import { EmergencyKillSwitch } from './killSwitch.js';
 import { bybitAdapter } from './bybitAdapter.js';
 import { AutonomousProfitOptimizer } from './autonomousProfitOptimizer.js';
 import { AutonomousOptimizationDecision } from './types.js';
+import { ownsBackgroundLoops } from './backgroundOwnership.js';
+import { probeAutonomousEngine } from './autonomousEngineProbe.js';
+import { assessTradingReadiness } from './tradingReadiness.js';
 
 export class TradingStore {
   // Modular Subsystems
@@ -50,6 +53,8 @@ export class TradingStore {
   public currentRegime: MarketRegime;
   public activeGrid: GridConfiguration | null = null;
   public ownerAuthenticated: boolean = false;
+  /** Consecutive failures of the autonomous optimization loop; used to throttle audit noise. */
+  private optimizerConsecutiveFailures: number = 0;
 
   constructor() {
     // 1. Instantiate all 11 modular engines
@@ -110,35 +115,88 @@ export class TradingStore {
       }
     });
 
-    // 6. Background capital sync & order reconciliation from real exchange account
-    this.syncCapitalFromRealExchange().catch(() => {});
-    this.exchangeExec.reconcileOpenOrders(this.activeSymbol).then(result => {
-      if (result.error) {
-        this.exchangeExec.setOffSwitch(false);
-        this.triggerEmergencyKillSwitch(`Exchange reconciliation failed at startup: ${result.error}`);
-      }
-    }).catch((err: any) => {
-      this.exchangeExec.setOffSwitch(false);
-      this.triggerEmergencyKillSwitch(`Exchange reconciliation failed at startup: ${err?.message || 'unknown error'}`);
-    });
-    setInterval(() => {
-      this.syncCapitalFromRealExchange().catch(() => {});
+    // 6. Background capital sync & order reconciliation from real exchange account.
+    //
+    // SINGLE-OWNER GATE. This class is instantiated as an import side effect (see
+    // `export const globalTradingStore = new TradingStore()` at the bottom of this file), and
+    // BOTH the API process and the worker process import it. Ungated, each process would
+    // independently reconcile the same live Bybit account, sync capital twice, and run its own
+    // autonomous optimizer against shared exchange state while holding separate in-memory
+    // state — duplicate order placement and divergent positions. Exactly ONE process may own
+    // these loops; the others must stay completely inert.
+    if (!ownsBackgroundLoops()) {
+      console.log(
+        '[TradingStore] Background loops DISABLED in this process (GIGPILOT_DISABLE_BACKGROUND_LOOPS=1). ' +
+        'The API process owns reconciliation, capital sync and the autonomous optimizer.'
+      );
+    } else {
+      // Every failure reporter goes through here. These used to be `.catch(() => {})`, which made
+      // a permanently dead loop indistinguishable from a healthy one.
+      const reportLoopFailure = (category: string, action: string, err: any) => {
+        console.error(`[TradingStore] ${action}:`, err?.message || err);
+        this.monitor.logAudit({
+          category,
+          action,
+          details: { error: err?.message || String(err), ts: new Date().toISOString() }
+        });
+      };
+
+      this.syncCapitalFromRealExchange().catch((err: any) =>
+        reportLoopFailure('CAPITAL_SYNC_FAILURE', 'Initial capital sync from Bybit failed', err));
       this.exchangeExec.reconcileOpenOrders(this.activeSymbol).then(result => {
         if (result.error) {
           this.exchangeExec.setOffSwitch(false);
-          this.triggerEmergencyKillSwitch(`Exchange reconciliation failed: ${result.error}`);
+          this.triggerEmergencyKillSwitch(`Exchange reconciliation failed at startup: ${result.error}`);
         }
       }).catch((err: any) => {
         this.exchangeExec.setOffSwitch(false);
-        this.triggerEmergencyKillSwitch(`Exchange reconciliation failed: ${err?.message || 'unknown error'}`);
+        this.triggerEmergencyKillSwitch(`Exchange reconciliation failed at startup: ${err?.message || 'unknown error'}`);
       });
-    }, 15000);
+      setInterval(() => {
+        this.syncCapitalFromRealExchange().catch((err: any) =>
+          reportLoopFailure('CAPITAL_SYNC_FAILURE', 'Periodic capital sync from Bybit failed', err));
+        this.exchangeExec.reconcileOpenOrders(this.activeSymbol).then(result => {
+          if (result.error) {
+            this.exchangeExec.setOffSwitch(false);
+            this.triggerEmergencyKillSwitch(`Exchange reconciliation failed: ${result.error}`);
+          }
+        }).catch((err: any) => {
+          this.exchangeExec.setOffSwitch(false);
+          this.triggerEmergencyKillSwitch(`Exchange reconciliation failed: ${err?.message || 'unknown error'}`);
+        });
+      }, 15000);
 
-    // 7. Continuous Autonomous AI Revenue Optimizer (Audit -> Decide -> Build -> Auto-Deploy)
-    // Runs automatically every 45s without asking the operator to choose
-    setInterval(() => {
-      this.runAutonomousProfitOptimizationCycle().catch(() => {});
-    }, 45000);
+      // 7. Continuous Autonomous AI Revenue Optimizer (Audit -> Decide -> Build -> Auto-Deploy)
+      // Runs automatically every 45s without asking the operator to choose.
+      //
+      // A failure here is an IMPROVEMENT-path fault, not an exchange-safety event, so it must not
+      // fail-closed the platform. It must however be VISIBLE — throttled so a persistent fault
+      // cannot flood the audit trail, with an explicit recovery entry when it heals.
+      setInterval(() => {
+        this.runAutonomousProfitOptimizationCycle().then(() => {
+          if (this.optimizerConsecutiveFailures > 0) {
+            console.log(`[TradingStore] Autonomous optimization cycle recovered after ${this.optimizerConsecutiveFailures} consecutive failure(s).`);
+            this.monitor.logAudit({
+              category: 'OPTIMIZER_CYCLE_RECOVERED',
+              action: 'Autonomous optimization cycle recovered',
+              details: { failedCycles: this.optimizerConsecutiveFailures }
+            });
+            this.optimizerConsecutiveFailures = 0;
+          }
+        }).catch((err: any) => {
+          this.optimizerConsecutiveFailures += 1;
+          if (this.optimizerConsecutiveFailures === 1 || this.optimizerConsecutiveFailures % 20 === 0) {
+            reportLoopFailure(
+              'OPTIMIZER_CYCLE_FAILURE',
+              `Autonomous optimization cycle failed (${this.optimizerConsecutiveFailures} consecutive)`,
+              err
+            );
+          } else {
+            console.error(`[TradingStore] Autonomous optimization cycle failed (${this.optimizerConsecutiveFailures} consecutive):`, err?.message || err);
+          }
+        });
+      }, 45000);
+    }
 
     this.monitor.logAudit({
       category: 'SYSTEM_BOOT',
@@ -596,6 +654,39 @@ export class TradingStore {
         }
       }
     }
+  }
+
+  /**
+   * THE single source of truth for "can this platform trade right now?".
+   *
+   * Every API surface and the dashboard read THIS, so they cannot disagree about readiness. It
+   * gathers the independent authorities — the engine's own REST-validated credential state, the
+   * execution engine's off-switch, the emergency kill switch, and the monitor's fail-closed
+   * verdict — and hands them to the pure assessor. It never decides whether to trade; it reports
+   * whether trading is POSSIBLE.
+   */
+  public async getTradingReadiness(engineOverride?: Awaited<ReturnType<typeof probeAutonomousEngine>>) {
+    // Callers that already probed the engine pass their result in, so a single health request does
+    // not hit the engine twice (and the two surfaces can never disagree about it).
+    const engine = engineOverride ?? (await probeAutonomousEngine());
+    const executionHealth: any = this.exchangeExec.healthCheck();
+    const killState: any = this.killSwitch.getState();
+    const failClosed = this.monitor.isSystemFailClosed();
+
+    return assessTradingReadiness({
+      engineTradingReady: engine.tradingReady,
+      engineCredentialsOk: engine.credentialsOk,
+      engineCredentialsError: engine.credentialsError,
+      tradePermissionsOk: engine.tradePermissionsOk,
+      tradePermissionsError: engine.tradePermissionsError,
+      engineBlockers: engine.tradingBlockers,
+      executionEngineEnabled: this.exchangeExec.getOffSwitch(),
+      executionEngineLastError: executionHealth?.lastError ?? null,
+      killSwitchActive: typeof killState?.isActive === 'boolean' ? killState.isActive : null,
+      systemFailClosed: typeof failClosed?.failClosed === 'boolean' ? failClosed.failClosed : null,
+      autonomyLevel: this.autonomyLevel,
+      armed: engine.armed
+    });
   }
 }
 

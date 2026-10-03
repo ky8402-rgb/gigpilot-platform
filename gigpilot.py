@@ -18,6 +18,7 @@ Invariants
 
 from __future__ import annotations
 import asyncio, hashlib, hmac, json, logging, math, os, sys, time, uuid
+from pathlib import Path
 import sqlite3
 from collections import deque
 from contextlib import asynccontextmanager
@@ -167,17 +168,8 @@ def setup_logging(level: str) -> logging.Logger:
 log = setup_logging("INFO")
 
 
-class Metrics:
-    def __init__(self): self.g: dict[str, float] = {}; self.c: dict[str, float] = {}
-    def set(self, n: str, v: float, **l: str):
-        k = n + ("{" + ",".join(f'{a}="{b}"' for a, b in sorted(l.items())) + "}" if l else "")
-        self.g[k] = v
-    def inc(self, n: str, v: float = 1.0, **l: str):
-        k = n + ("{" + ",".join(f'{a}="{b}"' for a, b in sorted(l.items())) + "}" if l else "")
-        self.c[k] = self.c.get(k, 0.0) + v
-    def render(self) -> str:
-        return "\n".join([f"{k} {v}" for k, v in sorted(self.g.items())] +
-                         [f"{k} {v}" for k, v in sorted(self.c.items())]) + "\n"
+# MIGRATED -> gpkg/core/metrics.py. Re-exported so existing references keep resolving.
+from gpkg.core.metrics import Metrics  # noqa: E402
 
 
 METRICS = Metrics()
@@ -186,9 +178,9 @@ METRICS = Metrics()
 # =============================================================================
 # 3. Bybit REST v5
 # =============================================================================
-class BybitError(Exception):
-    def __init__(self, code: int, msg: str):
-        super().__init__(f"Bybit {code}: {msg}"); self.code = code; self.msg = msg
+# MIGRATED -> gpkg/core/errors.py. Re-exported so every existing reference (and the deployed engine,
+# which imports this module) keeps resolving unchanged.
+from gpkg.core.errors import BybitError, DUPLICATE_ORDER_LINK_CODE  # noqa: E402
 
 
 class BybitREST:
@@ -279,6 +271,15 @@ class BybitREST:
     async def open_orders(self):
         return (await self._req("GET", "/v5/order/realtime",
                                 {"category": "linear", "settleCoin": "USDT"})).get("list", [])
+    async def api_info(self):
+        """Describe THIS API key: permissions and read-only status.
+
+        Non-mutating (unlike cancel-all), so it is safe to poll. It answers the question that
+        actually matters for trading readiness — NOT "does the key authenticate?" (a key can read
+        positions and orders perfectly well while being refused on every order-mutating endpoint)
+        but "is this key AUTHORISED TO TRADE?".
+        """
+        return await self._req("GET", "/v5/user/query-api", {})
     async def closed_pnl(self, limit: int = 100):
         return (await self._req("GET", "/v5/position/closed-pnl",
                                 {"category": "linear", "limit": limit})).get("list", [])
@@ -478,12 +479,11 @@ class Executor:
                              position_idx: int = 0) -> dict:
         qty_s = self._round_qty(symbol, qty)
         link = f"gp-{uuid.uuid4().hex[:26]}"
-        try:
-            await self.rest.place_order(category="linear", symbol=symbol, side=side,
-                                        orderType="Market", qty=qty_s,
-                                        orderLinkId=link, positionIdx=position_idx)
-        except BybitError as e:
-            if e.code != 110072: raise
+        # The duplicate-orderLinkId rule now lives in _place_idempotent, so this path can no longer
+        # drift out of sync with the unwind/close paths (it previously inlined the check).
+        await self._place_idempotent(link, category="linear", symbol=symbol, side=side,
+                                     orderType="Market", qty=qty_s,
+                                     positionIdx=position_idx)
         try:
             await self.rest.trading_stop(category="linear", symbol=symbol, tpslMode="Full",
                                          positionIdx=position_idx,
@@ -496,22 +496,49 @@ class Executor:
         METRICS.inc("gigpilot_trades_total", side=side, result="opened")
         return {"orderLinkId": link, "qty": qty_s, "tp": tp_price, "sl": sl_price}
 
+    async def _place_idempotent(self, link: str, **kw):
+        """Submit an order, treating a DUPLICATE client order id as SUCCESS.
+
+        Bybit dedupes on orderLinkId, so a retry after a lost response is answered with
+        DUPLICATE_ORDER_LINK_CODE even though the first attempt created the order. Every order path
+        in this class therefore submits through here, so the rule is applied once instead of being
+        re-derived (and forgotten) per call site — `open_protected` had it, `close_market` had
+        nothing, and `_unwind` raised a CRITICAL "UNWIND FAILED" alarm for a flatten that had
+        actually succeeded.
+
+        Returns the exchange result for a fresh submit, or None when the order already existed.
+        Every other error is re-raised, so a genuine failure is never hidden.
+        """
+        try:
+            return await self.rest.place_order(orderLinkId=link, **kw)
+        except BybitError as e:
+            if e.code == DUPLICATE_ORDER_LINK_CODE:
+                log.warning("place_order %s: duplicate orderLinkId -> already accepted by Bybit; "
+                            "treating as submitted (not a failure)", link)
+                return None
+            raise
+
     async def _unwind(self, symbol: str, side: str, qty_s: str, position_idx: int):
         opp = "Sell" if side == "Buy" else "Buy"
         try:
-            await self.rest.place_order(category="linear", symbol=symbol, side=opp,
-                                        orderType="Market", qty=qty_s, reduceOnly=True,
-                                        orderLinkId=f"gp-unwind-{uuid.uuid4().hex[:20]}",
-                                        positionIdx=position_idx)
+            # Through the idempotent helper: a duplicate here means the flatten ALREADY happened.
+            # Raising/logging CRITICAL for that would be a false alarm in the most safety-critical
+            # path, and would misreport a flattened position as still open.
+            await self._place_idempotent(f"gp-unwind-{uuid.uuid4().hex[:20]}",
+                                         category="linear", symbol=symbol, side=opp,
+                                         orderType="Market", qty=qty_s, reduceOnly=True,
+                                         positionIdx=position_idx)
         except Exception as e:
             log.critical("UNWIND FAILED %s: %s", symbol, e)
 
     async def close_market(self, symbol: str, side: str, qty_s: str, position_idx: int = 0):
         opp = "Sell" if side == "Buy" else "Buy"
-        return await self.rest.place_order(category="linear", symbol=symbol, side=opp,
-                                           orderType="Market", qty=qty_s, reduceOnly=True,
-                                           orderLinkId=f"gp-close-{uuid.uuid4().hex[:20]}",
-                                           positionIdx=position_idx)
+        # Was a bare place_order: a lost-response duplicate raised here and reported a close as
+        # failed while the position was already flat.
+        return await self._place_idempotent(f"gp-close-{uuid.uuid4().hex[:20]}",
+                                            category="linear", symbol=symbol, side=opp,
+                                            orderType="Market", qty=qty_s, reduceOnly=True,
+                                            positionIdx=position_idx)
 
 
 # =============================================================================
@@ -867,6 +894,13 @@ class Reconciler:
         self.healthy = False
         self.last_error: Optional[str] = "not_run"
         self.last_run_ms = 0
+        # Trade AUTHORIZATION, tracked separately from authentication.
+        # `healthy`/`last_error` describe whether signed REST calls succeed at all (reads). A key can
+        # pass that while being refused on every order-mutating endpoint — which is exactly the
+        # production state — so readiness must be gated on the permission probe below, not on reads.
+        self.trade_permissions_ok = False
+        self.trade_permissions_error: Optional[str] = "not_run"
+        self.trade_permissions_ms = 0
 
     async def run_once(self):
         try:
@@ -912,6 +946,31 @@ class Reconciler:
             self.healthy = False; self.last_error = str(e); self.last_run_ms = now_ms()
             log.warning("reconcile orders: %s", e)
             return
+        # --- trade-authorization probe (non-mutating) -------------------------------------------
+        # Read access succeeding does NOT mean the key may trade. In production this key reads
+        # positions and open orders perfectly well while every order-mutating endpoint answers
+        # "API key is invalid", so `healthy` alone would report a fully working credential.
+        try:
+            info = (await self.rest.api_info()).get("result", {}) or {}
+            perms = info.get("permissions", {}) or {}
+            contract_trade = perms.get("ContractTrade") or []
+            read_only = int(info.get("readOnly", 0) or 0)
+            if read_only != 0:
+                self.trade_permissions_ok = False
+                self.trade_permissions_error = "API key is READ-ONLY; it cannot place orders"
+            elif not contract_trade:
+                self.trade_permissions_ok = False
+                self.trade_permissions_error = (
+                    "API key lacks the ContractTrade permission; it cannot place futures orders"
+                )
+            else:
+                self.trade_permissions_ok = True
+                self.trade_permissions_error = None
+        except Exception as e:
+            self.trade_permissions_ok = False
+            self.trade_permissions_error = str(e)
+        self.trade_permissions_ms = now_ms()
+
         self.healthy = True; self.last_error = None; self.last_run_ms = now_ms()
 
 
@@ -1374,16 +1433,91 @@ app = FastAPI(title="GigPilot", lifespan=lifespan)
 
 
 @app.get("/health")
+@app.get("/api/health")
+@app.get("/api/trading/gigpilot/health")
 async def health():
     gp = get_gp()
     fresh = all((now_ms() - ms.ts_book_ms) < gp.cfg.staleness_ms
                 for ms in gp.markets.values() if ms.ts_book_ms > 0)
-    healthy = gp.ws._public_ok and gp.ws._private_ok and fresh
+    public_ok = gp.ws._public_ok
+    private_ok = gp.ws._private_ok
+    healthy = public_ok and private_ok and fresh
+
+    # ------------------------------------------------------------------ trading readiness
+    # TRADING READINESS IS DELIBERATELY SEPARATE FROM `healthy`.
+    #
+    # `healthy` describes the PROCESS and its feeds. That is what a deployment gate should verify,
+    # and it must not depend on an owner-side credential problem — otherwise a rejected key would
+    # freeze every release, including the releases that fix things.
+    #
+    # `trading_ready` describes whether EXECUTION IS ACTUALLY POSSIBLE. It therefore also requires
+    # authenticated REST validation: the reconciler performs real signed REST calls (positions,
+    # open orders) and records the outcome, which is the only evidence that the credentials are
+    # accepted. A connected private WebSocket is NOT sufficient evidence — WS auth and REST auth
+    # can disagree, and they currently DO in production.
+    #
+    # Every condition defaults to NOT-ready:
+    #   - reconciler.healthy starts False with last_error="not_run", so a credential state that has
+    #     never been validated can never present as ready. Absence of a failure is not readiness.
+    credentials_ok = bool(gp.reconciler.healthy)
+    trade_authorized = bool(gp.reconciler.trade_permissions_ok)
+    blockers = []
+    if not public_ok:
+        blockers.append("public market-data feed is not connected")
+    if not private_ok:
+        blockers.append("private (authenticated) WebSocket is not connected")
+    if not fresh:
+        blockers.append("market data is stale")
+    if not credentials_ok:
+        # Signed REST calls themselves are failing => the credential is not accepted at all.
+        blockers.append(
+            "credentials rejected for trading: "
+            + (gp.reconciler.last_error or "never validated")
+        )
+    elif not trade_authorized:
+        # Reads work but order placement would be refused. This is the production state and it must
+        # NOT be reported as acceptable: an authenticated key that cannot trade is not trading-ready.
+        blockers.append(
+            "credentials cannot trade: "
+            + (gp.reconciler.trade_permissions_error or "trade permission not validated")
+        )
+    if gp.position_mode != "one-way":
+        blockers.append(f"position mode is '{gp.position_mode}', expected 'one-way'")
+
+    deployed_file = Path(".gigpilot-data/deployed-commit.txt")
+    commit_sha = ""
+    if deployed_file.is_file():
+        commit_sha = deployed_file.read_text(encoding="utf-8").strip()
+    if not commit_sha:
+        commit_sha = os.getenv("DEPLOYED_COMMIT", os.getenv("GITHUB_SHA", ""))
+
     return JSONResponse(status_code=200 if healthy else 503, content={
-        "healthy": healthy, "public_ws": gp.ws._public_ok,
-        "private_ws": gp.ws._private_ok, "feed_fresh": fresh,
+        "status": "ok" if healthy else "degraded",
+        "service": "Autonomous Crypto Grid Trading Platform",
+        "healthy": healthy, "public_ws": public_ok,
+        "private_ws": private_ok, "feed_fresh": fresh,
         "armed": gp.armed, "host": gp.cfg.host,
         "position_mode": gp.position_mode,
+        "deployedCommit": commit_sha,
+        "autonomousEngine": {
+            "status": "healthy" if healthy else "unhealthy",
+            "reachable": True,
+            "publicWs": public_ok,
+            "privateWs": private_ok,
+            "feedFresh": fresh,
+            "armed": gp.armed,
+        },
+        # ---- authoritative trading-readiness signal ----
+        "trading_ready": len(blockers) == 0,
+        "credentials_ok": credentials_ok,
+        "credentials_error": gp.reconciler.last_error,
+        "credentials_checked_ms_ago": (now_ms() - gp.reconciler.last_run_ms)
+                                      if gp.reconciler.last_run_ms else None,
+        "trade_permissions_ok": trade_authorized,
+        "trade_permissions_error": gp.reconciler.trade_permissions_error,
+        "trade_permissions_checked_ms_ago": (now_ms() - gp.reconciler.trade_permissions_ms)
+                                            if gp.reconciler.trade_permissions_ms else None,
+        "trading_blockers": blockers,
     })
 
 
@@ -1518,8 +1652,9 @@ new EventSource('/events').onmessage=e=>{try{upd(JSON.parse(e.data))}catch(_){}}
 </script></body></html>"""
 
 
-@app.get("/", response_class=HTMLResponse)
-async def dashboard(): return DASHBOARD_HTML
+from gpkg.web.dashboard import mount_dashboard
+
+mount_dashboard(app, fallback_html=DASHBOARD_HTML)
 
 
 # =============================================================================

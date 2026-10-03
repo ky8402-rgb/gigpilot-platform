@@ -405,10 +405,22 @@ export interface GridConfiguration {
 
 export type OrderSide = 'BUY' | 'SELL';
 export type OrderType = 'LIMIT' | 'MARKET' | 'GRID_LIMIT';
-export type OrderStatus = 'NEW' | 'OPEN' | 'FILLED' | 'PARTIALLY_FILLED' | 'CANCELLED' | 'REJECTED';
+/**
+ * 'UNKNOWN' is NOT the same as 'REJECTED'. It means the submission outcome could not be
+ * determined (network failure / timeout / lost response) — the order MAY exist on the exchange.
+ * Recording such an attempt as REJECTED is a false negative that invites a duplicate order, so
+ * UNKNOWN orders must be resolved by reconciliation before any retry is allowed.
+ */
+export type OrderStatus = 'NEW' | 'OPEN' | 'FILLED' | 'PARTIALLY_FILLED' | 'CANCELLED' | 'REJECTED' | 'UNKNOWN';
 
 export interface Order {
   id: string;
+  /**
+   * Client-supplied idempotency key sent to the exchange as `orderLinkId`. It must be assigned
+   * BEFORE submission and persisted with the order, so that an order whose response was lost can
+   * be looked up on the exchange instead of being re-submitted.
+   */
+  clientOrderId?: string;
   symbol: string;
   side: OrderSide;
   type: OrderType;
