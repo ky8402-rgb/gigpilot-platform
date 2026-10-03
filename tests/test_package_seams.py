@@ -30,6 +30,10 @@ from gpkg.core import clock as core_clock  # noqa: E402
 from gpkg.core import config as core_config  # noqa: E402
 from gpkg.core import logging as core_logging  # noqa: E402
 from gpkg.exchange import bybit_rest as ex_rest  # noqa: E402
+from gpkg.market import state as mkt_state  # noqa: E402
+from gpkg.strategy import edge as strat_edge  # noqa: E402
+from gpkg.risk import gate as risk_gate  # noqa: E402
+from gpkg.execution import executor as exec_module  # noqa: E402
 
 failures: list[str] = []
 checks = 0
@@ -65,6 +69,12 @@ def main() -> int:
         ("JsonFormatter", engine.JsonFormatter, core_logging.JsonFormatter),
         ("setup_logging", engine.setup_logging, core_logging.setup_logging),
         ("BybitREST", engine.BybitREST, ex_rest.BybitREST),
+        ("MarketState", engine.MarketState, mkt_state.MarketState),
+        ("EdgeEstimate", engine.EdgeEstimate, strat_edge.EdgeEstimate),
+        ("EdgeEngine", engine.EdgeEngine, strat_edge.EdgeEngine),
+        ("Portfolio", engine.Portfolio, risk_gate.Portfolio),
+        ("RiskGate", engine.RiskGate, risk_gate.RiskGate),
+        ("Executor", engine.Executor, exec_module.Executor),
     ]
     for name, from_monolith, from_package in pairs:
         if from_monolith is from_package:
@@ -95,6 +105,11 @@ def main() -> int:
         (core_clock, "gpkg.core.clock"),
         (core_config, "gpkg.core.config"),
         (core_logging, "gpkg.core.logging"),
+        (ex_rest, "gpkg.exchange.bybit_rest"),
+        (mkt_state, "gpkg.market.state"),
+        (strat_edge, "gpkg.strategy.edge"),
+        (risk_gate, "gpkg.risk.gate"),
+        (exec_module, "gpkg.execution.executor"),
     ):
         if getattr(mod, "__file__", "").endswith(".py"):
             ok(f"{name} is a plain module with no runtime dependency")

@@ -78,242 +78,27 @@ from gpkg.exchange.bybit_rest import BybitREST  # noqa: E402
 
 
 # =============================================================================
-# 4. Market state
+# 4. Market state (MIGRATED -> gpkg/market/state.py)
 # =============================================================================
-@dataclass
-class MarketState:
-    symbol: str
-    bids: list = field(default_factory=list); asks: list = field(default_factory=list)
-    last: float = 0.0; mark: float = 0.0; index: float = 0.0
-    funding_rate: float = 0.0; next_funding_ms: int = 0
-    trades: deque = field(default_factory=lambda: deque(maxlen=512))
-    closes_1m: deque = field(default_factory=lambda: deque(maxlen=200))
-    ts_book_ms: int = 0; ts_tick_ms: int = 0
-
-    @property
-    def mid(self) -> float:
-        if not self.bids or not self.asks: return 0.0
-        return (self.bids[0][0] + self.asks[0][0]) / 2.0
-
-    @property
-    def spread_bps(self) -> float:
-        if not self.bids or not self.asks: return float("inf")
-        m = self.mid
-        return float("inf") if m <= 0 else (self.asks[0][0] - self.bids[0][0]) / m * 1e4
-
-    def apply_book_snapshot(self, b, a):
-        self.bids = sorted(((f(p), f(s)) for p, s in b if f(s) > 0), key=lambda x: -x[0])
-        self.asks = sorted(((f(p), f(s)) for p, s in a if f(s) > 0), key=lambda x: x[0])
-        self.ts_book_ms = now_ms()
-
-    def apply_book_delta(self, b, a):
-        for price, size in b:
-            p, s = f(price), f(size)
-            self.bids = [(bp, bs) for bp, bs in self.bids if bp != p]
-            if s > 0:
-                self.bids.append((p, s)); self.bids.sort(key=lambda x: -x[0])
-        for price, size in a:
-            p, s = f(price), f(size)
-            self.asks = [(ap, aa) for ap, aa in self.asks if ap != p]
-            if s > 0:
-                self.asks.append((p, s)); self.asks.sort(key=lambda x: x[0])
-        self.ts_book_ms = now_ms()
-
-    def depth_notional(self, side: str, levels: int) -> float:
-        book = self.bids if side == "Buy" else self.asks
-        return sum(p * s for p, s in book[:levels])
-
-    def imbalance(self, levels: int) -> float:
-        bv = sum(s for _, s in self.bids[:levels]); av = sum(s for _, s in self.asks[:levels])
-        tot = bv + av
-        return 0.0 if tot <= 0 else (bv - av) / tot
-
-    def momentum(self, window_s: int) -> float:
-        if not self.trades: return 0.0
-        cutoff = now_ms() - window_s * 1000
-        rec = [t for t in self.trades if t[0] >= cutoff]
-        if len(rec) < 5: return 0.0
-        p0, p1 = rec[0][1], rec[-1][1]
-        return 0.0 if p0 <= 0 else math.log(p1 / p0)
-
-    def atr_bps(self, period: int, fallback: float = 20.0) -> float:
-        if len(self.closes_1m) < period + 1: return fallback
-        closes = list(self.closes_1m)[-(period + 1):]
-        trs = [abs(closes[i] - closes[i-1]) / closes[i-1] for i in range(1, len(closes))]
-        return fallback if not trs else (sum(trs) / len(trs)) * 1e4
+from gpkg.market.state import MarketState  # noqa: E402
 
 
 # =============================================================================
-# 5. Edge engine
+# 5. Edge engine (MIGRATED -> gpkg/strategy/edge.py)
 # =============================================================================
-@dataclass
-class EdgeEstimate:
-    symbol: str; side: str
-    gross_bps: float; fee_bps: float; spread_bps: float
-    slip_bps: float; funding_bps: float; net_bps: float
-    tradable: bool; reason: str; ts_ms: int
-
-
-class EdgeEngine:
-    def __init__(self, cfg: Config): self.cfg = cfg
-
-    def evaluate(self, ms: MarketState, side: str, fee_rate_bps: float,
-                 holding_hours: float, required_notional: float) -> EdgeEstimate:
-        if not ms.bids or not ms.asks: return self._no(ms.symbol, side, "no_book")
-        if now_ms() - ms.ts_book_ms > self.cfg.staleness_ms:
-            return self._no(ms.symbol, side, "stale_book")
-        if now_ms() - ms.ts_tick_ms > self.cfg.staleness_ms:
-            return self._no(ms.symbol, side, "stale_tick")
-        mid = ms.mid
-        if mid <= 0: return self._no(ms.symbol, side, "no_mid")
-
-        imb = ms.imbalance(self.cfg.book_levels)
-        mom = ms.momentum(self.cfg.momentum_window_s)
-        signal = max(-1.0, min(1.0, 0.65 * imb + 0.35 * math.tanh(mom * 500.0)))
-        fair = mid * (1.0 + signal * self.cfg.signal_fair_shift_bps / 1e4)
-        entry = ms.asks[0][0] if side == "Buy" else ms.bids[0][0]
-        gross_bps = ((fair - entry) if side == "Buy" else (entry - fair)) / mid * 1e4
-        fee_bps = fee_rate_bps
-        spread_bps = ms.spread_bps
-        if not math.isfinite(spread_bps): return self._no(ms.symbol, side, "no_spread")
-        if ms.depth_notional(side, self.cfg.book_levels) < required_notional:
-            return EdgeEstimate(ms.symbol, side, gross_bps, fee_bps, spread_bps,
-                                0.0, 0.0, 0.0, False, "insufficient_depth", now_ms())
-        slip_bps = spread_bps * self.cfg.slippage_factor
-        funding_bps = abs(ms.funding_rate) * 1e4 * (holding_hours / 8.0)
-        net = gross_bps - fee_bps - spread_bps - slip_bps - funding_bps
-        ok = net >= self.cfg.edge_hurdle_bps
-        return EdgeEstimate(ms.symbol, side, gross_bps, fee_bps, spread_bps,
-                            slip_bps, funding_bps, net, ok,
-                            "clears_hurdle" if ok
-                            else f"net_{net:.2f}bps_lt_{self.cfg.edge_hurdle_bps}",
-                            now_ms())
-
-    @staticmethod
-    def _no(symbol: str, side: str, reason: str) -> EdgeEstimate:
-        return EdgeEstimate(symbol, side, 0, 0, 0, 0, 0, 0, False, reason, now_ms())
+from gpkg.strategy.edge import EdgeEstimate, EdgeEngine  # noqa: E402
 
 
 # =============================================================================
-# 6. Risk gate
+# 6. Risk gate (MIGRATED -> gpkg/risk/gate.py)
 # =============================================================================
-@dataclass
-class Portfolio:
-    equity: float = 0.0
-    daily_pnl: float = 0.0
-    gross_notional: float = 0.0
-    symbol_notional: dict = field(default_factory=dict)
-    open_positions: int = 0
-    margin_ratio: float = 0.0
-
-
-class RiskGate:
-    def __init__(self, cfg: Config): self.cfg = cfg
-
-    def check(self, p: Portfolio, symbol: str, notional: float, leverage: float,
-              armed: bool, day_start_equity: float) -> tuple[bool, str]:
-        if not armed: return False, "not_armed"
-        if p.equity <= 0: return False, "no_equity"
-        if leverage > self.cfg.max_leverage:
-            return False, f"leverage_{leverage:.2f}_gt_{self.cfg.max_leverage}"
-        if day_start_equity > 0:
-            loss_pct = -p.daily_pnl / day_start_equity * 100.0
-            if loss_pct >= self.cfg.max_daily_loss_pct:
-                return False, f"daily_loss_{loss_pct:.2f}pct"
-        if p.margin_ratio > 0.6:
-            return False, f"margin_ratio_{p.margin_ratio:.2f}"
-        if p.open_positions >= self.cfg.max_concurrent_positions:
-            return False, "max_concurrent"
-        if p.symbol_notional.get(symbol, 0.0) + notional > \
-           p.equity * self.cfg.max_symbol_notional_pct / 100.0:
-            return False, "symbol_concentration"
-        if p.gross_notional + notional > \
-           p.equity * self.cfg.max_gross_notional_pct / 100.0:
-            return False, "gross_exposure"
-        return True, "ok"
+from gpkg.risk.gate import Portfolio, RiskGate  # noqa: E402
 
 
 # =============================================================================
-# 7. Executor (one-way only; refuses unknown step)
+# 7. Executor (MIGRATED -> gpkg/execution/executor.py)
 # =============================================================================
-class Executor:
-    def __init__(self, cfg: Config, rest: BybitREST, step_sizes: dict[str, float]):
-        self.cfg = cfg; self.rest = rest; self.step_size = step_sizes
-
-    def _round_qty(self, symbol: str, qty: float) -> str:
-        step = self.step_size.get(symbol, 0.0)
-        if step <= 0:
-            raise RuntimeError(f"step size unknown for {symbol} — refusing to trade")
-        v = math.floor(qty / step) * step
-        if v <= 0:
-            raise RuntimeError(f"qty {qty} rounds to 0 at step {step} for {symbol}")
-        return f"{v:.10f}".rstrip("0").rstrip(".")
-
-    async def open_protected(self, symbol: str, side: str, qty: float,
-                             tp_price: float, sl_price: float,
-                             position_idx: int = 0) -> dict:
-        qty_s = self._round_qty(symbol, qty)
-        link = f"gp-{uuid.uuid4().hex[:26]}"
-        # The duplicate-orderLinkId rule now lives in _place_idempotent, so this path can no longer
-        # drift out of sync with the unwind/close paths (it previously inlined the check).
-        await self._place_idempotent(link, category="linear", symbol=symbol, side=side,
-                                     orderType="Market", qty=qty_s,
-                                     positionIdx=position_idx)
-        try:
-            await self.rest.trading_stop(category="linear", symbol=symbol, tpslMode="Full",
-                                         positionIdx=position_idx,
-                                         takeProfit=str(tp_price), stopLoss=str(sl_price),
-                                         tpTriggerBy="MarkPrice", slTriggerBy="MarkPrice")
-        except Exception as e:
-            log.error("protection failed %s — unwinding: %s", symbol, e)
-            await self._unwind(symbol, side, qty_s, position_idx)
-            raise RuntimeError("PROTECTION_FAILED_POSITION_FLATTENED")
-        METRICS.inc("gigpilot_trades_total", side=side, result="opened")
-        return {"orderLinkId": link, "qty": qty_s, "tp": tp_price, "sl": sl_price}
-
-    async def _place_idempotent(self, link: str, **kw):
-        """Submit an order, treating a DUPLICATE client order id as SUCCESS.
-
-        Bybit dedupes on orderLinkId, so a retry after a lost response is answered with
-        DUPLICATE_ORDER_LINK_CODE even though the first attempt created the order. Every order path
-        in this class therefore submits through here, so the rule is applied once instead of being
-        re-derived (and forgotten) per call site — `open_protected` had it, `close_market` had
-        nothing, and `_unwind` raised a CRITICAL "UNWIND FAILED" alarm for a flatten that had
-        actually succeeded.
-
-        Returns the exchange result for a fresh submit, or None when the order already existed.
-        Every other error is re-raised, so a genuine failure is never hidden.
-        """
-        try:
-            return await self.rest.place_order(orderLinkId=link, **kw)
-        except BybitError as e:
-            if e.code == DUPLICATE_ORDER_LINK_CODE:
-                log.warning("place_order %s: duplicate orderLinkId -> already accepted by Bybit; "
-                            "treating as submitted (not a failure)", link)
-                return None
-            raise
-
-    async def _unwind(self, symbol: str, side: str, qty_s: str, position_idx: int):
-        opp = "Sell" if side == "Buy" else "Buy"
-        try:
-            # Through the idempotent helper: a duplicate here means the flatten ALREADY happened.
-            # Raising/logging CRITICAL for that would be a false alarm in the most safety-critical
-            # path, and would misreport a flattened position as still open.
-            await self._place_idempotent(f"gp-unwind-{uuid.uuid4().hex[:20]}",
-                                         category="linear", symbol=symbol, side=opp,
-                                         orderType="Market", qty=qty_s, reduceOnly=True,
-                                         positionIdx=position_idx)
-        except Exception as e:
-            log.critical("UNWIND FAILED %s: %s", symbol, e)
-
-    async def close_market(self, symbol: str, side: str, qty_s: str, position_idx: int = 0):
-        opp = "Sell" if side == "Buy" else "Buy"
-        # Was a bare place_order: a lost-response duplicate raised here and reported a close as
-        # failed while the position was already flat.
-        return await self._place_idempotent(f"gp-close-{uuid.uuid4().hex[:20]}",
-                                            category="linear", symbol=symbol, side=opp,
-                                            orderType="Market", qty=qty_s, reduceOnly=True,
-                                            positionIdx=position_idx)
+from gpkg.execution.executor import Executor  # noqa: E402
 
 
 # =============================================================================

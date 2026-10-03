@@ -139,7 +139,11 @@ async def main() -> int:
         gp.log.removeHandler(capture)
 
     print("\n[4] Every order path submits through the one helper")
-    src = (ROOT / "gigpilot.py").read_text(encoding="utf8")
+    executor_file = ROOT / "gpkg" / "execution" / "executor.py"
+    if executor_file.is_file():
+        src = executor_file.read_text(encoding="utf8")
+    else:
+        src = (ROOT / "gigpilot.py").read_text(encoding="utf8")
     start = src.index("class Executor:")
     end = src.index("\nclass ", start + 1) if "\nclass " in src[start + 1:] else len(src)
     body = src[start:end]
