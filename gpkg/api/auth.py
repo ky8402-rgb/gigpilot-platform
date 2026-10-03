@@ -241,6 +241,26 @@ def _config_path() -> Path:
     return _data_dir() / "owner-auth-config.json"
 
 
+def _load_dotenv_once() -> None:
+    """Load the app's `.env` so BOTH stacks resolve the same owner secret.
+
+    The Node backend runs under pm2 with cwd = the app directory and reads `.env` (dotenv). The
+    Python engine runs beside it with the same cwd. Without this, the Node-minted owner session
+    token could not be verified by the engine, and every Node->engine proxy call would 401.
+
+    `OWNER_SESSION_SECRET` / `JWT_SECRET` therefore act as the shared signing secret across both
+    stacks, exactly as `.env.example` already implies. Failure to load is non-fatal: the persisted
+    `owner-auth-config.json` (which Node writes and this module reads) carries the fallback
+    `jwtSecret`, so the two still converge even with no `.env`.
+    """
+    try:
+        from dotenv import load_dotenv
+
+        load_dotenv(dotenv_path=Path(os.getcwd()) / ".env", override=False)
+    except Exception:
+        pass
+
+
 def _load_or_create_config() -> OwnerConfig:
     """Load the owner config, or mint one.
 
@@ -248,6 +268,7 @@ def _load_or_create_config() -> OwnerConfig:
     pair. The only way in is the break-glass PIN, which comes from `OWNER_AUTH_PIN` when supplied and
     is otherwise randomly generated and persisted `0600`.
     """
+    _load_dotenv_once()
     path = _config_path()
     env_pin = (os.getenv("OWNER_AUTH_PIN") or "").strip()
     env_secret = (os.getenv("JWT_SECRET") or os.getenv("OWNER_SESSION_SECRET") or "").strip()
@@ -259,8 +280,16 @@ def _load_or_create_config() -> OwnerConfig:
             if not cfg.emergency_pin or cfg.emergency_pin == "778899" or len(cfg.emergency_pin) < 6:
                 cfg.emergency_pin = env_pin if len(env_pin) >= 6 else secrets.token_hex(4)
                 _persist(path, cfg)
-            if not cfg.jwt_secret:
-                cfg.jwt_secret = env_secret or secrets.token_hex(32)
+            # Signing-secret precedence MUST match the Node implementation
+            # (server/trading/ownerAuth.ts):  JWT_SECRET > OWNER_SESSION_SECRET > persisted > random.
+            # Preferring the file over the environment would let the two stacks hold DIFFERENT
+            # secrets the moment the environment changes, and every Node->engine proxy call would
+            # then 401 and degrade to 503 ENGINE UNREACHABLE. An env-supplied secret is used
+            # in memory only — it is never written to disk.
+            if env_secret:
+                cfg.jwt_secret = env_secret
+            elif not cfg.jwt_secret:
+                cfg.jwt_secret = secrets.token_hex(32)
                 _persist(path, cfg)
             return cfg
         except Exception:

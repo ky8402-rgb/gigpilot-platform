@@ -1193,12 +1193,35 @@ tradingRouter.get('/inventory-awareness', async (req: Request, res: Response) =>
 // 32. GigPilot Bybit USDT-Perp Autonomous Engine Endpoints
 const GIGPILOT_URL = process.env.GIGPILOT_URL || 'http://127.0.0.1:8001';
 
-tradingRouter.get('/gigpilot/state', async (req: Request, res: Response) => {
+/**
+ * Forward the caller's verified owner session to the Python engine.
+ *
+ * The engine enforces owner authentication on every operational route. It previously enforced
+ * NONE, so any local process that could reach 127.0.0.1:8001 could arm live trading or trip the
+ * kill switch. The Node layer authenticates the owner and must therefore pass the session through
+ * rather than calling the engine anonymously.
+ *
+ * The two stacks converge on one signing secret: `OWNER_SESSION_SECRET` / `JWT_SECRET` from `.env`,
+ * or failing that the persisted `owner-auth-config.json` `jwtSecret`, which both processes read.
+ *
+ * The token is re-forwarded, never logged.
+ */
+function engineAuthHeaders(req: Request): Record<string, string> {
+  const token = extractToken(req);
+  return token ? { Authorization: `Bearer ${token}` } : {};
+}
+
+// requireOwnerAuth was MISSING here: this route proxies live equity, positions and realized PnL
+// straight out of the engine, so it was an unauthenticated account-state disclosure.
+tradingRouter.get('/gigpilot/state', requireOwnerAuth, async (req: Request, res: Response) => {
   try {
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 2000);
     try {
-      const response = await fetch(`${GIGPILOT_URL}/api/state`, { signal: controller.signal });
+      const response = await fetch(`${GIGPILOT_URL}/api/state`, {
+        headers: { ...engineAuthHeaders(req) },
+        signal: controller.signal
+      });
       clearTimeout(timeoutId);
       if (response.ok) {
         const data = await response.json();
@@ -1246,7 +1269,7 @@ tradingRouter.get('/gigpilot/state', async (req: Request, res: Response) => {
   }
 });
 
-tradingRouter.post('/gigpilot/arm', requireOwnerAuth, async (_req: Request, res: Response) => {
+tradingRouter.post('/gigpilot/arm', requireOwnerAuth, async (req: Request, res: Response) => {
   const store = globalTradingStore;
   const isKillActive = store.GLOBAL_KILL_SWITCH_ACTIVE || store.killSwitch.getState().isActive;
   if (isKillActive) {
@@ -1273,7 +1296,7 @@ tradingRouter.post('/gigpilot/arm', requireOwnerAuth, async (_req: Request, res:
   try {
     const response = await fetch(`${GIGPILOT_URL}/api/arm`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', ...engineAuthHeaders(req) },
       signal: controller.signal
     });
     clearTimeout(timeoutId);
@@ -1303,11 +1326,15 @@ tradingRouter.post('/gigpilot/arm', requireOwnerAuth, async (_req: Request, res:
   }
 });
 
-tradingRouter.post('/gigpilot/disarm', requireOwnerAuth, async (_req: Request, res: Response) => {
+tradingRouter.post('/gigpilot/disarm', requireOwnerAuth, async (req: Request, res: Response) => {
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), 5000);
   try {
-    const response = await fetch(`${GIGPILOT_URL}/api/disarm`, { method: 'POST', signal: controller.signal });
+    const response = await fetch(`${GIGPILOT_URL}/api/disarm`, {
+      method: 'POST',
+      headers: { ...engineAuthHeaders(req) },
+      signal: controller.signal
+    });
     clearTimeout(timeoutId);
     let data: any = null;
     try { data = await response.json(); } catch { data = { success: false, armed: null, error: 'Invalid DISARM response from autonomous engine.' }; }
@@ -1332,7 +1359,7 @@ tradingRouter.post('/gigpilot/disarm', requireOwnerAuth, async (_req: Request, r
   }
 });
 
-tradingRouter.post('/gigpilot/kill', requireOwnerAuth, async (_req: Request, res: Response) => {
+tradingRouter.post('/gigpilot/kill', requireOwnerAuth, async (req: Request, res: Response) => {
   try {
     globalTradingStore.killSwitch.trigger('Kill switch invoked from GigPilot Futures view');
 
@@ -1340,7 +1367,11 @@ tradingRouter.post('/gigpilot/kill', requireOwnerAuth, async (_req: Request, res
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 5000);
     try {
-      const response = await fetch(`${GIGPILOT_URL}/api/kill`, { method: 'POST', signal: controller.signal });
+      const response = await fetch(`${GIGPILOT_URL}/api/kill`, {
+        method: 'POST',
+        headers: { ...engineAuthHeaders(req) },
+        signal: controller.signal
+      });
       clearTimeout(timeoutId);
       daemonAcknowledged = response.ok;
     } catch {

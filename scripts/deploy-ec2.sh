@@ -91,6 +91,21 @@ if [ -n "${GEMINI_API_KEY:-}" ]; then
   echo "✔ GEMINI_API_KEY updated in $APP_DIR/.env"
 fi
 
+# --- Shared owner-session secret (single sign-on across BOTH stacks) -------------------------
+# The Node backend mints owner session tokens and proxies /api/trading/gigpilot/{state,arm,disarm,kill}
+# to the Python engine, which now verifies them. For that to work the two processes must sign with
+# the SAME secret. The engine reads it from this .env (python-dotenv) and Node reads it via
+# dotenv.config({override:true}); the persisted .gigpilot-data/owner-auth-config.json is only the
+# fallback. Generating it here when absent makes convergence deterministic instead of incidental.
+if ! grep -qE '^OWNER_SESSION_SECRET=.+' "$APP_DIR/.env" 2>/dev/null; then
+  umask 077
+  touch "$APP_DIR/.env"
+  set_env_value "OWNER_SESSION_SECRET" "$(openssl rand -hex 32 2>/dev/null || head -c 32 /dev/urandom | od -An -tx1 | tr -d ' \n')"
+  echo "✔ OWNER_SESSION_SECRET generated in $APP_DIR/.env (shared by Node and the engine)"
+else
+  echo "✔ OWNER_SESSION_SECRET already configured; left unchanged"
+fi
+
 # Require a production database connection for live persistence. The value is supplied
 # by the deployment workflow from GitHub Secrets and is never committed to source.
 if [ -n "${DATABASE_URL:-}" ]; then
