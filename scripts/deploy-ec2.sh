@@ -62,6 +62,9 @@ PY
   set_env_value "OWNER_SESSION_SECRET" "$OWNER_SESSION_SECRET"
 fi
 
+echo "Verifying prebuilt React artifact..."
+test -s "$APP_DIR/dist/index.html"
+
 echo "Installing Python dependencies..."
 if ! command -v python3 >/dev/null 2>&1; then
   echo "ERROR: python3 missing."
@@ -72,15 +75,6 @@ if [ ! -x "$APP_DIR/.venv/bin/python3" ]; then
 fi
 "$APP_DIR/.venv/bin/pip" install --disable-pip-version-check --no-input -r "$APP_DIR/requirements.txt"
 "$APP_DIR/.venv/bin/python3" -c "import fastapi, uvicorn, aiohttp; print('Python runtime verified')"
-
-echo "Building existing React frontend as static files only..."
-if ! command -v npm >/dev/null 2>&1; then
-  echo "ERROR: npm is required only to compile the React static artifact; no Node server is started."
-  exit 1
-fi
-npm ci --ignore-scripts
-npm run build:client
-test -s "$APP_DIR/dist/index.html"
 
 echo "Running Python migration and safety gates..."
 "$APP_DIR/.venv/bin/python3" tests/test_parity.py
