@@ -83,9 +83,9 @@ jobs:
           curl -kfsS "$BASE/version.json" | python -c "import json,sys,os; assert json.load(sys.stdin).get('commit')==os.environ['GITHUB_SHA']"
       - name: Verify no Node production runtime remains
         env:
-          SSH_KEY: \${{ secrets.EC2_SSH_KEY || secrets.GIGPILOT_MUMBAI_EC2 }}
-          EC2_HOST: \${{ secrets.EC2_HOST || '' }}
-          EC2_USER: \${{ secrets.EC2_USER || 'ubuntu' }}
+          SSH_KEY: ${{ secrets.EC2_SSH_KEY || secrets.GIGPILOT_MUMBAI_EC2 }}
+          EC2_HOST: ${{ secrets.EC2_HOST || '' }}
+          EC2_USER: ${{ secrets.EC2_USER || 'ubuntu' }}
         run: |
           set -euo pipefail
           if [ -z "$EC2_HOST" ] && [ -f deployment/backend-host.txt ]; then EC2_HOST="$(tr -d '\\r\\n' < deployment/backend-host.txt)"; fi
