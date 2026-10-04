@@ -43,8 +43,21 @@ class FeatureVector:
         )
 
 
-def extract_features(ms: MarketState, *, ts_ms: int, levels: int, momentum_window_s: int) -> FeatureVector:
-    """Point-in-time feature extraction. Caller supplies decision timestamp; no future rows allowed."""
+def extract_features(ms: MarketState, *, ts_ms: int, levels: int, momentum_window_s: int,
+                     max_staleness_ms: int | None = None) -> FeatureVector:
+    """Point-in-time feature extraction with explicit anti-leakage checks.
+
+    The feature timestamp is authoritative. Market snapshots stamped after it are refused, and trade
+    momentum is computed only from prints at or before it. This makes the same function safe for
+    live shadow inference and historical walk-forward replay.
+    """
+    if ts_ms <= 0:
+        raise ValueError("decision timestamp must be positive")
+    for name, source_ts in (("book", ms.ts_book_ms), ("ticker", ms.ts_tick_ms)):
+        if source_ts > ts_ms:
+            raise ValueError(f"future {name} state would leak into decision")
+        if max_staleness_ms is not None and source_ts > 0 and ts_ms - source_ts > max_staleness_ms:
+            raise ValueError(f"stale {name} state")
     mid = ms.mid
     if mid <= 0 or not ms.bids or not ms.asks:
         raise ValueError("market state is not feature-ready")
@@ -56,13 +69,19 @@ def extract_features(ms: MarketState, *, ts_ms: int, levels: int, momentum_windo
     basis = (mark - index) / index * 1e4 if index > 0 else 0.0
     bid_depth = sum(p * q for p, q in ms.bids[:levels])
     ask_depth = sum(p * q for p, q in ms.asks[:levels])
+    cutoff = ts_ms - momentum_window_s * 1000
+    prints = [t for t in ms.trades if cutoff <= t[0] <= ts_ms]
+    if len(prints) >= 5 and prints[0][1] > 0:
+        momentum_bps = log(prints[-1][1] / prints[0][1]) * 1e4
+    else:
+        momentum_bps = 0.0
     return FeatureVector(
         ts_ms=ts_ms,
         symbol=ms.symbol,
         mid=mid,
         spread_bps=spread,
         imbalance=ms.imbalance(levels),
-        momentum_bps=ms.momentum(momentum_window_s) * 1e4,
+        momentum_bps=momentum_bps,
         atr_bps=ms.atr_bps(max(2, min(50, len(ms.closes_1m) - 1))) if len(ms.closes_1m) >= 3 else 20.0,
         funding_bps_8h=ms.funding_rate * 1e4,
         basis_bps=basis,
