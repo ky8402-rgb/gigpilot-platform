@@ -98,13 +98,15 @@ class HistoricalDataWorker:
                 if not rows:
                     break
                 oldest = min(r.ts_ms for r in rows)
+                batch = []
                 for row in rows:
                     if start_ms <= row.ts_ms <= end_ms:
-                        self.store.ml_market_upsert(symbol, "kline_1m", row.ts_ms, {
+                        batch.append((symbol, "kline_1m", row.ts_ms, {
                             "open": row.open, "high": row.high, "low": row.low,
                             "close": row.close, "volume": row.volume, "turnover": row.turnover,
-                        })
-                        count += 1
+                        }))
+                self.store.ml_market_bulk_upsert(batch)
+                count += len(batch)
                 if oldest >= cursor:
                     break
                 cursor = oldest - 1
