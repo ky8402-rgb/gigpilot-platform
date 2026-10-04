@@ -39,6 +39,22 @@ def test_feature_extraction_is_point_in_time_and_regime_is_deterministic(monkeyp
     assert detect_regime(f, high_vol_bps=10_000, illiquid_spread_bps=10_000, trend_bps=10_000) is Regime.QUIET
 
 
+
+def test_feature_extraction_refuses_future_stamped_market_state():
+    m = market()
+    m.ts_book_ms = 5_001
+    m.ts_tick_ms = 5_000
+    with pytest.raises(ValueError, match="future book"):
+        extract_features(m, ts_ms=5_000, levels=2, momentum_window_s=10)
+
+
+def test_momentum_excludes_future_prints():
+    m = market()
+    m.ts_book_ms = m.ts_tick_ms = 5_000
+    m.trades.append((6_000, 200.0))  # dramatic future print must not affect 5_000 decision
+    f = extract_features(m, ts_ms=5_000, levels=2, momentum_window_s=10)
+    assert f.momentum_bps < 100.0
+
 def test_book_impact_uses_executable_side_and_refuses_insufficient_depth():
     m = market()
     assert book_impact_bps(m, "Buy", 2.0) > 0
