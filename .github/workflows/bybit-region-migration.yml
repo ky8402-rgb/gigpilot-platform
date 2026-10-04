@@ -29,7 +29,7 @@ jobs:
       EC2_SSH_KEY: ${{ secrets.EC2_SSH_KEY || secrets.GIGPILOT_MUMBAI_EC2 }}
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Check AWS & Migration Readiness
         id: check_aws
