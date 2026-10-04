@@ -19,7 +19,7 @@ from gpkg.core.clock import f, now_ms
 class Store:
     def __init__(self, path: str):
         self.path = path
-        self._conn = sqlite3.connect(path, check_same_thread=False)
+        self._conn = sqlite3.connect(path, check_same_thread=False, timeout=30)
         self._conn.execute("PRAGMA journal_mode=WAL")
         self._init()
 
