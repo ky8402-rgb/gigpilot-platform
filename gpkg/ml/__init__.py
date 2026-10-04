@@ -66,3 +66,7 @@ __all__ += [
     "position_notional",
     "select_verified_strategy",
 ]
+
+from .registry import ModelRegistry
+
+__all__ += ["ModelRegistry"]
