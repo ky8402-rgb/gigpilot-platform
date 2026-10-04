@@ -16,10 +16,14 @@ def _num(value: Any, default: float = 0.0) -> float:
 
 
 def normalize_audit(audit: dict[str, Any]) -> dict[str, Any]:
-    payload = audit.get("payload") or {}
-    evidence = payload.get("evidence") if isinstance(payload.get("evidence"), dict) else payload
-    costs = payload.get("cost_deductions") or payload.get("costs") or {}
-    thresholds = payload.get("gate_thresholds") or {
+    payload_raw = audit.get("payload")
+    payload = payload_raw if isinstance(payload_raw, dict) else {}
+    evidence_raw = payload.get("evidence")
+    evidence = evidence_raw if isinstance(evidence_raw, dict) else payload
+    costs_raw = payload.get("cost_deductions") or payload.get("costs")
+    costs = costs_raw if isinstance(costs_raw, dict) else {}
+    thresholds_raw = payload.get("gate_thresholds")
+    thresholds = thresholds_raw if isinstance(thresholds_raw, dict) else {
         "net_edge_bps": 8.0,
         "t_stat": 3.0,
         "oos_sharpe": 1.5,
