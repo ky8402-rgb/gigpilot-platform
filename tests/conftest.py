@@ -168,9 +168,17 @@ def make_engine(tmp_path):
         fake = FakeREST(symbols=syms, equity=equity, trade_permission=trade_permission,
                         taker_fee=taker_fee)
         engine.rest = fake
-        engine.executor = gp.Executor(cfg, fake, {s: 0.001 for s in syms},
+        # Mirror production wiring: one transport behind one adapter shared by execution,
+        # reconciliation and accounting. Replacing only engine.rest leaves those components
+        # attached to the constructor's original live adapter and creates an impossible split-brain
+        # test topology.
+        from gpkg.exchange.adapters.bybit import BybitAdapter
+        engine.exchange = BybitAdapter(cfg, rest=fake)
+        engine.executor = gp.Executor(cfg, engine.exchange, {s: 0.001 for s in syms},
                                       min_sizes={s: 0.001 for s in syms})
+        engine.reconciler.adapter = engine.exchange
         engine.reconciler.rest = fake
+        engine.accounting.adapter = engine.exchange
         engine.accounting.rest = fake
 
         if warm:
