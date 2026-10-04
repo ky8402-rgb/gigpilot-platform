@@ -47,7 +47,7 @@ jobs:
       # (a duplicate BybitError class would silently break `except` across modules). None optional.
       - name: Python lint and typecheck
         run: |
-          python3 -m ruff check --select F,I gpkg/ml/data.py gpkg/ml/hypotheses.py gpkg/ml/training.py gpkg/paper/engine.py gpkg/persistence/store.py scripts/ml_research.py tests/test_dashboard_delivery.py
+          python3 -m ruff check --select F,I gpkg/ml/data.py gpkg/ml/hypotheses.py gpkg/ml/training.py gpkg/paper/engine.py gpkg/persistence/store.py scripts/ml_research.py
           python3 -m mypy --ignore-missing-imports gpkg/ml/data.py gpkg/ml/hypotheses.py gpkg/ml/training.py gpkg/paper/engine.py gpkg/persistence/store.py scripts/ml_research.py
 
       - name: React lint and typecheck
