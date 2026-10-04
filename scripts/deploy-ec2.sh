@@ -260,7 +260,7 @@ check_unit gigpilot-ml-l2.service
 check_unit gigpilot-ml-train.timer
 if ! sudo systemctl is-enabled --quiet gigpilot-ml-train.timer; then
   echo "ERROR: gigpilot-ml-train.timer is not enabled"
-  return 1 2>/dev/null || exit 3
+  exit 3
 fi
 if ! systemctl show gigpilot.service -p Environment --value | grep -q "GIGPILOT_FORCE_DISARM=1"; then
   echo "ERROR: GIGPILOT_FORCE_DISARM=1 is not present on gigpilot.service"
