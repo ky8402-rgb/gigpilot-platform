@@ -52,5 +52,11 @@ jobs:
           python3 tests/test_package_seams.py
           python3 tests/test_dashboard_delivery.py
 
+      # The deploy workflow runs the complete Python suite before touching EC2. PR CI must run the
+      # same suite or "green CI" can merge a change that is guaranteed to fail the release gate.
+      # The targeted scripts above remain because they provide clearer invariant-specific output.
+      - name: Full Python regression suite
+        run: python3 -m pytest tests/ -q --no-header
+
       - name: Production build
         run: npm run build
