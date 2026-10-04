@@ -133,7 +133,7 @@ class Executor:
     ) -> dict:
         qty_s = self._round_qty(symbol, qty)
         link = f"gp-{uuid.uuid4().hex[:26]}"
-        if self.adapter is not None:
+        if getattr(self, "adapter", None) is not None:
             await self.adapter.place_order(OrderRequest(
                 exchange=self.adapter.name,
                 symbol=symbol,
@@ -154,7 +154,7 @@ class Executor:
                 positionIdx=position_idx,
             )
         try:
-            if self.adapter is not None:
+            if getattr(self, "adapter", None) is not None:
                 await self.adapter.set_protection(
                     symbol,
                     Side.BUY if side == "Buy" else Side.SELL,
@@ -208,7 +208,7 @@ class Executor:
         opp = "Sell" if side == "Buy" else "Buy"
         try:
             link = f"gp-unwind-{uuid.uuid4().hex[:20]}"
-            if self.adapter is not None:
+            if getattr(self, "adapter", None) is not None:
                 await self.adapter.place_order(OrderRequest(
                     exchange=self.adapter.name,
                     symbol=symbol,
@@ -236,7 +236,7 @@ class Executor:
     async def close_market(self, symbol: str, side: str, qty_s: str, position_idx: int = 0):
         opp = "Sell" if side == "Buy" else "Buy"
         link = f"gp-close-{uuid.uuid4().hex[:20]}"
-        if self.adapter is not None:
+        if getattr(self, "adapter", None) is not None:
             return await self.adapter.place_order(OrderRequest(
                 exchange=self.adapter.name,
                 symbol=symbol,
