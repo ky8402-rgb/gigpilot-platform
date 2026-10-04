@@ -873,12 +873,23 @@ class GigPilot:
         if entry_px <= 0: return
         step = self.step_size.get(symbol, 0.0)
         if step <= 0: return
-        qty = math.floor((notional / entry_px) / step) * step
-        if qty <= 0: return
+        # Size through the executor's DECIMAL rounder, not `math.floor(x/step)*step`.
+        #
+        # In binary, 0.3/0.1 == 2.9999999999999996, so the float floor drops a whole extra step
+        # (0.3 -> 0.2, a 33% under-size) and the position no longer matches the risk the gate is
+        # about to approve for it. Delegating also removes a duplicated rounding rule: it lived both
+        # here and in the executor, and when a rule is written twice only one of them is right.
+        try:
+            qty_s = self.executor._round_qty(symbol, notional / entry_px)
+        except RuntimeError as e:
+            log.info("skip entry %s: %s", symbol, e)
+            METRICS.inc("gigpilot_entry_skips_total", reason="qty_rounding", symbol=symbol)
+            return
+        qty = float(qty_s)
         # Entry-time minimum-size eligibility. Submitting below `minOrderQty` is guaranteed to be
         # rejected by Bybit, so this is a clean pre-trade skip rather than a wasted round trip and a
         # logged exchange error. It is checked on ENTRY only — never on the exit/unwind path.
-        size_ok, size_reason = self.executor.check_entry_size(symbol, qty)
+        size_ok, size_reason = self.executor.check_entry_size(symbol, qty_s)
         if not size_ok:
             log.info("skip entry %s: %s", symbol, size_reason)
             METRICS.inc("gigpilot_entry_skips_total", reason=size_reason, symbol=symbol)
@@ -896,7 +907,8 @@ class GigPilot:
         log.info("ENTER %s %s qty=%s notional=%.2f net=%.2fbps tp=%.6f sl=%.6f",
                  est.side, symbol, qty, notional, est.net_bps, tp, sl)
         try:
-            res = await self.executor.open_protected(symbol, est.side, qty, tp, sl)
+            # `qty_s` (the exact decimal string) goes on the wire, not the float round-trip of it.
+            res = await self.executor.open_protected(symbol, est.side, qty_s, tp, sl)
         except Exception as e:
             log.error("entry failed %s: %s", symbol, e)
             METRICS.inc("gigpilot_entry_errors_total", symbol=symbol); return
@@ -1109,9 +1121,31 @@ async def api_auth_status(request: Request):
     return auth.status(auth.verify(extract_token(request) or ""))
 
 
+def _throttled_response(auth) -> Optional[JSONResponse]:
+    """429 + Retry-After when the login throttle is engaged.
+
+    Checked BEFORE any credential comparison, so a locked-out caller cannot even make the server do
+    PBKDF2 work. Returning 401 here would be wrong: it tells the caller "your guess was wrong" when
+    the truth is "stop guessing", and it invites the retry that the lockout exists to prevent.
+    """
+    allowed, retry_after = auth.throttle.check()
+    if allowed:
+        return None
+    return JSONResponse(
+        status_code=429,
+        headers={"Retry-After": str(retry_after)},
+        content={"success": False, "lockedOut": True, "retryAfterSeconds": retry_after,
+                 "error": f"Too many failed authentication attempts. Retry in {retry_after}s."},
+    )
+
+
 @app.post("/api/auth/login")
 async def api_auth_login(body: _LoginBody):
-    ok, token, err = get_owner_auth().login(
+    auth = get_owner_auth()
+    limited = _throttled_response(auth)
+    if limited is not None:
+        return limited
+    ok, token, err = auth.login(
         body.email, body.password, body.totpCode, body.emergencyPin
     )
     if not ok:
@@ -1123,6 +1157,9 @@ async def api_auth_login(body: _LoginBody):
 async def api_auth_provision(body: _LoginBody):
     """Start first-run setup. Gated on the break-glass PIN so it cannot be used to seize the account."""
     auth = get_owner_auth()
+    limited = _throttled_response(auth)
+    if limited is not None:
+        return limited
     if not auth.verify_emergency_pin(body.emergencyPin):
         return JSONResponse(status_code=401, content={"success": False, "error": "Invalid break-glass PIN."})
     return {"success": True, **auth.initiate_setup(body.email or None)}
@@ -1131,6 +1168,9 @@ async def api_auth_provision(body: _LoginBody):
 @app.post("/api/auth/setup")
 async def api_auth_setup(body: _SetupBody):
     auth = get_owner_auth()
+    limited = _throttled_response(auth)
+    if limited is not None:
+        return limited
     if not auth.verify_emergency_pin(body.emergencyPin):
         return JSONResponse(status_code=401, content={"success": False, "error": "Invalid break-glass PIN."})
     ok, token, err = auth.complete_setup(body.password, body.totpCode, body.email or None)

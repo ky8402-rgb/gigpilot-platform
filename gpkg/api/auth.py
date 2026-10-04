@@ -337,12 +337,106 @@ def _persist(path: Path, cfg: OwnerConfig) -> None:
         pass
 
 
+def _now_ms() -> int:
+    """Wall-clock milliseconds. Local to this module so it depends on nothing outside stdlib."""
+    return int(time.time() * 1000)
+
+
+@dataclass
+class _ThrottleEntry:
+    failures: int = 0
+    locked_until_ms: int = 0
+    last_failure_ms: int = 0
+
+
+class LoginThrottle:
+    """Failed-authentication throttle: the control that was missing ENTIRELY.
+
+    WHY THIS EXISTS
+    ---------------
+    `login`, `verify_totp` and `verify_emergency_pin` were all unbounded. That is a practical
+    attack, not a theoretical one:
+
+      * TOTP is 6 digits (~10^6) and the ±1 step window accepts THREE codes at once, so a single
+        request in the right window has a 3-in-10^6 chance — far too high when requests are free.
+      * The break-glass PIN is 8 hex characters (~4.3x10^9), but it is checked before anything else
+        and has no other cost.
+      * The password is compared with PBKDF2, which is slow FOR US but costs the attacker nothing
+        extra, because the server does the work.
+
+    Worse, the old code commented that the PIN is checked first "so a lockout is always recoverable"
+    — describing a lockout that did not exist. A control documented as present but absent in fact is
+    more dangerous than one plainly missing, because it stops anyone from adding it.
+
+    DESIGN CHOICES
+    --------------
+    * IN-PROCESS, NOT PERSISTED. The attacker is remote and cannot restart the service, so the
+      lockout lasts as long as the attack does. Persisting it would let an attacker write durable
+      state, locking the owner out of the kill switch — turning a defence into a denial of service.
+    * BOUNDED. The lock caps at `max_lock_ms`, so even a deliberate lockout cannot hold the owner
+      out for long, and a restart clears it.
+    * DECAYING WINDOW. Failures older than `window_ms` are forgotten, so an operator who mistypes
+      once a week never accumulates a lockout.
+    * KEYED GLOBALLY, DELIBERATELY. This is a single-owner account, so a per-IP key would let an
+      attacker evade the throttle simply by rotating source addresses. One shared counter is the
+      stronger choice here, and the bounded lock keeps that from becoming an easy DoS.
+    """
+
+    def __init__(self, max_failures: int = 5, base_lock_ms: int = 30_000,
+                 max_lock_ms: int = 300_000, window_ms: int = 900_000) -> None:
+        self.max_failures = max(1, int(max_failures))
+        self.base_lock_ms = max(0, int(base_lock_ms))
+        self.max_lock_ms = max(self.base_lock_ms, int(max_lock_ms))
+        self.window_ms = max(1, int(window_ms))
+        self._entries: dict[str, _ThrottleEntry] = {}
+
+    def _entry(self, key: str) -> _ThrottleEntry:
+        return self._entries.setdefault(key, _ThrottleEntry())
+
+    def check(self, key: str = "owner") -> tuple[bool, int]:
+        """(allowed, retry_after_seconds). Consulted BEFORE any credential comparison."""
+        e = self._entries.get(key)
+        if e is None:
+            return True, 0
+        now = _now_ms()
+        if e.locked_until_ms > now:
+            return False, max(1, int((e.locked_until_ms - now + 999) // 1000))
+        if e.last_failure_ms and (now - e.last_failure_ms) > self.window_ms:
+            self._entries.pop(key, None)
+        return True, 0
+
+    def record_failure(self, key: str = "owner") -> int:
+        """Count a failure and engage exponential backoff once the threshold is crossed."""
+        e = self._entry(key)
+        now = _now_ms()
+        if e.last_failure_ms and (now - e.last_failure_ms) > self.window_ms:
+            e.failures = 0
+        e.failures += 1
+        e.last_failure_ms = now
+        if e.failures >= self.max_failures:
+            over = e.failures - self.max_failures
+            e.locked_until_ms = now + min(self.base_lock_ms * (2 ** over), self.max_lock_ms)
+        return e.failures
+
+    def record_success(self, key: str = "owner") -> None:
+        self._entries.pop(key, None)
+
+    def snapshot(self, key: str = "owner") -> dict:
+        e = self._entries.get(key)
+        if e is None:
+            return {"failures": 0, "locked": False}
+        allowed, retry = self.check(key)
+        return {"failures": e.failures, "locked": not allowed, "retry_after_s": retry}
+
+
 class OwnerAuth:
     """Owns the single-owner credential and mints/validates session tokens."""
 
-    def __init__(self, config: Optional[OwnerConfig] = None) -> None:
+    def __init__(self, config: Optional[OwnerConfig] = None,
+                 throttle: Optional[LoginThrottle] = None) -> None:
         self.config = config if config is not None else _load_or_create_config()
         self._pending_totp_secret: Optional[str] = None
+        self.throttle = throttle or LoginThrottle()
 
     # -- first-run provisioning -----------------------------------------------------
     def initiate_setup(self, email: Optional[str] = None) -> dict:
@@ -384,11 +478,24 @@ class OwnerAuth:
         return True, self.mint(), ""
 
     def verify_emergency_pin(self, pin: str) -> bool:
+        """Constant-time break-glass PIN check, throttled.
+
+        This is reachable from the setup and provision routes, so it is a second brute-force surface
+        on the same 8-hex-character secret. An unlocked attempt is refused before any comparison.
+        """
+        allowed, _ = self.throttle.check()
+        if not allowed:
+            return False
         expected = (self.config.emergency_pin or "").strip()
         given = (pin or "").strip()
         if not expected or not given or len(expected) != len(given):
+            self.throttle.record_failure()
             return False
-        return hmac.compare_digest(expected, given)
+        if not hmac.compare_digest(expected, given):
+            self.throttle.record_failure()
+            return False
+        self.throttle.record_success()
+        return True
 
     @property
     def is_configured(self) -> bool:
@@ -429,17 +536,37 @@ class OwnerAuth:
         totp_code: str = "",
         emergency_pin: str = "",
     ) -> tuple[bool, str, str]:
-        """Returns (success, token, error)."""
+        """Returns (success, token, error).
+
+        THROTTLED. Every failure path records an attempt, and once the threshold is crossed further
+        attempts are refused without comparing any credential at all. Without this the 6-digit TOTP
+        (3 valid codes per window) and the 8-hex-char break-glass PIN were both grindable at HTTP
+        speed — the throttle is what turns an unbounded search space into a bounded one.
+        """
+        allowed, retry_after = self.throttle.check()
+        if not allowed:
+            return False, "", f"Too many failed attempts. Retry in {retry_after}s."
+
         if (email or "").strip().lower() != self.config.owner_email.strip().lower():
+            self.throttle.record_failure()
             return False, "", "Access denied: personal single-owner account."
 
-        # Break-glass PIN is checked first so a lockout is always recoverable, and it is compared in
-        # constant time against a secret that is never a hardcoded literal.
+        # Break-glass PIN, compared in constant time against a secret that is never a hardcoded
+        # literal.
+        #
+        # NOTE: this cannot act as a recovery path OUT of a lockout, and deliberately so. The
+        # `throttle.check()` guard above refuses every credential path once locked. If a correct PIN
+        # could clear the lockout, the PIN would BE the bypass: a locked-out attacker would simply
+        # keep grinding the 8-hex-character PIN, which is precisely the hole this throttle closes.
+        # Operator recovery is a service restart — it clears the in-process state by construction,
+        # and it is an action the remote attacker cannot take.
         if emergency_pin and self.config.emergency_pin:
             if _constant_time_eq(
                 emergency_pin.strip(), self.config.emergency_pin.strip()
             ) and len(emergency_pin.strip()) == len(self.config.emergency_pin.strip()):
+                self.throttle.record_success()
                 return True, self.mint(), ""
+            self.throttle.record_failure()
 
         if not self.is_configured:
             return False, "", "Owner account is not initialized yet. Complete initial setup first."
@@ -450,14 +577,17 @@ class OwnerAuth:
         if not _constant_time_eq(
             hash_password(password, self.config.password_salt), self.config.password_hash
         ):
+            self.throttle.record_failure()
             return False, "", "Invalid owner password."
 
         if not totp_code:
             return False, "", "Google Authenticator 6-digit code is required."
 
         if not verify_totp(totp_code, self.config.totp_secret):
+            self.throttle.record_failure()
             return False, "", "Invalid Google Authenticator code. Check your device clock."
 
+        self.throttle.record_success()
         return True, self.mint(), ""
 
 
