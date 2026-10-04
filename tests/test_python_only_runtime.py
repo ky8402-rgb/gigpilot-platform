@@ -42,6 +42,8 @@ def main() -> None:
         and ".runtime-test" not in p.parts
         and "tests" not in p.parts
         and "migration" not in p.parts
+        and "src" not in p.parts
+        and "dist" not in p.parts
         and str(p.relative_to(ROOT)) not in ALLOWED_FRONTEND_NODE_FILES
     }
 
