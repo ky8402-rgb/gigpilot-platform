@@ -247,7 +247,11 @@ PY
 
 sudo systemctl is-active --quiet gigpilot.service
 sudo systemctl is-active --quiet gigpilot-ml-l2.service
+sudo systemctl is-active --quiet gigpilot-ml-train.timer
 sudo systemctl is-enabled --quiet gigpilot-ml-train.timer
+systemctl show gigpilot.service -p Environment --value | grep -q "GIGPILOT_FORCE_DISARM=1"
+test -x /usr/local/bin/gigpilot
+/usr/local/bin/gigpilot ml audit-summary --db "$APP_DIR/.gigpilot-data/gigpilot.db" >/tmp/gigpilot-ml-audit.json
 if command -v pm2 >/dev/null 2>&1 && pm2 jlist >/tmp/pm2.json 2>/dev/null; then
   if grep -q '"name":"gigpilot"' /tmp/pm2.json || grep -q '"name":"worker"' /tmp/pm2.json; then
     echo "ERROR: legacy Node PM2 runtime still active."
