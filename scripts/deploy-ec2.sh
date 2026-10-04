@@ -125,6 +125,65 @@ LimitNOFILE=65536
 WantedBy=multi-user.target
 UNIT
 
+sudo tee /etc/systemd/system/gigpilot-ml-l2.service >/dev/null <<UNIT
+[Unit]
+Description=GigPilot historical liquidity snapshot collector
+After=network-online.target gigpilot.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=ubuntu
+WorkingDirectory=$APP_DIR
+EnvironmentFile=$APP_DIR/.env
+Environment=PYTHONUNBUFFERED=1
+ExecStart=$APP_DIR/.venv/bin/python3 $APP_DIR/scripts/ml_research.py collect-l2 --db $APP_DIR/.gigpilot-data/gigpilot.db
+Restart=always
+RestartSec=15
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=full
+ReadWritePaths=$APP_DIR/.gigpilot-data
+LimitNOFILE=4096
+
+[Install]
+WantedBy=multi-user.target
+UNIT
+
+sudo tee /etc/systemd/system/gigpilot-ml-train.service >/dev/null <<UNIT
+[Unit]
+Description=GigPilot historical ML ingestion and qualification
+After=network-online.target gigpilot.service
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=ubuntu
+WorkingDirectory=$APP_DIR
+EnvironmentFile=$APP_DIR/.env
+Environment=PYTHONUNBUFFERED=1
+ExecStart=$APP_DIR/.venv/bin/python3 $APP_DIR/scripts/ml_research.py ingest --db $APP_DIR/.gigpilot-data/gigpilot.db
+ExecStart=$APP_DIR/.venv/bin/python3 $APP_DIR/scripts/ml_research.py train --db $APP_DIR/.gigpilot-data/gigpilot.db
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=full
+ReadWritePaths=$APP_DIR/.gigpilot-data
+UNIT
+
+sudo tee /etc/systemd/system/gigpilot-ml-train.timer >/dev/null <<UNIT
+[Unit]
+Description=Periodic GigPilot ML retraining
+
+[Timer]
+OnBootSec=10min
+OnUnitActiveSec=6h
+Persistent=true
+Unit=gigpilot-ml-train.service
+
+[Install]
+WantedBy=timers.target
+UNIT
+
 sudo systemctl daemon-reload
 
 echo "Stopping legacy Node production processes before Python activation..."
@@ -136,8 +195,10 @@ if command -v pm2 >/dev/null 2>&1; then
   pm2 kill 2>/dev/null || true
 fi
 
-sudo systemctl enable gigpilot.service
+sudo systemctl enable gigpilot.service gigpilot-ml-l2.service gigpilot-ml-train.timer
 sudo systemctl restart gigpilot.service
+sudo systemctl restart gigpilot-ml-l2.service
+sudo systemctl start gigpilot-ml-train.service || true
 
 echo "Waiting for FastAPI..."
 HEALTHY=0
