@@ -241,6 +241,14 @@ class Store:
         ).fetchall()
         return [{"ts_ms": int(ts), **json.loads(payload)} for ts, payload in rows]
 
+    def ml_market_latest(self, symbol: str, kind: str, limit: int = 1000) -> list[dict]:
+        limit = max(1, min(int(limit), 10000))
+        rows = self._conn.execute(
+            "SELECT ts_ms,payload_json FROM ml_market_data WHERE symbol=? AND kind=? ORDER BY ts_ms DESC LIMIT ?",
+            (symbol, kind, limit),
+        ).fetchall()
+        return [{"ts_ms": int(ts), **json.loads(payload)} for ts, payload in reversed(rows)]
+
     def ml_market_counts(self, symbol: str, start_ms: int, end_ms: int) -> dict[str, int]:
         rows = self._conn.execute(
             "SELECT kind,COUNT(*) FROM ml_market_data WHERE symbol=? AND ts_ms>=? AND ts_ms<=? GROUP BY kind",
