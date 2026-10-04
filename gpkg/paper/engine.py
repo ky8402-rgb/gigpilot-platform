@@ -99,15 +99,15 @@ class PaperTradingEngine:
         breakout=0.0; breakout_side=None
         if mid>hi: breakout_side="Buy"; breakout=(mid/hi-1)*1e4
         elif mid<lo: breakout_side="Sell"; breakout=(lo/mid-1)*1e4
-        latest_funding=self.store.ml_market_range(symbol,"funding_8h",0,now_ms())[-1:]
-        latest_basis=self.store.ml_market_range(symbol,"basis_1m",0,now_ms())[-1:]
+        latest_funding=self.store.ml_market_latest(symbol,"funding_8h",1)
+        latest_basis=self.store.ml_market_latest(symbol,"basis_1m",1)
         funding=float(latest_funding[0].get("funding_bps",0.0)) if latest_funding else 0.0
         basis=float(latest_basis[0].get("basis_bps",0.0)) if latest_basis else 0.0
         side=breakout_side; score=0.0
         family=" ".join(model.model_types)
         if "funding_rate_carry_reversion" in family:
-            f_hist=self.store.ml_market_range(symbol,"funding_8h",max(0,now_ms()-90*86400000),now_ms())
-            b_hist=self.store.ml_market_range(symbol,"basis_1m",max(0,now_ms()-90*86400000),now_ms())[-5000:]
+            f_hist=self.store.ml_market_latest(symbol,"funding_8h",1000)
+            b_hist=self.store.ml_market_latest(symbol,"basis_1m",5000)
             f_scale=max(1.0,pstdev([float(x.get("funding_bps",0.0)) for x in f_hist]) if len(f_hist)>1 else 1.0)
             b_scale=max(1.0,pstdev([float(x.get("basis_bps",0.0)) for x in b_hist]) if len(b_hist)>1 else 1.0)
             score=-(0.65*funding/f_scale+0.35*basis/b_scale)
