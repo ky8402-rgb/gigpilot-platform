@@ -45,11 +45,7 @@ def main() -> None:
         and str(p.relative_to(ROOT)) not in ALLOWED_FRONTEND_NODE_FILES
     }
 
-    backend_node = sorted(
-        p for p in node_sources
-        if not p.startswith("src/")
-        or any(marker in Path(p).name.lower() for marker in BACKEND_MARKERS)
-    )
+    backend_node = sorted(node_sources)
     if backend_node:
         fail(f"production/backend Node sources remain: {backend_node}")
 
