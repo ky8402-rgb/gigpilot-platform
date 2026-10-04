@@ -1057,8 +1057,17 @@ class GigPilot:
                         "verified": e.verified,
                         "mean_net_bps": e.mean_net_bps,
                         "p_value": e.one_sided_p_value,
+                        "t_stat": e.t_stat,
+                        "oos_sharpe": e.oos_sharpe,
+                        "expected_net_edge_bps": e.expected_net_edge_bps,
                         "oos_trades": e.oos_trades,
                         "walk_forward_folds": e.walk_forward_folds,
+                        "feature_importance": e.feature_importance,
+                        "psi_baseline": e.psi_baseline,
+                        "training_start_ms": e.training_start_ms,
+                        "training_window_ms": e.training_window_ms,
+                        "model_types": list(e.model_types),
+                        "calibration_error": e.calibration_error,
                         "live_eligible": bool(
                             e.verified and e.state.value in ("CANARY", "CHAMPION")
                         ),
@@ -1070,6 +1079,7 @@ class GigPilot:
                     if e.verified and e.state.value in ("CANARY", "CHAMPION")
                 ),
                 "recent_events": self.store.ml_events(limit=20),
+                "research_audits": self.store.ml_research_audits(limit=20),
             },
             "reconciliation": {"healthy": self.reconciler.healthy, "last_error": self.reconciler.last_error, "last_run_ms": self.reconciler.last_run_ms},
             "watchdog": self._watchdog.snapshot(),
