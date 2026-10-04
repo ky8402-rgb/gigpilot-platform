@@ -66,7 +66,21 @@ class MarketState:
         self.ts_book_ms = now_ms()
 
     def depth_notional(self, side: str, levels: int) -> float:
-        book = self.bids if side == "Buy" else self.asks
+        """Notional available on the side a `side` order would actually CONSUME.
+
+        A Buy takes from the ASK book and a Sell takes from the BID book — that is the same
+        convention the edge model uses when it prices entry (`asks[0]` for a Buy). This previously
+        read `bids if side == "Buy"`, i.e. it measured the book on the OPPOSITE side of the trade.
+
+        That inverted the liquidity gate: a Buy was admitted only when the BID book was deep, even
+        though the price it pays and the size it can absorb are set by the ASK book. A thin ask book
+        behind a deep bid book — the normal shape in a selloff — would pass the gate and then sweep
+        through levels the cost model never priced.
+
+        Deepening or thinning the book on the opposite side must not change whether a trade is
+        admissible; see the regression tests in tests/test_cost_model.py.
+        """
+        book = self.asks if side == "Buy" else self.bids
         return sum(p * s for p, s in book[:levels])
 
     def imbalance(self, levels: int) -> float:

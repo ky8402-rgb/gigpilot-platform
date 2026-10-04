@@ -72,6 +72,19 @@ class Config:
     edge_hurdle_bps: float = 3.0
     fee_ceiling_bps: float = 8.0
     slippage_factor: float = 0.5
+    # Bybit's /v5/account/fee-rate reports the fee PER SIDE. A completed trade pays it on entry AND
+    # on exit, so the edge model must charge it twice or it understates the cost of every round trip
+    # by one full fee unit (~5.5 bps at VIP0 taker). Kept as a knob rather than a literal so the
+    # multiplier is explicit and testable.
+    fee_round_trip_multiple: float = 2.0
+    # Adverse-selection cost as a fraction of the quoted spread.
+    #
+    # NOT CALIBRATED — there is no live fill data to calibrate against, so this is a deliberately
+    # conservative structural term rather than a measured one. It is expressed as a fraction of the
+    # spread because the spread is exchange-derived (not invented) and bounds the cost of being
+    # adversely filled for a taker. Set to 0.0 ONLY with evidence that adverse selection is
+    # immaterial; leaving it unset previously meant the term was silently absent from the model.
+    adverse_selection_factor: float = 0.5
     max_leverage: float = 3.0
     max_symbol_notional_pct: float = 15.0
     max_gross_notional_pct: float = 40.0
@@ -112,6 +125,8 @@ class Config:
             symbols=syms,
             arm=os.getenv("GIGPILOT_ARM", "0") == "1",
             edge_hurdle_bps=float(os.getenv("GIGPILOT_HURDLE_BPS", "3.0")),
+            fee_round_trip_multiple=float(os.getenv("GIGPILOT_FEE_ROUND_TRIP_MULTIPLE", "2.0")),
+            adverse_selection_factor=float(os.getenv("GIGPILOT_ADVERSE_SELECTION_FACTOR", "0.5")),
             max_leverage=float(os.getenv("GIGPILOT_MAX_LEV", "3.0")),
             max_daily_loss_pct=float(os.getenv("GIGPILOT_MAX_DAILY_LOSS", "1.5")),
             min_arm_capital_usdt=float(os.getenv("GIGPILOT_MIN_ARM_CAPITAL_USDT", "67.0")),

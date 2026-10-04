@@ -139,9 +139,17 @@ class FakeREST:
 def make_engine(tmp_path):
     """Factory: build a real GigPilot bound to a FakeREST, with a warm, freshly-stamped market."""
 
+    # `fair_shift_bps` default is 20.0, not 10.0.
+    #
+    # These fixtures must clear the FULL corrected cost stack: round-trip fee (2x the per-side rate),
+    # spread, slippage, funding, AND adverse selection. At 10.0 the synthetic edge was ~5.5 bps
+    # against ~6 bps of true cost, so it only ever cleared because the fee was being charged once and
+    # adverse selection was absent entirely — i.e. the fixture was calibrated against the very bug
+    # that was fixed. Raising the modelled edge is the honest correction; lowering the hurdle or the
+    # cost terms would have re-buried the defect.
     def _make(*, equity: float = 500.0, trade_permission: bool = True, taker_fee: float = 0.0001,
               armed_env: bool = False, warm: bool = True, hurdle_bps: float = 1.0,
-              fair_shift_bps: float = 10.0, symbols=None):
+              fair_shift_bps: float = 20.0, symbols=None):
         import gigpilot as gp
         from gpkg.core.config import Config
 
