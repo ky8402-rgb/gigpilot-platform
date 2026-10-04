@@ -25,6 +25,7 @@ import {
 } from 'lucide-react';
 import {
   GigPilotState,
+  GigPilotMLAudit,
   fetchGigPilotState,
   armGigPilot,
   disarmGigPilot,
@@ -349,6 +350,20 @@ export const GigPilotFuturesView: React.FC = () => {
             <div className="max-h-56 overflow-y-auto border border-zinc-800 rounded-lg"><table className="w-full text-left text-xs font-mono"><thead><tr className="text-slate-500 border-b border-zinc-800"><th className="p-2">Time</th><th className="p-2">Symbol</th><th className="p-2">Rejected paper decision</th></tr></thead><tbody>
             {state?.paper?.rejections?.length ? state.paper.rejections.slice().reverse().map((ev,i)=><tr key={i} className="border-b border-zinc-800/50"><td className="p-2 text-slate-500 whitespace-nowrap">{ev.ts}</td><td className="p-2 text-slate-200">{ev.symbol}</td><td className="p-2 text-amber-300">{ev.reason}</td></tr>) : <tr><td colSpan={3} className="p-4 text-center text-slate-500">No rejected paper decisions recorded yet.</td></tr>}
             </tbody></table></div>
+          </div>
+
+          {/* ML Research & Audit Log */}
+          <div className="p-5 bg-zinc-900/90 border border-cyan-500/20 rounded-2xl">
+            <div className="flex items-center justify-between mb-3">
+              <div className="flex items-center gap-2"><Database className="w-5 h-5 text-cyan-400" /><h3 className="text-sm font-bold font-mono text-white uppercase">ML Research &amp; Audit Log</h3></div>
+              <span className="text-[10px] font-mono text-slate-500">Strict gates: net ≥ 8 bps · t-stat &gt; 3 · OOS Sharpe &gt; 1.5</span>
+            </div>
+            <div className="overflow-x-auto max-h-80 overflow-y-auto border border-zinc-800 rounded-lg">
+              <table className="w-full text-left text-[11px] font-mono"><thead className="sticky top-0 bg-zinc-900 text-slate-500"><tr><th className="p-2">Family</th><th className="p-2">Gross</th><th className="p-2">Fees</th><th className="p-2">2×Peak</th><th className="p-2">Impact</th><th className="p-2">Net</th><th className="p-2">t</th><th className="p-2">Sharpe</th><th className="p-2">Gate</th><th className="p-2">Reason</th></tr></thead><tbody>
+                {(state?.ml?.research_audits || []).map((a:any, i:number) => { const p=a.payload||{}; const c=p.cost_deductions||{}; const net=Number(p.net_edge_bps??p.mean_net_bps??0); const t=Number(p.t_stat??0); const sh=Number(p.oos_sharpe??0); const gate=Boolean(p.gate_outcome??(a.outcome==='VERIFIED')); return <tr key={a.model_id+'-'+i} className="border-b border-zinc-800/50"><td className="p-2 text-cyan-300">{p.model_family||p.family||a.model_id}</td><td className="p-2">{fmt(p.gross_edge_bps,2)}</td><td className="p-2">{fmt(c.fees_bps,2)}</td><td className="p-2">{fmt(c.two_x_peak_spread_bps??c.spread_bps,2)}</td><td className="p-2">{fmt(c.modeled_impact_bps??c.slippage_bps,2)}</td><td className={`p-2 font-bold ${net>=8?'text-emerald-300':'text-amber-300'}`}>{fmt(net,2)}</td><td className="p-2">{fmt(t,2)}</td><td className="p-2">{fmt(sh,2)}</td><td className={`p-2 font-bold ${gate?'text-emerald-400':'text-rose-400'}`}>{gate?'PASS':'REJECT'}</td><td className="p-2 text-slate-400 max-w-[320px]">{a.reason}</td></tr> })}
+                {!state?.ml?.research_audits?.length && <tr><td colSpan={10} className="p-5 text-center text-slate-500">Awaiting ML research audits…</td></tr>}
+              </tbody></table>
+            </div>
           </div>
 
           {/* 3. Real Net Edge Engine Radar */}
