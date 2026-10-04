@@ -38,6 +38,22 @@ class Store:
             realized_pnl REAL DEFAULT 0, fees REAL DEFAULT 0);
         CREATE INDEX IF NOT EXISTS ix_trades_open ON trades(status, symbol);
         CREATE TABLE IF NOT EXISTS kv (k TEXT PRIMARY KEY, v TEXT NOT NULL);
+        CREATE TABLE IF NOT EXISTS ml_model_evidence (
+            model_id TEXT PRIMARY KEY,
+            state TEXT NOT NULL,
+            verified INTEGER NOT NULL CHECK(verified IN (0,1)),
+            evidence_json TEXT NOT NULL,
+            updated_ms INTEGER NOT NULL);
+        CREATE TABLE IF NOT EXISTS ml_model_events (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            ts_ms INTEGER NOT NULL,
+            model_id TEXT NOT NULL,
+            from_state TEXT,
+            to_state TEXT NOT NULL,
+            reason TEXT NOT NULL,
+            evidence_json TEXT NOT NULL);
+        CREATE INDEX IF NOT EXISTS ix_ml_model_events_model
+            ON ml_model_events(model_id, ts_ms);
         """)
         self._conn.commit()
 
@@ -118,6 +134,104 @@ class Store:
     def kv_get(self, k: str) -> Optional[str]:
         r = self._conn.execute("SELECT v FROM kv WHERE k=?", (k,)).fetchone()
         return r[0] if r else None
+
+    def ml_upsert_evidence(
+        self,
+        model_id: str,
+        state: str,
+        verified: bool,
+        evidence: dict,
+        *,
+        reason: str,
+        expected_from_state: Optional[str] = None,
+    ) -> None:
+        """Atomically persist current ML evidence and append its transition audit record.
+
+        expected_from_state is an optimistic-concurrency guard. A stale promoter/rollback worker
+        cannot overwrite a newer lifecycle decision.
+        """
+        if not model_id or not state or not reason:
+            raise ValueError("model_id, state and reason are required")
+        payload = json.dumps(evidence, sort_keys=True, separators=(",", ":"), default=str)
+        ts = now_ms()
+        with self._conn:
+            row = self._conn.execute(
+                "SELECT state FROM ml_model_evidence WHERE model_id=?", (model_id,)
+            ).fetchone()
+            current = row[0] if row else None
+            if expected_from_state is not None and current != expected_from_state:
+                raise RuntimeError(
+                    f"stale ML transition for {model_id}: expected {expected_from_state}, found {current}"
+                )
+            self._conn.execute(
+                """INSERT INTO ml_model_evidence(model_id,state,verified,evidence_json,updated_ms)
+                   VALUES(?,?,?,?,?)
+                   ON CONFLICT(model_id) DO UPDATE SET
+                       state=excluded.state,
+                       verified=excluded.verified,
+                       evidence_json=excluded.evidence_json,
+                       updated_ms=excluded.updated_ms""",
+                (model_id, state, 1 if verified else 0, payload, ts),
+            )
+            self._conn.execute(
+                """INSERT INTO ml_model_events(
+                       ts_ms,model_id,from_state,to_state,reason,evidence_json)
+                   VALUES(?,?,?,?,?,?)""",
+                (ts, model_id, current, state, reason, payload),
+            )
+
+    def ml_get_evidence(self, model_id: str) -> Optional[dict]:
+        row = self._conn.execute(
+            "SELECT state,verified,evidence_json,updated_ms FROM ml_model_evidence WHERE model_id=?",
+            (model_id,),
+        ).fetchone()
+        if row is None:
+            return None
+        evidence = json.loads(row[2])
+        return {
+            "model_id": model_id,
+            "state": row[0],
+            "verified": bool(row[1]),
+            "evidence": evidence,
+            "updated_ms": int(row[3]),
+        }
+
+    def ml_list_evidence(self) -> list[dict]:
+        rows = self._conn.execute(
+            """SELECT model_id,state,verified,evidence_json,updated_ms
+               FROM ml_model_evidence ORDER BY updated_ms DESC, model_id"""
+        ).fetchall()
+        return [{
+            "model_id": row[0],
+            "state": row[1],
+            "verified": bool(row[2]),
+            "evidence": json.loads(row[3]),
+            "updated_ms": int(row[4]),
+        } for row in rows]
+
+    def ml_events(self, model_id: Optional[str] = None, limit: int = 100) -> list[dict]:
+        limit = max(1, min(int(limit), 1000))
+        if model_id:
+            rows = self._conn.execute(
+                """SELECT ts_ms,model_id,from_state,to_state,reason,evidence_json
+                   FROM ml_model_events WHERE model_id=?
+                   ORDER BY id DESC LIMIT ?""",
+                (model_id, limit),
+            ).fetchall()
+        else:
+            rows = self._conn.execute(
+                """SELECT ts_ms,model_id,from_state,to_state,reason,evidence_json
+                   FROM ml_model_events ORDER BY id DESC LIMIT ?""",
+                (limit,),
+            ).fetchall()
+        return [{
+            "ts_ms": int(row[0]),
+            "model_id": row[1],
+            "from_state": row[2],
+            "to_state": row[3],
+            "reason": row[4],
+            "evidence": json.loads(row[5]),
+        } for row in rows]
 
     def realized_today(self) -> float:
         """Return exchange-authoritative net closed PnL since UTC midnight.
