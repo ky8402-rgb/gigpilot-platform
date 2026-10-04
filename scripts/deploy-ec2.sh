@@ -245,13 +245,34 @@ if not x.get("autonomousEngine",{}).get("reachable"):
 print("FastAPI exact-SHA health verification passed")
 PY
 
-sudo systemctl is-active --quiet gigpilot.service
-sudo systemctl is-active --quiet gigpilot-ml-l2.service
-sudo systemctl is-active --quiet gigpilot-ml-train.timer
-sudo systemctl is-enabled --quiet gigpilot-ml-train.timer
-systemctl show gigpilot.service -p Environment --value | grep -q "GIGPILOT_FORCE_DISARM=1"
+check_unit() {
+  local unit="$1"
+  if ! sudo systemctl is-active --quiet "$unit"; then
+    echo "ERROR: required unit is not active: $unit"
+    sudo systemctl status "$unit" --no-pager || true
+    sudo journalctl -u "$unit" -n 80 --no-pager || true
+    return 1
+  fi
+  echo "HEALTHY: $unit active"
+}
+check_unit gigpilot.service
+check_unit gigpilot-ml-l2.service
+check_unit gigpilot-ml-train.timer
+if ! sudo systemctl is-enabled --quiet gigpilot-ml-train.timer; then
+  echo "ERROR: gigpilot-ml-train.timer is not enabled"
+  return 1 2>/dev/null || exit 3
+fi
+if ! systemctl show gigpilot.service -p Environment --value | grep -q "GIGPILOT_FORCE_DISARM=1"; then
+  echo "ERROR: GIGPILOT_FORCE_DISARM=1 is not present on gigpilot.service"
+  systemctl show gigpilot.service -p Environment --value || true
+  exit 3
+fi
 test -x /usr/local/bin/gigpilot
-/usr/local/bin/gigpilot ml audit-summary --db "$APP_DIR/.gigpilot-data/gigpilot.db" >/tmp/gigpilot-ml-audit.json
+if ! /usr/local/bin/gigpilot ml audit-summary --db "$APP_DIR/.gigpilot-data/gigpilot.db" >/tmp/gigpilot-ml-audit.json; then
+  echo "ERROR: ML audit-summary CLI failed"
+  cat /tmp/gigpilot-ml-audit.json 2>/dev/null || true
+  exit 3
+fi
 if command -v pm2 >/dev/null 2>&1 && pm2 jlist >/tmp/pm2.json 2>/dev/null; then
   if grep -q '"name":"gigpilot"' /tmp/pm2.json || grep -q '"name":"worker"' /tmp/pm2.json; then
     echo "ERROR: legacy Node PM2 runtime still active."
