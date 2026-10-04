@@ -120,9 +120,14 @@ class Store:
         return r[0] if r else None
 
     def realized_today(self) -> float:
+        """Return exchange-authoritative net closed PnL since UTC midnight.
+
+        Bybit closedPnl already includes opening/closing trading fees and funding. The separate
+        fees column is retained for attribution only and must not be deducted a second time.
+        """
         midnight = int(datetime.now(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0).timestamp() * 1000)
         r = self._conn.execute(
-            "SELECT COALESCE(SUM(realized_pnl - fees),0) FROM trades WHERE status='closed' AND exit_ts_ms>=?",
+            "SELECT COALESCE(SUM(realized_pnl),0) FROM trades WHERE status='closed' AND exit_ts_ms>=?",
             (midnight,),
         ).fetchone()
         return f(r[0] if r else 0)
