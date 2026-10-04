@@ -209,7 +209,14 @@ class BybitAdapter(ExchangeAdapter):
     async def closed_pnl(self, limit: int = 100) -> list[Fill]:
         out: list[Fill] = []
         for c in await self.rest.closed_pnl(limit=limit):
-            fee = float(c.get("execFee") or 0.0)
+            # Closed-PnL now exposes full round-trip open/close fees. Preserve both costs through
+            # the unified Fill instead of falling back to a per-execution fee and understating
+            # realised trading cost.
+            open_fee = float(c.get("openFee") or c.get("cumEntryFee") or 0.0)
+            close_fee = float(c.get("closeFee") or c.get("cumExitFee") or 0.0)
+            fee = open_fee + close_fee
+            if fee == 0.0:
+                fee = float(c.get("execFee") or 0.0)
             out.append(Fill(
                 exchange=self.name,
                 symbol=c.get("symbol", ""),
