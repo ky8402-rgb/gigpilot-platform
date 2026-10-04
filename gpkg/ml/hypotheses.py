@@ -41,6 +41,7 @@ def _feature_rows(store: Store, symbol: str, start_ms: int, end_ms: int, use_l2:
     kl = store.ml_market_range(symbol, "kline_1m", start_ms, end_ms)
     funding = store.ml_market_range(symbol, "funding_8h", start_ms, end_ms)
     basis = store.ml_market_range(symbol, "basis_1m", start_ms, end_ms)
+    fi = bi = 0; current_funding = current_basis = 0.0
     books = store.ml_market_range(symbol, "orderbook_l2", start_ms, end_ms) if use_l2 else []
     aligned_books = align_point_in_time(kl, books) if books else []
     book_by_ts = {int(r["ts_ms"]): r["book"] for r in aligned_books}
@@ -59,8 +60,12 @@ def _feature_rows(store: Store, symbol: str, start_ms: int, end_ms: int, use_l2:
         vol_history = vol_series[max(0, len(vol_series) - 239):]
         vol_pct = sum(1 for x in vol_history if x <= vol) / max(len(vol_history), 1) if vol_history else 0.5
         vol_series.append(vol)
-        f = _asof_value(funding, int(row["ts_ms"]), "funding_bps")
-        b = _asof_value(basis, int(row["ts_ms"]), "basis_bps")
+        ts = int(row["ts_ms"])
+        while fi < len(funding) and int(funding[fi]["ts_ms"]) <= ts:
+            current_funding = float(funding[fi].get("funding_bps", 0.0)); fi += 1
+        while bi < len(basis) and int(basis[bi]["ts_ms"]) <= ts:
+            current_basis = float(basis[bi].get("basis_bps", 0.0)); bi += 1
+        f = current_funding; b = current_basis
         rec = {
             "ts_ms": int(row["ts_ms"]), "close": close, "volume": float(row.get("volume", 0.0)),
             "funding_bps": f, "basis_bps": b, "vol_bps": vol, "vol_percentile": vol_pct,
