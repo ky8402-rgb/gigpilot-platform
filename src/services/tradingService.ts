@@ -873,7 +873,12 @@ export interface GigPilotState {
   live_execution_policy?: string;
   paper?: { enabled:boolean; real_capital_execution:boolean; starting_equity:number; synthetic_equity:number; realized_pnl:number; unrealized_pnl:number; active_positions:GigPilotPosition[]; closed_trades:number; wins:number; win_rate:number; realized_slippage_bps:number; fills:number; rejections:Array<{ts:string;ts_ms:number;symbol:string;reason:string;[key:string]:any}>; model?:string|null };
   ops?: { services:Record<string,{name:string;active:boolean;state:string;enabled:string}>; l2_buffer:{rows:number;first_ts_ms?:number|null;last_ts_ms?:number|null;span_ms:number;db_bytes:number;disk_total_bytes:number;disk_used_bytes:number;disk_free_bytes:number;disk_used_pct:number} };
-  ml?: any;
+  ml?: {
+    research_audits?: Array<{
+      ts_ms:number; model_id:string; outcome:string; reason:string; payload?:any;
+    }>;
+    latest_audit?: any;
+  };
 }
 
 export async function fetchGigPilotState(): Promise<GigPilotState> {
@@ -940,3 +945,22 @@ export async function triggerReconciliationAudit(autoHeal: boolean = true): Prom
 }
 
 
+
+export interface GigPilotMLAudit {
+  ts_ms: number;
+  model_id: string;
+  outcome: string;
+  reason: string;
+  model_family: string;
+  gross_edge_bps: number;
+  cost_deductions: { fees_bps:number; two_x_peak_spread_bps:number; modeled_impact_bps:number };
+  net_edge_bps: number;
+  t_stat: number;
+  oos_sharpe: number;
+  gate_outcome: boolean;
+  gate_thresholds: { net_edge_bps:number; t_stat:number; oos_sharpe:number };
+}
+
+export async function fetchMLAuditLatest(limit = 50): Promise<{success:boolean; audits:GigPilotMLAudit[]}> {
+  return fetchWithFailover('/ml/audit/latest?limit=' + encodeURIComponent(String(limit)));
+}
