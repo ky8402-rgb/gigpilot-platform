@@ -371,3 +371,10 @@ def register_validated_candidate(store: Store, registry, result: TrainingResult)
     registry.persist_evidence(evidence, reason="strict_oos_validation")
     if result.verified:
         registry.transition(result.model_id, ModelState.PAPER, reason="historical_oos_passed_paper_admission")
+
+
+def train_hypotheses(store: Store, symbol: str, *, days: int = 90, taker_fee_bps: float = 5.5,
+                     end_ms: int | None = None):
+    """Run the funding/regime hypothesis families through the same purged OOS trainer contract."""
+    from gpkg.ml.hypotheses import evaluate_hypotheses
+    return evaluate_hypotheses(store, symbol, days=days, taker_fee_bps=taker_fee_bps, end_ms=end_ms)
