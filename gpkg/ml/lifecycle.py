@@ -244,11 +244,24 @@ def promote_challenger(
     *,
     min_improvement_bps: float = 0.0,
 ) -> PromotionDecision:
-    """A verified challenger advances only to CANARY, never directly to full champion."""
+    """Approve a verified challenger for PAPER evaluation only.
+
+    Out-of-sample validation is necessary but not sufficient for real capital. A challenger must
+    first survive paper evaluation, after which the durable lifecycle registry may advance PAPER to
+    CANARY. This function therefore never authorizes a live state.
+    """
 
     if not challenger.verified:
         return PromotionDecision(False, ModelState.RESEARCH, challenger.verification_reason, challenger,
                                  champion.model_id if champion else None)
+    if challenger.state is not ModelState.VALIDATED:
+        return PromotionDecision(
+            False,
+            challenger.state,
+            f"paper admission requires VALIDATED state, found {challenger.state.value}",
+            challenger,
+            champion.model_id if champion else None,
+        )
     if champion and champion.verified:
         improvement = challenger.mean_net_bps - champion.mean_net_bps
         if improvement <= min_improvement_bps:
@@ -257,8 +270,13 @@ def promote_challenger(
                 f"challenger net edge improvement {improvement:.4f} bps <= {min_improvement_bps:.4f}",
                 challenger, champion.model_id,
             )
-    return PromotionDecision(True, ModelState.CANARY, "verified challenger may enter canary",
-                             challenger, champion.model_id if champion else None)
+    return PromotionDecision(
+        True,
+        ModelState.PAPER,
+        "verified challenger may enter paper evaluation; live capital remains prohibited",
+        challenger,
+        champion.model_id if champion else None,
+    )
 
 
 def population_stability_index(
