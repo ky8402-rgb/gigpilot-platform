@@ -25,7 +25,6 @@ import {
 } from 'lucide-react';
 import {
   GigPilotState,
-  GigPilotMLAudit,
   fetchGigPilotState,
   armGigPilot,
   disarmGigPilot,
