@@ -11,7 +11,14 @@ from statistics import mean, pstdev
 
 from gpkg.core.clock import now_ms
 from gpkg.ml.data import align_point_in_time
-from gpkg.ml.lifecycle import CostBreakdown, ModelEvidence, ModelState, NetTrade, PurgedWalkForward, ValidationConfig, evaluate_candidate
+from gpkg.ml.lifecycle import (
+    CostBreakdown,
+    ModelEvidence,
+    NetTrade,
+    PurgedWalkForward,
+    ValidationConfig,
+    evaluate_candidate,
+)
 from gpkg.persistence.store import Store
 
 
