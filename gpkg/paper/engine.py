@@ -7,7 +7,7 @@ from dataclasses import dataclass
 from statistics import pstdev
 from typing import Any
 from gpkg.core.clock import now_iso, now_ms
-from gpkg.ml.lifecycle import ModelState
+from gpkg.ml.lifecycle import ModelEvidence, ModelState
 from gpkg.persistence.store import Store
 
 
@@ -22,9 +22,13 @@ class PaperTradingEngine:
         self.store=store; self.registry=registry; self.markets=markets; self.fee_rate_bps=fee_rate_bps
         self.hurdle_bps=max(8.0,float(hurdle_bps)); self.stale_ms=max(100,int(stale_ms))
         self.starting_equity=max(100.0,float(starting_equity))
-        self.bars={s:deque(maxlen=360) for s in markets}; self.positions={}
-        self.rejections=deque(maxlen=100); self._last_book_persist_ms={}; self._last_eval_ms={}; self._last_reject={}
-        self._model_cache=(0,None)
+        self.bars: dict[str, deque[dict[str, Any]]] = {s: deque(maxlen=360) for s in markets}
+        self.positions: dict[str, PaperPosition] = {}
+        self.rejections: deque[dict[str, Any]] = deque(maxlen=100)
+        self._last_book_persist_ms: dict[str, int] = {}
+        self._last_eval_ms: dict[str, int] = {}
+        self._last_reject: dict[tuple[str, str], int] = {}
+        self._model_cache: tuple[int, ModelEvidence | None] = (0, None)
 
     def warmup(self):
         end=now_ms(); start=end-2*86400000
@@ -39,7 +43,7 @@ class PaperTradingEngine:
             try:self.starting_equity=max(100.0,float(v))
             except ValueError:pass
 
-    def _paper_model(self):
+    def _paper_model(self) -> ModelEvidence | None:
         ts=now_ms(); cached_at,cached=self._model_cache
         if ts-cached_at<10000:return cached
         xs=[e for e in self.registry.list() if e.verified and e.state is ModelState.PAPER]
