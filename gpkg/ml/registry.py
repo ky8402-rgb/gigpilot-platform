@@ -50,6 +50,10 @@ class ModelRegistry:
     def __init__(self, store: Store, metrics: Metrics | None = None):
         self.store = store
         self.metrics = metrics
+        # Rehydrate gauges after restart without fabricating lifecycle event counters.
+        if self.metrics:
+            for evidence in self.list():
+                self._set_gauges(evidence)
 
     def get(self, model_id: str) -> ModelEvidence | None:
         rec = self.store.ml_get_evidence(model_id)
@@ -139,7 +143,7 @@ class ModelRegistry:
         if current is ModelState.PAPER and target is ModelState.CHAMPION:
             raise ValueError("CANARY stage is mandatory before CHAMPION")
 
-    def _metrics(self, evidence: ModelEvidence, event: str) -> None:
+    def _set_gauges(self, evidence: ModelEvidence) -> None:
         if not self.metrics:
             return
         self.metrics.set("gigpilot_ml_model_verified", 1 if evidence.verified else 0, model=evidence.model_id)
@@ -150,4 +154,9 @@ class ModelRegistry:
         )
         self.metrics.set("gigpilot_ml_model_mean_net_bps", evidence.mean_net_bps, model=evidence.model_id)
         self.metrics.set("gigpilot_ml_model_p_value", evidence.one_sided_p_value, model=evidence.model_id)
+
+    def _metrics(self, evidence: ModelEvidence, event: str) -> None:
+        if not self.metrics:
+            return
+        self._set_gauges(evidence)
         self.metrics.inc("gigpilot_ml_lifecycle_events_total", model=evidence.model_id, event=event)
