@@ -136,30 +136,6 @@ class BybitWS:
                        asyncio.create_task(self._private_loop(), name="ws-private")]
 
 
-    async def _watchdog_loop(self):
-        """Supervise critical loops without ever auto-arming after a crash."""
-        await asyncio.sleep(2)
-        while not self._stop.is_set():
-            for idx, task in enumerate(list(self._tasks)):
-                if task.done() and task.get_name() != "watchdog" and not self._stop.is_set():
-                    name = task.get_name()
-                    try:
-                        exc = task.exception()
-                    except asyncio.CancelledError:
-                        exc = None
-                    if exc is None and not self._stop.is_set():
-                        exc = RuntimeError("task exited without an exception")
-                    if self._watchdog.failure(name, exc):
-                        await asyncio.sleep(self._watchdog.restart_delay_s)
-                        if self._stop.is_set() or self._watchdog.circuit_open:
-                            continue
-                        factory = self._task_factories.get(name)
-                        if factory is not None:
-                            self._tasks[idx] = asyncio.create_task(factory(), name=name)
-                            METRICS.inc("gigpilot_watchdog_restarts_total", task=name)
-                            self.store.journal("WATCHDOG_RESTART", None, {"task": name})
-            await asyncio.sleep(1)
-
     async def stop(self):
         self._stop.set()
         for t in self._tasks: t.cancel()
@@ -632,6 +608,30 @@ class GigPilot:
             for name, factory in self._task_factories.items()
         ]
         self._tasks.append(asyncio.create_task(self._watchdog_loop(), name="watchdog"))
+
+    async def _watchdog_loop(self):
+        """Supervise critical loops without ever auto-arming after a crash."""
+        await asyncio.sleep(2)
+        while not self._stop.is_set():
+            for idx, task in enumerate(list(self._tasks)):
+                if task.done() and task.get_name() != "watchdog" and not self._stop.is_set():
+                    name = task.get_name()
+                    try:
+                        exc = task.exception()
+                    except asyncio.CancelledError:
+                        exc = None
+                    if exc is None and not self._stop.is_set():
+                        exc = RuntimeError("task exited without an exception")
+                    if self._watchdog.failure(name, exc):
+                        await asyncio.sleep(self._watchdog.restart_delay_s)
+                        if self._stop.is_set() or self._watchdog.circuit_open:
+                            continue
+                        factory = self._task_factories.get(name)
+                        if factory is not None:
+                            self._tasks[idx] = asyncio.create_task(factory(), name=name)
+                            METRICS.inc("gigpilot_watchdog_restarts_total", task=name)
+                            self.store.journal("WATCHDOG_RESTART", None, {"task": name})
+            await asyncio.sleep(1)
 
     async def stop(self):
         self._stop.set()
