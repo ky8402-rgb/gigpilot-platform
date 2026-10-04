@@ -3,11 +3,12 @@ from __future__ import annotations
 import math
 from collections import deque
 from dataclasses import dataclass
-from typing import Any
 from statistics import pstdev
+from typing import Any
 from gpkg.core.clock import now_iso, now_ms
 from gpkg.ml.lifecycle import ModelState
 from gpkg.persistence.store import Store
+
 
 @dataclass
 class PaperPosition:
