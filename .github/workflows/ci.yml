@@ -30,8 +30,15 @@ jobs:
       - name: Typecheck
         run: npm run test
 
+      # BOTH files. The gates below exercise FastAPI TestClient, so they need test-only packages
+      # (httpx, pytest). Installing only requirements.txt previously "worked" by accident: httpx
+      # arrived transitively via google-genai, so removing that genuinely-unused package exposed a
+      # phantom dependency and broke CI. Declaring it here keeps a test framework out of the runtime
+      # image while making the gate's real requirements explicit.
       - name: Install Python dependencies
-        run: python3 -m pip install --quiet -r requirements.txt
+        run: |
+          python3 -m pip install --quiet -r requirements.txt
+          python3 -m pip install --quiet -r requirements-dev.txt
 
       # Python-side gates. test_parity enforces that the Node surface stays mapped while the
       # migration is in flight (so a new Node endpoint cannot slip past it), and refuses `removed`

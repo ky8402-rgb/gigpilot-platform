@@ -241,6 +241,43 @@ def test_test_framework_is_not_a_runtime_dependency():
     assert "pytest" in dev, "pytest must live in requirements-dev.txt or the gates cannot run"
 
 
+def test_testclient_users_have_httpx_declared():
+    """Anything importing `fastapi.testclient` needs httpx, which must be DECLARED.
+
+    This is not hypothetical — it broke CI on the commit that removed the unused `google-genai`
+    package. httpx had only ever been present as a transitive dependency of google-genai, so the
+    gates imported fine by accident until that package went away. An undeclared dependency that
+    happens to be satisfied is a build that works for reasons nobody knows.
+    """
+    import re
+
+    users = []
+    for f in (ROOT / "tests").rglob("*.py"):
+        if "__pycache__" in str(f):
+            continue
+        if "fastapi.testclient" in f.read_text(errors="ignore"):
+            users.append(f.name)
+    assert users, "expected at least one TestClient-based gate; the detection logic may be stale"
+
+    dev = (ROOT / "requirements-dev.txt").read_text()
+    assert re.search(r"^\s*httpx", dev, re.M), (
+        f"{len(users)} gate(s) use fastapi.testclient but httpx is not declared in "
+        f"requirements-dev.txt: {sorted(users)}"
+    )
+
+
+def test_ci_installs_the_dev_requirements():
+    """The CI gates run the same TestClient-based tests, so CI must install requirements-dev.txt.
+
+    Installing only requirements.txt was how the phantom httpx dependency stayed hidden.
+    """
+    ci = (ROOT / ".github" / "workflows" / "ci.yml").read_text()
+    assert "requirements-dev.txt" in ci, (
+        "CI installs only runtime requirements, but its gates import test-only packages "
+        "(httpx). Install requirements-dev.txt in the workflow."
+    )
+
+
 def test_no_declared_runtime_dependency_is_unused():
     """Every runtime dependency must be imported somewhere. An unused one is pure install-time and
     CVE surface in the credential-holding process."""

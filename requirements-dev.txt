@@ -5,3 +5,12 @@
 # pm2 is restarted (fail-closed: a red gate aborts the rollout).
 pytest>=8.0.0
 pytest-asyncio>=0.23.0
+
+# Required by `starlette.testclient`, which `fastapi.testclient` re-exports. Every gate that uses
+# TestClient (test_dashboard_delivery, test_health_disclosure, test_auth_throttle,
+# test_control_plane_auth) fails to even IMPORT without it.
+#
+# This was previously satisfied BY ACCIDENT: httpx arrived as a transitive dependency of
+# `google-genai`, itself unused. Removing that unused package exposed the phantom dependency and
+# broke CI — so it is declared here explicitly, where it belongs, instead of relying on chance.
+httpx>=0.27.0
