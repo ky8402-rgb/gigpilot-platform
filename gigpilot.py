@@ -107,6 +107,7 @@ from gpkg.execution.executor import Executor  # noqa: E402
 # 8. Store (MIGRATED -> gpkg/persistence/store.py)
 # =============================================================================
 from gpkg.persistence.store import Store  # noqa: E402
+from gpkg.ml.registry import ModelRegistry  # noqa: E402
 
 
 # =============================================================================
@@ -431,6 +432,7 @@ class GigPilot:
         # retry, timeout, or venue semantics.
         self.exchange = BybitAdapter(cfg, rest=self.rest, metrics=METRICS)
         self.store = Store(cfg.db_path)
+        self.model_registry = ModelRegistry(self.store, METRICS)
         self.markets = {s: MarketState(symbol=s) for s in cfg.symbols}
         self.step_size: dict[str, float] = {}
         self.tick_size: dict[str, float] = {}
@@ -1008,6 +1010,28 @@ class GigPilot:
                          "fee_bps": self.fee_rate_bps.get(s)}
                         for s, m in self.markets.items()],
             "events": list(self.last_events)[-30:],
+            "ml": {
+                "models": [
+                    {
+                        "model_id": e.model_id,
+                        "state": e.state.value,
+                        "verified": e.verified,
+                        "mean_net_bps": e.mean_net_bps,
+                        "p_value": e.one_sided_p_value,
+                        "oos_trades": e.oos_trades,
+                        "walk_forward_folds": e.walk_forward_folds,
+                        "live_eligible": bool(
+                            e.verified and e.state.value in ("CANARY", "CHAMPION")
+                        ),
+                    }
+                    for e in self.model_registry.list()
+                ],
+                "live_eligible_count": sum(
+                    1 for e in self.model_registry.list()
+                    if e.verified and e.state.value in ("CANARY", "CHAMPION")
+                ),
+                "recent_events": self.store.ml_events(limit=20),
+            },
             "reconciliation": {"healthy": self.reconciler.healthy, "last_error": self.reconciler.last_error, "last_run_ms": self.reconciler.last_run_ms},
             "armable": bool(self.reconciler.healthy and self.position_mode == "one-way" and self.ws._public_ok and self.ws._private_ok),
         }
