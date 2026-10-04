@@ -81,6 +81,10 @@ fi
 if [ ! -x "$APP_DIR/.venv/bin/python3" ]; then
   python3 -m venv "$APP_DIR/.venv"
 fi
+# The deployment script runs the same full pytest regression gate as CI. Install test-only
+# dependencies explicitly so a fresh host cannot pass CI but fail deployment because pytest/httpx
+# were only present accidentally from a previous image.
+"$APP_DIR/.venv/bin/pip" install --disable-pip-version-check --no-input -r "$APP_DIR/requirements-dev.txt"
 "$APP_DIR/.venv/bin/pip" install --disable-pip-version-check --no-input -r "$APP_DIR/requirements.txt"
 "$APP_DIR/.venv/bin/python3" -c "import fastapi, uvicorn, aiohttp; print('Python runtime verified')"
 
