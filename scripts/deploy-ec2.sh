@@ -166,7 +166,10 @@ WorkingDirectory=$APP_DIR
 EnvironmentFile=$APP_DIR/.env
 Environment=PYTHONUNBUFFERED=1
 Environment=PYTHONPATH=$APP_DIR
-ExecStart=$APP_DIR/.venv/bin/python3 $APP_DIR/scripts/ml_research.py ingest --db $APP_DIR/.gigpilot-data/gigpilot.db
+# A transient public-market refresh failure must not suppress qualification against the already
+# persisted 90-day dataset. The leading '-' tells systemd to record/log a failed refresh but continue
+# to the fail-closed trainer; training itself remains mandatory for this oneshot to succeed.
+ExecStart=-$APP_DIR/.venv/bin/python3 $APP_DIR/scripts/ml_research.py ingest --db $APP_DIR/.gigpilot-data/gigpilot.db
 ExecStart=$APP_DIR/.venv/bin/python3 $APP_DIR/scripts/ml_research.py train --db $APP_DIR/.gigpilot-data/gigpilot.db
 NoNewPrivileges=true
 PrivateTmp=true
