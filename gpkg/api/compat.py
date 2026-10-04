@@ -10,6 +10,34 @@ from gpkg.api.auth import require_owner, get_owner_auth, extract_token
 
 def register_compat_routes(app, get_gp):
     router=APIRouter()
+
+    @router.get("/api/ml/audit/latest", dependencies=[Depends(require_owner)])
+    async def ml_audit_latest(limit: int = 50):
+        gp = get_gp()
+        audits = gp.store.ml_research_audits(limit=max(1, min(limit, 100)))
+        rows = []
+        for audit in audits:
+            payload = audit.get("payload") or {}
+            evidence = payload.get("evidence") if isinstance(payload.get("evidence"), dict) else payload
+            costs = payload.get("cost_deductions") or payload.get("costs") or {}
+            net = payload.get("net_edge_bps", payload.get("mean_net_bps", evidence.get("mean_net_bps", 0.0)))
+            gross = payload.get("gross_edge_bps", evidence.get("gross_edge_bps", 0.0))
+            rows.append({
+                "ts_ms": audit["ts_ms"], "model_id": audit["model_id"], "outcome": audit["outcome"],
+                "reason": audit["reason"], "model_family": payload.get("family") or payload.get("model_family") or audit["model_id"],
+                "gross_edge_bps": float(gross or 0.0),
+                "cost_deductions": {
+                    "fees_bps": float(costs.get("fees_bps", 0.0) or 0.0),
+                    "two_x_peak_spread_bps": float(costs.get("two_x_peak_spread_bps", costs.get("spread_bps", 0.0)) or 0.0),
+                    "modeled_impact_bps": float(costs.get("modeled_impact_bps", costs.get("slippage_bps", 0.0)) or 0.0),
+                },
+                "net_edge_bps": float(net or 0.0),
+                "t_stat": float(payload.get("t_stat", evidence.get("t_stat", 0.0)) or 0.0),
+                "oos_sharpe": float(payload.get("oos_sharpe", evidence.get("oos_sharpe", 0.0)) or 0.0),
+                "gate_outcome": bool(payload.get("gate_outcome", evidence.get("verified", audit["outcome"] == "VERIFIED"))),
+                "gate_thresholds": payload.get("gate_thresholds", {"net_edge_bps": 8.0, "t_stat": 3.0, "oos_sharpe": 1.5}),
+            })
+        return {"success": True, "audits": rows, "real_capital_execution": False if gp.force_disarm else None}
     async def _auth_status(request):
         auth=get_owner_auth(); return auth.status(auth.verify(extract_token(request) or ""))
     async def _read(request,symbol=None,id=None,challengerId=None):
