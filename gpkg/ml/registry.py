@@ -7,7 +7,7 @@ and refuses any live-eligible state for unverified evidence.
 from __future__ import annotations
 
 from dataclasses import asdict, replace
-from typing import Iterable, List
+from typing import List
 
 from gpkg.core.metrics import Metrics
 from gpkg.persistence.store import Store
