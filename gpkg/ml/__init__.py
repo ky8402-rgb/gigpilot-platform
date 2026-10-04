@@ -16,6 +16,8 @@ from .lifecycle import (
     authorize_prediction,
     evaluate_candidate,
     population_stability_index,
+    promote_challenger,
+    should_rollback,
 )
 
 __all__ = [
@@ -31,4 +33,6 @@ __all__ = [
     "authorize_prediction",
     "evaluate_candidate",
     "population_stability_index",
+    "promote_challenger",
+    "should_rollback",
 ]
