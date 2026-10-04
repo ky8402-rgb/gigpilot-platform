@@ -39,8 +39,7 @@ class PaperTradingEngine:
     def _paper_model(self):
         ts=now_ms(); cached_at,cached=self._model_cache
         if ts-cached_at<10000:return cached
-        xs=[e for e in self.registry.list() if e.verified and e.state is ModelState.PAPER
-            and "baseline_regime_momentum" in tuple(e.model_types)]
+        xs=[e for e in self.registry.list() if e.verified and e.state is ModelState.PAPER]
         model=max(xs,key=lambda e:e.evaluated_at_ms,default=None); self._model_cache=(ts,model); return model
 
     @staticmethod
@@ -83,16 +82,60 @@ class PaperTradingEngine:
             r=math.log(p1/p0); w=max(float(b.get("volume",0)),1e-9); num+=w*r*r; den+=w
         return math.sqrt(num/den)*1e4 if den else 0.0
 
-    def _features(self,symbol,mid):
+    def _features(self,symbol,mid,model):
         bars=list(self.bars.get(symbol,()))
-        if len(bars)<121 or mid<=0:return None
+        if len(bars)<30 or mid<=0:return None
+        vol=self._vw_vol_bps(bars)
+        returns=[]
+        for a,b in zip(bars[-61:-1],bars[-60:]):
+            p0=float(a["close"]); p1=float(b["close"])
+            if p0>0: returns.append(math.log(p1/p0)*1e4)
+        vol_hist=[]
+        for i in range(20,len(bars)):
+            vol_hist.append(self._vw_vol_bps(bars[:i+1]))
+        vol_pct=sum(v<=vol for v in vol_hist[-239:])/max(len(vol_hist[-239:]),1) if vol_hist else .5
         hist=bars[-121:-1]; hi=max(float(x["high"]) for x in hist); lo=min(float(x["low"]) for x in hist)
-        vol=self._vw_vol_bps(bars); side=None; breakout=0.0
-        if mid>hi:side="Buy"; breakout=(mid/hi-1)*1e4
-        elif mid<lo:side="Sell"; breakout=(lo/mid-1)*1e4
-        strength=breakout/max(vol,1.0); prob=min(.95,.50+max(0.0,strength)*.20)
-        gross=breakout+vol*min(.85,max(0.0,prob-.50)*1.5)
-        return {"side":side,"vw_vol_bps":vol,"breakout_bps":breakout,"probability":prob,"gross_edge_bps":gross}
+        breakout=0.0; breakout_side=None
+        if mid>hi: breakout_side="Buy"; breakout=(mid/hi-1)*1e4
+        elif mid<lo: breakout_side="Sell"; breakout=(lo/mid-1)*1e4
+        latest_funding=self.store.ml_market_range(symbol,"funding_8h",0,now_ms())[-1:]
+        latest_basis=self.store.ml_market_range(symbol,"basis_1m",0,now_ms())[-1:]
+        funding=float(latest_funding[0].get("funding_bps",0.0)) if latest_funding else 0.0
+        basis=float(latest_basis[0].get("basis_bps",0.0)) if latest_basis else 0.0
+        side=breakout_side; score=0.0
+        family=" ".join(model.model_types)
+        if "funding_rate_carry_reversion" in family:
+            f_hist=self.store.ml_market_range(symbol,"funding_8h",max(0,now_ms()-90*86400000),now_ms())
+            b_hist=self.store.ml_market_range(symbol,"basis_1m",max(0,now_ms()-90*86400000),now_ms())[-5000:]
+            f_scale=max(1.0,self._std([float(x.get("funding_bps",0.0)) for x in f_hist]))
+            b_scale=max(1.0,self._std([float(x.get("basis_bps",0.0)) for x in b_hist]))
+            score=-(0.65*funding/f_scale+0.35*basis/b_scale)
+            side="Buy" if score>0 else "Sell" if score<0 else None
+            gross=abs(score)*max(vol,1.0)
+        elif "volatility_regime_conditioning" in family:
+            low=vol_pct<.50
+            recent=sum(returns[-5:])/max(len(returns[-5:]),1) if returns else 0.0
+            score=(-recent/max(vol,1.0) if low else recent/max(vol,1.0))
+            side=("Buy" if score>0 else "Sell" if score<0 else breakout_side)
+            gross=abs(score)*max(vol,1.0)
+            if breakout_side and vol_pct>=.75: gross=max(gross,breakout)
+        else:
+            strength=breakout/max(vol,1.0)
+            side=breakout_side; score=strength if side=="Buy" else -strength if side=="Sell" else 0.0
+            gross=breakout+vol*.20
+        book=self.markets.get(symbol)
+        obi=0.0; micro=0.0
+        if book and book.bids and book.asks:
+            bd=sum(float(p)*float(q) for p,q in list(book.bids[:50])); ad=sum(float(p)*float(q) for p,q in list(book.asks[:50]))
+            obi=(bd-ad)/max(bd+ad,1e-12)
+            bid=float(book.bids[0][0]); ask=float(book.asks[0][0]); book_mid=(bid+ask)/2
+            micro=((ask*bd+bid*ad)/max(bd+ad,1e-12)-book_mid)/max(book_mid,1e-12)*1e4
+            if side=="Buy": gross+=max(0.0,obi*vol*.25+micro*.05)
+            elif side=="Sell": gross+=max(0.0,-obi*vol*.25-micro*.05)
+        probability=min(.95,.50+min(.45,abs(score)*.20))
+        return {"side":side,"vw_vol_bps":vol,"breakout_bps":breakout,"probability":probability,
+                "gross_edge_bps":max(0.0,gross),"vol_percentile":vol_pct,"funding_bps":funding,"basis_bps":basis,
+                "obi":obi,"microprice_bps":micro,"family":family}
 
     @staticmethod
     def _impact_bps(ms,side,notional):
@@ -110,8 +153,8 @@ class PaperTradingEngine:
         age=now_ms()-int(ms.ts_book_ms or 0)
         if age>self.stale_ms:self._reject(symbol,f"Stale feed {age}ms > {self.stale_ms}ms"); return
         model=self._paper_model()
-        if model is None:self._reject(symbol,"No verified PAPER baseline model"); return
-        feat=self._features(symbol,float(ms.mid))
+        if model is None:self._reject(symbol,"No verified PAPER model"); return
+        feat=self._features(symbol,float(ms.mid),model)
         if feat is None:self._reject(symbol,"Insufficient live 1m feature history"); return
         if feat["side"] is None:self._reject(symbol,"No high-water/low-water breakout signal"); return
         if feat["probability"]<.55:self._reject(symbol,f"Probability {feat['probability']:.3f} < 0.550"); return
