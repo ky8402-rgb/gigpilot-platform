@@ -252,12 +252,12 @@ def train_candidate(store: Store, symbol: str, *, config: TrainingConfig = Train
     rows = _feature_rows(store, symbol, start_ms, end_ms, config.horizon_bars)
     if len(rows) < config.min_rows:
         reason = f"insufficient aligned point-in-time rows {len(rows)} < {config.min_rows}"
-        evidence = {
+        evidence_payload = {
             "model_id": model_id, "state": ModelState.RESEARCH.value, "verified": False,
             "reason": reason, "rows": len(rows), "start_ms": start_ms, "end_ms": end_ms,
         }
-        store.ml_research_audit(model_id, "REJECTED", reason, evidence)
-        return TrainingResult(model_id, ModelState.RESEARCH, False, reason, evidence, {}, {}, start_ms,
+        store.ml_research_audit(model_id, "REJECTED", reason, evidence_payload)
+        return TrainingResult(model_id, ModelState.RESEARCH, False, reason, evidence_payload, {}, {}, start_ms,
                               end_ms - start_ms, ("directional_logistic", "ewma_volatility", "almgren_chriss_impact"), 1.0,
                               config.kelly_fraction)
 
