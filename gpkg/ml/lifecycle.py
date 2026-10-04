@@ -78,6 +78,9 @@ class ValidationConfig:
     min_live_observations: int = 20
     rollback_live_mean_net_bps: float = 0.0
     max_population_stability_index: float = 0.25
+    min_t_stat: float = 0.0
+    min_oos_sharpe: float = 0.0
+    min_edge_bps: float = 0.0
 
 
 @dataclass(frozen=True)
@@ -95,6 +98,15 @@ class ModelEvidence:
     verification_reason: str
     evaluated_at_ms: int
     data_cutoff_ms: int
+    t_stat: float = 0.0
+    oos_sharpe: float = 0.0
+    expected_net_edge_bps: float = 0.0
+    feature_importance: dict[str, float] = field(default_factory=dict)
+    psi_baseline: dict[str, float] = field(default_factory=dict)
+    training_start_ms: int = 0
+    training_window_ms: int = 0
+    model_types: tuple[str, ...] = ()
+    calibration_error: float = 0.0
 
 
 @dataclass(frozen=True)
@@ -211,8 +223,14 @@ def evaluate_candidate(
         reasons.append(f"oos_trades {n} < {config.min_oos_trades}")
     if walk_forward_folds < config.min_walk_forward_folds:
         reasons.append(f"walk_forward_folds {walk_forward_folds} < {config.min_walk_forward_folds}")
-    if mu <= config.min_mean_net_bps:
-        reasons.append(f"mean_net_bps {mu:.4f} <= hurdle {config.min_mean_net_bps:.4f}")
+    if mu <= max(config.min_mean_net_bps, config.min_edge_bps):
+        reasons.append(f"mean_net_bps {mu:.4f} <= hurdle {max(config.min_mean_net_bps, config.min_edge_bps):.4f}")
+    t_stat = (mu / (sigma / sqrt(n))) if n > 1 and sigma > 0 else (float("inf") if mu > 0 else 0.0)
+    sharpe = (mu / sigma * sqrt(n)) if n > 1 and sigma > 0 else (float("inf") if mu > 0 else 0.0)
+    if t_stat <= config.min_t_stat:
+        reasons.append(f"t_stat {t_stat:.4f} <= {config.min_t_stat:.4f}")
+    if sharpe <= config.min_oos_sharpe:
+        reasons.append(f"oos_sharpe {sharpe:.4f} <= {config.min_oos_sharpe:.4f}")
     if pf < config.min_profit_factor:
         reasons.append(f"profit_factor {pf:.4f} < {config.min_profit_factor:.4f}")
     if dd > config.max_drawdown_bps:
@@ -235,6 +253,9 @@ def evaluate_candidate(
         verification_reason="verified_oos_net_edge" if verified else "; ".join(reasons),
         evaluated_at_ms=evaluated_at_ms,
         data_cutoff_ms=data_cutoff_ms,
+        t_stat=t_stat,
+        oos_sharpe=sharpe,
+        expected_net_edge_bps=mu,
     )
 
 
