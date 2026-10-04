@@ -20,7 +20,7 @@ sys.path.insert(0, str(ROOT))
 warnings.filterwarnings(
     "ignore",
     message=r"Using .*starlette\.testclient.* is deprecated.*",
-    category=DeprecationWarning,
+    category=Warning,
 )
 
 from fastapi import FastAPI
