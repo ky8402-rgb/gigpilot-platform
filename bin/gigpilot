@@ -1,0 +1,21 @@
+#!/usr/bin/env python3
+"""GigPilot operator CLI."""
+from __future__ import annotations
+import sys
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT))
+
+from scripts.ml_research import main as ml_main
+
+
+def main() -> int:
+    if len(sys.argv) >= 3 and sys.argv[1:3] == ["ml", "audit-summary"]:
+        sys.argv = [sys.argv[0], "audit-summary", *sys.argv[3:]]
+        return ml_main()
+    raise SystemExit("usage: gigpilot ml audit-summary [--db PATH]")
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
