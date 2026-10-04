@@ -36,7 +36,7 @@ def test_feature_extraction_is_point_in_time_and_regime_is_deterministic(monkeyp
     f = extract_features(m, ts_ms=5_000, levels=2, momentum_window_s=10)
     assert f.symbol == "BTCUSDT"
     assert f.spread_bps > 0
-    assert detect_regime(f, high_vol_bps=10_000, trend_bps=10_000) is Regime.QUIET
+    assert detect_regime(f, high_vol_bps=10_000, illiquid_spread_bps=10_000, trend_bps=10_000) is Regime.QUIET
 
 
 def test_book_impact_uses_executable_side_and_refuses_insufficient_depth():
