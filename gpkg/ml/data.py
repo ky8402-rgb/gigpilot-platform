@@ -9,9 +9,8 @@ manufactures historical depth.
 from __future__ import annotations
 
 import asyncio
-import time
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
-from typing import Awaitable, Callable
 
 import aiohttp
 
