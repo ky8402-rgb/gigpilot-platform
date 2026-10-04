@@ -17,6 +17,7 @@ from gpkg.core.config import Config
 from gpkg.core.errors import BybitError, DUPLICATE_ORDER_LINK_CODE
 from gpkg.core.metrics import Metrics
 from gpkg.exchange.bybit_rest import BybitREST
+from gpkg.exchange.base import ExchangeAdapter, OrderRequest, OrderType, Side
 
 log = logging.getLogger("gigpilot")
 
@@ -49,13 +50,17 @@ class Executor:
     def __init__(
         self,
         cfg: Config,
-        rest: BybitREST,
+        rest: BybitREST | ExchangeAdapter,
         step_sizes: dict[str, float],
         metrics: Metrics | None = None,
         min_sizes: dict[str, float] | None = None,
     ):
         self.cfg = cfg
-        self.rest = rest
+        # Backward-compatible constructor for tests/migration, but production passes an
+        # ExchangeAdapter. Keeping the raw REST object only as a legacy seam prevents a flag-day
+        # rewrite while making the adapter the real live mutation path.
+        self.adapter = rest if isinstance(rest, ExchangeAdapter) else None
+        self.rest = rest.rest if self.adapter is not None and hasattr(rest, "rest") else rest
         self.step_size = step_sizes
         self.min_size = min_sizes or {}
         self._metrics = metrics
@@ -128,26 +133,46 @@ class Executor:
     ) -> dict:
         qty_s = self._round_qty(symbol, qty)
         link = f"gp-{uuid.uuid4().hex[:26]}"
-        await self._place_idempotent(
-            link,
-            category="linear",
-            symbol=symbol,
-            side=side,
-            orderType="Market",
-            qty=qty_s,
-            positionIdx=position_idx,
-        )
-        try:
-            await self.rest.trading_stop(
+        if self.adapter is not None:
+            await self.adapter.place_order(OrderRequest(
+                exchange=self.adapter.name,
+                symbol=symbol,
+                side=Side.BUY if side == "Buy" else Side.SELL,
+                qty=qty_s,
+                order_type=OrderType.MARKET,
+                client_order_id=link,
+                position_idx=position_idx,
+            ))
+        else:
+            await self._place_idempotent(
+                link,
                 category="linear",
                 symbol=symbol,
-                tpslMode="Full",
+                side=side,
+                orderType="Market",
+                qty=qty_s,
                 positionIdx=position_idx,
-                takeProfit=str(tp_price),
-                stopLoss=str(sl_price),
-                tpTriggerBy="MarkPrice",
-                slTriggerBy="MarkPrice",
             )
+        try:
+            if self.adapter is not None:
+                await self.adapter.set_protection(
+                    symbol,
+                    Side.BUY if side == "Buy" else Side.SELL,
+                    qty_s,
+                    str(tp_price),
+                    str(sl_price),
+                )
+            else:
+                await self.rest.trading_stop(
+                    category="linear",
+                    symbol=symbol,
+                    tpslMode="Full",
+                    positionIdx=position_idx,
+                    takeProfit=str(tp_price),
+                    stopLoss=str(sl_price),
+                    tpTriggerBy="MarkPrice",
+                    slTriggerBy="MarkPrice",
+                )
         except Exception as e:
             log.error("protection failed %s — unwinding: %s", symbol, e)
             await self._unwind(symbol, side, qty_s, position_idx)
@@ -182,23 +207,48 @@ class Executor:
     async def _unwind(self, symbol: str, side: str, qty_s: str, position_idx: int) -> None:
         opp = "Sell" if side == "Buy" else "Buy"
         try:
-            await self._place_idempotent(
-                f"gp-unwind-{uuid.uuid4().hex[:20]}",
-                category="linear",
-                symbol=symbol,
-                side=opp,
-                orderType="Market",
-                qty=qty_s,
-                reduceOnly=True,
-                positionIdx=position_idx,
-            )
+            link = f"gp-unwind-{uuid.uuid4().hex[:20]}"
+            if self.adapter is not None:
+                await self.adapter.place_order(OrderRequest(
+                    exchange=self.adapter.name,
+                    symbol=symbol,
+                    side=Side.BUY if opp == "Buy" else Side.SELL,
+                    qty=qty_s,
+                    order_type=OrderType.MARKET,
+                    reduce_only=True,
+                    client_order_id=link,
+                    position_idx=position_idx,
+                ))
+            else:
+                await self._place_idempotent(
+                    link,
+                    category="linear",
+                    symbol=symbol,
+                    side=opp,
+                    orderType="Market",
+                    qty=qty_s,
+                    reduceOnly=True,
+                    positionIdx=position_idx,
+                )
         except Exception as e:
             log.critical("UNWIND FAILED %s: %s", symbol, e)
 
     async def close_market(self, symbol: str, side: str, qty_s: str, position_idx: int = 0):
         opp = "Sell" if side == "Buy" else "Buy"
+        link = f"gp-close-{uuid.uuid4().hex[:20]}"
+        if self.adapter is not None:
+            return await self.adapter.place_order(OrderRequest(
+                exchange=self.adapter.name,
+                symbol=symbol,
+                side=Side.BUY if opp == "Buy" else Side.SELL,
+                qty=qty_s,
+                order_type=OrderType.MARKET,
+                reduce_only=True,
+                client_order_id=link,
+                position_idx=position_idx,
+            ))
         return await self._place_idempotent(
-            f"gp-close-{uuid.uuid4().hex[:20]}",
+            link,
             category="linear",
             symbol=symbol,
             side=opp,
