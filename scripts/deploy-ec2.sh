@@ -206,10 +206,10 @@ sudo systemctl enable gigpilot.service gigpilot-ml-l2.service gigpilot-ml-train.
 sudo systemctl restart gigpilot.service
 sudo systemctl start gigpilot-ml-train.timer
 sudo systemctl stop gigpilot-ml-l2.service 2>/dev/null || true
-if ! timeout 360s sudo systemctl start gigpilot-ml-train.service; then
-  echo "WARNING: ML bootstrap did not complete within 360s; live engine remains fail-closed and the timer will retry qualification."
+echo "Starting ML qualification asynchronously; production activation does not wait on research duration."
+if ! sudo systemctl start --no-block gigpilot-ml-train.service; then
+  echo "WARNING: ML bootstrap could not be queued; live engine remains fail-closed and the timer will retry qualification."
   sudo systemctl status gigpilot-ml-train.service --no-pager || true
-  sudo journalctl -u gigpilot-ml-train.service -n 100 --no-pager || true
 fi
 sudo systemctl restart gigpilot-ml-l2.service
 
