@@ -334,13 +334,27 @@ def train_candidate(store: Store, symbol: str, *, config: TrainingConfig = Train
         "model_types": ("directional_logistic", "ewma_volatility", "almgren_chriss_impact"),
         "calibration_error": cal_error,
     })
-    store.ml_research_audit(
-        model_id, "VERIFIED" if evidence.verified else "REJECTED",
-        evidence.verification_reason,
-        {"t_stat": evidence.t_stat, "oos_sharpe": evidence.oos_sharpe,
-         "mean_net_bps": evidence.mean_net_bps, "oos_trades": evidence.oos_trades,
-         "folds": evidence.walk_forward_folds, "features": importance},
-    )
+    observed_peak_spread = max((r.spread_bps for r in rows), default=0.0)
+    avg_fees = mean(t.costs.fees_bps for t in trades) if trades else 0.0
+    avg_spread = mean(t.costs.spread_bps for t in trades) if trades else 0.0
+    avg_impact = mean(t.costs.slippage_bps for t in trades) if trades else 0.0
+    avg_other = mean(t.costs.funding_bps + t.costs.adverse_selection_bps for t in trades) if trades else 0.0
+    audit_payload = {
+        "model_family": "directional_logistic_l2", "gross_edge_bps": mean(t.gross_edge_bps for t in trades),
+        "cost_deductions": {
+            "fees_bps": avg_fees,
+            "two_x_peak_spread_bps": 2.0 * observed_peak_spread,
+            "modeled_impact_bps": avg_impact,
+            "observed_average_spread_component_bps": avg_spread,
+            "funding_and_adverse_selection_bps": avg_other,
+        },
+        "net_edge_bps": evidence.mean_net_bps, "t_stat": evidence.t_stat,
+        "oos_sharpe": evidence.oos_sharpe, "gate_outcome": evidence.verified,
+        "gate_thresholds": {"net_edge_bps": config.edge_hurdle_bps, "t_stat": config.min_t_stat, "oos_sharpe": config.min_oos_sharpe},
+        "oos_trades": evidence.oos_trades, "folds": evidence.walk_forward_folds, "features": importance,
+    }
+    store.ml_research_audit(model_id, "VERIFIED" if evidence.verified else "REJECTED",
+                            evidence.verification_reason, audit_payload)
     return TrainingResult(
         model_id=model_id, state=evidence.state, verified=evidence.verified,
         reason=evidence.verification_reason, evidence=evidence, feature_importance=importance,
