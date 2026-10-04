@@ -67,6 +67,7 @@ from gpkg.core.metrics import Metrics  # noqa: E402
 
 
 METRICS = Metrics()
+from gpkg.core.watchdog import TaskWatchdog  # noqa: E402
 
 
 # =============================================================================
@@ -134,6 +135,30 @@ class BybitWS:
         self._tasks = [asyncio.create_task(self._public_loop(), name="ws-public"),
                        asyncio.create_task(self._private_loop(), name="ws-private")]
 
+
+    async def _watchdog_loop(self):
+        """Supervise critical loops without ever auto-arming after a crash."""
+        await asyncio.sleep(2)
+        while not self._stop.is_set():
+            for idx, task in enumerate(list(self._tasks)):
+                if task.done() and task.get_name() != "watchdog" and not self._stop.is_set():
+                    name = task.get_name()
+                    try:
+                        exc = task.exception()
+                    except asyncio.CancelledError:
+                        exc = None
+                    if exc is None and not self._stop.is_set():
+                        exc = RuntimeError("task exited without an exception")
+                    if self._watchdog.failure(name, exc):
+                        await asyncio.sleep(self._watchdog.restart_delay_s)
+                        if self._stop.is_set() or self._watchdog.circuit_open:
+                            continue
+                        factory = self._task_factories.get(name)
+                        if factory is not None:
+                            self._tasks[idx] = asyncio.create_task(factory(), name=name)
+                            METRICS.inc("gigpilot_watchdog_restarts_total", task=name)
+                            self.store.journal("WATCHDOG_RESTART", None, {"task": name})
+            await asyncio.sleep(1)
 
     async def stop(self):
         self._stop.set()
@@ -450,6 +475,12 @@ class GigPilot:
         self.armed: bool = False
         self.position_mode: str = "one-way"
         self._tasks: list[asyncio.Task] = []
+        self._task_factories: dict[str, callable] = {}
+        self._watchdog = TaskWatchdog(
+            disarm=self.disarm,
+            journal=self.store.journal,
+            metric_inc=METRICS.inc,
+        )
         self._stop = asyncio.Event()
         self.signals: dict[str, EdgeEstimate] = {}
         self.last_events: deque = deque(maxlen=200)
@@ -588,14 +619,19 @@ class GigPilot:
                                           "hurdle_bps": self.cfg.edge_hurdle_bps,
                                           "position_mode": self.position_mode})
 
+        self._task_factories = {
+            "ws": self.ws.start,
+            "strategy": self._strategy_loop,
+            "reconcile": self._reconcile_loop,
+            "portfolio": self._portfolio_loop,
+            "daily-reset": self._daily_reset_loop,
+            "accounting": self._accounting_loop,
+        }
         self._tasks = [
-            asyncio.create_task(self.ws.start(), name="ws"),
-            asyncio.create_task(self._strategy_loop(), name="strategy"),
-            asyncio.create_task(self._reconcile_loop(), name="reconcile"),
-            asyncio.create_task(self._portfolio_loop(), name="portfolio"),
-            asyncio.create_task(self._daily_reset_loop(), name="daily-reset"),
-            asyncio.create_task(self._accounting_loop(), name="accounting"),
+            asyncio.create_task(factory(), name=name)
+            for name, factory in self._task_factories.items()
         ]
+        self._tasks.append(asyncio.create_task(self._watchdog_loop(), name="watchdog"))
 
     async def stop(self):
         self._stop.set()
