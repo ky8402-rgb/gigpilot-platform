@@ -16,6 +16,8 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
 import unittest
+import warnings
+warnings.filterwarnings("ignore", message=r"Using .*starlette\.testclient.* is deprecated.*", category=DeprecationWarning)
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
