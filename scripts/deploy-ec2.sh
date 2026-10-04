@@ -191,6 +191,7 @@ Unit=gigpilot-ml-train.service
 WantedBy=timers.target
 UNIT
 
+sudo install -m 0755 "$APP_DIR/bin/gigpilot" /usr/local/bin/gigpilot
 sudo systemctl daemon-reload
 
 echo "Stopping legacy Node production processes before Python activation..."
