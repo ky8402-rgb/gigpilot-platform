@@ -111,6 +111,8 @@ EnvironmentFile=$APP_DIR/.env
 Environment=GIGPILOT_BIND=127.0.0.1
 Environment=GIGPILOT_PORT=3000
 Environment=GIGPILOT_ARM=0
+Environment=GIGPILOT_FORCE_DISARM=1
+Environment=GIGPILOT_PAPER_EQUITY=10000
 Environment=PYTHONUNBUFFERED=1
 ExecStart=$APP_DIR/.venv/bin/python3 $APP_DIR/gigpilot.py
 Restart=always
@@ -241,6 +243,8 @@ print("FastAPI exact-SHA health verification passed")
 PY
 
 sudo systemctl is-active --quiet gigpilot.service
+sudo systemctl is-active --quiet gigpilot-ml-l2.service
+sudo systemctl is-enabled --quiet gigpilot-ml-train.timer
 if command -v pm2 >/dev/null 2>&1 && pm2 jlist >/tmp/pm2.json 2>/dev/null; then
   if grep -q '"name":"gigpilot"' /tmp/pm2.json || grep -q '"name":"worker"' /tmp/pm2.json; then
     echo "ERROR: legacy Node PM2 runtime still active."

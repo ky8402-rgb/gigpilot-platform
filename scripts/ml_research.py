@@ -15,6 +15,7 @@ import os
 from gpkg.core.config import Config
 from gpkg.ml.data import HistoricalDataWorker
 from gpkg.ml.training import TrainingConfig, register_validated_candidate, train_candidate
+from gpkg.ml.baseline import qualify_conservative_baseline, register_baseline_paper
 from gpkg.ml.registry import ModelRegistry
 from gpkg.persistence.store import Store
 
@@ -46,16 +47,19 @@ def main() -> int:
     config = TrainingConfig()
     rc = 0
     for symbol in symbols:
+        strict_verified=False
         try:
-            result = train_candidate(store, symbol, config=config)
-            print(symbol, result.state.value, result.verified, result.reason)
-            if result.verified:
-                register_validated_candidate(store, registry, result)
+            result=train_candidate(store,symbol,config=config); print(symbol,result.state.value,result.verified,result.reason)
+            if result.verified: register_validated_candidate(store,registry,result); strict_verified=True
         except Exception as exc:
-            model_id = f"alpha-{symbol.lower()}-training-error"
-            store.ml_research_audit(model_id, "ERROR", str(exc), {"symbol": symbol})
-            print(symbol, "REJECTED", str(exc))
-            rc = 1
+            store.ml_research_audit(f"alpha-{symbol.lower()}-training-error","ERROR",str(exc),{"symbol":symbol}); print(symbol,"STRICT_REJECTED",str(exc))
+        if not strict_verified:
+            try:
+                evidence,reason=qualify_conservative_baseline(store,symbol,taker_fee_bps=config.taker_fee_bps,hurdle_bps=config.edge_hurdle_bps)
+                verified=bool(evidence and evidence.verified); print(symbol,"BASELINE",verified,reason)
+                if verified: register_baseline_paper(registry,evidence)
+            except Exception as exc:
+                store.ml_research_audit(f"baseline-{symbol.lower()}-training-error","ERROR",str(exc),{"symbol":symbol}); print(symbol,"BASELINE_REJECTED",str(exc)); rc=1
     return rc
 
 

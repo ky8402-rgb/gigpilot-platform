@@ -870,6 +870,10 @@ export interface GigPilotState {
   markets: GigPilotMarket[];
   events: GigPilotEvent[];
   message?: string;
+  live_execution_policy?: string;
+  paper?: { enabled:boolean; real_capital_execution:boolean; starting_equity:number; synthetic_equity:number; realized_pnl:number; unrealized_pnl:number; active_positions:GigPilotPosition[]; closed_trades:number; wins:number; win_rate:number; realized_slippage_bps:number; fills:number; rejections:Array<{ts:string;ts_ms:number;symbol:string;reason:string;[key:string]:any}>; model?:string|null };
+  ops?: { services:Record<string,{name:string;active:boolean;state:string;enabled:string}>; l2_buffer:{rows:number;first_ts_ms?:number|null;last_ts_ms?:number|null;span_ms:number;db_bytes:number;disk_total_bytes:number;disk_used_bytes:number;disk_free_bytes:number;disk_used_pct:number} };
+  ml?: any;
 }
 
 export async function fetchGigPilotState(): Promise<GigPilotState> {

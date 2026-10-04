@@ -109,6 +109,8 @@ from gpkg.execution.executor import Executor  # noqa: E402
 # =============================================================================
 from gpkg.persistence.store import Store  # noqa: E402
 from gpkg.ml.registry import ModelRegistry  # noqa: E402
+from gpkg.paper.engine import PaperTradingEngine  # noqa: E402
+from gpkg.core.ops import operational_snapshot  # noqa: E402
 
 
 # =============================================================================
@@ -125,8 +127,8 @@ from gpkg.api.auth import OwnerAuth, get_owner_auth, owner_authenticated, requir
 # 9. Bybit WebSocket
 # =============================================================================
 class BybitWS:
-    def __init__(self, cfg: Config, markets: dict, on_private_event=None):
-        self.cfg = cfg; self.markets = markets; self.on_private_event = on_private_event
+    def __init__(self, cfg: Config, markets: dict, on_private_event=None, on_public_event=None):
+        self.cfg=cfg; self.markets=markets; self.on_private_event=on_private_event; self.on_public_event=on_public_event
         self._stop = asyncio.Event()
         self._public_ok = False; self._private_ok = False
         self._tasks: list[asyncio.Task] = []
@@ -153,7 +155,7 @@ class BybitWS:
                         backoff = 1.0
                         args = []
                         for s in self.cfg.symbols:
-                            args += [f"orderbook.50.{s}", f"tickers.{s}", f"publicTrade.{s}"]
+                            args += [f"orderbook.50.{s}", f"tickers.{s}", f"publicTrade.{s}", f"kline.1.{s}"]
                         await ws.send_json({"op": "subscribe", "args": args})
                         log.info("public WS subscribed: %s", self.cfg.symbols)
                         async for msg in ws:
@@ -183,6 +185,16 @@ class BybitWS:
             if mtype == "snapshot": ms.apply_book_snapshot(b, a)
             else: ms.apply_book_delta(b, a)
             METRICS.set("gigpilot_tick_age_ms", now_ms() - ms.ts_book_ms, symbol=sym)
+            if self.on_public_event: self.on_public_event("book", sym, ms, data)
+        elif topic.startswith("kline.1."):
+            sym=topic.split(".",2)[2]; ms=self.markets.get(sym)
+            if ms is None or not isinstance(data,list): return
+            for row in data:
+                if not isinstance(row,dict): continue
+                if bool(row.get("confirm")):
+                    close=f(row.get("close"))
+                    if close>0: ms.closes_1m.append(close)
+                if self.on_public_event: self.on_public_event("kline",sym,ms,row)
         elif topic.startswith("tickers."):
             sym = topic.split(".", 1)[1]; ms = self.markets.get(sym)
             if ms is None or not isinstance(data, dict): return
@@ -443,12 +455,14 @@ class GigPilot:
         self.positions: dict[str, dict] = {}
         self.reconciler = Reconciler(cfg, self.exchange, self.store, self.positions)
         self.accounting = AccountingReconciler(self.exchange, self.store)
-        self.ws = BybitWS(cfg, self.markets, on_private_event=self._on_private)
+        self.paper = PaperTradingEngine(self.store,self.model_registry,self.markets,self.fee_rate_bps,hurdle_bps=max(8.0,self.cfg.edge_hurdle_bps),starting_equity=f(os.getenv("GIGPILOT_PAPER_EQUITY"),10000.0),stale_ms=500)
+        self.ws = BybitWS(cfg, self.markets, on_private_event=self._on_private, on_public_event=self._on_public_market)
         self.portfolio = Portfolio()
         self.fee_rate_bps: dict[str, float] = {}
         self.day_start_equity: float = 0.0
         self._day_anchor: str = ""
         self.armed: bool = False
+        self.force_disarm: bool = os.getenv("GIGPILOT_FORCE_DISARM","0").strip().lower() in ("1","true","yes","on")
         self.position_mode: str = "one-way"
         self._tasks: list[asyncio.Task] = []
         self._task_factories: dict[str, callable] = {}
@@ -585,7 +599,10 @@ class GigPilot:
             try: await self.rest.set_leverage(s, self.cfg.max_leverage)
             except Exception as e: log.warning("set_leverage %s: %s", s, e)
 
+        self.paper.warmup()
         self.armed, arm_source = self._restore_arm_state()
+        if self.force_disarm:
+            self.armed=False; arm_source="GIGPILOT_FORCE_DISARM"; self._persist_arm_state(self.ARM_DISARMED)
         if arm_source.startswith("persisted_"):
             log.warning("boot arm state suppressed by %s — refusing to auto-arm", arm_source)
         log.info("trading %s (source=%s)", "ARMED" if self.armed else "DISARMED (DO NOTHING)", arm_source)
@@ -657,6 +674,8 @@ class GigPilot:
             if details: item["details"] = details
             reasons.append(item)
 
+        if self.force_disarm:
+            block("LIVE_EXECUTION_POLICY", "Real-capital execution is policy-disarmed while live paper qualification is active.")
         if not self.cfg.api_key or not self.cfg.api_secret:
             block("BYBIT_CREDENTIALS_MISSING", "Valid Bybit Linear Futures credentials are required.")
         if self.position_mode != "one-way":
@@ -786,6 +805,14 @@ class GigPilot:
             self.store.journal("ARM", None, {"hurdle_bps": self.cfg.edge_hurdle_bps})
             log.warning("MANUAL ARM: all safety gates passed")
         return True, reasons
+
+    # ---------- public market events -> isolated paper engine ----------
+    def _on_public_market(self, kind: str, symbol: str, ms: MarketState, payload: dict):
+        try:
+            if kind=="book": self.paper.on_book(symbol,ms)
+            elif kind=="kline": self.paper.on_kline(symbol,payload)
+        except Exception as e:
+            log.error("paper market handler %s %s: %s",kind,symbol,e); METRICS.inc("gigpilot_paper_errors_total",kind=kind,symbol=symbol)
 
     # ---------- private WS events ----------
     async def _on_private(self, msg: dict):
@@ -1049,6 +1076,9 @@ class GigPilot:
                          "fee_bps": self.fee_rate_bps.get(s)}
                         for s, m in self.markets.items()],
             "events": list(self.last_events)[-30:],
+            "live_execution_policy": "FORCE_DISARMED" if self.force_disarm else "OWNER_GATED",
+            "paper": self.paper.snapshot(),
+            "ops": operational_snapshot(self.store, self.cfg.db_path),
             "ml": {
                 "models": [
                     {
@@ -1083,7 +1113,7 @@ class GigPilot:
             },
             "reconciliation": {"healthy": self.reconciler.healthy, "last_error": self.reconciler.last_error, "last_run_ms": self.reconciler.last_run_ms},
             "watchdog": self._watchdog.snapshot(),
-            "armable": bool(self.reconciler.healthy and self.position_mode == "one-way" and self.ws._public_ok and self.ws._private_ok),
+            "armable": bool((not self.force_disarm) and self.reconciler.healthy and self.position_mode == "one-way" and self.ws._public_ok and self.ws._private_ok),
         }
 
 

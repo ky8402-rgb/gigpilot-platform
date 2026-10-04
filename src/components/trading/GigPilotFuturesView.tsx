@@ -331,6 +331,26 @@ export const GigPilotFuturesView: React.FC = () => {
             </div>
           </div>
 
+          {/* Paper ML + systemd operational telemetry */}
+          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4">
+            <div className="p-4 bg-zinc-900/80 border border-zinc-800 rounded-xl"><div className="flex items-center justify-between"><span className="text-xs font-mono text-slate-400 uppercase">ML L2 Collector</span><Radio className="w-4 h-4 text-cyan-400" /></div><div className={`text-lg font-bold font-mono mt-2 ${state?.ops?.services?.['gigpilot-ml-l2.service']?.active ? 'text-emerald-400' : 'text-rose-400'}`}>{state?.ops?.services?.['gigpilot-ml-l2.service']?.state || 'unknown'}</div><div className="text-[10px] font-mono text-slate-500 mt-1">gigpilot-ml-l2.service</div></div>
+            <div className="p-4 bg-zinc-900/80 border border-zinc-800 rounded-xl"><div className="flex items-center justify-between"><span className="text-xs font-mono text-slate-400 uppercase">ML Train Timer</span><Clock className="w-4 h-4 text-indigo-400" /></div><div className={`text-lg font-bold font-mono mt-2 ${state?.ops?.services?.['gigpilot-ml-train.timer']?.active ? 'text-emerald-400' : 'text-amber-400'}`}>{state?.ops?.services?.['gigpilot-ml-train.timer']?.state || 'unknown'}</div><div className="text-[10px] font-mono text-slate-500 mt-1">gigpilot-ml-train.timer</div></div>
+            <div className="p-4 bg-zinc-900/80 border border-zinc-800 rounded-xl"><div className="flex items-center justify-between"><span className="text-xs font-mono text-slate-400 uppercase">Live L2 Buffer</span><Database className="w-4 h-4 text-fuchsia-400" /></div><div className="text-lg font-bold font-mono text-white mt-2">{(state?.ops?.l2_buffer?.rows || 0).toLocaleString()} rows</div><div className="text-[10px] font-mono text-slate-500 mt-1">Span {fmt((state?.ops?.l2_buffer?.span_ms || 0)/3600000,1)}h · Disk {fmt(state?.ops?.l2_buffer?.disk_used_pct,1)}%</div></div>
+            <div className="p-4 bg-zinc-900/80 border border-emerald-500/20 rounded-xl"><div className="flex items-center justify-between"><span className="text-xs font-mono text-slate-400 uppercase">Paper Equity</span><TrendingUp className="w-4 h-4 text-emerald-400" /></div><div className="text-lg font-bold font-mono text-white mt-2">${fmt(state?.paper?.synthetic_equity)}</div><div className="text-[10px] font-mono text-slate-500 mt-1">Realized {state?.paper && state.paper.realized_pnl>=0?'+':''}${fmt(state?.paper?.realized_pnl)} · Live capital {state?.paper?.real_capital_execution?'ON':'OFF'}</div></div>
+          </div>
+          <div className="p-5 bg-zinc-900/90 border border-emerald-500/20 rounded-2xl">
+            <div className="flex items-center justify-between mb-3"><div className="flex items-center gap-2"><Activity className="w-5 h-5 text-emerald-400" /><h3 className="text-sm font-bold font-mono text-white uppercase">Live Paper Trading Telemetry</h3></div><span className="text-xs font-mono text-slate-400">{state?.paper?.model || 'No PAPER model qualified'}</span></div>
+            <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-4 text-xs font-mono">
+              <div className="bg-zinc-950/60 rounded-lg p-3"><div className="text-slate-500">Active positions</div><div className="text-xl text-white font-bold">{state?.paper?.active_positions?.length || 0}</div></div>
+              <div className="bg-zinc-950/60 rounded-lg p-3"><div className="text-slate-500">Win rate</div><div className="text-xl text-white font-bold">{fmt((state?.paper?.win_rate||0)*100,1)}%</div></div>
+              <div className="bg-zinc-950/60 rounded-lg p-3"><div className="text-slate-500">Closed trades</div><div className="text-xl text-white font-bold">{state?.paper?.closed_trades || 0}</div></div>
+              <div className="bg-zinc-950/60 rounded-lg p-3"><div className="text-slate-500">Realized slippage</div><div className="text-xl text-white font-bold">{fmt(state?.paper?.realized_slippage_bps,2)} bps</div></div>
+            </div>
+            <div className="max-h-56 overflow-y-auto border border-zinc-800 rounded-lg"><table className="w-full text-left text-xs font-mono"><thead><tr className="text-slate-500 border-b border-zinc-800"><th className="p-2">Time</th><th className="p-2">Symbol</th><th className="p-2">Rejected paper decision</th></tr></thead><tbody>
+            {state?.paper?.rejections?.length ? state.paper.rejections.slice().reverse().map((ev,i)=><tr key={i} className="border-b border-zinc-800/50"><td className="p-2 text-slate-500 whitespace-nowrap">{ev.ts}</td><td className="p-2 text-slate-200">{ev.symbol}</td><td className="p-2 text-amber-300">{ev.reason}</td></tr>) : <tr><td colSpan={3} className="p-4 text-center text-slate-500">No rejected paper decisions recorded yet.</td></tr>}
+            </tbody></table></div>
+          </div>
+
           {/* 3. Real Net Edge Engine Radar */}
           <div className="p-5 bg-zinc-900/90 border border-zinc-800 rounded-2xl">
             <div className="flex items-center justify-between mb-3">
