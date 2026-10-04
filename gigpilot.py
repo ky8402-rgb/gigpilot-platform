@@ -455,10 +455,10 @@ class GigPilot:
         self.positions: dict[str, dict] = {}
         self.reconciler = Reconciler(cfg, self.exchange, self.store, self.positions)
         self.accounting = AccountingReconciler(self.exchange, self.store)
+        self.fee_rate_bps: dict[str, float] = {}
         self.paper = PaperTradingEngine(self.store,self.model_registry,self.markets,self.fee_rate_bps,hurdle_bps=max(8.0,self.cfg.edge_hurdle_bps),starting_equity=f(os.getenv("GIGPILOT_PAPER_EQUITY"),10000.0),stale_ms=500)
         self.ws = BybitWS(cfg, self.markets, on_private_event=self._on_private, on_public_event=self._on_public_market)
         self.portfolio = Portfolio()
-        self.fee_rate_bps: dict[str, float] = {}
         self.day_start_equity: float = 0.0
         self._day_anchor: str = ""
         self.armed: bool = False
