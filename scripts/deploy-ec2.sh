@@ -206,7 +206,11 @@ sudo systemctl enable gigpilot.service gigpilot-ml-l2.service gigpilot-ml-train.
 sudo systemctl restart gigpilot.service
 sudo systemctl start gigpilot-ml-train.timer
 sudo systemctl stop gigpilot-ml-l2.service 2>/dev/null || true
-sudo systemctl start gigpilot-ml-train.service || { echo "WARNING: ML bootstrap failed; live engine remains fail-closed."; sudo journalctl -u gigpilot-ml-train.service -n 100 --no-pager || true; }
+if ! timeout 360s sudo systemctl start gigpilot-ml-train.service; then
+  echo "WARNING: ML bootstrap did not complete within 360s; live engine remains fail-closed and the timer will retry qualification."
+  sudo systemctl status gigpilot-ml-train.service --no-pager || true
+  sudo journalctl -u gigpilot-ml-train.service -n 100 --no-pager || true
+fi
 sudo systemctl restart gigpilot-ml-l2.service
 
 echo "Waiting for FastAPI..."
