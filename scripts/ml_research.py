@@ -12,11 +12,9 @@ import argparse
 import asyncio
 import os
 
-from gpkg.core.config import Config
 from gpkg.ml.data import HistoricalDataWorker
-from gpkg.ml.training import TrainingConfig, register_validated_candidate, train_candidate
+from gpkg.ml.training import TrainingConfig, register_validated_candidate, train_candidate, train_hypotheses
 from gpkg.ml.baseline import qualify_conservative_baseline, register_baseline_paper
-from gpkg.ml.hypotheses import evaluate_hypotheses
 from gpkg.ml.registry import ModelRegistry
 from gpkg.persistence.store import Store
 
@@ -67,7 +65,7 @@ def main() -> int:
         except Exception as exc:
             store.ml_research_audit(f"alpha-{symbol.lower()}-training-error","ERROR",str(exc),{"symbol":symbol}); print(symbol,"STRICT_REJECTED",str(exc))
         try:
-            hypotheses, progress = evaluate_hypotheses(store, symbol, taker_fee_bps=config.taker_fee_bps)
+            hypotheses, progress = train_hypotheses(store, symbol, taker_fee_bps=config.taker_fee_bps)
             print(symbol, "HYPOTHESES", progress)
             for evidence in hypotheses:
                 registry.persist_evidence(evidence, reason="funding_regime_walk_forward")
