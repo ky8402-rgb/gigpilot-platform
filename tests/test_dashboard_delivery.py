@@ -14,6 +14,9 @@ import unittest
 import warnings
 from pathlib import Path
 
+ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(ROOT))
+
 warnings.filterwarnings(
     "ignore",
     message=r"Using .*starlette\.testclient.* is deprecated.*",
@@ -24,9 +27,6 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from gpkg.web.dashboard import DIST_DIR, INDEX_PATH, mount_dashboard
-
-ROOT = Path(__file__).resolve().parent.parent
-sys.path.insert(0, str(ROOT))
 
 class TestDashboardDelivery(unittest.TestCase):
     def setUp(self):
