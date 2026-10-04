@@ -111,13 +111,13 @@ async def test_full_lifecycle_arm_enter_protect_close_account(make_engine):
     assert row[1] == pytest.approx(closed_pnl), "realized PnL must be the EXCHANGE figure"
     assert row[2] == pytest.approx(open_fee + close_fee), "fees must be exchange-confirmed"
 
-    # Net-of-fee accounting is what the daily loss limit is computed from.
-    assert engine.store.realized_today() == pytest.approx(closed_pnl - (open_fee + close_fee))
+    # Bybit closedPnl is already net of trading fees and funding; do not subtract fees twice.
+    assert engine.store.realized_today() == pytest.approx(closed_pnl)
 
     # Replaying the same exchange rows must not double-count.
     again = await engine.accounting.run_once()
     assert again == 0, "accounting double-applied an already-seen close"
-    assert engine.store.realized_today() == pytest.approx(closed_pnl - (open_fee + close_fee))
+    assert engine.store.realized_today() == pytest.approx(closed_pnl)
 
 
 async def test_unmatched_exchange_close_is_journalled_not_fabricated(make_engine):
