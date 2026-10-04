@@ -188,7 +188,9 @@ def evaluate_hypotheses(
                    f"L2 buffer at {int(l2.get('span_ms', 0))/3_600_000:.1f}/48 hours; training klines + funding + basis only",
     }
     if len(rows) < MIN_ROWS:
-        return [], {**progress, "rejected": f"insufficient aligned rows {len(rows)} < {MIN_ROWS}"}
+        reason = f"insufficient aligned rows {len(rows)} < {MIN_ROWS}"
+        store.ml_research_audit(f"l2-progress-{symbol.lower()}-{end}", "WARMING", progress["message"], {**progress, "rows": len(rows), "reason": reason})
+        return [], {**progress, "rejected": reason}
     splits = PurgedWalkForward(n_splits=5, min_train=20_000, test_size=5_000, purge=5).split(
         [int(r["ts_ms"]) for r in rows]
     )
