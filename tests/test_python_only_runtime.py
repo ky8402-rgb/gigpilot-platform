@@ -40,6 +40,7 @@ def main() -> None:
         and p.suffix.lower() in {".js", ".mjs", ".cjs", ".ts", ".tsx"}
         and "node_modules" not in p.parts
         and ".runtime-test" not in p.parts
+        and ".venv" not in p.parts
         and "tests" not in p.parts
         and "migration" not in p.parts
         and "src" not in p.parts
