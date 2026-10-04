@@ -208,6 +208,20 @@ class Store:
         )
         self._conn.commit()
 
+    def ml_market_bulk_upsert(self, rows: list[tuple[str, str, int, dict]]) -> None:
+        if not rows:
+            return
+        payloads = [
+            (int(ts), symbol, kind, json.dumps(payload, sort_keys=True, separators=(",", ":"), default=str))
+            for symbol, kind, ts, payload in rows
+            if symbol and kind and int(ts) > 0
+        ]
+        with self._conn:
+            self._conn.executemany(
+                "INSERT OR REPLACE INTO ml_market_data(ts_ms,symbol,kind,payload_json) VALUES(?,?,?,?)",
+                payloads,
+            )
+
     def ml_market_range(self, symbol: str, kind: str, start_ms: int, end_ms: int) -> list[dict]:
         rows = self._conn.execute(
             "SELECT ts_ms,payload_json FROM ml_market_data WHERE symbol=? AND kind=? AND ts_ms>=? AND ts_ms<=? ORDER BY ts_ms",
