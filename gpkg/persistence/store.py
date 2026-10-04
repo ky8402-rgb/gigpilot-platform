@@ -54,6 +54,25 @@ class Store:
             evidence_json TEXT NOT NULL);
         CREATE INDEX IF NOT EXISTS ix_ml_model_events_model
             ON ml_model_events(model_id, ts_ms);
+        CREATE TABLE IF NOT EXISTS ml_market_data (
+            ts_ms INTEGER NOT NULL,
+            symbol TEXT NOT NULL,
+            kind TEXT NOT NULL,
+            payload_json TEXT NOT NULL,
+            PRIMARY KEY(ts_ms, symbol, kind)
+        );
+        CREATE INDEX IF NOT EXISTS ix_ml_market_data_symbol_kind_ts
+            ON ml_market_data(symbol, kind, ts_ms);
+        CREATE TABLE IF NOT EXISTS ml_research_audits (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            ts_ms INTEGER NOT NULL,
+            model_id TEXT NOT NULL,
+            outcome TEXT NOT NULL,
+            reason TEXT NOT NULL,
+            payload_json TEXT NOT NULL
+        );
+        CREATE INDEX IF NOT EXISTS ix_ml_research_audits_model
+            ON ml_research_audits(model_id, ts_ms);
         """)
         self._conn.commit()
 
@@ -179,6 +198,46 @@ class Store:
                    VALUES(?,?,?,?,?,?)""",
                 (ts, model_id, current, state, reason, payload),
             )
+
+    def ml_market_upsert(self, symbol: str, kind: str, ts_ms: int, payload: dict) -> None:
+        if not symbol or not kind or ts_ms <= 0:
+            raise ValueError("symbol, kind and positive timestamp are required")
+        self._conn.execute(
+            "INSERT OR REPLACE INTO ml_market_data(ts_ms,symbol,kind,payload_json) VALUES(?,?,?,?)",
+            (int(ts_ms), symbol, kind, json.dumps(payload, sort_keys=True, separators=(",", ":"), default=str)),
+        )
+        self._conn.commit()
+
+    def ml_market_range(self, symbol: str, kind: str, start_ms: int, end_ms: int) -> list[dict]:
+        rows = self._conn.execute(
+            "SELECT ts_ms,payload_json FROM ml_market_data WHERE symbol=? AND kind=? AND ts_ms>=? AND ts_ms<=? ORDER BY ts_ms",
+            (symbol, kind, int(start_ms), int(end_ms)),
+        ).fetchall()
+        return [{"ts_ms": int(ts), **json.loads(payload)} for ts, payload in rows]
+
+    def ml_market_counts(self, symbol: str, start_ms: int, end_ms: int) -> dict[str, int]:
+        rows = self._conn.execute(
+            "SELECT kind,COUNT(*) FROM ml_market_data WHERE symbol=? AND ts_ms>=? AND ts_ms<=? GROUP BY kind",
+            (symbol, int(start_ms), int(end_ms)),
+        ).fetchall()
+        return {str(k): int(v) for k, v in rows}
+
+    def ml_research_audit(self, model_id: str, outcome: str, reason: str, payload: dict) -> None:
+        self._conn.execute(
+            "INSERT INTO ml_research_audits(ts_ms,model_id,outcome,reason,payload_json) VALUES(?,?,?,?,?)",
+            (now_ms(), model_id, outcome, reason, json.dumps(payload, sort_keys=True, separators=(",", ":"), default=str)),
+        )
+        self._conn.commit()
+        self.journal("ML_RESEARCH_AUDIT", None, {"model_id": model_id, "outcome": outcome, "reason": reason})
+
+    def ml_research_audits(self, limit: int = 50) -> list[dict]:
+        limit = max(1, min(int(limit), 1000))
+        rows = self._conn.execute(
+            "SELECT ts_ms,model_id,outcome,reason,payload_json FROM ml_research_audits ORDER BY id DESC LIMIT ?",
+            (limit,),
+        ).fetchall()
+        return [{"ts_ms": int(ts), "model_id": mid, "outcome": out, "reason": reason, "payload": json.loads(payload)}
+                for ts, mid, out, reason, payload in rows]
 
     def ml_get_evidence(self, model_id: str) -> Optional[dict]:
         row = self._conn.execute(
