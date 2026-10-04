@@ -12,6 +12,8 @@ import argparse
 import asyncio
 import os
 
+from gpkg.ml.audit import normalize_audit
+
 from gpkg.ml.baseline import qualify_conservative_baseline, register_baseline_paper
 from gpkg.ml.data import HistoricalDataWorker
 from gpkg.ml.registry import ModelRegistry
@@ -29,13 +31,33 @@ def main() -> int:
     parser.add_argument("command", choices=("ingest", "collect-l2", "train", "audit-summary"))
     parser.add_argument("--db", default=os.getenv("GIGPILOT_DB", ".gigpilot-data/gigpilot.db"))
     parser.add_argument("--symbol", default=None)
+    parser.add_argument("--limit", type=int, default=50)
+    parser.add_argument("--format", choices=("json", "table"), default="json")
     args = parser.parse_args()
     store = Store(args.db)
     worker = HistoricalDataWorker(store)
 
     if args.command == "audit-summary":
         import json
-        print(json.dumps(store.ml_research_audits(limit=50), indent=2, sort_keys=True, default=str))
+        audits = [normalize_audit(row) for row in store.ml_research_audits(limit=max(1, min(args.limit, 1000)))]
+        if args.format == "table":
+            headers = ("TIME", "FAMILY", "GROSS", "FEES", "2xPEAK", "IMPACT", "NET", "T", "SHARPE", "GATE")
+            print(" ".join(f"{h:>12}" for h in headers))
+            print("-" * 132)
+            for row in audits:
+                costs = row["cost_deductions"]
+                values = (
+                    str(row["ts_ms"]), row["model_family"][:24], f"{row['gross_edge_bps']:.2f}",
+                    f"{costs['fees_bps']:.2f}", f"{costs['two_x_peak_spread_bps']:.2f}",
+                    f"{costs['modeled_impact_bps']:.2f}", f"{row['net_edge_bps']:.2f}",
+                    f"{row['t_stat']:.2f}", f"{row['oos_sharpe']:.2f}",
+                    "PASS" if row["gate_outcome"] else "REJECT",
+                )
+                print(" ".join(f"{v:>12}" for v in values))
+                if row["gate_failures"]:
+                    print("  reason:", " | ".join(str(x) for x in row["gate_failures"]))
+            return 0
+        print(json.dumps(audits, indent=2, sort_keys=True, default=str))
         return 0
 
     if args.command == "ingest":
