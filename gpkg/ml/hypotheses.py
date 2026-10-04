@@ -27,16 +27,6 @@ def _std(xs: list[float]) -> float:
     return v if math.isfinite(v) and v > 1e-12 else 1.0
 
 
-def _asof_value(rows: list[dict], ts: int, key: str, default: float = 0.0) -> float:
-    value = default
-    for row in rows:
-        rts = int(row["ts_ms"])
-        if rts > ts:
-            break
-        value = float(row.get(key, default))
-    return value
-
-
 def _feature_rows(store: Store, symbol: str, start_ms: int, end_ms: int, use_l2: bool) -> list[dict]:
     kl = store.ml_market_range(symbol, "kline_1m", start_ms, end_ms)
     funding = store.ml_market_range(symbol, "funding_8h", start_ms, end_ms)
