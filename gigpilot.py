@@ -76,6 +76,7 @@ METRICS = Metrics()
 # which imports this module) keeps resolving unchanged.
 from gpkg.core.errors import BybitError, DUPLICATE_ORDER_LINK_CODE  # noqa: E402
 from gpkg.exchange.bybit_rest import BybitREST  # noqa: E402
+from gpkg.exchange.adapters.bybit import BybitAdapter  # noqa: E402
 
 
 # =============================================================================
@@ -386,6 +387,10 @@ class GigPilot:
     def __init__(self, cfg: Config):
         self.cfg = cfg
         self.rest = BybitREST(cfg)
+        # The adapter is the live execution boundary. It deliberately reuses the already-hardened
+        # BybitREST transport/session so this migration changes the abstraction seam, not signing,
+        # retry, timeout, or venue semantics.
+        self.exchange = BybitAdapter(cfg, rest=self.rest, metrics=METRICS)
         self.store = Store(cfg.db_path)
         self.markets = {s: MarketState(symbol=s) for s in cfg.symbols}
         self.step_size: dict[str, float] = {}
@@ -508,7 +513,7 @@ class GigPilot:
                 log.warning("fee_rate %s: %s — ceiling applied", s, e)
                 self.fee_rate_bps[s] = self.cfg.fee_ceiling_bps
 
-        self.executor = Executor(self.cfg, self.rest, self.step_size, min_sizes=self.min_qty)
+        self.executor = Executor(self.cfg, self.exchange, self.step_size, metrics=METRICS, min_sizes=self.min_qty)
 
         # --- Anchor day_start_equity, restore from KV if same UTC day ---
         await self._refresh_portfolio()
