@@ -532,8 +532,8 @@ class GigPilot:
         last_err = None
         for attempt in range(3):
             try:
-                positions = await self.rest.positions()
-                idxs = {int(p.get("positionIdx", 0)) for p in positions}
+                positions = await self.exchange.positions()
+                idxs = {int(p.position_idx) for p in positions}
                 if idxs - {0}: return "hedge"
                 return "one-way"
             except Exception as e:
