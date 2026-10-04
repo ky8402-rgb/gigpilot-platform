@@ -76,10 +76,11 @@ class FakeREST:
         return []
 
     async def api_info(self):
-        return {"result": {
+        # Match BybitREST.api_info(): _req() already unwraps the venue's top-level result envelope.
+        return {
             "readOnly": self.read_only,
             "permissions": {"ContractTrade": ["Order", "Position"] if self.trade_permission else []},
-        }}
+        }
 
     async def instrument(self, symbol: str):
         return {
