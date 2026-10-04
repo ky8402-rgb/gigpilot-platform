@@ -1072,6 +1072,7 @@ class GigPilot:
                 "recent_events": self.store.ml_events(limit=20),
             },
             "reconciliation": {"healthy": self.reconciler.healthy, "last_error": self.reconciler.last_error, "last_run_ms": self.reconciler.last_run_ms},
+            "watchdog": self._watchdog.snapshot(),
             "armable": bool(self.reconciler.healthy and self.position_mode == "one-way" and self.ws._public_ok and self.ws._private_ok),
         }
 
