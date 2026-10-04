@@ -94,11 +94,12 @@ def test_purged_walk_forward_has_strict_time_order_and_gap():
         PurgedWalkForward().split([1, 2, 2, 3] * 100)
 
 
-def test_challenger_can_only_advance_to_canary():
+def test_verified_challenger_can_only_advance_to_paper_first():
     ev = verified_evidence()
     decision = promote_challenger(ev, None)
     assert decision.allowed
-    assert decision.target_state is ModelState.CANARY
+    assert decision.target_state is ModelState.PAPER
+    assert "paper" in decision.reason.lower()
 
 
 def test_drift_blocks_trade_and_triggers_rollback():
