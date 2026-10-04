@@ -15,7 +15,12 @@ import os
 from gpkg.ml.baseline import qualify_conservative_baseline, register_baseline_paper
 from gpkg.ml.data import HistoricalDataWorker
 from gpkg.ml.registry import ModelRegistry
-from gpkg.ml.training import TrainingConfig, register_validated_candidate, train_candidate, train_hypotheses
+from gpkg.ml.training import (
+    TrainingConfig,
+    register_validated_candidate,
+    train_candidate,
+    train_hypotheses,
+)
 from gpkg.persistence.store import Store
 
 
