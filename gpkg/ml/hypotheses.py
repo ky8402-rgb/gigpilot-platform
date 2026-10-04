@@ -47,6 +47,7 @@ def _feature_rows(store: Store, symbol: str, start_ms: int, end_ms: int, use_l2:
     closes = [float(r["close"]) for r in kl]
     out: list[dict] = []
     returns: list[float] = []
+    vol_series: list[float] = []
     for i, row in enumerate(kl):
         close = float(row["close"])
         if i and close > 0 and closes[i - 1] > 0:
@@ -55,12 +56,15 @@ def _feature_rows(store: Store, symbol: str, start_ms: int, end_ms: int, use_l2:
             returns.append(0.0)
         hist = returns[max(0, i - 239):i + 1]
         vol = _std(hist)
-        vol_pct = sum(1 for x in hist if x <= vol) / max(len(hist), 1)
+        vol_history = vol_series[max(0, len(vol_series) - 239):]
+        vol_pct = sum(1 for x in vol_history if x <= vol) / max(len(vol_history), 1) if vol_history else 0.5
+        vol_series.append(vol)
         f = _asof_value(funding, int(row["ts_ms"]), "funding_bps")
         b = _asof_value(basis, int(row["ts_ms"]), "basis_bps")
         rec = {
             "ts_ms": int(row["ts_ms"]), "close": close, "volume": float(row.get("volume", 0.0)),
             "funding_bps": f, "basis_bps": b, "vol_bps": vol, "vol_percentile": vol_pct,
+            "return_bps": returns[-1],
         }
         if use_l2:
             book = book_by_ts.get(int(row["ts_ms"]))
@@ -142,7 +146,7 @@ def _evaluate(
             else:
                 # Low-volatility regimes favor reversion; high-volatility regimes favor breakouts.
                 low = float(r["vol_bps"]) <= vol_mid
-                recent = mean(float(x["future_return_bps"]) for x in rows[max(train.start, i-5):i]) if i > train.start else 0.0
+                recent = mean(float(x["return_bps"]) for x in rows[max(train.start, i-5):i]) if i > train.start else 0.0
                 score = (-(0.7 * bz + 0.3 * fz) if low else (recent / max(float(r["vol_bps"]), 1.0)))
                 threshold = 0.75 if low else 0.5
             if l2_ready:
@@ -158,7 +162,7 @@ def _evaluate(
                 spread_bps=spread_charge,
                 slippage_bps=impact,
                 funding_bps=0.0,
-                adverse_selection_bps=0.05 * abs(float(r["future_return_bps"])),
+                adverse_selection_bps=0.05 * float(r["vol_bps"]),
             )
             trades.append(NetTrade(gross, realised, costs, int(r["ts_ms"])))
     return evaluate_candidate(
