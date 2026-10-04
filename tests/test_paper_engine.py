@@ -14,4 +14,4 @@ def test_paper_engine_has_no_live_exchange_execution_dependency(tmp_path):
 def test_paper_rejection_is_auditable(tmp_path):
     store=Store(str(tmp_path/"paper.db")); m=MarketState("BTCUSDT"); m.apply_book_snapshot([["100","10"]],[["101","10"]])
     e=PaperTradingEngine(store,EmptyRegistry(),{"BTCUSDT":m},{"BTCUSDT":5.5}); e.warmup(); e.on_book("BTCUSDT",m)
-    assert e.snapshot()["rejections"][-1]["reason"]=="No verified PAPER baseline model"
+    assert e.snapshot()["rejections"][-1]["reason"]=="No verified PAPER model"
