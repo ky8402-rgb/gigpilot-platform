@@ -242,8 +242,11 @@ class BybitWS:
 # 10. Position reconciler
 # =============================================================================
 class Reconciler:
-    def __init__(self, cfg: Config, rest: BybitREST, store: Store, positions: dict):
-        self.cfg = cfg; self.rest = rest; self.store = store; self.positions = positions
+    def __init__(self, cfg: Config, rest, store: Store, positions: dict):
+        self.cfg = cfg
+        self.adapter = rest if hasattr(rest, "positions") and hasattr(rest, "trade_permission") else None
+        self.rest = rest.rest if self.adapter is not None and hasattr(rest, "rest") else rest
+        self.store = store; self.positions = positions
         self.healthy = False
         self.last_error: Optional[str] = "not_run"
         self.last_run_ms = 0
@@ -257,8 +260,11 @@ class Reconciler:
 
     async def run_once(self):
         try:
-            exch = {p["symbol"]: p for p in await self.rest.positions()
-                    if f(p.get("size")) > 0}
+            if self.adapter is not None:
+                exch = {p.symbol: p for p in await self.adapter.positions() if p.qty > 0}
+            else:
+                exch = {p["symbol"]: p for p in await self.rest.positions()
+                        if f(p.get("size")) > 0}
         except Exception as e:
             self.healthy = False; self.last_error = str(e); self.last_run_ms = now_ms()
             log.warning("reconcile positions: %s", e)
@@ -272,29 +278,44 @@ class Reconciler:
                 METRICS.inc("gigpilot_reconcile_divergences_total",
                             kind="local_open_exch_flat")
                 continue
-            ep = exch[sym]; e_qty = f(ep.get("size"))
+            ep = exch[sym]
+            e_qty = ep.qty if self.adapter is not None else f(ep.get("size"))
             if abs(e_qty - self.positions[sym].get("qty", 0.0)) > 1e-9:
                 self.positions[sym]["qty"] = e_qty
                 METRICS.inc("gigpilot_reconcile_divergences_total", kind="size")
         for sym, ep in exch.items():
             if sym not in self.positions:
                 log.warning("RECONCILE: adopting untracked %s", sym)
-                self.positions[sym] = {"side": ep.get("side", "Buy"),
-                                       "qty": f(ep.get("size")),
-                                       "entry": f(ep.get("avgPrice")),
-                                       "trade_id": None}
+                if self.adapter is not None:
+                    side = ep.side.value
+                    qty = ep.qty
+                    entry = ep.entry_price
+                else:
+                    side = ep.get("side", "Buy")
+                    qty = f(ep.get("size"))
+                    entry = f(ep.get("avgPrice"))
+                self.positions[sym] = {"side": side, "qty": qty, "entry": entry, "trade_id": None}
                 METRICS.inc("gigpilot_reconcile_divergences_total", kind="adopt")
         try:
-            for o in await self.rest.open_orders():
-                link = o.get("orderLinkId", "")
+            orders = await (self.adapter.open_orders() if self.adapter is not None else self.rest.open_orders())
+            for o in orders:
+                if self.adapter is not None:
+                    link = o.client_order_id or ""
+                    symbol = o.symbol
+                    order_id = o.order_id
+                else:
+                    link = o.get("orderLinkId", "")
+                    symbol = o["symbol"]
+                    order_id = ""
                 if not link.startswith("gp-"): continue
                 try:
-                    await self.rest.cancel_order(category="linear",
-                                                 symbol=o["symbol"],
-                                                 orderLinkId=link)
-                    METRICS.inc("gigpilot_reconcile_divergences_total",
-                                kind="orphan_cancelled")
-                except Exception: pass
+                    if self.adapter is not None:
+                        await self.adapter.cancel_order(symbol, order_id)
+                    else:
+                        await self.rest.cancel_order(category="linear", symbol=symbol, orderLinkId=link)
+                    METRICS.inc("gigpilot_reconcile_divergences_total", kind="orphan_cancelled")
+                except Exception:
+                    pass
         except Exception as e:
             self.healthy = False; self.last_error = str(e); self.last_run_ms = now_ms()
             log.warning("reconcile orders: %s", e)
@@ -304,24 +325,26 @@ class Reconciler:
         # positions and open orders perfectly well while every order-mutating endpoint answers
         # "API key is invalid", so `healthy` alone would report a fully working credential.
         try:
-            # BybitREST._req() already unwraps the venue envelope and returns result directly.
-            # Unwrapping "result" a second time silently produced {}, making every valid key look
-            # like it lacked ContractTrade and permanently blocking trading readiness.
-            info = (await self.rest.api_info()) or {}
-            perms = info.get("permissions", {}) or {}
-            contract_trade = perms.get("ContractTrade") or []
-            read_only = int(info.get("readOnly", 0) or 0)
-            if read_only != 0:
-                self.trade_permissions_ok = False
-                self.trade_permissions_error = "API key is READ-ONLY; it cannot place orders"
-            elif not contract_trade:
-                self.trade_permissions_ok = False
-                self.trade_permissions_error = (
-                    "API key lacks the ContractTrade permission; it cannot place futures orders"
-                )
+            if self.adapter is not None:
+                self.trade_permissions_ok, reason = await self.adapter.trade_permission()
+                self.trade_permissions_error = None if self.trade_permissions_ok else reason
             else:
-                self.trade_permissions_ok = True
-                self.trade_permissions_error = None
+                # BybitREST._req() already unwraps the venue envelope and returns result directly.
+                info = (await self.rest.api_info()) or {}
+                perms = info.get("permissions", {}) or {}
+                contract_trade = perms.get("ContractTrade") or []
+                read_only = int(info.get("readOnly", 0) or 0)
+                if read_only != 0:
+                    self.trade_permissions_ok = False
+                    self.trade_permissions_error = "API key is READ-ONLY; it cannot place orders"
+                elif not contract_trade:
+                    self.trade_permissions_ok = False
+                    self.trade_permissions_error = (
+                        "API key lacks the ContractTrade permission; it cannot place futures orders"
+                    )
+                else:
+                    self.trade_permissions_ok = True
+                    self.trade_permissions_error = None
         except Exception as e:
             self.trade_permissions_ok = False
             self.trade_permissions_error = str(e)
@@ -334,35 +357,48 @@ class Reconciler:
 # 11. Accounting reconciler — exchange-verified PnL
 # =============================================================================
 class AccountingReconciler:
-    """Back-fills realized_pnl + fees from /v5/position/closed-pnl.
+    """Back-fills realized_pnl + fees from exchange-verified closed fills.
     Unmatched exchange closes emit ACCT_ORPHAN — never fabricate a local row."""
 
-    def __init__(self, rest: BybitREST, store: Store):
-        self.rest = rest; self.store = store
+    def __init__(self, rest, store: Store):
+        self.adapter = rest if hasattr(rest, "closed_pnl") and hasattr(rest, "trade_permission") else None
+        self.rest = rest.rest if self.adapter is not None and hasattr(rest, "rest") else rest
+        self.store = store
         self._seen_order_ids: set[str] = set()
 
     async def run_once(self) -> int:
         try:
-            rows = await self.rest.closed_pnl(limit=100)
+            rows = await (self.adapter.closed_pnl(limit=100) if self.adapter is not None
+                          else self.rest.closed_pnl(limit=100))
         except Exception as e:
             log.warning("closed-pnl fetch failed: %s", e)
             METRICS.inc("gigpilot_accounting_errors_total")
             return 0
         applied = 0
         for row in rows:
-            order_id = str(row.get("orderId", ""))
+            if self.adapter is not None:
+                order_id = row.order_id
+                sym = row.symbol
+                side = row.side.value
+                avg_exit = row.price
+                closed_pnl = row.closed_pnl
+                created_ms = row.ts_ms
+                total_fee = row.fees
+            else:
+                order_id = str(row.get("orderId", ""))
+                sym = row.get("symbol", "")
+                side = row.get("side", "")
+                avg_exit = f(row.get("avgExitPrice"))
+                closed_pnl = f(row.get("closedPnl"))
+                created_ms = int(f(row.get("createdTime"), 0))
+                total_fee = 0.0
+                for a, b in (("openFee", "closeFee"), ("cumEntryFee", "cumExitFee")):
+                    if a in row or b in row:
+                        total_fee = f(row.get(a)) + f(row.get(b)); break
+                if total_fee == 0.0:
+                    total_fee = f(row.get("execFee"))
             if not order_id or order_id in self._seen_order_ids: continue
             self._seen_order_ids.add(order_id)
-            sym        = row.get("symbol", "")
-            side       = row.get("side", "")
-            avg_exit   = f(row.get("avgExitPrice"))
-            closed_pnl = f(row.get("closedPnl"))
-            created_ms = int(f(row.get("createdTime"), 0))
-            total_fee = 0.0
-            for a, b in (("openFee", "closeFee"), ("cumEntryFee", "cumExitFee")):
-                if a in row or b in row:
-                    total_fee = f(row.get(a)) + f(row.get(b)); break
-            if total_fee == 0.0: total_fee = f(row.get("execFee"))
             matched = self.store.match_closed_trade(sym, side, created_ms)
             if matched is None:
                 log.warning("ACCT: unmatched close %s side=%s pnl=%.4f",
@@ -402,8 +438,8 @@ class GigPilot:
         self.executor: Optional[Executor] = None
         self.edge = EdgeEngine(cfg); self.risk = RiskGate(cfg)
         self.positions: dict[str, dict] = {}
-        self.reconciler = Reconciler(cfg, self.rest, self.store, self.positions)
-        self.accounting = AccountingReconciler(self.rest, self.store)
+        self.reconciler = Reconciler(cfg, self.exchange, self.store, self.positions)
+        self.accounting = AccountingReconciler(self.exchange, self.store)
         self.ws = BybitWS(cfg, self.markets, on_private_event=self._on_private)
         self.portfolio = Portfolio()
         self.fee_rate_bps: dict[str, float] = {}
@@ -1258,7 +1294,7 @@ async def api_kill():
         try: await gp._close_position(sym, reason="kill_switch")
         except Exception as e: log.error("kill close %s: %s", sym, e)
     for sym in gp.cfg.symbols:
-        try: await gp.rest.cancel_all(sym)
+        try: await gp.exchange.cancel_all(sym)
         except Exception as e: log.warning("cancel_all %s: %s", sym, e)
     return {"killed": True}
 
