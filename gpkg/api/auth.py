@@ -611,6 +611,27 @@ def extract_token(request: Request) -> Optional[str]:
     return request.query_params.get("token") or request.headers.get("x-owner-token")
 
 
+def owner_authenticated(request: Request) -> bool:
+    """True only for a request carrying a VALID owner session. Never raises, never prompts.
+
+    Used by endpoints that must serve a reduced payload to anonymous callers instead of refusing
+    outright — `/api/health` has to stay reachable for the deployment gate and external monitoring,
+    so it cannot simply be gated with `require_owner`. Anything that would fail closed here is a bug:
+    an exception in this helper must mean "not the owner", never a 500 on the health check that
+    uptime monitoring depends on.
+    """
+    try:
+        token = extract_token(request)
+    except Exception:
+        return False
+    if not token:
+        return False
+    try:
+        return bool(get_owner_auth().verify(token))
+    except Exception:
+        return False
+
+
 def require_owner(request: Request) -> bool:
     """FastAPI dependency. Refuses unless a valid owner session token is presented."""
     token = extract_token(request)

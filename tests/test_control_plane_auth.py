@@ -92,9 +92,21 @@ def test_health_remains_public_and_leaks_no_credentials(authed_client):
 
 
 def test_health_declares_not_trading_ready_when_unverified(authed_client):
-    """Absence of a failure is not readiness: a never-validated credential must not read as ready."""
-    client, engine, _token, _owner = authed_client
-    body = client.get("/health").json()
+    """Absence of a failure is not readiness: a never-validated credential must not read as ready.
+
+    The detailed fields are requested with the OWNER token, because `credentials_ok`,
+    `trade_permissions_ok` and `trading_blockers` are now owner-only — they carry verbatim
+    credential-failure text that must not be served to anonymous callers. `trading_ready` itself
+    stays public so monitoring can still alarm on it, so BOTH tiers are asserted: that way a future
+    change to the split cannot silently break either audience.
+    """
+    client, engine, token, _owner = authed_client
+
+    anon = client.get("/health").json()
+    assert anon.get("trading_ready") is False, "trading_ready must remain visible to monitoring"
+    assert "trading_blockers" not in anon, "blocker detail leaked to an anonymous caller"
+
+    body = client.get("/health", headers={"Authorization": f"Bearer {token}"}).json()
     assert body.get("trading_ready") is False, body.get("trading_ready")
     assert body.get("credentials_ok") is False, "reconciler never ran, so credentials are not validated"
     assert body.get("trade_permissions_ok") is False

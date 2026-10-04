@@ -115,7 +115,7 @@ from gpkg.persistence.store import Store  # noqa: E402
 # boundary (server/trading/ownerAuth.ts); the Python control plane previously enforced NOTHING, so
 # an unauthenticated caller could arm live trading or trip the kill switch. Absence of a check is
 # not a neutral default on a control plane that can move money.
-from gpkg.api.auth import OwnerAuth, get_owner_auth, require_owner  # noqa: E402
+from gpkg.api.auth import OwnerAuth, get_owner_auth, owner_authenticated, require_owner  # noqa: E402
 
 
 # =============================================================================
@@ -998,8 +998,26 @@ app = FastAPI(title="GigPilot", lifespan=lifespan)
 @app.get("/health")
 @app.get("/api/health")
 @app.get("/api/trading/gigpilot/health")
-async def health():
+async def health(request: Request):
+    """Liveness/readiness for the deploy gate, monitoring, and the owner.
+
+    TWO-TIER RESPONSE. This endpoint stays reachable WITHOUT authentication because the deployment
+    gate and uptime monitoring depend on it — locking it down would freeze every release, including
+    the releases that fix things. But it previously returned the full operational picture to anyone
+    who asked, which is free reconnaissance:
+
+      * `host`                  -> which venue, so an attacker knows where else to look
+      * `armed`                 -> whether live trading is on RIGHT NOW
+      * `trade_permissions_error`, `credentials_error`, `trading_blockers`
+                                -> verbatim internal failure text, including why a key was rejected
+      * `position_mode`         -> account configuration detail
+
+    So the sensitive fields are now returned only to a caller holding a valid owner session. The
+    public tier keeps exactly what the gate asserts on (`deployedCommit`, `autonomousEngine.reachable`)
+    plus booleans that carry monitoring value without disclosing configuration or state reasons.
+    """
     gp = get_gp()
+    is_owner = owner_authenticated(request)
     fresh = all((now_ms() - ms.ts_book_ms) < gp.cfg.staleness_ms
                 for ms in gp.markets.values() if ms.ts_book_ms > 0)
     public_ok = gp.ws._public_ok
@@ -1054,13 +1072,15 @@ async def health():
     if not commit_sha:
         commit_sha = os.getenv("DEPLOYED_COMMIT", os.getenv("GITHUB_SHA", ""))
 
-    return JSONResponse(status_code=200 if healthy else 503, content={
+    payload = {
+        # ---- PUBLIC TIER -------------------------------------------------------------
+        # The deployment gate asserts on `deployedCommit` and `autonomousEngine.reachable`; both
+        # must stay here or every rollout breaks. The rest is monitoring signal that discloses no
+        # configuration, no credential state and no failure reasons.
         "status": "ok" if healthy else "degraded",
         "service": "Autonomous Crypto Grid Trading Platform",
         "healthy": healthy, "public_ws": public_ok,
         "private_ws": private_ok, "feed_fresh": fresh,
-        "armed": gp.armed, "host": gp.cfg.host,
-        "position_mode": gp.position_mode,
         "deployedCommit": commit_sha,
         "autonomousEngine": {
             "status": "healthy" if healthy else "unhealthy",
@@ -1068,20 +1088,32 @@ async def health():
             "publicWs": public_ok,
             "privateWs": private_ok,
             "feedFresh": fresh,
-            "armed": gp.armed,
         },
-        # ---- authoritative trading-readiness signal ----
+        # A single boolean. Uptime monitoring needs to alarm when the engine cannot trade; nobody
+        # outside needs to know WHY, and the reason is what leaks credential state.
         "trading_ready": len(blockers) == 0,
-        "credentials_ok": credentials_ok,
-        "credentials_error": gp.reconciler.last_error,
-        "credentials_checked_ms_ago": (now_ms() - gp.reconciler.last_run_ms)
-                                      if gp.reconciler.last_run_ms else None,
-        "trade_permissions_ok": trade_authorized,
-        "trade_permissions_error": gp.reconciler.trade_permissions_error,
-        "trade_permissions_checked_ms_ago": (now_ms() - gp.reconciler.trade_permissions_ms)
-                                            if gp.reconciler.trade_permissions_ms else None,
-        "trading_blockers": blockers,
-    })
+        "authenticated": is_owner,
+    }
+
+    if is_owner:
+        payload.update({
+            # ---- OWNER TIER ----------------------------------------------------------
+            "host": gp.cfg.host,
+            "position_mode": gp.position_mode,
+            "armed": gp.armed,
+            "credentials_ok": credentials_ok,
+            "credentials_error": gp.reconciler.last_error,
+            "credentials_checked_ms_ago": (now_ms() - gp.reconciler.last_run_ms)
+                                          if gp.reconciler.last_run_ms else None,
+            "trade_permissions_ok": trade_authorized,
+            "trade_permissions_error": gp.reconciler.trade_permissions_error,
+            "trade_permissions_checked_ms_ago": (now_ms() - gp.reconciler.trade_permissions_ms)
+                                                if gp.reconciler.trade_permissions_ms else None,
+            "trading_blockers": blockers,
+        })
+        payload["autonomousEngine"]["armed"] = gp.armed
+
+    return JSONResponse(status_code=200 if healthy else 503, content=payload)
 
 
 @app.get("/metrics", dependencies=[Depends(require_owner)])
