@@ -77,6 +77,7 @@ fi
 "$APP_DIR/.venv/bin/python3" -c "import fastapi, uvicorn, aiohttp; print('Python runtime verified')"
 
 echo "Running Python migration and safety gates..."
+"$APP_DIR/.venv/bin/python3" tests/test_python_only_runtime.py
 "$APP_DIR/.venv/bin/python3" tests/test_parity.py
 "$APP_DIR/.venv/bin/python3" tests/test_execution_idempotency.py
 "$APP_DIR/.venv/bin/python3" tests/test_package_seams.py
