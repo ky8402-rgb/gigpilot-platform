@@ -9,9 +9,6 @@ Verifies that FastAPI serves the prebuilt React dashboard from dist/:
   5. SPA fallback routes (e.g. /cockpit, /terminal) return 200 and index.html.
   6. API routes (/api/*, /health, /metrics) are NOT intercepted by SPA fallback.
 """
-import sys
-from pathlib import Path
-
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
@@ -21,7 +18,7 @@ warnings.filterwarnings("ignore", message=r"Using .*starlette\.testclient.* is d
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from gpkg.web.dashboard import mount_dashboard, DIST_DIR, INDEX_PATH
+from gpkg.web.dashboard import DIST_DIR, INDEX_PATH, mount_dashboard
 
 
 class TestDashboardDelivery(unittest.TestCase):
