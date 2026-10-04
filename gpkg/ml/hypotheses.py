@@ -187,7 +187,7 @@ def evaluate_hypotheses(
     l2 = store.ml_market_buffer_stats_for_symbol(symbol, "orderbook_l2")
     l2_ready = int(l2.get("span_ms", 0)) >= L2_REQUIRED_MS
     rows = _feature_rows(store, symbol, start, end, l2_ready)
-    progress = {
+    progress: dict[str, object] = {
         "symbol": symbol, "l2_rows": int(l2.get("rows", 0)),
         "l2_span_ms": int(l2.get("span_ms", 0)), "l2_ready_48h": l2_ready,
         "message": "L2 OBI/micro-price enabled" if l2_ready else
@@ -195,7 +195,7 @@ def evaluate_hypotheses(
     }
     if len(rows) < MIN_ROWS:
         reason = f"insufficient aligned rows {len(rows)} < {MIN_ROWS}"
-        store.ml_research_audit(f"l2-progress-{symbol.lower()}-{end}", "WARMING", progress["message"], {**progress, "rows": len(rows), "reason": reason})
+        store.ml_research_audit(f"l2-progress-{symbol.lower()}-{end}", "WARMING", str(progress["message"]), {**progress, "rows": len(rows), "reason": reason})
         return [], {**progress, "rejected": reason}
     splits = PurgedWalkForward(n_splits=5, min_train=20_000, test_size=5_000, purge=5).split(
         [int(r["ts_ms"]) for r in rows]
@@ -204,11 +204,11 @@ def evaluate_hypotheses(
         return [], {**progress, "rejected": f"only {len(splits)} purged folds available; required 5"}
     peak, l2_count = _peak_spread(store, symbol, start, end)
     if not l2_count:
-        progress["message"] += "; no observed L2 spread yet, candidates remain research-only"
+        progress["message"] = str(progress["message"]) + "; no observed L2 spread yet, candidates remain research-only"
     evidence: list[ModelEvidence] = []
     for family in ("funding_rate_carry_reversion", "volatility_regime_conditioning"):
         ev = _evaluate(store, symbol, family, rows, splits, peak, taker_fee_bps, l2_ready)
-        cost = {
+        cost: dict[str, float] = {
             "fees_bps": 2.0 * taker_fee_bps,
             "two_x_peak_spread_bps": 2.0 * peak,
             "modeled_impact_bps": max(1.0, mean(float(r["vol_bps"]) for r in rows[-1000:]) * 0.05),
