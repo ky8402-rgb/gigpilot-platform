@@ -304,7 +304,10 @@ class Reconciler:
         # positions and open orders perfectly well while every order-mutating endpoint answers
         # "API key is invalid", so `healthy` alone would report a fully working credential.
         try:
-            info = (await self.rest.api_info()).get("result", {}) or {}
+            # BybitREST._req() already unwraps the venue envelope and returns result directly.
+            # Unwrapping "result" a second time silently produced {}, making every valid key look
+            # like it lacked ContractTrade and permanently blocking trading readiness.
+            info = (await self.rest.api_info()) or {}
             perms = info.get("permissions", {}) or {}
             contract_trade = perms.get("ContractTrade") or []
             read_only = int(info.get("readOnly", 0) or 0)
