@@ -4,6 +4,7 @@ import math
 from collections import deque
 from dataclasses import dataclass
 from typing import Any
+from statistics import pstdev
 from gpkg.core.clock import now_iso, now_ms
 from gpkg.ml.lifecycle import ModelState
 from gpkg.persistence.store import Store
@@ -107,8 +108,8 @@ class PaperTradingEngine:
         if "funding_rate_carry_reversion" in family:
             f_hist=self.store.ml_market_range(symbol,"funding_8h",max(0,now_ms()-90*86400000),now_ms())
             b_hist=self.store.ml_market_range(symbol,"basis_1m",max(0,now_ms()-90*86400000),now_ms())[-5000:]
-            f_scale=max(1.0,self._std([float(x.get("funding_bps",0.0)) for x in f_hist]))
-            b_scale=max(1.0,self._std([float(x.get("basis_bps",0.0)) for x in b_hist]))
+            f_scale=max(1.0,pstdev([float(x.get("funding_bps",0.0)) for x in f_hist]) if len(f_hist)>1 else 1.0)
+            b_scale=max(1.0,pstdev([float(x.get("basis_bps",0.0)) for x in b_hist]) if len(b_hist)>1 else 1.0)
             score=-(0.65*funding/f_scale+0.35*basis/b_scale)
             side="Buy" if score>0 else "Sell" if score<0 else None
             gross=abs(score)*max(vol,1.0)
