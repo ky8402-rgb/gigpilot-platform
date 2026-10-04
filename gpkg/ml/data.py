@@ -123,6 +123,53 @@ class HistoricalDataWorker:
             "volume_1m": snapshot.volume_1m,
         })
 
+    async def ingest_funding_history(self, symbol: str, *, end_ms: int | None = None) -> int:
+        """Persist Bybit's historical 8-hour funding observations."""
+        end_ms = int(end_ms or now_ms()); start_ms = end_ms - self.days * 86_400_000
+        cursor = end_ms; count = 0
+        async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=30)) as session:
+            while cursor >= start_ms:
+                body = await self._get(session, "funding/history", {"category":"linear","symbol":symbol,"endTime":cursor,"limit":200})
+                rows = body.get("result", {}).get("list", []) or []
+                if not rows: break
+                oldest = cursor; batch = []
+                for row in rows:
+                    ts = int(row.get("fundingRateTimestamp") or row.get("fundingTime") or 0)
+                    if start_ms <= ts <= end_ms and ts > 0:
+                        oldest = min(oldest, ts)
+                        rate = float(row.get("fundingRate", 0.0))
+                        batch.append((symbol,"funding_8h",ts,{"funding_rate":rate,"funding_bps":rate*1e4}))
+                self.store.ml_market_bulk_upsert(batch); count += len(batch)
+                if oldest >= cursor: break
+                cursor = oldest - 1
+                if self.request_pause_s: await asyncio.sleep(self.request_pause_s)
+        return count
+
+    async def ingest_basis_history(self, symbol: str, *, end_ms: int | None = None) -> int:
+        """Persist one-minute perp-vs-index basis with the index observation at the same timestamp."""
+        end_ms = int(end_ms or now_ms()); start_ms = end_ms - self.days * 86_400_000
+        cursor = end_ms; count = 0
+        async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=30)) as session:
+            while cursor > start_ms:
+                perp_body = await self._get(session, "kline", {"category":"linear","symbol":symbol,"interval":"1","end":cursor,"limit":1000})
+                index_body = await self._get(session, "index-price-kline", {"category":"linear","symbol":symbol,"interval":"1","end":cursor,"limit":1000})
+                perp = {int(r[0]):float(r[4]) for r in perp_body.get("result",{}).get("list",[]) or [] if len(r)>=5}
+                index = {int(r[0]):float(r[4]) for r in index_body.get("result",{}).get("list",[]) or [] if len(r)>=5}
+                timestamps = sorted(set(perp).intersection(index))
+                if not timestamps: break
+                oldest = min(timestamps); batch=[]
+                for ts in timestamps:
+                    if start_ms <= ts <= end_ms and index[ts] > 0:
+                        batch.append((symbol,"basis_1m",ts,{"perp_close":perp[ts],"index_close":index[ts],"basis_bps":(perp[ts]/index[ts]-1.0)*1e4}))
+                self.store.ml_market_bulk_upsert(batch); count += len(batch)
+                if oldest >= cursor: break
+                cursor = oldest - 1
+                if self.request_pause_s: await asyncio.sleep(self.request_pause_s)
+        return count
+
+    async def ingest_funding_and_basis(self, symbol: str, *, end_ms: int | None = None) -> tuple[int,int]:
+        return await self.ingest_funding_history(symbol,end_ms=end_ms), await self.ingest_basis_history(symbol,end_ms=end_ms)
+
     async def collect_current_snapshot(self, symbol: str, *, limit: int = 50) -> LiquiditySnapshot:
         async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=15)) as session:
             body = await self._get(session, "orderbook", {
@@ -167,14 +214,17 @@ class HistoricalDataWorker:
         start_ms = end_ms - self.days * 86_400_000
         counts = self.store.ml_market_counts(symbol, start_ms, end_ms)
         expected = self.days * 1440
+        funding = self.store.ml_market_range(symbol, "funding_8h", start_ms, end_ms)
+        basis = self.store.ml_market_range(symbol, "basis_1m", start_ms, end_ms)
+        l2 = self.store.ml_market_buffer_stats_for_symbol(symbol, "orderbook_l2")
         return {
-            "symbol": symbol,
-            "start_ms": start_ms,
-            "end_ms": end_ms,
-            "expected_1m_bars": expected,
-            "kline_count": counts.get("kline_1m", 0),
+            "symbol": symbol, "start_ms": start_ms, "end_ms": end_ms,
+            "expected_1m_bars": expected, "kline_count": counts.get("kline_1m", 0),
             "liquidity_snapshot_count": counts.get("orderbook_l2", 0),
             "kline_coverage": counts.get("kline_1m", 0) / max(expected, 1),
+            "funding_count": len(funding), "basis_count": len(basis),
+            "l2_span_ms": int(l2.get("span_ms", 0)),
+            "l2_48h_ready": int(l2.get("span_ms", 0)) >= 48 * 3_600_000,
         }
 
     def require_training_coverage(self, symbol: str, *, min_kline_coverage: float = 0.98,
