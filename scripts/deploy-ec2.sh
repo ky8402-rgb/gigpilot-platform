@@ -137,6 +137,7 @@ User=ubuntu
 WorkingDirectory=$APP_DIR
 EnvironmentFile=$APP_DIR/.env
 Environment=PYTHONUNBUFFERED=1
+Environment=PYTHONPATH=$APP_DIR
 ExecStart=$APP_DIR/.venv/bin/python3 $APP_DIR/scripts/ml_research.py collect-l2 --db $APP_DIR/.gigpilot-data/gigpilot.db
 Restart=always
 RestartSec=15
@@ -162,6 +163,7 @@ User=ubuntu
 WorkingDirectory=$APP_DIR
 EnvironmentFile=$APP_DIR/.env
 Environment=PYTHONUNBUFFERED=1
+Environment=PYTHONPATH=$APP_DIR
 ExecStart=$APP_DIR/.venv/bin/python3 $APP_DIR/scripts/ml_research.py ingest --db $APP_DIR/.gigpilot-data/gigpilot.db
 ExecStart=$APP_DIR/.venv/bin/python3 $APP_DIR/scripts/ml_research.py train --db $APP_DIR/.gigpilot-data/gigpilot.db
 NoNewPrivileges=true
