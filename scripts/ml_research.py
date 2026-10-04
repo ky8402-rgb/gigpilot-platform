@@ -16,23 +16,31 @@ from gpkg.core.config import Config
 from gpkg.ml.data import HistoricalDataWorker
 from gpkg.ml.training import TrainingConfig, register_validated_candidate, train_candidate
 from gpkg.ml.baseline import qualify_conservative_baseline, register_baseline_paper
+from gpkg.ml.hypotheses import evaluate_hypotheses
 from gpkg.ml.registry import ModelRegistry
 from gpkg.persistence.store import Store
 
 
 def main() -> int:
     parser = argparse.ArgumentParser()
-    parser.add_argument("command", choices=("ingest", "collect-l2", "train"))
+    parser.add_argument("command", choices=("ingest", "collect-l2", "train", "audit-summary"))
     parser.add_argument("--db", default=os.getenv("GIGPILOT_DB", ".gigpilot-data/gigpilot.db"))
     parser.add_argument("--symbol", default=None)
     args = parser.parse_args()
     store = Store(args.db)
     worker = HistoricalDataWorker(store)
 
+    if args.command == "audit-summary":
+        import json
+        print(json.dumps(store.ml_research_audits(limit=50), indent=2, sort_keys=True, default=str))
+        return 0
+
     if args.command == "ingest":
         async def run():
             for symbol in worker.symbols:
-                print(symbol, await worker.ingest_klines(symbol))
+                klines = await worker.ingest_klines(symbol)
+                funding, basis = await worker.ingest_funding_and_basis(symbol)
+                print(symbol, "klines", klines, "funding_8h", funding, "basis_1m", basis)
         asyncio.run(run())
         return 0
 
@@ -49,10 +57,27 @@ def main() -> int:
     for symbol in symbols:
         strict_verified=False
         try:
+            try:
+                funding, basis = asyncio.run(worker.ingest_funding_and_basis(symbol))
+                print(symbol, "funding_8h_refresh", funding, "basis_1m_refresh", basis)
+            except Exception as exc:
+                store.ml_research_audit(f"market-data-{symbol.lower()}-funding-basis", "ERROR", str(exc), {"symbol": symbol})
             result=train_candidate(store,symbol,config=config); print(symbol,result.state.value,result.verified,result.reason)
             if result.verified: register_validated_candidate(store,registry,result); strict_verified=True
         except Exception as exc:
             store.ml_research_audit(f"alpha-{symbol.lower()}-training-error","ERROR",str(exc),{"symbol":symbol}); print(symbol,"STRICT_REJECTED",str(exc))
+        try:
+            hypotheses, progress = evaluate_hypotheses(store, symbol, taker_fee_bps=config.taker_fee_bps)
+            print(symbol, "HYPOTHESES", progress)
+            for evidence in hypotheses:
+                registry.persist_evidence(evidence, reason="funding_regime_walk_forward")
+                if evidence.verified:
+                    from gpkg.ml.lifecycle import ModelState
+                    registry.transition(evidence.model_id, ModelState.PAPER, reason="strict_funding_regime_oos_passed_paper_admission")
+                    strict_verified = True
+        except Exception as exc:
+            store.ml_research_audit(f"hypotheses-{symbol.lower()}-training-error","ERROR",str(exc),{"symbol":symbol})
+
         if not strict_verified:
             try:
                 evidence,reason=qualify_conservative_baseline(store,symbol,taker_fee_bps=config.taker_fee_bps,hurdle_bps=config.edge_hurdle_bps)
