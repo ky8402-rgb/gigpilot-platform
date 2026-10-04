@@ -25,6 +25,14 @@ git remote set-url origin "$REPO_URL" 2>/dev/null || true
 git fetch origin main --prune
 git checkout -B main origin/main
 git reset --hard origin/main
+
+# Remove only known legacy Node production artifacts left by pre-migration deployments.
+# Never use a blanket git clean: .env and .gigpilot-data are persistent production state.
+echo "Purging legacy Node runtime artifacts from the EC2 host..."
+rm -rf "$APP_DIR/server" "$APP_DIR/node_modules" "$APP_DIR/.npm" \
+       "$APP_DIR/ecosystem.config.cjs" "$APP_DIR/dist/server.cjs" "$APP_DIR/dist/worker.cjs"
+rm -f "$APP_DIR/server.ts" "$APP_DIR/worker.ts"
+
 DEPLOYED_COMMIT="$(git rev-parse HEAD)"
 echo "Target revision: $DEPLOYED_COMMIT"
 
