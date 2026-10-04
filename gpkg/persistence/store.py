@@ -111,7 +111,9 @@ class Store:
             (now_ms(), symbol, side, qty, entry, tp, sl, link),
         )
         self._conn.commit()
-        return cur.lastrowid
+        if cur.lastrowid is None:
+            raise RuntimeError("SQLite did not return a trade id")
+        return int(cur.lastrowid)
 
     def mark_closed_pending(self, trade_id: int, reason: str) -> None:
         """Local close registered; awaiting exchange-verified PnL."""
@@ -274,7 +276,10 @@ class Store:
 
     def paper_open_trade(self,symbol,side,qty,entry_px,entry_fee_usd,entry_slippage_bps,model_id)->int:
         cur=self._conn.execute("""INSERT INTO paper_trades(open_ts_ms,symbol,side,qty,entry_px,entry_fee_usd,entry_slippage_bps,model_id,status)
-                                 VALUES(?,?,?,?,?,?,?,?, 'open')""",(now_ms(),symbol,side,qty,entry_px,entry_fee_usd,entry_slippage_bps,model_id)); self._conn.commit(); return int(cur.lastrowid)
+                                 VALUES(?,?,?,?,?,?,?,?, 'open')""",(now_ms(),symbol,side,qty,entry_px,entry_fee_usd,entry_slippage_bps,model_id)); self._conn.commit()
+        if cur.lastrowid is None:
+            raise RuntimeError("SQLite did not return a paper trade id")
+        return int(cur.lastrowid)
 
     def paper_close_trade(self,trade_id,exit_px,exit_fee_usd,exit_slippage_bps,realized_pnl_usd):
         self._conn.execute("""UPDATE paper_trades SET status='closed',close_ts_ms=?,exit_px=?,exit_fee_usd=?,exit_slippage_bps=?,realized_pnl_usd=?
