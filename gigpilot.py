@@ -814,7 +814,10 @@ class GigPilot:
                 if sym not in fresh and prev.get("trade_id"):
                     self.store.mark_closed_pending(prev["trade_id"], "refresh_flat")
                     log.info("marked local trade pending_verify for %s (exchange flat)", sym)
-            self.positions = fresh
+            # Keep the shared dict identity stable. Reconciler holds a reference to this object;
+            # rebinding self.positions here would leave reconciliation mutating a stale dictionary.
+            self.positions.clear()
+            self.positions.update(fresh)
             self.portfolio.gross_notional = gross
             self.portfolio.symbol_notional = per_sym
             self.portfolio.open_positions = len(fresh)
