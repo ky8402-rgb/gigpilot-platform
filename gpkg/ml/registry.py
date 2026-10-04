@@ -133,11 +133,11 @@ class ModelRegistry:
         target: ModelState,
         verified: bool,
     ) -> None:
+        if target in (ModelState.VALIDATED, ModelState.PAPER, ModelState.CANARY, ModelState.CHAMPION) and not verified:
+            raise ValueError(f"unverified evidence cannot enter {target.value}")
         if target not in _ALLOWED.get(current, set()):
             src = "NONE" if current is None else current.value
             raise ValueError(f"illegal model transition {src}->{target.value}")
-        if target in (ModelState.VALIDATED, ModelState.PAPER, ModelState.CANARY, ModelState.CHAMPION) and not verified:
-            raise ValueError(f"unverified evidence cannot enter {target.value}")
         if current is ModelState.VALIDATED and target is ModelState.CANARY:
             raise ValueError("PAPER stage is mandatory before CANARY")
         if current is ModelState.PAPER and target is ModelState.CHAMPION:
