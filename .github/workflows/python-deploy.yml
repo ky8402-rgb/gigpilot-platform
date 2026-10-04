@@ -28,7 +28,14 @@ jobs:
           name: react-dist
           path: dist
           retention-days: 3
-      - run: python -m pip install --quiet -r requirements.txt
+      # BOTH files: the gates below run TestClient-based tests (test_dashboard_delivery) and the
+      # pytest suite, so they need test-only packages. Installing only requirements.txt previously
+      # worked by accident — httpx came in transitively via the unused google-genai package, so
+      # removing that package broke this job. scripts/deploy-ec2.sh already installed both; the
+      # workflows did not.
+      - run: |
+          python -m pip install --quiet -r requirements.txt
+          python -m pip install --quiet -r requirements-dev.txt
       - run: python tests/test_python_only_runtime.py
       - run: python tests/test_parity.py
       - run: python tests/test_execution_idempotency.py

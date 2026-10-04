@@ -266,15 +266,28 @@ def test_testclient_users_have_httpx_declared():
     )
 
 
-def test_ci_installs_the_dev_requirements():
-    """The CI gates run the same TestClient-based tests, so CI must install requirements-dev.txt.
+def test_every_workflow_that_runs_the_gates_installs_dev_requirements():
+    """EVERY workflow that runs the TestClient gates must install requirements-dev.txt.
 
-    Installing only requirements.txt was how the phantom httpx dependency stayed hidden.
+    Checked across all workflows rather than just ci.yml, because scoping the first version of this
+    test to ci.yml is exactly how the deploy workflow kept failing: both workflows had identical
+    install steps, only one was fixed, and the fix looked complete until the deploy job ran.
     """
-    ci = (ROOT / ".github" / "workflows" / "ci.yml").read_text()
-    assert "requirements-dev.txt" in ci, (
-        "CI installs only runtime requirements, but its gates import test-only packages "
-        "(httpx). Install requirements-dev.txt in the workflow."
+    import re
+
+    offline = []
+    for wf in sorted((ROOT / ".github" / "workflows").glob("*.yml")):
+        text = wf.read_text(errors="ignore")
+        # Only workflows that actually run a TestClient-based gate need the test-only packages.
+        if "test_dashboard_delivery" not in text and "pytest tests/" not in text:
+            continue
+        if not re.search(r"pip install[^\n]*requirements\.txt", text):
+            continue
+        if "requirements-dev.txt" not in text:
+            offline.append(wf.name)
+    assert not offline, (
+        f"workflow(s) run TestClient/pytest gates but install only runtime requirements, so the "
+        f"gates will fail to import httpx: {offline}"
     )
 
 
