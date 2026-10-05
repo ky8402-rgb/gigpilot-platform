@@ -233,11 +233,11 @@ class BybitAdapter(ExchangeAdapter):
 
     # -- permissions -----------------------------------------------------------------
     async def trade_permission(self) -> tuple[bool, str]:
-        """POSITIVE authorisation check. Defaults to DENIED on any doubt.
+        """Positive authorization check; withdrawal-capable keys are always rejected.
 
-        `readOnly=0` alone is not sufficient — the key must actually list the Order permission for
-        ContractTrade. The live account demonstrates the distinction: it authenticates and reads
-        fine while being unable to place a single futures order.
+        Authentication is not authorization, and trading authorization is not sufficient if the same
+        key can withdraw funds. This process therefore requires ContractTrade Order permission and
+        explicitly rejects any withdrawal capability. Unknown permission shapes fail closed.
         """
         try:
             info = await self.rest.api_info()
@@ -247,7 +247,18 @@ class BybitAdapter(ExchangeAdapter):
             return False, f"permission probe failed: {e}"
         if int(info.get("readOnly") or 0) == 1:
             return False, "API key is read-only"
+
         perms = info.get("permissions") or {}
+        for group_name, values in perms.items():
+            if isinstance(values, dict):
+                values = values.keys()
+            if isinstance(values, (list, tuple, set)):
+                normalized = {str(v).strip().lower() for v in values}
+                if any("withdraw" in v for v in normalized):
+                    return False, f"API key has withdrawal permission in {group_name}; refusing live execution"
+            elif isinstance(values, str) and "withdraw" in values.lower():
+                return False, f"API key has withdrawal permission in {group_name}; refusing live execution"
+
         contract = perms.get("ContractTrade") or []
         if "Order" not in contract:
             return False, "API key lacks the ContractTrade permission; it cannot place futures orders"
