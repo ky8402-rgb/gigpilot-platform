@@ -121,6 +121,8 @@ class Config:
             print(f"FATAL: host must be exactly {LIVE_HOST}.", file=sys.stderr)
             sys.exit(2)
         syms = [s.strip().upper() for s in os.getenv("GIGPILOT_SYMBOLS", "BTCUSDT,ETHUSDT,SOLUSDT").split(",") if s.strip()]
+        execution_mode = os.getenv("GIGPILOT_EXECUTION_MODE", "paper").strip().lower()
+        live_armed = os.getenv("GIGPILOT_LIVE_ARMED", "0") == "1"
         if not syms:
             print("FATAL: GIGPILOT_SYMBOLS empty.", file=sys.stderr)
             sys.exit(2)
@@ -136,8 +138,8 @@ class Config:
             api_secret=secret,
             symbols=syms,
             arm=os.getenv("GIGPILOT_ARM", "0") == "1",
-            execution_mode=os.getenv("GIGPILOT_EXECUTION_MODE", "paper").strip().lower(),
-            live_armed=os.getenv("GIGPILOT_LIVE_ARMED", "0") == "1",
+            execution_mode=execution_mode,
+            live_armed=live_armed,
             edge_hurdle_bps=float(os.getenv("GIGPILOT_HURDLE_BPS", "3.0")),
             fee_round_trip_multiple=float(os.getenv("GIGPILOT_FEE_ROUND_TRIP_MULTIPLE", "2.0")),
             adverse_selection_factor=float(os.getenv("GIGPILOT_ADVERSE_SELECTION_FACTOR", "0.5")),
