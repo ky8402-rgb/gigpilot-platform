@@ -92,3 +92,112 @@ jobs:
           python -c "import json,os; x=json.load(open('/tmp/health.json')); assert x.get('deployedCommit')==os.environ['GITHUB_SHA']; assert x.get('autonomousEngine',{}).get('reachable') is True"
           curl -kfsS "$BASE/" | grep -Eiq '<html|<script|<div'
           curl -kfsS "$BASE/version.json" | python -c "import json,sys,os; assert json.load(sys.stdin).get('commit')==os.environ['GITHUB_SHA']"
+
+
+  amplify:
+    name: Deploy and verify React frontend on AWS Amplify
+    needs: validate
+    runs-on: ubuntu-latest
+    env:
+      AWS_REGION: ${{ secrets.AWS_REGION || 'us-east-1' ${{
+      AMPLIFY_APP_ID: ${{ secrets.AMPLIFY_APP_ID || 'd2qe2q720fbn3x' ${{
+      AMPLIFY_BRANCH: main
+      BACKEND_URL: https://35-154-110-156.sslip.io
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 1
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID || secrets.ID ${{
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY || secrets.AWS ${{
+          aws-region: ${{ env.AWS_REGION ${{
+      - name: Verify Amplify app and main branch
+        run: |
+          set -euo pipefail
+          aws amplify get-app --app-id "$AMPLIFY_APP_ID" --region "$AWS_REGION" >/tmp/amplify-app.json
+          python - <<'PY'
+          import json, os, subprocess
+          app=json.load(open("/tmp/amplify-app.json"))["app"]
+          assert app["appId"] == os.environ["AMPLIFY_APP_ID"]
+          branches=subprocess.check_output(["aws","amplify","list-branches","--app-id",os.environ["AMPLIFY_APP_ID"],"--region",os.environ["AWS_REGION"],"--query","branches[].branchName","--output","text"], text=True).split()
+          assert os.environ["AMPLIFY_BRANCH"] in branches, branches
+          PY
+      - name: Assert production backend URL is present in source
+        run: |
+          set -euo pipefail
+          grep -R -F "$BACKEND_URL" src .env.production vite.config.* 2>/dev/null | head -n 20
+          test -f .env.production
+          grep -Fq "$BACKEND_URL" .env.production
+      - name: Pin Amplify build environment to production backend
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json, os, subprocess
+          app=os.environ["AMPLIFY_APP_ID"]; region=os.environ["AWS_REGION"]; url=os.environ["BACKEND_URL"]
+          raw=subprocess.check_output(["aws","amplify","get-app","--app-id",app,"--region",region,"--query","app.environmentVariables","--output","json"], text=True)
+          env=json.loads(raw or "{}")
+          for key in ("API_BASE_URL","REACT_APP_API_URL","VITE_BACKEND_URL","VITE_API_BASE_URL","VITE_API_URL"): env[key]=url
+          subprocess.run(["aws","amplify","update-app","--app-id",app,"--region",region,"--environment-variables",json.dumps(env)], check=True)
+          PY
+      - name: Trigger Amplify release for this main commit
+        id: release
+        run: |
+          set -euo pipefail
+          aws amplify start-job --app-id "$AMPLIFY_APP_ID" --branch-name "$AMPLIFY_BRANCH" --job-type RELEASE --region "$AWS_REGION" --output json >/tmp/amplify-release.json
+          JOB_ID="$(python -c 'import json; print(json.load(open("/tmp/amplify-release.json"))["jobSummary"]["jobId"])')"
+          test -n "$JOB_ID"
+          echo "job_id=$JOB_ID" >> "$GITHUB_OUTPUT"
+      - name: Wait for exact commit Amplify deployment
+        env:
+          JOB_ID: ${{ steps.release.outputs.job_id ${{
+        run: |
+          set -euo pipefail
+          deadline=$((SECONDS+900))
+          while [ "$SECONDS" -lt "$deadline" ]; do
+            aws amplify get-job --app-id "$AMPLIFY_APP_ID" --branch-name "$AMPLIFY_BRANCH" --job-id "$JOB_ID" --region "$AWS_REGION" --output json >/tmp/amplify-job.json
+            python - <<'PY'
+          import json, os, sys
+          summary=json.load(open("/tmp/amplify-job.json"))["job"]["summary"]
+          status=summary.get("status","UNKNOWN"); commit=summary.get("commitId","")
+          print(f"Amplify status={status} commit={commit}")
+          if status == "SUCCEED":
+              expected=os.environ["GITHUB_SHA"]
+              if not commit or commit != expected:
+                  print(f"ERROR: deployed commit {commit!r}, expected {expected}", file=sys.stderr)
+                  sys.exit(2)
+              sys.exit(0)
+          if status in {"FAILED","CANCELLED"}: sys.exit(3)
+          sys.exit(10)
+          PY
+            rc=$?
+            if [ "$rc" -eq 0 ]; then exit 0; fi
+            if [ "$rc" -ne 10 ]; then exit "$rc"; fi
+            sleep 10
+          done
+          echo "ERROR: Amplify deployment timed out" >&2
+          exit 5
+      - name: Verify deployed Amplify frontend contains production backend URL
+        run: |
+          set -euo pipefail
+          DOMAIN="$(aws amplify get-app --app-id "$AMPLIFY_APP_ID" --region "$AWS_REGION" --query 'app.defaultDomain' --output text)"
+          test -n "$DOMAIN" && test "$DOMAIN" != "None"
+          export FRONTEND_URL="https://$AMPLIFY_BRANCH.$DOMAIN"
+          curl --fail --silent --show-error --location --max-time 30 "$FRONTEND_URL" -o /tmp/index.html
+          grep -Fq '<div id="root"' /tmp/index.html || grep -Fq '<div id="root">' /tmp/index.html
+          python - <<'PY'
+          import os, re, subprocess, sys
+          page=open("/tmp/index.html", encoding="utf-8").read()
+          url=os.environ["BACKEND_URL"]
+          if url in page: raise SystemExit(0)
+          scripts=re.findall(r'<script[^>]+src=["\']([^"\']+)["\']', page, re.I)
+          for src in scripts:
+              full=src if src.startswith("http") else os.environ["FRONTEND_URL"] + (src if src.startswith("/") else "/" + src)
+              try: body=subprocess.check_output(["curl","--fail","--silent","--show-error","--location","--max-time","30",full], text=True)
+              except subprocess.CalledProcessError: continue
+              if url in body:
+                  print("Production backend URL found in deployed JS:", full); raise SystemExit(0)
+          print("ERROR: expected backend URL not found in deployed HTML/JS", file=sys.stderr)
+          raise SystemExit(1)
+          PY
