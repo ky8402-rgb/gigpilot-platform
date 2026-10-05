@@ -41,7 +41,10 @@ jobs:
       - run: python tests/test_execution_idempotency.py
       - run: python tests/test_package_seams.py
       - run: python tests/test_dashboard_delivery.py
-      - run: python -m pytest tests/ -q --no-header
+      - name: Run pytest with warnings as errors
+        env:
+          PYTHONWARNINGS: error
+        run: python -m pytest tests/ -q --no-header
   deploy:
     name: Deploy FastAPI runtime to EC2
     needs: validate
