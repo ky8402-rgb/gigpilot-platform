@@ -157,6 +157,7 @@ jobs:
           deadline=$((SECONDS+900))
           while [ "$SECONDS" -lt "$deadline" ]; do
             aws amplify get-job --app-id "$AMPLIFY_APP_ID" --branch-name "$AMPLIFY_BRANCH" --job-id "$JOB_ID" --region "$AWS_REGION" --output json >/tmp/amplify-job.json
+            set +e
             python - <<'PY'
           import json, os, sys
           summary=json.load(open("/tmp/amplify-job.json"))["job"]["summary"]
@@ -172,6 +173,7 @@ jobs:
           sys.exit(10)
           PY
             rc=$?
+            set -e
             if [ "$rc" -eq 0 ]; then exit 0; fi
             if [ "$rc" -ne 10 ]; then exit "$rc"; fi
             sleep 10
