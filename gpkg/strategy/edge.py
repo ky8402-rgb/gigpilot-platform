@@ -52,10 +52,13 @@ class EdgeEngine:
         self,
         ms: MarketState,
         side: str,
-        one_way_fee_bps: float,
-        holding_hours: float,
-        required_notional: float,
+        one_way_fee_bps: float = 0.0,
+        holding_hours: float = 1.0,
+        required_notional: float = 0.0,
+        *,
+        fee_rate_bps: float | None = None,
     ) -> EdgeEstimate:
+        effective_fee = fee_rate_bps if fee_rate_bps is not None else one_way_fee_bps
         if not ms.bids or not ms.asks:
             return self._no(ms.symbol, side, "no_book")
         if now_ms() - ms.ts_book_ms > self.cfg.staleness_ms:
@@ -73,7 +76,7 @@ class EdgeEngine:
         entry = ms.asks[0][0] if side == "Buy" else ms.bids[0][0]
         gross_bps = ((fair - entry) if side == "Buy" else (entry - fair)) / mid * 1e4
         # `one_way_fee_bps` is the venue's PER-SIDE rate. A round trip pays it on entry and on exit.
-        fee_bps = one_way_fee_bps * self.cfg.fee_round_trip_multiple
+        fee_bps = effective_fee * self.cfg.fee_round_trip_multiple
         spread_bps = ms.spread_bps
         if not math.isfinite(spread_bps):
             return self._no(ms.symbol, side, "no_spread")
@@ -84,7 +87,7 @@ class EdgeEngine:
         slip_bps = spread_bps * self.cfg.slippage_factor
         funding_bps = abs(ms.funding_rate) * 1e4 * (holding_hours / 8.0)
         # Adverse selection: the cost of being filled because the market was about to move against
-        # the resting/aggressing side. Previously absent from the model entirely.
+        # the resting/aggressing side.
         adverse_bps = spread_bps * self.cfg.adverse_selection_factor
         net = gross_bps - fee_bps - spread_bps - slip_bps - funding_bps - adverse_bps
         ok = net >= self.cfg.edge_hurdle_bps

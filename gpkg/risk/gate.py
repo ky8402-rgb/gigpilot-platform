@@ -9,6 +9,7 @@ Enforces:
   - Maximum concurrent position count.
   - Per-symbol concentration limit (% of equity).
   - Gross portfolio exposure limit (% of equity).
+  - Unified cross-exchange exposure and concentration caps.
 """
 from __future__ import annotations
 
@@ -25,6 +26,9 @@ class Portfolio:
     symbol_notional: dict[str, float] = field(default_factory=dict)
     open_positions: int = 0
     margin_ratio: float = 0.0
+    exchange_equity: dict[str, float] = field(default_factory=dict)
+    exchange_notional: dict[str, float] = field(default_factory=dict)
+    exchange_margin_ratio: dict[str, float] = field(default_factory=dict)
 
 
 class RiskGate:
@@ -58,4 +62,32 @@ class RiskGate:
             return False, "symbol_concentration"
         if p.gross_notional + notional > p.equity * self.cfg.max_gross_notional_pct / 100.0:
             return False, "gross_exposure"
+        return True, "ok"
+
+    def check_cross_exchange(
+        self,
+        p: Portfolio,
+        exchange: str,
+        symbol: str,
+        notional: float,
+        leverage: float,
+        armed: bool,
+        day_start_equity: float,
+    ) -> tuple[bool, str]:
+        # Global risk gate evaluation
+        allowed, reason = self.check(p, symbol, notional, leverage, armed, day_start_equity)
+        if not allowed:
+            return False, reason
+
+        # Check exchange-specific margin ratio (> 0.60 rejected)
+        ex_margin = p.exchange_margin_ratio.get(exchange, 0.0)
+        if ex_margin > 0.60:
+            return False, f"margin_ratio_{ex_margin:.2f}_on_{exchange}"
+
+        # Check single exchange concentration cap (max 60% of total equity)
+        max_ex_conc_pct = getattr(self.cfg, "max_exchange_notional_pct", 60.0)
+        curr_ex_notional = p.exchange_notional.get(exchange, 0.0)
+        if curr_ex_notional + notional > p.equity * max_ex_conc_pct / 100.0:
+            return False, "exchange_concentration"
+
         return True, "ok"

@@ -64,6 +64,7 @@ class Config:
     api_key: str
     api_secret: str
     symbols: list[str]
+    api_passphrase: str = ""
     host: str = LIVE_HOST
     ws_public: str = WS_PUBLIC
     ws_private: str = WS_PRIVATE
