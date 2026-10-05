@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import pytest
+from pathlib import Path
 
 from gigpilot import AccountingReconciler, Reconciler
 from gpkg.core.config import Config
@@ -88,7 +89,7 @@ async def test_accounting_uses_normalized_fill_cost_and_verified_pnl():
 
 
 def test_orchestrator_routes_recon_accounting_and_kill_cancel_through_adapter():
-    source = open("gigpilot.py", encoding="utf-8").read()
+    source = Path("gigpilot.py").read_text(encoding="utf-8")
     assert "Reconciler(cfg, self.exchange" in source
     assert "AccountingReconciler(self.exchange" in source
     assert "gp.exchange.cancel_all(sym)" in source
