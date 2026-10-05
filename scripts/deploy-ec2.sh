@@ -111,6 +111,9 @@ EnvironmentFile=$APP_DIR/.env
 Environment=GIGPILOT_BIND=127.0.0.1
 Environment=GIGPILOT_PORT=3000
 Environment=GIGPILOT_ARM=0
+# Production remains fail-closed until an operator explicitly validates a live-capital release.
+Environment=GIGPILOT_EXECUTION_MODE=paper
+Environment=GIGPILOT_LIVE_ARMED=0
 Environment=GIGPILOT_FORCE_DISARM=1
 Environment=GIGPILOT_PAPER_EQUITY=10000
 Environment=PYTHONUNBUFFERED=1
@@ -267,8 +270,18 @@ if ! sudo systemctl is-enabled --quiet gigpilot-ml-train.timer; then
   echo "ERROR: gigpilot-ml-train.timer is not enabled"
   exit 3
 fi
+if ! systemctl show gigpilot.service -p Environment --value | grep -q "GIGPILOT_EXECUTION_MODE=paper"; then
+  echo "ERROR: production execution mode is not explicitly fail-closed (paper)"
+  systemctl show gigpilot.service -p Environment --value || true
+  exit 3
+fi
+if ! systemctl show gigpilot.service -p Environment --value | grep -q "GIGPILOT_LIVE_ARMED=0"; then
+  echo "ERROR: GIGPILOT_LIVE_ARMED=0 is not present on gigpilot.service"
+  systemctl show gigpilot.service -p Environment --value || true
+  exit 3
+fi
 if ! systemctl show gigpilot.service -p Environment --value | grep -q "GIGPILOT_FORCE_DISARM=1"; then
-  echo "ERROR: GIGPILOT_FORCE_DISARM=1 is not present on gigpilot.service"
+  echo "ERROR: legacy disarm compatibility guard is missing during the safety migration"
   systemctl show gigpilot.service -p Environment --value || true
   exit 3
 fi
