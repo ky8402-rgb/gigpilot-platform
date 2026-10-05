@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import pytest
+from pathlib import Path
 
 from gpkg.core.config import Config
 from gpkg.exchange.base import (
@@ -93,7 +94,7 @@ async def test_protection_failure_fails_closed_and_unwinds_through_adapter():
 
 
 def test_production_orchestrator_passes_adapter_not_raw_rest_to_executor():
-    source = open("gigpilot.py", encoding="utf-8").read()
+    source = Path("gigpilot.py").read_text(encoding="utf-8")
     assert "self.exchange = BybitAdapter(cfg, rest=self.rest" in source
     assert "Executor(self.cfg, self.exchange" in source
     assert "Executor(self.cfg, self.rest, self.step_size" not in source
