@@ -160,6 +160,8 @@ def make_engine(tmp_path):
             api_secret="test-secret",
             symbols=syms,
             arm=armed_env,
+            execution_mode="live",
+            live_armed=True,
             edge_hurdle_bps=hurdle_bps,
             signal_fair_shift_bps=fair_shift_bps,
             db_path=str(tmp_path / f"test-{abs(hash((equity, trade_permission, armed_env)))}.db"),
