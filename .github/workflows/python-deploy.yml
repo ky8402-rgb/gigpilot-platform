@@ -23,7 +23,7 @@ jobs:
       - run: npm ci
       - run: npm test
       - name: Upload verified React build artifact
-        uses: actions/upload-artifact@v5
+        uses: actions/upload-artifact@v6
         with:
           name: react-dist
           path: dist
