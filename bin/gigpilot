@@ -5,6 +5,10 @@ import sys
 from pathlib import Path
 
 ROOT = Path(__import__("os").environ.get("GIGPILOT_APP_DIR", "/home/ubuntu/gigpilot")).resolve()
+VENV_PYTHON = ROOT / ".venv" / "bin" / "python3"
+if VENV_PYTHON.exists() and Path(sys.executable).resolve() != VENV_PYTHON.resolve():
+    import os
+    os.execv(str(VENV_PYTHON), [str(VENV_PYTHON), __file__, *sys.argv[1:]])
 sys.path.insert(0, str(ROOT))
 
 from scripts.ml_research import main as ml_main
