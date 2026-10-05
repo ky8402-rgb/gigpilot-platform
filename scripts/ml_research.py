@@ -14,16 +14,6 @@ import os
 
 from gpkg.ml.audit import normalize_audit
 
-from gpkg.ml.baseline import qualify_conservative_baseline, register_baseline_paper
-from gpkg.ml.data import HistoricalDataWorker
-from gpkg.ml.registry import ModelRegistry
-from gpkg.ml.training import (
-    TrainingConfig,
-    register_validated_candidate,
-    train_candidate,
-    train_hypotheses,
-)
-from gpkg.persistence.store import Store
 
 
 def main() -> int:
@@ -34,10 +24,9 @@ def main() -> int:
     parser.add_argument("--limit", type=int, default=50)
     parser.add_argument("--format", choices=("json", "table"), default="json")
     args = parser.parse_args()
-    store = Store(args.db)
-    worker = HistoricalDataWorker(store)
 
     if args.command == "audit-summary":
+        from gpkg.persistence.store import Store
         import json
         audits = [normalize_audit(row) for row in store.ml_research_audits(limit=max(1, min(args.limit, 1000)))]
         if args.format == "table":
@@ -59,6 +48,19 @@ def main() -> int:
             return 0
         print(json.dumps(audits, indent=2, sort_keys=True, default=str))
         return 0
+
+    from gpkg.ml.baseline import qualify_conservative_baseline, register_baseline_paper
+    from gpkg.ml.data import HistoricalDataWorker
+    from gpkg.ml.registry import ModelRegistry
+    from gpkg.ml.training import (
+        TrainingConfig,
+        register_validated_candidate,
+        train_candidate,
+        train_hypotheses,
+    )
+    from gpkg.persistence.store import Store
+    store = Store(args.db)
+    worker = HistoricalDataWorker(store)
 
     if args.command == "ingest":
         async def run():
