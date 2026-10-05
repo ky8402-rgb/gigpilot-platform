@@ -28,6 +28,7 @@ def main() -> int:
     if args.command == "audit-summary":
         from gpkg.persistence.store import Store
         import json
+        store = Store(args.db)
         audits = [normalize_audit(row) for row in store.ml_research_audits(limit=max(1, min(args.limit, 1000)))]
         if args.format == "table":
             headers = ("TIME", "FAMILY", "GROSS", "FEES", "2xPEAK", "IMPACT", "NET", "T", "SHARPE", "GATE")
