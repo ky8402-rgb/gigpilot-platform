@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import json
 import os
 
 from gpkg.ml.audit import normalize_audit
@@ -90,7 +91,7 @@ def main() -> int:
                     print(f"  champion {j['champion']['model_id']} net={j['champion']['net_edge_bps']} bps")
                 else:
                     print("  no candidate cleared the strict gates "
-                          f"(net>=8.0 bps, sharpe>1.8, pf>1.75, t>3.0)")
+                          "(net>=8.0 bps, sharpe>1.8, pf>1.75, t>3.0)")
             except Exception as exc:
                 store.ml_research_audit(f"tournament-{symbol.lower()}-error", "ERROR", str(exc),
                                         {"symbol": symbol})
@@ -100,7 +101,11 @@ def main() -> int:
 
     if args.command == "audit-summary":
         from gpkg.persistence.store import Store
-        import json
+        # NOTE: `json` is imported at MODULE level. It must not be imported here.
+        # A function-local `import json` makes `json` a local name for the WHOLE of `main()`, so the
+        # earlier `tournament-status` branches referenced an unbound local and raised
+        # UnboundLocalError — in the DEFAULT output format. That is what this comment prevents
+        # someone from "tidying" back in.
         store = Store(args.db)
         audits = [normalize_audit(row) for row in store.ml_research_audits(limit=max(1, min(args.limit, 1000)))]
         if args.format == "table":

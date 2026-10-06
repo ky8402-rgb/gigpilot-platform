@@ -18,6 +18,7 @@ Run: python3 -m pytest tests/test_ml_tournament.py -q
 """
 from __future__ import annotations
 
+import json
 import math
 import random
 import sys
@@ -465,6 +466,48 @@ def test_hot_swap_promotes_on_recent_improvement():
 def test_hot_swap_requires_improvement_when_no_recent_window_exists():
     ok, why = hot_swap_decision(_ev("champ", 12.0), _ev("chal", 6.0))
     assert ok is False and "does not improve" in why
+
+
+# =============================================================================================
+# CLI SURFACES — EVERY output format is a code path and must be exercised
+# =============================================================================================
+@pytest.mark.parametrize("fmt", ["json", "table"])
+def test_tournament_status_cli_works_in_both_formats(tmp_path, monkeypatch, capsys, fmt):
+    """`--format json` shipped BROKEN with an UnboundLocalError.
+
+    `import json` lived inside the sibling `audit-summary` branch, which made `json` a function-local
+    name — unbound when `tournament-status` reached it. Manual testing only ran `--format table`, so
+    the DEFAULT path was broken and CI's linter found it as F821 before a user did. The lesson is
+    that an output format is a code path, and an unexercised code path is one that ships broken.
+    """
+    from scripts.ml_research import main
+    db = tmp_path / "cli.db"
+    monkeypatch.setattr(sys, "argv",
+                        ["gigpilot", "tournament-status", "--db", str(db), "--format", fmt])
+    rc = main()
+    out = capsys.readouterr().out
+    assert rc == 0, "the CLI must exit 0 with no tournament, not raise"
+    assert "no tournament has run yet" in out
+    if fmt == "json":
+        assert json.loads(out)["available"] is False, "JSON path must emit parseable JSON"
+
+
+def test_audit_summary_json_still_works_after_shared_import(tmp_path, monkeypatch, capsys):
+    """`audit-summary` previously did its own function-local `import json`. Hoisting it to module
+    level is what fixes the sibling command, so this pins that the ORIGINAL command still works."""
+    from scripts.ml_research import main
+    db = tmp_path / "cli2.db"
+    monkeypatch.setattr(sys, "argv", ["gigpilot", "audit-summary", "--db", str(db), "--format", "json"])
+    assert main() == 0
+    assert json.loads(capsys.readouterr().out) == []
+
+
+def test_gigpilot_cli_rejects_an_unknown_ml_subcommand():
+    """A typo must fail loudly rather than silently dispatch to a different parser."""
+    src = (ROOT / "bin" / "gigpilot").read_text()
+    assert "unknown ml subcommand" in src
+    for cmd in ("tournament", "tournament-status"):
+        assert cmd in src, f"{cmd} must be reachable from the operator CLI"
 
 
 # =============================================================================================
