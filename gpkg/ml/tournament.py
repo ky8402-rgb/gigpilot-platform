@@ -48,14 +48,13 @@ import json
 import math
 import random
 from dataclasses import asdict, dataclass, field, replace
-from typing import Any, Iterable, Sequence
+from typing import Any, Sequence
 
 from gpkg.core.clock import now_ms
 from gpkg.ml.friction import (
     DEFAULT_HURDLE_BPS,
     Liquidity,
     build_friction,
-    evaluate_admission,
 )
 
 
@@ -64,7 +63,6 @@ def _liquidity_from_gene(v: float) -> Liquidity:
     return "maker" if v >= 0.5 else "taker"
 from gpkg.ml.lifecycle import (
     ModelEvidence,
-    ModelState,
     NetTrade,
     PromotionDecision,
     PurgedWalkForward,
