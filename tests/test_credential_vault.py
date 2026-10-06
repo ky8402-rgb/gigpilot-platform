@@ -158,18 +158,57 @@ def test_status_reports_readiness_without_ever_leaking_a_value_or_length():
     assert vault.exchange_status()["bybit"]["ready"] is False
 
 
-def test_credentials_are_never_persisted_to_disk(tmp_path):
-    """The store is memory-only by construction; assert it stays that way."""
+#: Directories that must never be walked by the scan below. `node_modules` alone holds tens of
+#: thousands of files, and an unbounded walk of it is not a stricter test — it is a memory bomb. It
+#: OOM-killed the deploy (exit 137) the first time this ran on the EC2 host, because the deploy runs
+#: this suite there. The engine writes nowhere near these, so excluding them costs no coverage.
+_SKIP_DIRS = {"node_modules", "dist", ".git", ".venv", "__pycache__", ".pytest_cache",
+              ".mypy_cache", ".ruff_cache", "build", "coverage"}
+#: A vendored bundle or lockfile cannot contain OUR secret, and reading one is pure cost.
+_MAX_SCAN_BYTES = 1_000_000
+
+
+def test_credentials_are_never_persisted_to_disk():
+    """The store is memory-only by construction; assert it stays that way.
+
+    The scan is deliberately bounded to the repository's OWN source and config. That is where the
+    engine could plausibly write a credential, so it is where the assertion has to look — and
+    staying out of vendored trees keeps this test cheap enough to run on a small production host.
+    """
+    import secrets
+
     vault = CredentialVault.instance()
-    secret = "memory-only-secret-abcdefghijklmnop"
-    vault.store_exchange_credentials("bybit", "an-api-key-value-1234", secret)
-    for p in ROOT.rglob("*"):
-        if p.is_file() and p.suffix in {".db", ".sqlite", ".env", ".json"}:
-            try:
-                if secret in p.read_text(errors="ignore"):
-                    pytest.fail(f"the secret was written to {p}")
-            except (OSError, UnicodeDecodeError):
+    # Generated per run rather than written as a literal. A literal would exist on disk in THIS file,
+    # so the scan would find its own fixture and fail — the "test fails on its own source" trap. A
+    # random value is also strictly stronger: there is provably no on-disk copy of it anywhere, which
+    # is the property being asserted, and it lets the scan include .py files it otherwise could not.
+    secret = "memory-only-" + secrets.token_hex(16)
+    api_key = "api-key-" + secrets.token_hex(16)
+    vault.store_exchange_credentials("bybit", api_key, secret)
+
+    suffixes = {".db", ".sqlite", ".sqlite3", ".env", ".json", ".py", ".log", ".txt"}
+    scanned = 0
+    for path in ROOT.rglob("*"):
+        if any(part in _SKIP_DIRS for part in path.parts):
+            continue
+        if not path.is_file() or path.suffix not in suffixes:
+            continue
+        try:
+            if path.stat().st_size > _MAX_SCAN_BYTES:
                 continue
+        except OSError:
+            continue
+        scanned += 1
+        try:
+            blob = path.read_text(errors="ignore")
+            if secret in blob:
+                pytest.fail(f"the secret was written to {path}")
+            if api_key in blob:
+                pytest.fail(f"the API key was written to {path}")
+        except (OSError, UnicodeDecodeError):
+            continue
+    # Guard against the scan silently walking nothing, which would make this test vacuous.
+    assert scanned > 50, f"the secret-store scan only inspected {scanned} files"
 
 
 # =============================================================================================
