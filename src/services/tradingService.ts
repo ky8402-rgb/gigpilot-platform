@@ -98,9 +98,13 @@ export function setStoredOwnerToken(token: string | null): void {
 
 export async function fetchWithFailover<T>(
   endpointPath: string,
-  options?: RequestInit & { timeoutMs?: number }
+  options?: RequestInit & { timeoutMs?: number; baseUrls?: string[] }
 ): Promise<T> {
-  const candidates = getCandidateBaseUrls();
+  // An explicit base list lets a caller target a different mount point (e.g. the ML control plane,
+  // which lives at the API root rather than under /api/trading) while still reusing the exact same
+  // owner-token header injection, timeout, and host-failover behaviour.
+  const overrideBases = options?.baseUrls && options.baseUrls.length > 0 ? options.baseUrls : null;
+  const candidates = overrideBases ?? getCandidateBaseUrls();
   let lastError: Error | null = null;
   const timeoutMs = options?.timeoutMs ?? 15000;
 
@@ -111,7 +115,7 @@ export async function fetchWithFailover<T>(
   const token = getStoredOwnerToken();
   if (token) mergedHeaders.Authorization = `Bearer ${token}`;
 
-  const { timeoutMs: _timeout, ...fetchOptions } = options || {};
+  const { timeoutMs: _timeout, baseUrls: _baseUrls, ...fetchOptions } = options || {};
   for (const baseUrl of candidates) {
     const cleanEndpoint = endpointPath.startsWith('/') ? endpointPath : `/${endpointPath}`;
     const targetUrl = `${baseUrl}${cleanEndpoint}`;
@@ -131,8 +135,10 @@ export async function fetchWithFailover<T>(
 
       const data = await res.json();
 
-      // Successful JSON response indicates the backend is reached and active
-      workingBaseUrl = baseUrl;
+      // Successful JSON response indicates the backend is reached and active. Only cache a host
+      // discovered from the default trading list: an explicit base list (ML root) must not
+      // overwrite the trading failover preference with a non-/api/trading origin.
+      if (!overrideBases) workingBaseUrl = baseUrl;
       isBackendLive = true;
       lastSyncTimestamp = new Date().toISOString();
 
@@ -963,4 +969,112 @@ export interface GigPilotMLAudit {
 
 export async function fetchMLAuditLatest(limit = 50): Promise<{success:boolean; audits:GigPilotMLAudit[]}> {
   return fetchWithFailover('/ml/audit/latest?limit=' + encodeURIComponent(String(limit)));
+}
+
+// -------------------------------------------------------------
+// ML Research & Audit — champion/challenger tournament surface
+// -------------------------------------------------------------
+// The tournament control plane is mounted at the API ROOT (/api/ml/...), NOT under the /api/trading
+// prefix the trading routes use. We therefore derive the same host candidates with that prefix
+// stripped, and reuse fetchWithFailover so the owner token, timeout and failover are identical to
+// every other owner-authenticated call.
+function getMLRootBaseUrls(): string[] {
+  return [
+    ...new Set(
+      getCandidateBaseUrls()
+        .map((u) => u.replace(/\/api\/trading\/?$/i, ''))
+        .filter((u) => u.length > 0)
+    )
+  ];
+}
+
+/** Gate thresholds exactly as reported by the backend; never hardcoded in the UI. */
+export interface MLTournamentGates {
+  min_net_edge_bps: number;
+  min_oos_sharpe: number;
+  min_profit_factor: number;
+  min_t_stat: number;
+  min_walk_forward_folds: number;
+  min_oos_trades: number;
+}
+
+/** A candidate that was evaluated. `champion`/`winners` use this shape; `rejection` explains a miss. */
+export interface MLTournamentCandidate {
+  model_id: string;
+  family: string;
+  liquidity: string;
+  net_edge_bps: number;
+  oos_sharpe: number;
+  profit_factor: number;
+  t_stat: number;
+  oos_trades: number;
+  folds: number;
+  max_drawdown_bps?: number;
+  verified?: boolean;
+  rejection?: string;
+}
+
+/** A ranked loser. Only these carry a `reason`; there is no `verified`/drawdown for unadmitted work. */
+export interface MLRejectedRankedCandidate {
+  model_id: string;
+  family: string;
+  liquidity: string;
+  net_edge_bps: number;
+  oos_sharpe: number;
+  profit_factor: number;
+  t_stat: number;
+  oos_trades: number;
+  folds: number;
+  reason: string;
+}
+
+export interface MLTournamentPromotion {
+  allowed: boolean;
+  target_state: string;
+  reason: string;
+}
+
+export type MLTournamentOutcome =
+  | 'NO_CANDIDATE_CLEARED_GATES'
+  | 'CHALLENGER_PROMOTED_TO_PAPER'
+  | 'CHAMPION_HELD';
+
+export interface MLTournament {
+  version: number;
+  symbol: string;
+  started_at_ms: number;
+  ended_at_ms: number;
+  duration_ms: number;
+  generations: number;
+  population_size: number;
+  candidates_evaluated: number;
+  candidates_admitted: number;
+  seed: number;
+  bars_used: number;
+  window_days: number;
+  l2_ready: boolean;
+  peak_spread_bps: number;
+  gates: MLTournamentGates;
+  champion: MLTournamentCandidate | null;
+  winners: MLTournamentCandidate[];
+  promotion: MLTournamentPromotion | null;
+  rejected_ranked: MLRejectedRankedCandidate[];
+  outcome: MLTournamentOutcome;
+}
+
+/** Frozen contract: GET /api/ml/tournament/latest?symbol=BTCUSDT (owner-authenticated). */
+export interface MLTournamentResponse {
+  success: boolean;
+  available: boolean;
+  tournament: MLTournament | null;
+  real_capital_execution: boolean | null;
+}
+
+export async function fetchMLTournamentLatest(symbol = 'BTCUSDT'): Promise<MLTournamentResponse> {
+  // The tournament keys results by venue symbol (BTCUSDT), not the display pair (BTC/USDT).
+  const normalized = symbol.replace(/[\/\-_]/g, '').toUpperCase() || 'BTCUSDT';
+  return await fetchWithFailover<MLTournamentResponse>(
+    `/api/ml/tournament/latest?symbol=${encodeURIComponent(normalized)}`,
+    { baseUrls: getMLRootBaseUrls() }
+  );
 }

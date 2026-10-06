@@ -22,6 +22,25 @@ def register_compat_routes(app, get_gp):
             "audits": rows,
             "real_capital_execution": False if gp.force_disarm else None,
         }
+    @router.get("/api/ml/tournament/latest", dependencies=[Depends(require_owner)])
+    async def ml_tournament_latest(symbol: str | None = None):
+        """Latest champion/challenger tournament result.
+
+        Returns `available: false` with a null summary when no tournament has run yet, rather than a
+        404. A 404 would be indistinguishable from a routing mistake and would make a dashboard show
+        an error where the truthful state is "no evidence yet" — and "no evidence yet" is precisely
+        the state that must never be dressed up as a result.
+        """
+        gp = get_gp()
+        from gpkg.ml.tournament import load_latest_tournament
+        summary = load_latest_tournament(gp.store, symbol)
+        return {
+            "success": True,
+            "available": summary is not None,
+            "tournament": summary,
+            "real_capital_execution": False if gp.force_disarm else None,
+        }
+
     async def _auth_status(request):
         auth=get_owner_auth(); return auth.status(auth.verify(extract_token(request) or ""))
     async def _read(request,symbol=None,id=None,challengerId=None):

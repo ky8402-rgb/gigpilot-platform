@@ -70,3 +70,63 @@ __all__ += [
 from .registry import ModelRegistry
 
 __all__ += ["ModelRegistry"]
+
+from .friction import (
+    BYBIT_MAKER_FEE_BPS,
+    BYBIT_TAKER_FEE_BPS,
+    DEFAULT_HURDLE_BPS,
+    DEFAULT_TAKER_CROSS_HURDLE_BPS,
+    Admission,
+    FrictionBreakdown,
+    adverse_selection_bps,
+    build_friction,
+    evaluate_admission,
+    fee_bps,
+    hostile_imbalance,
+    market_impact_bps,
+    order_book_imbalance,
+    snapshot_decay,
+    taker_crossing_allowed,
+    worst_case_spread_bps,
+)
+
+__all__ += [
+    "BYBIT_MAKER_FEE_BPS",
+    "BYBIT_TAKER_FEE_BPS",
+    "DEFAULT_HURDLE_BPS",
+    "DEFAULT_TAKER_CROSS_HURDLE_BPS",
+    "Admission",
+    "FrictionBreakdown",
+    "adverse_selection_bps",
+    "build_friction",
+    "evaluate_admission",
+    "fee_bps",
+    "hostile_imbalance",
+    "market_impact_bps",
+    "order_book_imbalance",
+    "snapshot_decay",
+    "taker_crossing_allowed",
+    "worst_case_spread_bps",
+]
+
+from .tournament import (
+    STRICT_GATE,
+    CandidateOutcome,
+    CandidateParams,
+    TournamentResult,
+    evaluate_params,
+    hot_swap_decision,
+    load_latest_tournament,
+    run_tournament,
+)
+
+__all__ += [
+    "STRICT_GATE",
+    "CandidateOutcome",
+    "CandidateParams",
+    "TournamentResult",
+    "evaluate_params",
+    "hot_swap_decision",
+    "load_latest_tournament",
+    "run_tournament",
+]

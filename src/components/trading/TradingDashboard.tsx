@@ -68,6 +68,7 @@ import { AutonomousRevenueEngineView } from './AutonomousRevenueEngineView';
 import { GigPilotFuturesView } from './GigPilotFuturesView';
 import { ReconciliationTerminal } from './ReconciliationTerminal';
 import { FuturesCommandCenter } from './FuturesCommandCenter';
+import { MLResearchAuditLog } from './MLResearchAuditLog';
 
 import {
   BarChart2,
@@ -84,7 +85,8 @@ import {
   WifiOff,
   Coins,
   Server,
-  Sparkles
+  Sparkles,
+  FlaskConical
 } from 'lucide-react';
 import { EngineHealthView } from './EngineHealthView';
 import { TradingReadinessBanner } from './TradingReadinessBanner';
@@ -106,6 +108,7 @@ export type ActiveTerminalTab =
   | 'ASSETS'
   | 'ADAPTIVE_GRID'
   | 'LEARNING_LOOP'
+  | 'ML_RESEARCH'
   | 'SCRIPTING_IDE'
   | 'PROFIT_SWEEP'
   | 'WEB_RESEARCH'
@@ -641,6 +644,18 @@ export const TradingDashboard: React.FC<TradingDashboardProps> = ({ onLogout }) 
             </button>
 
             <button
+              onClick={() => setActiveTab('ML_RESEARCH')}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-mono font-bold transition-all ${
+                activeTab === 'ML_RESEARCH'
+                  ? 'bg-cyan-950/80 text-cyan-300 border border-cyan-600/80 shadow'
+                  : 'text-slate-400 hover:text-slate-200'
+              }`}
+            >
+              <FlaskConical className="w-3.5 h-3.5 text-cyan-400" />
+              <span>ML Research Log</span>
+            </button>
+
+            <button
               onClick={() => setActiveTab('SCRIPTING_IDE')}
               className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-mono font-bold transition-all ${
                 activeTab === 'SCRIPTING_IDE'
@@ -868,10 +883,16 @@ export const TradingDashboard: React.FC<TradingDashboardProps> = ({ onLogout }) 
           />
         )}
 
+        {activeTab === 'ML_RESEARCH' && (
+          <MLResearchAuditLog
+            activeSymbol={state.activeSymbol}
+            onRefresh={loadFullState}
+          />
+        )}
+
         {activeTab === 'SCRIPTING_IDE' && (
           <ScriptingIdeView />
         )}
-
         {activeTab === 'PROFIT_SWEEP' && profitSweepInfo && (
           <ProfitSweepView
             capital={state.capital}
