@@ -20,6 +20,10 @@ const reasonText = (r: { reasons?: ControlPlaneReason[]; error?: string }) =>
 
 export const FuturesCommandCenter: React.FC = () => {
   const [markets, setMarkets] = useState<FuturesUniverseMarket[]>([]);
+  // WHY THIS IS VISIBLE: the universe request used to fail silently (`Promise.allSettled` with the
+  // rejection discarded), so an empty selector was indistinguishable from a venue with no markets.
+  // This build fails closed AND loudly.
+  const [universeError, setUniverseError] = useState<string>('');
   const [query, setQuery] = useState('');
   const [exchange, setExchange] = useState<'ALL' | 'BYBIT'>('ALL');
   const [selected, setSelected] = useState<FuturesUniverseMarket | null>(null);
@@ -40,6 +44,12 @@ export const FuturesCommandCenter: React.FC = () => {
     // problem on /gigpilot/state also erased the live Bybit market list, so the page rendered as
     // "everything is down" when only one half had failed. allSettled keeps each half truthful.
     const [universeRes, stateRes] = await Promise.allSettled([fetchFuturesUniverse(), fetchGigPilotState()]);
+    if (universeRes.status === 'rejected') {
+      const r: any = universeRes.reason;
+      setUniverseError(String((r && (r.message || r.error)) || r || 'universe unavailable'));
+    } else {
+      setUniverseError('');
+    }
 
     if (universeRes.status === 'fulfilled') {
       setMarkets(universeRes.value);
@@ -159,6 +169,11 @@ export const FuturesCommandCenter: React.FC = () => {
       <aside className="rounded-xl border border-slate-800 bg-slate-950/80 overflow-hidden">
         <div className="p-3 border-b border-slate-800"><input value={query} onChange={e => setQuery(e.target.value)} placeholder="Search coin / symbol…" className="w-full bg-slate-900 border border-slate-800 rounded-lg px-3 py-2 text-sm outline-none"/>
           <div className="flex gap-1 mt-2">{(['ALL','BYBIT'] as const).map(x => <button key={x} onClick={() => setExchange(x)} className={`px-2 py-1 rounded text-[10px] ${exchange===x?'bg-cyan-500/20 text-cyan-300':'text-slate-500'}`}>{x}</button>)}</div></div>
+        {universeError && (
+          <div className="mb-2 rounded-lg border border-rose-800 bg-rose-950/60 px-3 py-2 text-[11px] text-rose-200">
+            Live Bybit universe unavailable — {universeError}
+          </div>
+        )}
         <div className="max-h-[620px] overflow-auto">{filtered.map(m => <button key={m.exchange+m.symbol} onClick={() => setSelected(m)} className={`w-full text-left px-3 py-2.5 border-b border-slate-900 hover:bg-slate-900 ${selected?.exchange===m.exchange&&selected?.symbol===m.symbol?'bg-slate-900':''}`}>
           <div className="flex justify-between"><span className="font-mono text-sm">{m.symbol}</span><span className="text-[10px] text-slate-500">{m.exchange}</span></div>
           <div className="flex justify-between text-xs mt-1"><span>{fmt(m.price, m.price < 1 ? 6 : 2)}</span><span className={m.change24hPct>=0?'text-emerald-400':'text-rose-400'}>{pct(m.change24hPct)}</span></div>
