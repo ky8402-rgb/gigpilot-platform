@@ -186,12 +186,34 @@ def test_empty_secret_is_refused():
 
 
 def test_status_contains_no_value_and_no_length():
+    """`status()` is the payload that gets logged, returned over HTTP and shipped to telemetry, so
+    nothing about the secret may appear in it.
+
+    The length check is done STRUCTURALLY rather than by searching the JSON text for the digits. An
+    earlier version asserted `str(len(SECRET))` appeared nowhere in the blob, which passed or failed
+    depending on whether the current millisecond timestamp happened to contain those digits — a
+    flake that could equally have masked a real leak by luck.
+    """
     store = RuntimeSecretStore.instance()
     store.set(BYBIT_SECRET, SECRET, source="test")
-    blob = json.dumps(store.status())
+    status = store.status()
+    blob = json.dumps(status)
     assert SECRET not in blob
-    assert str(len(SECRET)) not in blob.replace('"count": 1', "")
     assert "source" in blob and "set_at_ms" in blob
+
+    # No field anywhere in the structure may carry the length or a value.
+    forbidden = {"length", "len", "value", "secret", "token", "size"}
+    stack = [status]
+    while stack:
+        node = stack.pop()
+        if isinstance(node, dict):
+            for k, v in node.items():
+                assert str(k).lower() not in forbidden, f"status exposes a {k!r} field"
+                if isinstance(v, int) and not isinstance(v, bool):
+                    assert v != len(SECRET), "status leaks the secret's length as a number"
+                stack.append(v)
+        elif isinstance(node, (list, tuple)):
+            stack.extend(node)
 
 
 def test_variants_cover_common_encodings():

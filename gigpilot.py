@@ -103,6 +103,12 @@ from gpkg.risk.gate import Portfolio, RiskGate  # noqa: E402
 # =============================================================================
 from gpkg.execution.executor import Executor  # noqa: E402
 from gpkg.execution.routing import QuoteSnapshot  # noqa: E402
+from gpkg.strategy.vpin import (  # noqa: E402
+    DEFAULT_BUCKET_VOLUME,
+    VpinConfig,
+    VpinEngine,
+    toxicity_policy,
+)
 
 
 # =============================================================================
@@ -121,7 +127,15 @@ from gpkg.core.ops import operational_snapshot  # noqa: E402
 # boundary (server/trading/ownerAuth.ts); the Python control plane previously enforced NOTHING, so
 # an unauthenticated caller could arm live trading or trip the kill switch. Absence of a check is
 # not a neutral default on a control plane that can move money.
-from gpkg.api.auth import OwnerAuth, get_owner_auth, owner_authenticated, require_owner  # noqa: E402
+from gpkg.api.auth import (  # noqa: E402
+    TOKEN_TTL_SECONDS,
+    OwnerAuth,
+    clear_session_cookie,
+    get_owner_auth,
+    owner_authenticated,
+    require_owner,
+    set_session_cookie,
+)
 
 
 # =============================================================================
@@ -130,6 +144,15 @@ from gpkg.api.auth import OwnerAuth, get_owner_auth, owner_authenticated, requir
 class BybitWS:
     def __init__(self, cfg: Config, markets: dict, on_private_event=None, on_public_event=None):
         self.cfg=cfg; self.markets=markets; self.on_private_event=on_private_event; self.on_public_event=on_public_event
+        # VPIN lives HERE, on the socket that receives the trades, not on the engine.
+        # The trade handler runs in this class, so an engine-held dict would be an AttributeError on
+        # the first print — caught by mypy as `"BybitWS" has no attribute "vpin"`, which is the
+        # difference between a typing complaint and a strategy that silently never measures toxicity.
+        # One engine per symbol: bucket volume and the toxicity baseline are instrument-specific, and
+        # a shared engine would mix BTC's flow into ETH's baseline.
+        self.vpin = {s: VpinEngine(VpinConfig(bucket_volume=cfg.vpin_bucket_volume.get(s,
+                                                                                    DEFAULT_BUCKET_VOLUME)))
+                     for s in cfg.symbols}
         self._stop = asyncio.Event()
         self._public_ok = False; self._private_ok = False
         self._tasks: list[asyncio.Task] = []
@@ -210,9 +233,20 @@ class BybitWS:
         elif topic.startswith("publicTrade."):
             sym = topic.split(".", 1)[1]; ms = self.markets.get(sym)
             if ms is None or not isinstance(data, list): return
+            engine = self.vpin.get(sym)
             for t in data:
                 px = f(t.get("p")); ts = int(f(t.get("T"), now_ms()))
-                if px > 0: ms.trades.append((ts, px))
+                if px <= 0:
+                    continue
+                # `v` is the size and `S` the AGGRESSOR side. Both are needed for VPIN: without a
+                # size there is no volume to bucket, and without the side the tick rule has to infer
+                # what the venue already told us. The tuple keeps (ts, px) at indices 0 and 1 so
+                # every existing reader of `ms.trades` is unaffected.
+                sz = f(t.get("v", 0.0))
+                side = str(t.get("S") or "")
+                ms.trades.append((ts, px, sz, side))
+                if engine is not None and sz > 0:
+                    engine.on_trade(price=px, size=sz, side=side, ts_ms=ts)
 
     async def _private_loop(self):
         backoff = 1.0
@@ -1073,6 +1107,10 @@ class GigPilot:
                 funding_bps=est.funding_bps,
                 impact_bps=est.slip_bps,
                 obi=self._book_imbalance(symbol),
+                # §4 execution linkage: one-sided flow is the adverse-selection risk the passive
+                # quote is exposed to, so the routing layer widens — or stops quoting — when VPIN
+                # says the book is carrying informed order flow.
+                toxicity=toxicity_policy(self.ws.vpin.get(symbol)),
                 # Distances, not just levels: a maker fill happens at the touch, not at the mid we
                 # estimated from, so the executor re-derives TP/SL from the realised fill to keep
                 # the intended risk. Without these it can only shift the levels, not re-scale them.
@@ -1163,6 +1201,9 @@ class GigPilot:
         return {
             "ts": now_iso(), "armed": self.armed, "host": self.cfg.host,
             "hurdle_bps": self.cfg.edge_hurdle_bps,
+            # §4 telemetry: per-symbol VPIN and the quoting response it is currently causing, so the
+            # dashboard can show WHY quoting widened or paused rather than only that it did.
+            "vpin": {s: e.snapshot() for s, e in self.ws.vpin.items()},
             "position_mode": self.position_mode,
             "equity": self.portfolio.equity,
             "margin_ratio": self.portfolio.margin_ratio,
@@ -1424,7 +1465,7 @@ def _throttled_response(auth) -> Optional[JSONResponse]:
 
 
 @app.post("/api/auth/login")
-async def api_auth_login(body: _LoginBody):
+async def api_auth_login(request: Request, body: _LoginBody):
     auth = get_owner_auth()
     limited = _throttled_response(auth)
     if limited is not None:
@@ -1434,7 +1475,51 @@ async def api_auth_login(body: _LoginBody):
     )
     if not ok:
         return JSONResponse(status_code=401, content={"success": False, "error": err})
-    return {"success": True, "token": token}
+    # The session is ALSO set as an httpOnly cookie, so a same-origin SPA never has to hold the token
+    # in JavaScript at all. The body still carries it: the Amplify frontend is a DIFFERENT ORIGIN, so
+    # a SameSite=Strict cookie is never sent there, and those clients keep using an in-memory bearer.
+    resp = JSONResponse(content={"success": True, "token": token})
+    set_session_cookie(resp, token, request=request, max_age_s=TOKEN_TTL_SECONDS)
+    return resp
+
+
+@app.post("/api/auth/refresh")
+async def api_auth_refresh(request: Request):
+    """Re-mint a session from the httpOnly cookie — the handshake that makes in-memory storage viable.
+
+    An in-memory token dies on every page reload. Without this, the operator would have to re-enter
+    password + TOTP on each refresh, which in practice pushes clients back towards persisting the
+    token somewhere durable — the exact outcome being removed. Refresh lets a client recover a token
+    from the cookie on load while keeping it out of `localStorage`.
+
+    It verifies the cookie through the SAME path as every other request: a forged or expired cookie
+    is refused, so this is not an authentication bypass, it is a re-issue of an already-proven one.
+    """
+    from gpkg.api.auth import extract_token
+
+    token = extract_token(request)
+    if not token:
+        return JSONResponse(status_code=401, content={"success": False,
+                                                      "error": "no session to refresh"})
+    # `OwnerAuth.verify` RETURNS False on a bad token — it does not raise. An earlier version of this
+    # handler wrapped the call in try/except only, so a forged cookie was "verified" and minted a
+    # fresh session: a complete authentication bypass. The return value IS the check.
+    auth = get_owner_auth()
+    if not auth.verify(token):
+        return JSONResponse(status_code=401, content={"success": False,
+                                                      "error": "session invalid or expired"})
+    fresh = auth.mint()
+    resp = JSONResponse(content={"success": True, "token": fresh})
+    set_session_cookie(resp, fresh, request=request, max_age_s=TOKEN_TTL_SECONDS)
+    return resp
+
+
+@app.post("/api/auth/logout")
+async def api_auth_logout(request: Request):
+    """Clear the session cookie. Idempotent, and never reveals whether a session existed."""
+    resp = JSONResponse(content={"success": True})
+    clear_session_cookie(resp, request=request)
+    return resp
 
 
 @app.post("/api/auth/provision")
@@ -1450,7 +1535,7 @@ async def api_auth_provision(body: _LoginBody):
 
 
 @app.post("/api/auth/setup")
-async def api_auth_setup(body: _SetupBody):
+async def api_auth_setup(request: Request, body: _SetupBody):
     auth = get_owner_auth()
     limited = _throttled_response(auth)
     if limited is not None:
@@ -1460,7 +1545,9 @@ async def api_auth_setup(body: _SetupBody):
     ok, token, err = auth.complete_setup(body.password, body.totpCode, body.email or None)
     if not ok:
         return JSONResponse(status_code=422, content={"success": False, "error": err})
-    return {"success": True, "token": token}
+    resp = JSONResponse(content={"success": True, "token": token})
+    set_session_cookie(resp, token, request=request, max_age_s=TOKEN_TTL_SECONDS)
+    return resp
 
 
 @app.get("/api/state", dependencies=[Depends(require_owner)])

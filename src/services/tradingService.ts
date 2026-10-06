@@ -77,23 +77,55 @@ export function getCandidateBaseUrls(): string[] {
   return [...new Set(urls.filter((u) => !isDeadOrDeprecatedUrl(u)))];
 }
 
-const OWNER_TOKEN_STORAGE_KEY = 'gigpilot_owner_token';
+// ---------------------------------------------------------------------------
+// Owner session token — IN-MEMORY only.
+//
+// A bearer token in durable browser storage is readable by any injected script (XSS), so the token
+// no longer lives in such a store. It is held in a module-level variable; on same-origin deployments a
+// reload recovers a session from the httpOnly cookie via `refreshOwnerSession()`. The exported
+// function names are unchanged so existing callers keep working.
+// ---------------------------------------------------------------------------
+const LEGACY_OWNER_TOKEN_KEYS = [
+  'gigpilot_owner_token', // canonical owner key this module used to persist
+  'gigpilot_token',       // legacy alias read by lib/api.ts
+  'token'                 // legacy alias read by lib/api.ts
+] as const;
+
+let ownerTokenInMemory: string | null = null;
+let ownerTokenListener: (() => void) | null = null;
+
+// MIGRATION (runs on module load): unconditionally scrub any legacy owner bearer from durable browser
+// storage. Leaving it behind would preserve the exact credential this module exists to remove. That
+// storage may be unavailable (SSR / private browsing); the try/catch covers that case.
+try {
+  for (const legacyKey of LEGACY_OWNER_TOKEN_KEYS) {
+    localStorage.removeItem(legacyKey);
+  }
+} catch {
+  // No durable storage available — there is nothing to migrate.
+}
 
 export function getStoredOwnerToken(): string | null {
-  try {
-    return localStorage.getItem(OWNER_TOKEN_STORAGE_KEY);
-  } catch {
-    return null;
-  }
+  return ownerTokenInMemory;
 }
 
 export function setStoredOwnerToken(token: string | null): void {
-  try {
-    if (token) localStorage.setItem(OWNER_TOKEN_STORAGE_KEY, token);
-    else localStorage.removeItem(OWNER_TOKEN_STORAGE_KEY);
-  } catch {
-    // Storage availability must not affect exchange API truth.
+  ownerTokenInMemory = token;
+  if (ownerTokenListener) {
+    try {
+      ownerTokenListener();
+    } catch {
+      // A subscriber must never break the auth flow.
+    }
   }
+}
+
+/** Optional subscription so UI can react to login/logout/refresh without a storage event. */
+export function subscribeOwnerToken(listener: () => void): () => void {
+  ownerTokenListener = listener;
+  return () => {
+    if (ownerTokenListener === listener) ownerTokenListener = null;
+  };
 }
 
 export async function fetchWithFailover<T>(
@@ -720,9 +752,58 @@ export async function loginOwner(credentials: {
   }
 }
 
+/**
+ * End the owner session: clear the httpOnly cookie server-side (best effort) and wipe memory.
+ *
+ * `POST /api/auth/logout` with `credentials: 'include'` is what clears the cookie; the in-memory
+ * bearer is cleared in `finally` so a network failure can never leave the client holding a session.
+ */
 export async function logoutOwner(): Promise<void> {
-  await fetchWithFailover('/auth/logout', { method: 'POST' });
-  setStoredOwnerToken(null);
+  try {
+    for (const base of getControlPlaneBaseUrls()) {
+      try {
+        await fetch(`${base}/api/auth/logout`, {
+          method: 'POST',
+          credentials: 'include',
+          headers: { 'Content-Type': 'application/json' }
+        });
+        break; // first reachable API root wins; logout is idempotent
+      } catch {
+        // Network failure on this host — try the next candidate.
+      }
+    }
+  } finally {
+    setStoredOwnerToken(null);
+  }
+}
+
+/**
+ * Recover an owner session after a reload from the httpOnly session cookie.
+ *
+ * `POST /api/auth/refresh` re-mints a token from the cookie. This is what makes in-memory storage
+ * viable: same-origin deployments get a session back on reload without ever persisting the token in
+ * JavaScript. It NEVER throws; a 401 (no session to refresh — e.g. the cross-origin Amplify
+ * deployment, where the SameSite=Strict cookie is withheld) is a normal outcome, reported as false.
+ */
+export async function refreshOwnerSession(): Promise<boolean> {
+  for (const base of getControlPlaneBaseUrls()) {
+    try {
+      const res = await fetch(`${base}/api/auth/refresh`, {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' }
+      });
+      if (!res.ok) continue; // 401 = nothing to refresh here; try the next candidate
+      const data = await res.json().catch(() => null);
+      if (data?.success && typeof data.token === 'string' && data.token) {
+        setStoredOwnerToken(data.token);
+        return true;
+      }
+    } catch {
+      // Network/host failure — try the next candidate.
+    }
+  }
+  return false;
 }
 
 export async function getAutonomousOptimizerStatus(): Promise<{

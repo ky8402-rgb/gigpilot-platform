@@ -3,11 +3,12 @@
  * Features:
  * - Automatic credentials: 'include' (fetch) and withCredentials: true (axios)
  * - Cross-subdomain cookie handling
- * - Bearer token fallback from localStorage
+ * - Bearer token from the in-memory owner session (never a durable store)
  * - Robust error interceptors
  */
 
 import axios, { AxiosInstance, AxiosRequestConfig } from 'axios';
+import { getStoredOwnerToken } from '../services/tradingService';
 
 // Default production backend URL on AWS EC2 (Mumbai ap-south-1 Elastic IP)
 export const DEFAULT_PRODUCTION_BACKEND_URL = 'https://35-154-110-156.sslip.io';
@@ -97,22 +98,14 @@ export function getBaseApiUrl(): string {
 /**
  * The ONE place the owner session token is read from.
  *
- * `tradingService.setStoredOwnerToken()` — what the owner login flow actually calls — persists the
- * session under `gigpilot_owner_token`. This module previously read `gigpilot_token` / `token`
- * instead, so every request issued through `apiClient` or `apiFetch` went out ANONYMOUS after a
- * successful login and was refused with 401 by the owner-auth gate. The app looked broken to an
- * owner who had just signed in correctly.
- *
- * Reading the canonical key first, with the legacy keys retained as fallbacks, keeps a single source
- * of truth without invalidating any session already in a user's browser.
+ * The token is held in memory by `tradingService` — never in durable browser storage, cookies
+ * written from JavaScript, IndexedDB, or the URL — so an injected script cannot lift a durable
+ * bearer out of the page. `tradingService` removes the legacy `gigpilot_owner_token` key on load,
+ * and same-origin deployments recover a session from the httpOnly cookie via
+ * `tradingService.refreshOwnerSession()`.
  */
 export function getOwnerToken(): string | null {
-  if (typeof localStorage === 'undefined') return null;
-  return (
-    localStorage.getItem('gigpilot_owner_token') ||
-    localStorage.getItem('gigpilot_token') ||
-    localStorage.getItem('token')
-  );
+  return getStoredOwnerToken();
 }
 
 /**
@@ -131,11 +124,9 @@ export const apiClient: AxiosInstance = axios.create({
 // Request interceptor: Attach Bearer token as backup if present
 apiClient.interceptors.request.use(
   (config) => {
-    if (typeof localStorage !== 'undefined') {
-      const token = getOwnerToken();
-      if (token && config.headers) {
-        config.headers.Authorization = `Bearer ${token}`;
-      }
+    const token = getOwnerToken();
+    if (token && config.headers) {
+      config.headers.Authorization = `Bearer ${token}`;
     }
     return config;
   },
@@ -171,11 +162,9 @@ export async function apiFetch<T = any>(
     headers.set('Content-Type', 'application/json');
   }
 
-  if (typeof localStorage !== 'undefined') {
-    const token = getOwnerToken();
-    if (token && !headers.has('Authorization')) {
-      headers.set('Authorization', `Bearer ${token}`);
-    }
+  const token = getOwnerToken();
+  if (token && !headers.has('Authorization')) {
+    headers.set('Authorization', `Bearer ${token}`);
   }
 
   const response = await fetch(url, {

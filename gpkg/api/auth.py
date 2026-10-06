@@ -44,7 +44,7 @@ import secrets
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Optional
+from typing import Optional
 
 from fastapi import HTTPException, Request
 
@@ -604,10 +604,73 @@ def get_owner_auth() -> OwnerAuth:
     return _OWNER_AUTH
 
 
+# ------------------------------------------------------------------------------------------------
+# Session cookie
+# ------------------------------------------------------------------------------------------------
+# `__Host-` is used when the cookie is Secure. The prefix is a browser-enforced guarantee that the
+# cookie was set with Secure, from this host, with Path=/ and NO Domain attribute, which removes the
+# subdomain-injection class of attack. It cannot apply to a non-Secure cookie, so plain-HTTP
+# development falls back to the unprefixed name.
+SESSION_COOKIE = "gp_session"
+SESSION_COOKIE_HOST_PREFIXED = f"__Host-{SESSION_COOKIE}"
+
+
+def session_cookie_name(*, secure: bool) -> str:
+    return SESSION_COOKIE_HOST_PREFIXED if secure else SESSION_COOKIE
+
+
+def cookie_is_secure(request: Request) -> bool:
+    """Whether to set the Secure flag. Defaults to True.
+
+    Only an explicit opt-out disables it, so a misconfiguration fails towards a cookie the browser
+    REFUSES to send over plain HTTP, rather than one it happily leaks.
+    """
+    import os
+    if os.getenv("GIGPILOT_COOKIE_INSECURE", "0") == "1":
+        return False
+    fwd = (request.headers.get("x-forwarded-proto") or "").split(",")[0].strip().lower()
+    return request.url.scheme == "https" or fwd == "https"
+
+
+def set_session_cookie(response, token: str, *, request: Request, max_age_s: int) -> None:
+    """Issue the session as an httpOnly cookie.
+
+    `HttpOnly` is the entire point: the token becomes unreadable from JavaScript, so an XSS can no
+    longer lift it out of the page. `SameSite=Strict` is the CSRF control — a cross-site request
+    simply does not carry the cookie, so the cookie path needs no separate CSRF token.
+    """
+    secure = cookie_is_secure(request)
+    response.set_cookie(key=session_cookie_name(secure=secure), value=token, max_age=max_age_s,
+                        httponly=True, secure=secure, samesite="strict", path="/")
+
+
+def clear_session_cookie(response, *, request: Request) -> None:
+    """Clear BOTH possible names.
+
+    The Secure/`__Host-` split means a config change leaves the other name behind, and a stale
+    session cookie is a session that outlives a logout.
+    """
+    for name in (SESSION_COOKIE_HOST_PREFIXED, SESSION_COOKIE):
+        response.delete_cookie(key=name, path="/")
+
+
 def extract_token(request: Request) -> Optional[str]:
+    """Session token from any supported carrier.
+
+    ORDER: Authorization header, then cookie, then query/`x-owner-token`.
+
+    The HEADER comes first so a caller explicitly presenting a bearer always gets that identity even
+    when a stale cookie is also present — otherwise a logged-out-then-relogged browser could be
+    silently authenticated as the previous session. The query parameter exists only because
+    `EventSource` cannot set headers.
+    """
     header = request.headers.get("authorization") or ""
     if header.lower().startswith("bearer "):
         return header[7:].strip()
+    for name in (SESSION_COOKIE_HOST_PREFIXED, SESSION_COOKIE):
+        c = request.cookies.get(name)
+        if c:
+            return c.strip()
     return request.query_params.get("token") or request.headers.get("x-owner-token")
 
 

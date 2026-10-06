@@ -116,6 +116,10 @@ class Config:
     # Bounded re-quote attempts. Each requote is a new client order id, so the venue can still
     # deduplicate a retry of any single attempt.
     maker_max_requotes: int = 2
+    # VPIN bucket volume per symbol, in BASE units. Instrument-specific by necessity: a bucket sized
+    # for BTCUSDT would fill in milliseconds on a thin altcoin and produce single-trade buckets that
+    # measure noise. Override with GIGPILOT_VPIN_BUCKET_<SYMBOL>=<volume>.
+    vpin_bucket_volume: dict = field(default_factory=dict)
     max_signal_to_ack_drift_bps: float = 2.5
     max_concurrent_positions: int = 3
     min_arm_capital_usdt: float = 67.0
@@ -185,6 +189,10 @@ class Config:
             maker_entry_enabled=os.getenv("GIGPILOT_MAKER_ENTRY", "1") == "1",
             maker_max_quote_age_ms=int(os.getenv("GIGPILOT_MAKER_MAX_QUOTE_AGE_MS", "2500")),
             maker_max_requotes=int(os.getenv("GIGPILOT_MAKER_MAX_REQUOTES", "2")),
+            vpin_bucket_volume={
+                s: float(os.getenv(f"GIGPILOT_VPIN_BUCKET_{s}", str(d)))
+                for s, d in ((sym, 25.0 if sym.endswith("USDT") else 25.0) for sym in syms)
+            },
             max_signal_to_ack_drift_bps=float(os.getenv("GIGPILOT_MAX_SIGNAL_TO_ACK_DRIFT_BPS", "2.5")),
             min_arm_capital_usdt=float(os.getenv("GIGPILOT_MIN_ARM_CAPITAL_USDT", "67.0")),
             db_path=os.getenv("GIGPILOT_DB_PATH", "gigpilot.db"),

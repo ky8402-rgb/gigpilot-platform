@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { TradingDashboard } from './components/trading/TradingDashboard';
 import { OwnerLoginScreen } from './components/auth/OwnerLoginScreen';
-import { fetchOwnerAuthStatus, getStoredOwnerToken, logoutOwner } from './services/tradingService';
+import { fetchOwnerAuthStatus, getStoredOwnerToken, refreshOwnerSession, logoutOwner } from './services/tradingService';
 import { Shield, RefreshCw } from 'lucide-react';
 
 export function App() {
@@ -14,6 +14,11 @@ export function App() {
 
   const checkInitialSession = async () => {
     try {
+      // The token is memory-only, so a reload starts empty. When the deployment is same-origin the
+      // httpOnly session cookie can re-mint one here; cross-origin it is a no-op (false) and the
+      // owner must sign in again — the accepted cost of keeping the bearer out of durable storage.
+      await refreshOwnerSession();
+
       const token = getStoredOwnerToken();
       if (!token) {
         setIsAuthenticated(false);

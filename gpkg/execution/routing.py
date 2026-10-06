@@ -31,7 +31,10 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from decimal import ROUND_DOWN, ROUND_UP, Decimal
-from typing import Literal
+from typing import TYPE_CHECKING, Literal, Optional
+
+if TYPE_CHECKING:  # import only for typing: `vpin` must not be pulled in at runtime by the router
+    from gpkg.strategy.vpin import ToxicityPolicy
 
 from gpkg.ml.friction import (
     DEFAULT_TAKER_CROSS_HURDLE_BPS,
@@ -122,14 +125,20 @@ def micro_price(bid_px: float, ask_px: float, bid_qty: float, ask_qty: float) ->
     return (b * aq + a * bq) / total
 
 
-def round_passive(price: float, tick: float, side: str, *, bid_px: float, ask_px: float) -> Decimal:
+def round_passive(price: float, tick: float, side: str, *, bid_px: float, ask_px: float,
+                  extra_ticks: int = 0) -> Decimal:
     """Round `price` to the tick such that the result CANNOT cross the book.
 
     A buy rounds DOWN, a sell rounds UP, and the result is additionally clamped to the near touch
-    minus/plus one tick. Both steps matter:
+    minus/plus `1 + extra_ticks` ticks. Both steps matter:
       * directional rounding alone can still land on a price that equals or crosses the far touch
         when bid and ask are one tick apart;
       * clamping alone can round AWAY from the touch and lose queue priority for no benefit.
+
+    `extra_ticks` is the adverse-selection retreat: it moves the quote FURTHER from the touch, so a
+    buy rests lower and a sell rests higher. That is the correct direction — a wider quote is filled
+    less often, and the fills it does get are ones the market had to come to us for. Used by the VPIN
+    toxicity policy.
 
     Never returns a crossing price for a usable book, which is what makes POST_ONLY safe to send.
     """
@@ -137,15 +146,16 @@ def round_passive(price: float, tick: float, side: str, *, bid_px: float, ask_px
     if t <= 0:
         raise ValueError(f"tick size must be positive, got {tick!r}")
     p = _dec(price)
+    extra = max(0, int(extra_ticks))
     buy = str(side).strip().lower() in {"buy", "long", "bid"}
     if buy:
         q = (p / t).to_integral_value(rounding=ROUND_DOWN) * t
-        ceiling = _dec(ask_px) - t
+        ceiling = _dec(ask_px) - t * (1 + extra)
         if q > ceiling:
             q = (ceiling / t).to_integral_value(rounding=ROUND_DOWN) * t
     else:
         q = (p / t).to_integral_value(rounding=ROUND_UP) * t
-        floor_ = _dec(bid_px) + t
+        floor_ = _dec(bid_px) + t * (1 + extra)
         if q < floor_:
             q = (floor_ / t).to_integral_value(rounding=ROUND_UP) * t
     return q
@@ -302,8 +312,14 @@ def plan_entry(
     fee_rate_bps: float | None = None,
     notional_usd: float = 0.0,
     depth_notional_usd: float = 0.0,
+    toxicity: Optional["ToxicityPolicy"] = None,
 ) -> EntryPlan:
     """Prefer resting at the micro-price; take only when the 12 bps gate is genuinely cleared.
+
+    TOXICITY OVERRIDE: when order flow is one-sided (high VPIN) the passive quote is the thing being
+    picked off, so the plan retreats — first by widening (`widen_ticks`), and at extremes by not
+    quoting at all. Pausing returns `mode="none"` even if the taker gate WOULD have allowed crossing,
+    because crossing into informed flow pays the spread to be adversely selected faster.
 
     FAIL-CLOSED ORDERING. Every path that cannot quote safely ends in "taker-if-justified, else
     none" — never in "market anyway":
@@ -334,14 +350,24 @@ def plan_entry(
         and float(tick) > 0
     )
     mp = quote.micro_price if can_quote and quote is not None else float("nan")
+    if toxicity is not None and toxicity.pause:
+        return EntryPlan(
+            mode="none", taker=gate,
+            reason=f"toxicity_pause: {toxicity.reason} "
+                   f"(vpin={toxicity.vpin}, p90={toxicity.threshold})",
+        )
+
+    widen = max(0, int(getattr(toxicity, "widen_ticks", 0))) if toxicity is not None else 0
     if can_quote and mp == mp:  # NaN check without importing math for one comparison
         try:
             limit = round_passive(mp, float(tick), side,
-                                  bid_px=quote.bid_px, ask_px=quote.ask_px)
+                                  bid_px=quote.bid_px, ask_px=quote.ask_px,
+                                  extra_ticks=widen)
         except (ValueError, ArithmeticError):
             limit = None
         if limit is not None and limit > 0:
-            return EntryPlan(mode="maker", reason=f"rest_at_micro_price {limit}",
+            suffix = f" (toxicity widened by {widen} tick(s))" if widen else ""
+            return EntryPlan(mode="maker", reason=f"rest_at_micro_price {limit}{suffix}",
                              limit_price=limit, tick=_dec(tick), taker=gate)
 
     why = "no_usable_quote" if not can_quote else "micro_price_unavailable"

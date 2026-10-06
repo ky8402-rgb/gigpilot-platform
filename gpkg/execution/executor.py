@@ -13,7 +13,10 @@ import logging
 import math
 import uuid
 from decimal import ROUND_FLOOR, Decimal, InvalidOperation
-from typing import Awaitable, Callable, Optional
+from typing import TYPE_CHECKING, Awaitable, Callable, Optional
+
+if TYPE_CHECKING:  # typing-only: the executor must not import the strategy package at runtime
+    from gpkg.strategy.vpin import ToxicityPolicy
 
 from gpkg.core.config import Config
 from gpkg.core.clock import now_ms
@@ -151,6 +154,7 @@ class Executor:
         obi: float = 0.0,
         tp_bps: Optional[float] = None,
         sl_bps: Optional[float] = None,
+        toxicity: Optional["ToxicityPolicy"] = None,
     ) -> dict:
         """Enter with protection, routing the entry through the maker/taker decision.
 
@@ -185,6 +189,7 @@ class Executor:
                 quote_fn=quote_fn, side=side, tick_size=float(tick_size),
                 gross_edge_bps=gross_edge_bps, peak_spread_bps=peak_spread_bps,
                 funding_bps=funding_bps, impact_bps=impact_bps, obi=obi,
+                toxicity=toxicity,
             )
             if plan.mode == "maker":
                 io = _MakerIO(self, symbol, position_idx, quote_fn=quote_fn)
@@ -374,6 +379,7 @@ class Executor:
         funding_bps: float = 0.0,
         impact_bps: float = 0.0,
         obi: float = 0.0,
+        toxicity: Optional["ToxicityPolicy"] = None,
     ) -> EntryPlan:
         """Read the book and ask the routing policy what to do.
 
@@ -391,6 +397,7 @@ class Executor:
             peak_spread_bps=float(peak),
             funding_bps=funding_bps, impact_bps=impact_bps, obi=obi,
             taker_hurdle_bps=float(getattr(self.cfg, "taker_min_net_edge_bps", 12.0)),
+            toxicity=toxicity,
         )
 
     async def _submit_order(self, symbol: str, side: str, qty_s: str, position_idx: int,
