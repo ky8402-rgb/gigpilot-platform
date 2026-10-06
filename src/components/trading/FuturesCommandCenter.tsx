@@ -162,7 +162,7 @@ export const FuturesCommandCenter: React.FC = () => {
         <div className="max-h-[620px] overflow-auto">{filtered.map(m => <button key={m.exchange+m.symbol} onClick={() => setSelected(m)} className={`w-full text-left px-3 py-2.5 border-b border-slate-900 hover:bg-slate-900 ${selected?.exchange===m.exchange&&selected?.symbol===m.symbol?'bg-slate-900':''}`}>
           <div className="flex justify-between"><span className="font-mono text-sm">{m.symbol}</span><span className="text-[10px] text-slate-500">{m.exchange}</span></div>
           <div className="flex justify-between text-xs mt-1"><span>{fmt(m.price, m.price < 1 ? 6 : 2)}</span><span className={m.change24hPct>=0?'text-emerald-400':'text-rose-400'}>{pct(m.change24hPct)}</span></div>
-          <div className="text-[10px] text-slate-600 mt-1">Spread {fmt(m.spreadBps,2)} bps · Liq {fmt(m.liquidityScore,0)}</div>
+          <div className="text-[10px] text-slate-600 mt-1">Spread {fmt(m.spreadBps,2)} bps · Liq {m.liquidityScore === undefined ? '—' : fmt(m.liquidityScore, 0)}</div>
         </button>)}</div>
       </aside>
 

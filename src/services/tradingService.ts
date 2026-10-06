@@ -239,8 +239,13 @@ export interface FuturesUniverseMarket {
   qtyStep: number | null;
   makerFeeBps: number | null;
   takerFeeBps: number | null;
-  liquidityScore: number;
-  executionScore: number;
+  /**
+   * OPTIONAL BECAUSE NOTHING MEASURES THEM. The engine has no liquidity- or execution-scoring
+   * quantity, so the universe endpoint omits them rather than sending an invented number. Services
+   * must not fabricate a metric merely because a type asked for one.
+   */
+  liquidityScore?: number;
+  executionScore?: number;
   eligible: boolean;
   reasons: string[];
 }

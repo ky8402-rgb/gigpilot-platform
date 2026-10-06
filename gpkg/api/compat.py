@@ -4,6 +4,7 @@ Every live mutation remains owner-authenticated and fail-closed. Legacy manual o
 intentionally disabled because the production architecture is autonomous futures-only execution.
 """
 from __future__ import annotations
+import math
 from fastapi import APIRouter, Depends, Request
 from fastapi.responses import JSONResponse
 from gpkg.api.auth import require_owner, get_owner_auth, extract_token
@@ -11,9 +12,21 @@ from gpkg.api.auth import require_owner, get_owner_auth, extract_token
 def register_compat_routes(app, get_gp):
     router=APIRouter()
 
+    def _gp():
+        """Resolve the live engine LAZILY through the application module.
+
+        These routes used to close over the `get_gp` argument, which froze the reference at
+        registration time. Every other route in the application resolves `get_gp` dynamically, so this
+        was the ONE surface where re-binding had no effect — a test double could not take effect, and
+        such a test would silently construct a REAL engine from the process environment instead of
+        using the fixture. That is a test that reports on something other than what it claims.
+        """
+        import gigpilot
+        return gigpilot.get_gp()
+
     @router.get("/api/ml/audit/latest", dependencies=[Depends(require_owner)])
     async def ml_audit_latest(limit: int = 50):
-        gp = get_gp()
+        gp=_gp()
         from gpkg.ml.audit import normalize_audit
         audits = gp.store.ml_research_audits(limit=max(1, min(limit, 100)))
         rows = [normalize_audit(audit) for audit in audits]
@@ -31,7 +44,7 @@ def register_compat_routes(app, get_gp):
         an error where the truthful state is "no evidence yet" — and "no evidence yet" is precisely
         the state that must never be dressed up as a result.
         """
-        gp = get_gp()
+        gp=_gp()
         from gpkg.ml.tournament import load_latest_tournament
         summary = load_latest_tournament(gp.store, symbol)
         return {
@@ -44,7 +57,7 @@ def register_compat_routes(app, get_gp):
     async def _auth_status(request):
         auth=get_owner_auth(); return auth.status(auth.verify(extract_token(request) or ""))
     async def _read(request,symbol=None,id=None,challengerId=None):
-        gp=get_gp(); path=request.url.path; s=gp.snapshot()
+        gp=_gp(); path=request.url.path; s=gp.snapshot()
         if path.endswith("/state"): return s
         if path.endswith("/health"): return {"status":"healthy" if s.get("reconciliation",{}).get("healthy") else "degraded",**s}
         if path.endswith("/readiness"): return {"ready":bool(s.get("armable")),"armed":s.get("armed"),"blockers":[] if s.get("armable") else ["live safety preflight has not passed"]}
@@ -52,7 +65,7 @@ def register_compat_routes(app, get_gp):
         if path.endswith("/reconciliation/status"): return s.get("reconciliation",{})
         if path.endswith("/pairs"): return {"pairs":[m.get("symbol") for m in s.get("markets",[])]}
         if "/pair/" in path: return next((m for m in s.get("markets",[]) if m.get("symbol")==symbol),{"error":"unknown_symbol"})
-        if path.endswith("/futures/universe"): return {"category":"linear","pairs":[m.get("symbol") for m in s.get("markets",[])]}
+        if path.endswith("/futures/universe"): return await _futures_universe()
         if path.endswith("/engines/health"): return {"gigpilot":{"status":"healthy" if s.get("reconciliation",{}).get("healthy") else "degraded"},"armed":s.get("armed")}
         if path.endswith("/decisions"): return {"decisions":s.get("events",[])}
         if path.endswith("/quant/edge-breakdown"): return {"signals":s.get("signals",[])}
@@ -72,8 +85,84 @@ def register_compat_routes(app, get_gp):
         if path.endswith("/webhook-info"): return {"enabled":False,"reason":"deployment webhook is pipeline-owned"}
         if path.startswith("/api/github/"): return {"status":"python","managed_by":"GitHub Actions","fail_closed":True}
         return {"status":"ok","python":True,"path":path}
+
+    async def _futures_universe():
+        """The linear-perp universe, built from Bybit's PUBLIC ticker feed.
+
+        WHY THIS WAS REWRITTEN. This route used to return the Node-era legacy shape
+        `{"category": "linear", "pairs": [symbols...]}`, but the React terminal requires
+        `{"success": true, "markets": [...]}` and THROWS on anything else. `pairs` is a list of bare
+        strings, so even a caller that read it could not get a price. The result was a market selector
+        stuck on "Select a market", every quote showing "—", and a blank chart — the UI was calling an
+        endpoint that existed but answered a different question.
+
+        REAL DATA OR NO FIELD. Every number here comes from the venue: price/24h change/24h volume/
+        bid/ask/funding are ticker fields, spread is computed from bid and ask, and qty step plus taker
+        fee come from the instrument data the engine already resolved at boot. There is deliberately NO
+        `liquidityScore` or `executionScore`: the engine measures no such quantity, and inventing a
+        number to satisfy a TypeScript interface would be fabricating a metric. Those two are optional
+        in the frontend contract for exactly that reason.
+
+        `eligible` states whether the symbol is in the engine's configured universe — the UI may browse
+        the whole venue, but only these can actually be traded, and `reasons` says so in words.
+        """
+        gp=_gp()
+        try:
+            rows = await gp.rest.tickers()
+        except Exception as e:
+            # Fail VISIBLY and CLOSED. Returning an empty list here would render as "this venue has no
+            # markets", which is a different and much more dangerous claim than "the venue could not be
+            # read", and would hide a broken feed behind a plausible-looking screen.
+            return JSONResponse(status_code=503, content={
+                "success": False, "error": "TICKERS_UNAVAILABLE", "message": str(e), "markets": []})
+
+        configured = set(gp.cfg.symbols)
+
+        def num(row, key):
+            """Ticker fields arrive as strings and are sometimes empty; never raise, never NaN."""
+            try:
+                v = float(row.get(key) or 0.0)
+            except (TypeError, ValueError):
+                return 0.0
+            return v if math.isfinite(v) else 0.0
+
+        markets = []
+        for row in rows or []:
+            sym = str(row.get("symbol") or "")
+            if not sym.endswith("USDT"):
+                continue
+            bid, ask, last = num(row, "bid1Price"), num(row, "ask1Price"), num(row, "lastPrice")
+            mid = (bid + ask) / 2 if (bid > 0 and ask > 0) else last
+            raw_funding = row.get("fundingRate")
+            markets.append({
+                "exchange": "BYBIT",
+                "symbol": sym,
+                "baseAsset": sym[:-4],
+                "quoteAsset": "USDT",
+                "contractType": "PERPETUAL",
+                # Bybit's ticker carries no listing status. Saying "Trading" is only justified by a
+                # live price; otherwise the honest answer is that we do not know.
+                "status": "Trading" if last > 0 else "Unknown",
+                "price": mid,
+                "volume24h": num(row, "volume24h"),
+                "change24hPct": num(row, "price24hPctChg"),
+                "fundingRate": (float(raw_funding) if raw_funding not in (None, "") else None),
+                "bid": bid,
+                "ask": ask,
+                "spreadBps": ((ask - bid) / mid * 1e4) if (bid > 0 and ask > 0 and mid > 0) else 0.0,
+                "tickSize": None,  # no instrument tick available for the whole venue
+                "qtyStep": gp.step_size.get(sym),
+                "makerFeeBps": None,  # the engine only resolves the taker side
+                "takerFeeBps": gp.fee_rate_bps.get(sym),
+                "eligible": sym in configured,
+                "reasons": ([] if sym in configured
+                            else ["not in the engine's configured trading universe"]),
+            })
+        markets.sort(key=lambda m: (not m["eligible"], -(m["volume24h"] or 0.0)))
+        return {"success": True, "category": "linear", "markets": markets}
+
     async def _mutate(request,symbol=None,id=None,challengerId=None):
-        gp=get_gp(); path=request.url.path
+        gp=_gp(); path=request.url.path
         if path.endswith("/gigpilot/arm") or path.endswith("/autonomy"):
             ok,reasons=await gp.arm(); return JSONResponse(status_code=200 if ok else 422,content={"success":ok,"armed":gp.armed,"reasons":reasons,"state":gp.snapshot()})
         if path.endswith("/gigpilot/disarm") or path.endswith("/kill-switch/deactivate"): gp.disarm("manual"); return {"success":True,"armed":False}

@@ -132,6 +132,31 @@ class FakeREST:
     async def fee_rate(self, symbol: str):
         return {"takerFeeRate": str(self.taker_fee), "makerFeeRate": "0.0001"}
 
+    async def tickers(self):
+        """Bybit-shaped linear tickers (strings, as the venue sends them).
+
+        `FuturesCommandCenter`'s universe is built from these, so without them the endpoint would be
+        untestable and its shape could drift from the UI contract unnoticed — which is exactly how the
+        legacy `{category, pairs}` payload shipped.
+        """
+        rows = []
+        for i, s in enumerate(self.symbols):
+            px = 100.0 + i * 10.0
+            rows.append({
+                "symbol": s, "lastPrice": str(px),
+                "bid1Price": str(px - 0.01), "ask1Price": str(px + 0.01),
+                "volume24h": str(1000.0 + i),
+                "price24hPctChg": str(1.5 + i),
+                "fundingRate": "0.0001",
+            })
+        # A non-configured USDT perp, to prove the venue is browsable while `eligible` stays honest.
+        rows.append({"symbol": "DOGEUSDT", "lastPrice": "0.5", "bid1Price": "0.4999",
+                     "ask1Price": "0.5001", "volume24h": "50", "price24hPctChg": "0.2",
+                     "fundingRate": ""})
+        # A non-USDT contract, which must be filtered out.
+        rows.append({"symbol": "BTCUSD", "lastPrice": "60000", "volume24h": "9"})
+        return rows
+
     async def kline(self, symbol: str, interval: str = "1", limit: int = 200):
         """Bybit-shaped klines, NEWEST FIRST, with a real volume column.
 
