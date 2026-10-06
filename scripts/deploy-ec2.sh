@@ -174,6 +174,17 @@ Environment=PYTHONPATH=$APP_DIR
 # to the fail-closed trainer; training itself remains mandatory for this oneshot to succeed.
 ExecStart=-$APP_DIR/.venv/bin/python3 $APP_DIR/scripts/ml_research.py ingest --db $APP_DIR/.gigpilot-data/gigpilot.db
 ExecStart=$APP_DIR/.venv/bin/python3 $APP_DIR/scripts/ml_research.py train --db $APP_DIR/.gigpilot-data/gigpilot.db
+# Champion/challenger tournament, run AFTER ingestion so it evaluates against the freshest dataset.
+#
+# The leading '-' is deliberate and is the opposite trade-off from `train` above: training
+# qualification is mandatory, whereas the research loop must never be able to take down the ML
+# pipeline. A tournament failure is recorded in ml_research_audits and leaves the previous summary
+# in place, so the dashboard shows stale-but-labelled evidence rather than a broken service. Making
+# it mandatory would mean a research bug blocks data ingestion — which is how a venue silently stops
+# collecting the very history the research depends on.
+#
+# Nothing here can promote a model to live capital: the tournament's strongest outcome is PAPER.
+ExecStart=-$APP_DIR/.venv/bin/python3 $APP_DIR/scripts/ml_research.py tournament --db $APP_DIR/.gigpilot-data/gigpilot.db --generations 4 --population 12 --seed 7
 NoNewPrivileges=true
 PrivateTmp=true
 ProtectSystem=full
