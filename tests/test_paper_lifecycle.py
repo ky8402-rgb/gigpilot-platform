@@ -62,7 +62,9 @@ async def test_full_lifecycle_arm_enter_protect_close_account(make_engine):
     assert entry["orderLinkId"].startswith("gp-"), "orderLinkId must be traceable to this engine"
 
     symbol = entry["symbol"]
-    qty = float(entry["qty"])
+    # The qty must be numerically valid; assert that here rather than binding a name the test
+    # never goes on to use.
+    float(entry["qty"])
 
     # ---- 3. Native protection MUST be registered --------------------------------------
     assert len(fake.protections) == 1, (

@@ -23,7 +23,6 @@ sys.path.insert(0, str(ROOT))
 # NOTE: alias the monolith as `engine`, never `gp` — `gp` is exactly the alias several scripts use
 # for gigpilot, and it is what collided when this package was briefly named `gp`.
 import gigpilot as engine  # noqa: E402
-import gpkg.core  # noqa: E402
 from gpkg.core import errors as core_errors  # noqa: E402
 from gpkg.core import metrics as core_metrics  # noqa: E402
 from gpkg.core import clock as core_clock  # noqa: E402

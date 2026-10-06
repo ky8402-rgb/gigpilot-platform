@@ -5,7 +5,7 @@ from pathlib import Path
 
 from gpkg.core.config import Config
 from gpkg.exchange.base import (
-    AccountSnapshot, ExchangeAdapter, FeeRate, Instrument, OrderRequest, OrderResult,
+    AccountSnapshot, ExchangeAdapter, FeeRate, OrderRequest, OrderResult,
     OrderStatus, Position, Side, Ticker,
 )
 from gpkg.execution.executor import Executor

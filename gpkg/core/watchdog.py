@@ -7,7 +7,7 @@ circuit breaker so a flapping process cannot repeatedly regain a path to capital
 from __future__ import annotations
 
 import time
-from collections.abc import Awaitable, Callable
+from collections.abc import Callable
 
 
 class TaskWatchdog:

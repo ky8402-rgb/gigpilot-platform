@@ -16,7 +16,6 @@ Run: python3 tests/test_arm_gate.py
 """
 from __future__ import annotations
 
-import asyncio
 import sys
 from pathlib import Path
 

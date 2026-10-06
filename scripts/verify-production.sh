@@ -136,6 +136,55 @@ if [[ "$HTTP_CODE" == "200" ]]; then
   else
     check_warn "Backend responded with HTTP 200 OK but database reported: ${DB_VAL}" "System Status: ${SYS_STATUS^^}"
   fi
+
+  # --- Engine lifecycle contract --------------------------------------------------------------
+  # A release must be ACCEPTABLE while the engine is not yet armed with live credentials.
+  #
+  # A cold boot in runtime-secret mode correctly reports engine_state=AWAITING_SECRET until an
+  # operator enters the secret, and the endpoint that accepts that secret (POST /api/arm) lives on
+  # the very server being deployed. Demanding ARMED here would be self-sealing: the release could
+  # never pass, so the server that would accept the secret could never come up to accept it.
+  #
+  # What IS required is that the DAEMON is alive: status=ok, healthy=true, and a lifecycle state
+  # that means "running as intended" rather than "broken".
+  ENGINE_STATE="missing"
+  HEALTHY_FLAG="false"
+  if command -v python3 >/dev/null 2>&1; then
+    ENGINE_STATE=$(printf '%s' "$HEALTH_BODY" | python3 -c 'import json,sys
+try: d=json.load(sys.stdin)
+except Exception: d=None
+print(d.get("engine_state","missing") if isinstance(d,dict) else "missing")' 2>/dev/null)
+    HEALTHY_FLAG=$(printf '%s' "$HEALTH_BODY" | python3 -c 'import json,sys
+try: d=json.load(sys.stdin)
+except Exception: d=None
+print("true" if isinstance(d,dict) and d.get("healthy") is True else "false")' 2>/dev/null)
+  fi
+  ENGINE_STATE="${ENGINE_STATE:-missing}"
+  HEALTHY_FLAG="${HEALTHY_FLAG:-false}"
+  # Grep fallbacks, so the gate still works on a host with no python3 available.
+  if [[ "$HEALTHY_FLAG" != "true" ]] && echo "$HEALTH_BODY" | grep -q '"healthy":true'; then
+    HEALTHY_FLAG="true"
+  fi
+  if [[ "$ENGINE_STATE" == "missing" ]]; then
+    ENGINE_STATE=$(echo "$HEALTH_BODY" | grep -o '"engine_state":"[^"]*"' | head -n 1 | cut -d':' -f2 | tr -d '"')
+    ENGINE_STATE="${ENGINE_STATE:-missing}"
+  fi
+
+  LIFECYCLE_PROBLEMS=""
+  [[ "$SYS_STATUS" == "ok" ]] || LIFECYCLE_PROBLEMS="${LIFECYCLE_PROBLEMS} status='${SYS_STATUS}' (expected 'ok');"
+  [[ "$HEALTHY_FLAG" == "true" ]] || LIFECYCLE_PROBLEMS="${LIFECYCLE_PROBLEMS} healthy='${HEALTHY_FLAG}' (expected true);"
+  case "$ENGINE_STATE" in
+    AWAITING_SECRET|PAPER|ARMED) ;;
+    *) LIFECYCLE_PROBLEMS="${LIFECYCLE_PROBLEMS} engine_state='${ENGINE_STATE}' (expected AWAITING_SECRET, PAPER or ARMED);" ;;
+  esac
+
+  if [[ -z "$LIFECYCLE_PROBLEMS" ]]; then
+    check_pass "Health contract verified: status=ok, healthy=true, engine_state=${ENGINE_STATE}." \
+      "Live arming is deliberately NOT required at deploy time; AWAITING_SECRET is a PASS."
+  else
+    check_fail "Health lifecycle contract violated at HTTP 200:${LIFECYCLE_PROBLEMS}" \
+      "healthy=false or a 503 means the DAEMON is unhealthy (public feed down/stale, database unreachable) — NOT that live trading is unarmed. Cannot reach POST /api/arm to supply the runtime secret while the daemon is unhealthy."
+  fi
 else
   check_fail "Backend returned HTTP ${HTTP_CODE} or timed out (${BACKEND_URL}/api/health)." \
     "Connect to EC2 ('ssh ${EC2_USER}@${EC2_HOST}') and check backend processes: 'pm2 status gigpilot' or 'docker compose ps'. Check logs with 'pm2 logs gigpilot --lines 50'."

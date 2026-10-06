@@ -46,9 +46,20 @@ from __future__ import annotations
 
 import math
 from collections import deque
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Deque, Optional
 
+#: DEPRECATED — do not use for new wiring.
+#:
+#: A flat 25 base units is not a neutral placeholder; it is a bucket size that is simultaneously far
+#: too coarse on BTC (25 BTC is ~$1.6M, so a "50 bucket" window spans weeks and the measure barely
+#: updates) and far too fine on SOL (25 SOL is ~$4k, which prints in well under a second and yields
+#: single-trade buckets that average tick noise rather than toxicity). Bucket size is the SAMPLING
+#: RATE of the measurement and is therefore per-instrument by construction — the platform derives it
+#: from each symbol's 24h ADV in `gpkg/strategy/vpin_calibration.py`.
+#:
+#: Retained only as the `VpinConfig` dataclass default so engines constructed explicitly (and the
+#: tests that pin those constructions) keep working. No production path resolves to this value.
 DEFAULT_BUCKET_VOLUME = 25.0
 DEFAULT_WINDOW_BUCKETS = 50
 DEFAULT_PERCENTILE = 90.0
@@ -63,6 +74,10 @@ class VpinConfig:
     bucket that takes an hour to fill on BTCUSDT makes the measure useless on a quiet day, and one
     that fills in milliseconds on a thin altcoin produces a string of single-trade buckets that
     measure noise.
+
+    The default here is DEPRECATED and exists only for explicitly-constructed engines; production
+    wiring resolves the value per symbol from 24h ADV via `gpkg/strategy/vpin_calibration.py` and
+    hands it in.
     """
 
     bucket_volume: float = DEFAULT_BUCKET_VOLUME
@@ -135,6 +150,30 @@ class VpinEngine:
         self._last_price = 0.0
         self._last_side = ""
         self._trades = 0
+
+    def recalibrate(self, bucket_volume: float) -> None:
+        """Adopt a new bucket size, taken from this instrument's measured ADV at boot.
+
+        LEGAL ONLY BEFORE INGESTION HAS BEGUN, and the guard is not defensive padding. Completed
+        buckets were filled to the OLD size, and `vpin` divides their imbalance by
+        `n * bucket_volume`. Mixing two sizes would silently scale the denominator away from the
+        volumes actually measured, producing a number that is not VPIN at any size — the failure
+        would be invisible, because a wrong VPIN still looks like a plausible VPIN.
+
+        The engine is recalibrated in place rather than replaced so the containing `{symbol: engine}`
+        mapping keeps its identity: `BybitWS.vpin` is iterated for telemetry and read by the strategy
+        loop, and swapping engine objects under those readers is how a live path ends up holding a
+        stale reference.
+        """
+        v = float(bucket_volume)
+        if not (v > 0) or v != v or v in (float("inf"), float("-inf")):
+            raise ValueError("bucket_volume must be positive and finite")
+        if self._trades or self._buckets:
+            raise RuntimeError(
+                "cannot recalibrate after ingestion has begun: existing buckets were filled at the "
+                "previous size and would be summed against a different denominator"
+            )
+        self.cfg = replace(self.cfg, bucket_volume=v)
 
     # ------------------------------------------------------------------ ingestion
     def on_trade(self, *, price: float, size: float, side: str = "", ts_ms: int = 0) -> None:

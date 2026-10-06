@@ -8,7 +8,6 @@ monitoring and automation must not depend on a Node runtime or Node backend sour
 from __future__ import annotations
 
 import json
-import re
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent

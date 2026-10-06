@@ -25,8 +25,6 @@ sys.path.insert(0, str(ROOT))
 from gpkg.exchange.base import (  # noqa: E402
     AccountSnapshot,
     CredentialsMissing,
-    ExchangeError,
-    Instrument,
     OrderRequest,
     OrderType,
     Side,

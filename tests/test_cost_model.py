@@ -189,7 +189,6 @@ def test_regression_trade_admitted_by_the_old_model_must_now_be_refused():
 
 def test_no_trade_without_positive_expectancy():
     """Sweep the fair-value shift: nothing below the hurdle may ever be tradable."""
-    cfg = make_cfg()
     for shift in [0.0, 5.0, 10.0, 20.0, 30.0, 40.0, 60.0, 100.0]:
         est = evaluate(make_cfg(signal_fair_shift_bps=shift), make_book())
         if est.tradable:

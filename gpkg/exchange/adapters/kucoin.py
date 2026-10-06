@@ -30,11 +30,10 @@ from __future__ import annotations
 import base64
 import hashlib
 import hmac
-import time
 from typing import Optional
 
 from gpkg.core.clock import now_ms
-from gpkg.exchange.adapters._http import RestClient, qs
+from gpkg.exchange.adapters._http import RestClient
 from gpkg.exchange.base import (
     AccountSnapshot,
     Balance,
@@ -45,7 +44,6 @@ from gpkg.exchange.base import (
     Fill,
     Instrument,
     InstrumentUnknown,
-    MarginMode,
     Order,
     OrderRequest,
     OrderResult,

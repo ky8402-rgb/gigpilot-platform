@@ -17,20 +17,18 @@ Invariants
 """
 
 from __future__ import annotations
-import asyncio, hashlib, hmac, json, logging, math, os, sys, time, uuid
+import asyncio, hashlib, hmac, json, math, os, time
 from pathlib import Path
-import sqlite3
 from collections import deque
 from contextlib import asynccontextmanager
-from dataclasses import dataclass, field, asdict
+from dataclasses import asdict
 from datetime import datetime, timezone
 from typing import Any, AsyncIterator, Optional
-from urllib.parse import urlencode
 
 import aiohttp
 import uvicorn
 from fastapi import Depends, FastAPI, Request, Response
-from fastapi.responses import HTMLResponse, JSONResponse, StreamingResponse
+from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import BaseModel as _BaseModel
 
 
@@ -104,10 +102,21 @@ from gpkg.risk.gate import Portfolio, RiskGate  # noqa: E402
 from gpkg.execution.executor import Executor  # noqa: E402
 from gpkg.execution.routing import QuoteSnapshot  # noqa: E402
 from gpkg.strategy.vpin import (  # noqa: E402
-    DEFAULT_BUCKET_VOLUME,
     VpinConfig,
     VpinEngine,
     toxicity_policy,
+)
+from gpkg.strategy.vpin_calibration import (  # noqa: E402
+    KLINE_INTERVAL as VPIN_KLINE_INTERVAL,
+    KLINE_LOOKBACK_BARS as VPIN_KLINE_LOOKBACK_BARS,
+    adv_from_klines,
+    describe_resolution,
+    is_degraded_source,
+    resolve_bucket_volume,
+)
+from gpkg.core.engine_state import (  # noqa: E402
+    assess_engine_state,
+    ready_for_arming,
 )
 
 
@@ -139,23 +148,111 @@ from gpkg.api.auth import (  # noqa: E402
 
 
 # =============================================================================
+# 9a. PUBLIC RE-EXPORT SURFACE
+# =============================================================================
+# `gigpilot.py` is being dismantled into `gpkg/`, and while both exist this module must keep
+# RE-EXPORTING what has moved so that every existing reference — including the deployed engine, which
+# imports this module — keeps resolving unchanged. Those names are deliberately imported and
+# deliberately never referenced below, which is precisely the shape that a linter reports as
+# "imported but unused".
+#
+# This declaration is what distinguishes an intentional re-export from a leftover, and it is
+# machine-checked rather than a convention: `__all__` is how a reader, a linter, and `from gigpilot
+# import *` all learn the same answer. Deleting one of these to satisfy a warning would remove a
+# symbol from the module's public surface and break the deployed engine — and
+# `tests/test_package_seams.py` pins the identity of the safety-critical ones (`BybitError`,
+# `DUPLICATE_ORDER_LINK_CODE`, `Metrics`, `Config`, `LIVE_HOST`, ...) precisely so that cannot happen
+# quietly.
+__all__ = [
+    # gpkg.core.config
+    "Config", "LIVE_HOST", "WS_PUBLIC", "WS_PRIVATE", "FORBIDDEN",
+    "_maybe_load_local_keys", "_maybe_load_aws_secret",
+    # gpkg.core.logging / metrics
+    "JsonFormatter", "setup_logging", "Metrics",
+    # gpkg.core.errors
+    "BybitError", "DUPLICATE_ORDER_LINK_CODE",
+    # gpkg.api.auth
+    "OwnerAuth", "TOKEN_TTL_SECONDS", "get_owner_auth", "owner_authenticated", "require_owner",
+    "set_session_cookie", "clear_session_cookie",
+]
+
+
+# =============================================================================
 # 9. Bybit WebSocket
 # =============================================================================
+#: How often the private socket re-checks for a runtime secret while in AWAITING_SECRET. A poll
+#: rather than the connection backoff: with no credential there is nothing to connect with, so
+#: backing off exponentially would delay picking up the secret by minutes for no benefit, while
+#: retrying instantly would flood the log. Five seconds is the responsiveness an operator expects
+#: after entering the secret, without turning a resting state into log noise.
+PRIVATE_WS_SECRET_POLL_S = 5.0
+
+
 class BybitWS:
-    def __init__(self, cfg: Config, markets: dict, on_private_event=None, on_public_event=None):
+    def __init__(self, cfg: Config, markets: dict, on_private_event=None, on_public_event=None,
+                 signing_secret=None):
         self.cfg=cfg; self.markets=markets; self.on_private_event=on_private_event; self.on_public_event=on_public_event
+        # ONE secret-resolution rule for the whole process. The private socket signs with the same
+        # runtime-first / config-second / fail-closed resolver the REST client uses, injected here
+        # rather than reimplemented. It previously read `cfg.api_secret` DIRECTLY, so in
+        # runtime-secret mode (where cfg.api_secret is deliberately empty) it signed with an empty
+        # key, the venue refused the auth, and `_private_ok` stayed False for the life of the
+        # process — including after the operator supplied the secret. Arming then blocked forever on
+        # "private WebSocket is not healthy", which is precisely what made the
+        # AWAITING_SECRET -> ARMED transition impossible.
+        self._signing_secret = signing_secret
         # VPIN lives HERE, on the socket that receives the trades, not on the engine.
         # The trade handler runs in this class, so an engine-held dict would be an AttributeError on
         # the first print — caught by mypy as `"BybitWS" has no attribute "vpin"`, which is the
         # difference between a typing complaint and a strategy that silently never measures toxicity.
         # One engine per symbol: bucket volume and the toxicity baseline are instrument-specific, and
         # a shared engine would mix BTC's flow into ETH's baseline.
-        self.vpin = {s: VpinEngine(VpinConfig(bucket_volume=cfg.vpin_bucket_volume.get(s,
-                                                                                    DEFAULT_BUCKET_VOLUME)))
-                     for s in cfg.symbols}
+        #
+        # Bucket sizes here are the PRE-CALIBRATION values (an explicit operator override, else a
+        # documented per-instrument fallback) because ADV is measured asynchronously at boot, after
+        # this constructor has returned. `recalibrate_vpin` swaps in the ADV-derived sizes before any
+        # trade is consumed; see `GigPilot._calibrate_vpin_buckets`.
+        self.vpin = {s: VpinEngine(VpinConfig(bucket_volume=resolve_bucket_volume(
+            s, override=cfg.vpin_bucket_volume.get(s))[0]))
+            for s in cfg.symbols}
         self._stop = asyncio.Event()
         self._public_ok = False; self._private_ok = False
+        self._waiting_for_secret = False
         self._tasks: list[asyncio.Task] = []
+
+    def resolve_signing_secret(self) -> str:
+        """The API secret to authenticate the private socket with, or raise `SecretRequired`.
+
+        Delegates to the injected resolver (the REST client's own `_secret`) so the socket and every
+        signed REST call cannot disagree about which key is in force. The local fallback exists only
+        for engines built without a provider, and it is still fail-closed: an empty secret raises
+        rather than producing an HMAC over an empty key.
+        """
+        from gpkg.core.runtime_secrets import SecretRequired
+
+        if self._signing_secret is not None:
+            return self._signing_secret()
+        if self.cfg.api_secret:
+            return self.cfg.api_secret
+        raise SecretRequired("no API secret available to authenticate the private WebSocket")
+
+    def recalibrate_vpin(self, bucket_volumes: dict) -> None:
+        """Adopt ADV-derived bucket sizes, one per symbol.
+
+        Only legal before ingestion begins, which the caller guarantees by running this from
+        `GigPilot.start()`: the socket task does not exist until later in the same method, so no
+        trade can have been consumed and no bucket history is discarded. `VpinEngine.recalibrate`
+        additionally refuses if ingestion has somehow started, so the invariant is enforced at both
+        ends rather than trusted.
+
+        A symbol absent from `bucket_volumes` keeps its pre-calibration size; that is a deliberate
+        no-op rather than a removal, because a missing entry means "not measured", not "size zero".
+        """
+        for symbol, volume in bucket_volumes.items():
+            engine = self.vpin.get(symbol)
+            if engine is None:
+                continue
+            engine.recalibrate(volume)
 
     async def start(self):
         self._tasks = [asyncio.create_task(self._public_loop(), name="ws-public"),
@@ -249,22 +346,46 @@ class BybitWS:
                     engine.on_trade(price=px, size=sz, side=side, ts_ms=ts)
 
     async def _private_loop(self):
+        from gpkg.core.runtime_secrets import SecretRequired
+
         backoff = 1.0
         while not self._stop.is_set():
+            # Resolve the secret BEFORE opening a socket. Without a credential there is nothing to
+            # authenticate with, so connecting would only produce a refused handshake and a wall of
+            # identical warnings that buries real faults. AWAITING_SECRET is a resting state, not an
+            # error: it is announced once and polled quietly until an operator supplies the secret.
+            try:
+                secret = self.resolve_signing_secret()
+            except SecretRequired:
+                self._private_ok = False
+                if not self._waiting_for_secret:
+                    self._waiting_for_secret = True
+                    log.warning(
+                        "private WS idle: no API secret available yet — waiting for an operator to "
+                        "supply one (engine_state=AWAITING_SECRET). Public market data and /api/health "
+                        "are unaffected."
+                    )
+                await asyncio.sleep(PRIVATE_WS_SECRET_POLL_S)
+                continue
             try:
                 async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(
                         total=None, sock_connect=10, sock_read=60)) as sess:
                     async with sess.ws_connect(self.cfg.ws_private, heartbeat=20) as ws:
                         expires = int((time.time() + 10) * 1000)
-                        sig = hmac.new(self.cfg.api_secret.encode(),
+                        sig = hmac.new(secret.encode(),
                                        f"GET/realtime{expires}".encode(),
                                        hashlib.sha256).hexdigest()
+                        # Drop the reference as soon as the digest exists; only the digest is needed
+                        # from here. The secret itself is re-resolved per attempt so a rotated or
+                        # scrubbed handle can never be reused from a stale local.
+                        del secret
                         await ws.send_json({"op": "auth",
                                             "args": [self.cfg.api_key, expires, sig]})
                         resp = await ws.receive_json()
                         if not resp.get("success"):
                             raise RuntimeError(f"private WS auth failed: {resp}")
                         self._private_ok = True
+                        self._waiting_for_secret = False
                         METRICS.set("gigpilot_ws_connected", 1, stream="private")
                         backoff = 1.0
                         await ws.send_json({"op": "subscribe",
@@ -492,7 +613,15 @@ class GigPilot:
         self.accounting = AccountingReconciler(self.exchange, self.store)
         self.fee_rate_bps: dict[str, float] = {}
         self.paper = PaperTradingEngine(self.store,self.model_registry,self.markets,self.fee_rate_bps,hurdle_bps=max(8.0,self.cfg.edge_hurdle_bps),starting_equity=f(os.getenv("GIGPILOT_PAPER_EQUITY"),10000.0),stale_ms=500)
-        self.ws = BybitWS(cfg, self.markets, on_private_event=self._on_private, on_public_event=self._on_public_market)
+        # The private socket authenticates through the REST client's own secret resolver, so there is
+        # exactly ONE rule for which key is in force (runtime-first, config-second, fail closed) and
+        # the socket and every signed REST call can never disagree about it.
+        self.ws = BybitWS(cfg, self.markets, on_private_event=self._on_private,
+                          on_public_event=self._on_public_market, signing_secret=self.rest._secret)
+        # Per-symbol VPIN bucket-size provenance, populated at boot by `_calibrate_vpin_buckets`.
+        # Surfaced in the owner health tier so a fallback-sized bucket is visible to the operator
+        # instead of being a silent property of the run.
+        self.vpin_calibration: dict[str, dict] = {}
         self.portfolio = Portfolio()
         self.day_start_equity: float = 0.0
         self._day_anchor: str = ""
@@ -567,21 +696,47 @@ class GigPilot:
                 await asyncio.sleep(2 ** attempt)
         raise RuntimeError(f"cannot determine position mode: {last_err}")
 
-    async def start(self):
-        log.info("GigPilot starting — host=%s symbols=%s", self.cfg.host, self.cfg.symbols)
-        await self.rest.start()
+    # -------------------------------------------------------------------- credential surface
+    def _runtime_secret_loaded(self) -> bool:
+        """Whether a hand-entered API secret is currently held in memory.
 
-        # --- Startup credential verification (fail closed) ---
-        # A successful signed wallet request proves the HMAC signing path, timestamp/recv-window
-        # handling, and account authentication are all functioning before any trading task starts.
+        Read from the store each time rather than cached: the store is the single source of truth and
+        it is mutated by /api/arm and /api/disarm, so a cached copy would go stale exactly when it
+        matters (the arming transition).
+        """
+        from gpkg.core.runtime_secrets import BYBIT_SECRET, RuntimeSecretStore
+
         try:
-            probe_ts = str(now_ms())
-            probe_sig = self.rest._sign(probe_ts, "")
+            return RuntimeSecretStore.instance().has(BYBIT_SECRET)
+        except Exception:
+            # A store that cannot be read is treated as "no secret present". That direction is the
+            # safe one: it can only make the engine report AWAITING_SECRET and refuse to sign, never
+            # the reverse.
+            return False
+
+    def _has_signing_secret(self) -> bool:
+        """Whether ANY secret is available to sign with — runtime-injected or configured."""
+        return bool(self.cfg.api_secret) or self._runtime_secret_loaded()
+
+    async def verify_credentials(self) -> tuple[bool, str]:
+        """Prove the signing path works, authenticate, and refuse a withdrawal-capable key.
+
+        Returns `(ok, reason)` instead of raising, because the two callers need different
+        consequences for the same failure: BOOT refuses to serve (a configured credential that does
+        not work is fatal), while the ARM gate records a blocker and lets the operator see why.
+
+        This runs at ARM time in addition to boot, and that is the point of deferring the boot check
+        in runtime-secret mode: a secret that arrives later must still pass the FULL check — including
+        the withdrawal-permission refusal — before it is ever used to sign a live order. Deferring the
+        check did not retire it.
+        """
+        try:
+            probe_sig = self.rest._sign(str(now_ms()), "")
             if len(probe_sig) != 64 or any(c not in "0123456789abcdef" for c in probe_sig.lower()):
-                raise RuntimeError("invalid HMAC signature generated by BybitREST")
+                return False, "invalid HMAC signature generated by BybitREST"
             wallet_probe = await self.rest.wallet()
             if not (wallet_probe.get("list") or []):
-                raise RuntimeError("authenticated wallet probe returned no account rows")
+                return False, "authenticated wallet probe returned no account rows"
             info = await self.rest.api_info()
             withdrawal_groups = []
             for group_name, values in (info.get("permissions") or {}).items():
@@ -593,29 +748,144 @@ class GigPilot:
                 elif isinstance(values, str) and "withdraw" in values.lower():
                     withdrawal_groups.append(str(group_name))
             if withdrawal_groups:
-                raise SystemExit(
+                return False, (
                     "CRITICAL SECURITY ERROR: Bybit API key has withdrawal permission "
-                    f"in {', '.join(withdrawal_groups)}; startup refused."
+                    f"in {', '.join(withdrawal_groups)}; refused."
                 )
-            self.store.journal("CREDENTIAL_PROBE_OK", None, {"signed_rest": True, "withdrawal_permission": False})
-        except SystemExit:
-            raise
+            self.store.journal("CREDENTIAL_PROBE_OK", None,
+                               {"signed_rest": True, "withdrawal_permission": False})
+            return True, "credentials verified"
+        except SystemExit as e:
+            return False, f"credential verification aborted: {e}"
         except Exception as e:
-            log.critical("BOOT REFUSED: authenticated Bybit credential verification failed: %s", e)
-            raise SystemExit(2) from e
+            return False, f"authenticated Bybit credential verification failed: {e}"
 
-        # --- Refuse hedge at boot ---
-        self.position_mode = await self._detect_position_mode()
-        self.store.journal("POSITION_MODE", None, {"mode": self.position_mode})
-        if self.position_mode == "hedge":
-            log.critical(
-                "BOOT REFUSED: hedge mode detected. This build supports ONE-WAY only. "
-                "Hedge returns two legs per symbol (positionIdx 1 and 2) and this "
-                "system keys positions by symbol alone — running it would attach "
-                "TP/SL and the kill switch to the wrong leg. Switch the account to "
-                "one-way in the Bybit UI, or request the hedge refactor."
+    async def _calibrate_vpin_buckets(self) -> None:
+        """Size each symbol's VPIN bucket from its own 24h ADV, before any trade is consumed.
+
+        Runs from `start()` while the socket task does not yet exist, so `recalibrate` is always
+        legal at this point and no bucket history can be discarded.
+
+        Klines are PUBLIC data — no credential is required — which is why this works in
+        AWAITING_SECRET as well as after arming. That matters: a deployment that boots without a
+        secret would otherwise run its whole first session on fallback bucket sizes.
+
+        One symbol failing to measure must not cost the others their calibration and must not block
+        the boot. An unmeasurable ADV degrades to a documented per-instrument size, and the result is
+        recorded on `self.vpin_calibration` and journalled so the degradation is visible rather than
+        silent — a wrong sampling rate never raises, it just measures something else.
+        """
+        from gpkg.strategy.vpin_calibration import SOURCE_ADV, SOURCE_OVERRIDE
+
+        volumes: dict[str, float] = {}
+        for symbol in self.cfg.symbols:
+            override = self.cfg.vpin_bucket_volume.get(symbol)
+            adv = None
+            try:
+                rows = await self.rest.kline(symbol, VPIN_KLINE_INTERVAL, VPIN_KLINE_LOOKBACK_BARS)
+                adv = adv_from_klines(rows)
+            except Exception as e:
+                log.warning("VPIN ADV bootstrap for %s failed: %s — using fallback", symbol, e)
+
+            volume, source = resolve_bucket_volume(symbol, adv_24h=adv, override=override)
+            volumes[symbol] = volume
+            detail = describe_resolution(symbol, volume, source, adv)
+            if is_degraded_source(source):
+                log.warning("VPIN calibration DEGRADED: %s", detail)
+            else:
+                log.info("VPIN calibration: %s", detail)
+
+            self.vpin_calibration[symbol] = {
+                "bucket_volume": volume,
+                "source": source,
+                # `measured` vs `operator_pinned` vs degraded, so an operator can tell a value that
+                # was derived from this instrument apart from one that was assumed for it.
+                "measured": source == SOURCE_ADV,
+                "operator_pinned": source == SOURCE_OVERRIDE,
+                "degraded": is_degraded_source(source),
+            }
+            self.store.journal("VPIN_CALIBRATION", symbol, self.vpin_calibration[symbol])
+
+        self.ws.recalibrate_vpin(volumes)
+
+    # -------------------------------------------------------------------- lifecycle state
+    @property
+    def engine_state(self) -> str:
+        """Arming lifecycle state — SEPARATE from daemon health. See gpkg/core/engine_state.py."""
+        return assess_engine_state(
+            require_runtime_secret=bool(getattr(self.cfg, "require_runtime_secret", False)),
+            secret_loaded=self._runtime_secret_loaded(),
+            execution_mode=self.cfg.execution_mode,
+            armed=bool(self.armed),
+        )
+
+    @property
+    def live_armed(self) -> bool:
+        """Whether capital can move RIGHT NOW: live execution mode AND the engine armed.
+
+        Distinct from `self.armed`, which is the operator's arm request and can be True while the
+        engine is still in PAPER mode where the exchange boundary is never crossed.
+        """
+        return bool(self.cfg.execution_mode == "live" and self.armed)
+
+    @property
+    def ready_for_arming(self) -> bool:
+        """True when POST /api/arm will accept a runtime secret."""
+        return ready_for_arming(self.engine_state)
+
+    async def start(self):
+        log.info("GigPilot starting — host=%s symbols=%s", self.cfg.host, self.cfg.symbols)
+        await self.rest.start()
+
+        # --- Startup credential verification, conditional on a secret EXISTING -------------
+        # Two genuinely different situations that used to be collapsed into one:
+        #
+        #   * a secret IS available -> verify it NOW, and refuse the boot if it is bad. Coming up
+        #     with an unusable persisted credential would leave a process that reports itself
+        #     healthy and fails every signed call.
+        #
+        #   * NO secret in runtime-secret mode -> do NOT refuse. This is the intended cold-boot
+        #     state, and the daemon must come up so the owner can reach `POST /api/arm` to supply
+        #     one. Exiting here made the deadlock unbreakable: the only route that can deliver the
+        #     secret lives on the very server that refused to start, so the documented instruction
+        #     ("expect 503 until an operator arms it") described an unreachable state, and the
+        #     deploy gate's `curl --fail` on /api/health could never pass.
+        #
+        # Nothing is weakened by waiting. `BybitREST._secret` raises SecretRequired for every signed
+        # call while no secret is loaded, so no order can be signed; `verify_credentials` is re-run
+        # at ARM time, withdrawal-permission refusal included, before any live signing happens.
+        if self._has_signing_secret():
+            ok, reason = await self.verify_credentials()
+            if not ok:
+                log.critical("BOOT REFUSED: authenticated Bybit credential verification failed: %s", reason)
+                raise SystemExit(2)
+        else:
+            log.warning(
+                "no API secret available at boot: entering AWAITING_SECRET. Nothing can be signed "
+                "until an operator supplies the secret via POST /api/arm; /api/health stays HTTP 200 "
+                "and the deploy gate remains satisfiable."
             )
-            raise SystemExit(3)
+
+        # --- Refuse hedge at boot (and only when the account could actually be read) ---
+        if self._has_signing_secret():
+            self.position_mode = await self._detect_position_mode()
+            self.store.journal("POSITION_MODE", None, {"mode": self.position_mode})
+            if self.position_mode == "hedge":
+                log.critical(
+                    "BOOT REFUSED: hedge mode detected. This build supports ONE-WAY only. "
+                    "Hedge returns two legs per symbol (positionIdx 1 and 2) and this "
+                    "system keys positions by symbol alone — running it would attach "
+                    "TP/SL and the kill switch to the wrong leg. Switch the account to "
+                    "one-way in the Bybit UI, or request the hedge refactor."
+                )
+                raise SystemExit(3)
+        else:
+            # "unknown", never "one-way". Claiming one-way without reading it would let a
+            # hedge-mode account present as safe, and the hedge check would be silently skipped.
+            # The arm gate re-detects the real mode before any live order, and `trading_ready`
+            # already treats anything other than one-way as a blocker.
+            self.position_mode = "unknown"
+            log.warning("position mode not read (AWAITING_SECRET) — reported as 'unknown', not assumed")
 
         # --- Instruments, klines, fees ---
         for s in self.cfg.symbols:
@@ -642,6 +912,8 @@ class GigPilot:
             except Exception as e:
                 log.warning("fee_rate %s: %s — ceiling applied", s, e)
                 self.fee_rate_bps[s] = self.cfg.fee_ceiling_bps
+
+        await self._calibrate_vpin_buckets()
 
         self.executor = Executor(self.cfg, self.exchange, self.step_size, metrics=METRICS, min_sizes=self.min_qty)
 
@@ -744,8 +1016,25 @@ class GigPilot:
 
         if self.force_disarm:
             block("LIVE_EXECUTION_POLICY", "Real-capital execution is policy-disarmed while live paper qualification is active.")
-        if not self.cfg.api_key or not self.cfg.api_secret:
+        # A runtime-injected secret COUNTS as credentials.
+        #
+        # In runtime-secret mode `cfg.api_secret` is deliberately empty — the secret is typed per
+        # session and lives only in memory. Testing `cfg.api_secret` alone therefore declared
+        # "credentials missing" on a session whose secret had *just* been supplied, so arming could
+        # never succeed and the AWAITING_SECRET -> ARMED transition was unreachable.
+        if not self.cfg.api_key or not self._has_signing_secret():
             block("BYBIT_CREDENTIALS_MISSING", "Valid Bybit Linear Futures credentials are required.")
+        else:
+            # Re-run the FULL credential probe here, withdrawal-permission refusal included.
+            #
+            # Boot defers this when no secret exists yet (AWAITING_SECRET), and a deferred check that
+            # is never re-run has been retired, not deferred. A secret handed over later must clear
+            # exactly the same bar as one present at boot — otherwise the first secret to arrive
+            # would be the one credential in the system that never faced the withdrawal test, and
+            # this is the last gate before live order placement.
+            creds_ok, creds_reason = await self.verify_credentials()
+            if not creds_ok:
+                block("BYBIT_CREDENTIALS_INVALID", creds_reason)
         if self.position_mode != "one-way":
             block("POSITION_MODE_INVALID", "Bybit account must be in one-way position mode.", {"position_mode": self.position_mode})
 
@@ -1315,7 +1604,41 @@ async def health(request: Request):
                 for ms in gp.markets.values() if ms.ts_book_ms > 0)
     public_ok = gp.ws._public_ok
     private_ok = gp.ws._private_ok
-    healthy = public_ok and private_ok and fresh
+
+    # ------------------------------------------------------------------ arming lifecycle
+    # Read ONCE and used consistently below, so the reported state and the health verdict cannot
+    # disagree with each other within a single response.
+    state = gp.engine_state
+    armed_now = gp.live_armed
+    can_arm = gp.ready_for_arming
+
+    # ------------------------------------------------------------------ daemon health
+    # `healthy` now answers "is this PROCESS doing its job?", which is the only question a deploy
+    # gate is entitled to ask. It used to also require the private (authenticated) WebSocket, and
+    # since that socket cannot connect before a credential exists, a correct cold boot in
+    # runtime-secret mode reported itself unhealthy. `/api/health` answered 503, the deploy gate's
+    # `curl --fail` refused the release, and — because the only route that can deliver the secret is
+    # `POST /api/arm` on this same server — the failure was self-sealing.
+    #
+    # So the private socket is required only once it is SUPPOSED to be up. In AWAITING_SECRET it
+    # cannot be, and its absence is the designed state rather than evidence of a fault. This is
+    # exactly the separation the `trading_ready` block below has always described; it is now
+    # implemented for `healthy` too instead of only documented.
+    private_expected = state != "AWAITING_SECRET"
+    private_health = private_ok if private_expected else True
+
+    # The database is part of "is the process doing its job", and it is the one dependency whose
+    # failure would make every journal write, trade row and audit entry silently wrong. Probed
+    # cheaply and fail-closed: an unreadable database reports "error", never "ok".
+    database_ok = True
+    database_error = None
+    try:
+        gp.store.kv_get("__health_probe__")
+    except Exception as e:
+        database_ok = False
+        database_error = str(e)
+
+    healthy = bool(public_ok and fresh and private_health and database_ok)
 
     # ------------------------------------------------------------------ trading readiness
     # TRADING READINESS IS DELIBERATELY SEPARATE FROM `healthy`.
@@ -1365,7 +1688,12 @@ async def health(request: Request):
     if not commit_sha:
         commit_sha = os.getenv("DEPLOYED_COMMIT", os.getenv("GITHUB_SHA", ""))
 
-    payload = {
+    # `dict[str, Any]` is the honest type for this: it is a heterogeneous JSON response whose
+    # values are str/bool/int/None and nested dicts, and it is built up incrementally below
+    # (`payload.update(...)`, `payload["autonomousEngine"]["armed"] = ...`). Without the
+    # annotation mypy infers a precise union from the literal, then rejects every later addition
+    # and every nested assignment as incompatible with that inferred union.
+    payload: dict[str, Any] = {
         # ---- PUBLIC TIER -------------------------------------------------------------
         # The deployment gate asserts on `deployedCommit` and `autonomousEngine.reachable`; both
         # must stay here or every rollout breaks. The rest is monitoring signal that discloses no
@@ -1374,6 +1702,27 @@ async def health(request: Request):
         "service": "Autonomous Crypto Grid Trading Platform",
         "healthy": healthy, "public_ws": public_ok,
         "private_ws": private_ok, "feed_fresh": fresh,
+        # ---- arming lifecycle, PUBLIC on purpose -------------------------------------------
+        # The deploy gate is an UNAUTHENTICATED `curl` in verify-production.sh, and it must be able
+        # to tell "the daemon is up and waiting for a secret" apart from "the daemon is broken". So
+        # `engine_state` and `ready_for_arming` have to be readable without an owner session.
+        #
+        # DISCLOSURE TRADE-OFF, stated rather than glossed: `engine_state: "ARMED"` and
+        # `live_armed: true` reveal that live trading is active, which is the class of fact the
+        # owner tier otherwise protects. It is not a NEW leak — `trading_ready` has always been a
+        # public boolean meaning "execution is possible right now" — but the two now say it more
+        # precisely. The reasons WHY trading is blocked (`trading_blockers`), the venue host, the
+        # credential state and the verbatim failure text all remain owner-only.
+        "engine_state": state,
+        "live_armed": armed_now,
+        "ready_for_arming": can_arm,
+        # Infrastructure the process owns, reported as its own object so "responsiveness" and
+        # "dependency state" can be alarmed on separately.
+        "database": {"status": "ok" if database_ok else "error"},
+        "websockets": {"public": public_ok, "private": private_ok,
+                       # True when the private socket is EXPECTED to be up in this state. False only
+                       # in AWAITING_SECRET, where it cannot be and its absence is by design.
+                       "private_expected": private_expected},
         "deployedCommit": commit_sha,
         "autonomousEngine": {
             "status": "healthy" if healthy else "unhealthy",
@@ -1403,6 +1752,12 @@ async def health(request: Request):
             "trade_permissions_checked_ms_ago": (now_ms() - gp.reconciler.trade_permissions_ms)
                                                 if gp.reconciler.trade_permissions_ms else None,
             "trading_blockers": blockers,
+            "database_error": database_error,
+            # Per-symbol VPIN bucket-size PROVENANCE. A bucket size that came from a fallback is a
+            # degraded measurement of toxicity, and the only way an operator can notice is if the
+            # engine says which symbols were measured and which were assumed. Owner-only: it is
+            # strategy configuration, not monitoring signal.
+            "vpin_calibration": gp.vpin_calibration,
         })
         payload["autonomousEngine"]["armed"] = gp.armed
 

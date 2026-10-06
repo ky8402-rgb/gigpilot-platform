@@ -35,6 +35,37 @@ def _maybe_load_aws_secret() -> None:
     print("hydrated Bybit credentials from Secrets Manager", file=sys.stderr)
 
 
+def _vpin_bucket_overrides(symbols: list[str]) -> dict[str, float]:
+    """EXPLICIT `GIGPILOT_VPIN_BUCKET_<SYMBOL>` overrides only.
+
+    An absent symbol means "no override", and the platform then derives the bucket size from that
+    instrument's measured 24h ADV at boot (`gpkg/strategy/vpin_calibration.py`), falling back per
+    symbol when ADV cannot be read. This mapping used to be pre-populated with a flat 25.0 for every
+    symbol; that default is gone because bucket size is the SAMPLING RATE of the measure and no
+    single value can be right for both BTC and a thin alt.
+
+    A malformed or non-positive override is a hard refusal rather than a silent fallback to the
+    derived size. An operator who set this variable meant to pin the bucket size; quietly ignoring a
+    typo would leave them believing a value was in force when it was not.
+    """
+    out: dict[str, float] = {}
+    for sym in symbols:
+        raw = os.getenv(f"GIGPILOT_VPIN_BUCKET_{sym}", "").strip()
+        if not raw:
+            continue
+        try:
+            value = float(raw)
+        except ValueError:
+            print(f"FATAL: GIGPILOT_VPIN_BUCKET_{sym} is not a number: {raw!r}", file=sys.stderr)
+            sys.exit(2)
+        if not (value > 0) or value != value or value in (float("inf"), float("-inf")):
+            print(f"FATAL: GIGPILOT_VPIN_BUCKET_{sym} must be positive and finite: {raw!r}",
+                  file=sys.stderr)
+            sys.exit(2)
+        out[sym] = value
+    return out
+
+
 def _maybe_load_local_keys() -> tuple[str, str]:
     key = os.getenv("BYBIT_API_KEY", "").strip()
     secret = os.getenv("BYBIT_API_SECRET", "").strip()
@@ -116,9 +147,15 @@ class Config:
     # Bounded re-quote attempts. Each requote is a new client order id, so the venue can still
     # deduplicate a retry of any single attempt.
     maker_max_requotes: int = 2
-    # VPIN bucket volume per symbol, in BASE units. Instrument-specific by necessity: a bucket sized
-    # for BTCUSDT would fill in milliseconds on a thin altcoin and produce single-trade buckets that
-    # measure noise. Override with GIGPILOT_VPIN_BUCKET_<SYMBOL>=<volume>.
+    # EXPLICIT VPIN bucket-volume overrides only, in BASE units, keyed by symbol — NOT a default.
+    #
+    # Bucket size is the SAMPLING RATE of the VPIN measure, so it is instrument-specific by
+    # construction: a bucket sized for BTCUSDT fills in milliseconds on a thin altcoin and produces
+    # single-trade buckets that measure noise, while the reverse leaves the measure unable to react.
+    # This mapping used to be populated with a flat 25.0 for every symbol, which was wrong by orders
+    # of magnitude in both directions at once. It is now empty unless an operator explicitly pins a
+    # value with GIGPILOT_VPIN_BUCKET_<SYMBOL>=<volume>, and an unset symbol is sized from its own
+    # measured 24h ADV (see gpkg/strategy/vpin_calibration.py).
     vpin_bucket_volume: dict = field(default_factory=dict)
     max_signal_to_ack_drift_bps: float = 2.5
     max_concurrent_positions: int = 3
@@ -189,10 +226,7 @@ class Config:
             maker_entry_enabled=os.getenv("GIGPILOT_MAKER_ENTRY", "1") == "1",
             maker_max_quote_age_ms=int(os.getenv("GIGPILOT_MAKER_MAX_QUOTE_AGE_MS", "2500")),
             maker_max_requotes=int(os.getenv("GIGPILOT_MAKER_MAX_REQUOTES", "2")),
-            vpin_bucket_volume={
-                s: float(os.getenv(f"GIGPILOT_VPIN_BUCKET_{s}", str(d)))
-                for s, d in ((sym, 25.0 if sym.endswith("USDT") else 25.0) for sym in syms)
-            },
+            vpin_bucket_volume=_vpin_bucket_overrides(syms),
             max_signal_to_ack_drift_bps=float(os.getenv("GIGPILOT_MAX_SIGNAL_TO_ACK_DRIFT_BPS", "2.5")),
             min_arm_capital_usdt=float(os.getenv("GIGPILOT_MIN_ARM_CAPITAL_USDT", "67.0")),
             db_path=os.getenv("GIGPILOT_DB_PATH", "gigpilot.db"),

@@ -76,7 +76,9 @@ if [ "${GIGPILOT_REQUIRE_RUNTIME_SECRET:-0}" = "1" ]; then
   fi
   set_env_value "GIGPILOT_REQUIRE_RUNTIME_SECRET" "1"
   echo "runtime-secret mode ENABLED: the engine boots with no secret and signs nothing until"
-  echo "  an operator arms it. Expect trading_ready=false and HTTP 503 from /api/health until then."
+  echo "  an operator arms it. /api/health answers HTTP 200 with engine_state=AWAITING_SECRET and"
+  echo "  healthy=true; trading_ready stays false until a secret is supplied, and the deploy gate"
+  echo "  deliberately does NOT require live arming."
 else
   [ -n "${BYBIT_API_SECRET:-}" ] && set_env_value "BYBIT_API_SECRET" "$BYBIT_API_SECRET"
 fi
@@ -288,7 +290,27 @@ if x.get("deployedCommit") != expected:
     raise SystemExit(f"deployment attestation mismatch: {x.get('deployedCommit')} != {expected}")
 if not x.get("autonomousEngine",{}).get("reachable"):
     raise SystemExit("FastAPI reports autonomous engine unreachable")
-print("FastAPI exact-SHA health verification passed")
+
+# DAEMON health, not live arming. `AWAITING_SECRET` is the CORRECT state on a cold boot in
+# runtime-secret mode: nothing can be signed until an operator hands over the secret, and the
+# endpoint that accepts it lives on this server. Requiring an armed engine here would be
+# self-sealing — the gate could never pass, so the server that accepts the secret could never come
+# up to accept it. The acceptable set comes from the state machine itself rather than a local
+# copy, so this gate cannot drift away from the contract in gpkg/core/engine_state.py.
+sys.path.insert(0, ".")
+from gpkg.core.engine_state import DEPLOY_ACCEPTABLE_STATES  # noqa: E402
+
+state = x.get("engine_state")
+if x.get("status") != "ok":
+    raise SystemExit(f"daemon health is not ok: status={x.get('status')!r}")
+if x.get("healthy") is not True:
+    raise SystemExit("daemon reports healthy != true (public feed or database is down)")
+if state not in DEPLOY_ACCEPTABLE_STATES:
+    raise SystemExit(
+        f"engine_state={state!r} is not deploy-acceptable; expected one of "
+        f"{', '.join(DEPLOY_ACCEPTABLE_STATES)}. Live arming is NOT required at deploy time."
+    )
+print(f"FastAPI exact-SHA health verification passed (engine_state={state})")
 PY
 
 check_unit() {

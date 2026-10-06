@@ -16,7 +16,7 @@ from urllib.parse import urlencode
 
 import aiohttp
 
-from gpkg.core.clock import f, now_ms
+from gpkg.core.clock import f
 from gpkg.core.config import Config
 from gpkg.core.errors import OKXError, OKX_DUPLICATE_ORDER_CODE
 from gpkg.core.metrics import Metrics

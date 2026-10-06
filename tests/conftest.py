@@ -34,11 +34,16 @@ class FakeREST:
     """
 
     def __init__(self, symbols=None, equity: float = 500.0, trade_permission: bool = True,
-                 taker_fee: float = 0.0001):
+                 taker_fee: float = 0.0001, bar_volume: float = 10.0):
         self.symbols = symbols or list(SYMBOLS)
         self.equity = equity
         self.trade_permission = trade_permission
         self.taker_fee = taker_fee
+        # Base volume per synthetic kline bar; 288 bars of this make the 24h ADV the VPIN
+        # calibration reads at boot.
+        self.bar_volume = bar_volume
+        # Used by `_sign`, mirroring `BybitREST`'s resolved secret.
+        self.api_secret = "test-secret"
         self.read_only = 0
         self.position_legs: list[dict] = []
         self._leverage: dict[str, float] = {}
@@ -63,6 +68,20 @@ class FakeREST:
 
     async def stop(self):
         self.started = False
+
+    def _sign(self, ts: str, payload: str) -> str:
+        """Mirror of `BybitREST._sign`, so the engine's credential-verification path is exercisable.
+
+        `GigPilot.verify_credentials()` proves the HMAC path before trusting a credential, and that
+        check is called at ARM time as well as boot. A fake without `_sign` would make the whole
+        check fail on AttributeError in every test, which would look like a refused credential
+        rather than a missing test method.
+        """
+        import hashlib
+        import hmac
+
+        return hmac.new(self.api_secret.encode(), (ts + payload).encode(),
+                        hashlib.sha256).hexdigest()
 
     async def wallet(self):
         return {"list": [{
@@ -114,8 +133,16 @@ class FakeREST:
         return {"takerFeeRate": str(self.taker_fee), "makerFeeRate": "0.0001"}
 
     async def kline(self, symbol: str, interval: str = "1", limit: int = 200):
-        # ascending close prices; index 4 is the close
-        return [[0, 0, 0, 0, str(100.0 + i * 0.01)] for i in range(limit)]
+        """Bybit-shaped klines, NEWEST FIRST, with a real volume column.
+
+        Index 4 is the close and index 5 is the base volume. The volume column is present because
+        the VPIN bucket size is now derived from 24h ADV (`gpkg/strategy/vpin_calibration.py`), and a
+        fake without volumes would make that whole path untestable — `adv_from_klines` would return
+        None on every symbol and the code would silently only ever exercise the fallback.
+        """
+        rows = [[i * 300_000, "100", "100", "100", str(100.0 + i * 0.01), str(self.bar_volume)]
+                for i in range(limit)]
+        return list(reversed(rows))
 
     async def set_leverage(self, symbol: str, lev: float):
         """Record leverage AND expose it back on a flat leg, so the engine's read-back verification
@@ -135,10 +162,6 @@ class FakeREST:
 
     async def cancel_all(self, symbol: str):
         self.cancelled.append({"symbol": symbol})
-        return {}
-
-    async def cancel_order(self, **kw):
-        self.cancelled.append(kw)
         return {}
 
     async def trading_stop(self, **kw):
@@ -184,25 +207,32 @@ def make_engine(tmp_path):
     # cost terms would have re-buried the defect.
     def _make(*, equity: float = 500.0, trade_permission: bool = True, taker_fee: float = 0.0001,
               armed_env: bool = False, warm: bool = True, hurdle_bps: float = 1.0,
-              fair_shift_bps: float = 20.0, symbols=None):
+              fair_shift_bps: float = 20.0, symbols=None,
+              require_runtime_secret: bool = False, api_secret: str = "test-secret",
+              bar_volume: float = 10.0):
         import gigpilot as gp
         from gpkg.core.config import Config
 
         syms = symbols or list(SYMBOLS)
         cfg = Config(
             api_key="test-key",
-            api_secret="test-secret",
+            api_secret=api_secret,
             symbols=syms,
             arm=armed_env,
             execution_mode="live",
             live_armed=True,
             edge_hurdle_bps=hurdle_bps,
             signal_fair_shift_bps=fair_shift_bps,
-            db_path=str(tmp_path / f"test-{abs(hash((equity, trade_permission, armed_env)))}.db"),
+            # Runtime-secret mode is exercised by passing require_runtime_secret=True with
+            # api_secret="" — the production cold-boot shape, where the absence of a secret is the
+            # intended resting state rather than a fault.
+            require_runtime_secret=require_runtime_secret,
+            db_path=str(tmp_path / f"test-{abs(hash((equity, trade_permission, armed_env, require_runtime_secret)))}.db"),
         )
         engine = gp.GigPilot(cfg)
         fake = FakeREST(symbols=syms, equity=equity, trade_permission=trade_permission,
-                        taker_fee=taker_fee)
+                        taker_fee=taker_fee, bar_volume=bar_volume)
+        fake.api_secret = api_secret or "test-secret"
         engine.rest = fake
         # Mirror production wiring: one transport behind one adapter shared by execution,
         # reconciliation and accounting. Replacing only engine.rest leaves those components

@@ -24,7 +24,6 @@ sys.path.insert(0, str(ROOT))
 from gpkg.api.auth import (  # noqa: E402
     OwnerAuth,
     OwnerConfig,
-    TokenError,
     base32_decode,
     base32_encode,
     generate_totp,

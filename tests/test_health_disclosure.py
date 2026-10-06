@@ -71,10 +71,20 @@ class _Reconciler:
 class _Cfg:
     staleness_ms = 5000
     host = "https://api-demo-secret-host.example.com"
+    execution_mode = "paper"
+    require_runtime_secret = False
 
 
 class _Markets:
     """Empty so the staleness comprehension short-circuits to True."""
+
+
+class _Store:
+    """Minimal stand-in for the SQLite store. The health endpoint's database probe only needs the
+    call to answer without raising; a store that raises is what produces `database: error`."""
+
+    def kv_get(self, _key):
+        return None
 
 
 class _FakeGP:
@@ -83,8 +93,32 @@ class _FakeGP:
         self.ws = _WS()
         self.reconciler = _Reconciler()
         self.cfg = _Cfg()
+        self.store = _Store()
+        self.vpin_calibration = {}
         self.position_mode = "hedge"
         self.armed = True
+
+    # The state/readiness properties delegate to the REAL implementations rather than returning
+    # hardcoded strings. A double that hardcoded "PAPER" would keep passing after the production
+    # state machine changed, which is the drift these endpoint tests exist to catch.
+    @property
+    def engine_state(self):
+        from gpkg.core.engine_state import assess_engine_state
+        return assess_engine_state(
+            require_runtime_secret=self.cfg.require_runtime_secret,
+            secret_loaded=False,
+            execution_mode=self.cfg.execution_mode,
+            armed=self.armed,
+        )
+
+    @property
+    def live_armed(self):
+        return bool(self.cfg.execution_mode == "live" and self.armed)
+
+    @property
+    def ready_for_arming(self):
+        from gpkg.core.engine_state import ready_for_arming
+        return ready_for_arming(self.engine_state)
 
 
 SECRET_MARKERS = [
@@ -295,7 +329,6 @@ def test_no_declared_runtime_dependency_is_unused():
     """Every runtime dependency must be imported somewhere. An unused one is pure install-time and
     CVE surface in the credential-holding process."""
     import re
-    from pathlib import Path as P
 
     runtime = (ROOT / "requirements.txt").read_text()
     deps = []

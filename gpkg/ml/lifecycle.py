@@ -21,7 +21,7 @@ from dataclasses import dataclass, field
 from enum import Enum
 from math import erf, isfinite, log, sqrt
 from statistics import mean, pstdev
-from typing import Iterable, Sequence
+from typing import Sequence
 
 
 class ModelState(str, Enum):

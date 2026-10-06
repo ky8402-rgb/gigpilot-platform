@@ -90,6 +90,12 @@ jobs:
           BASE="https://$(printf '%s' "$EC2_HOST" | tr '.' '-').sslip.io"
           curl -kfsS "$BASE/api/health" -o /tmp/health.json
           python -c "import json,os; x=json.load(open('/tmp/health.json')); assert x.get('deployedCommit')==os.environ['GITHUB_SHA']; assert x.get('autonomousEngine',{}).get('reachable') is True"
+          # DAEMON health, NOT live arming. A cold boot in runtime-secret mode is SUPPOSED to report
+          # engine_state=AWAITING_SECRET: nothing can be signed before an operator supplies the
+          # secret, and POST /api/arm - the only route that accepts it - runs on the very server
+          # being deployed. Requiring ARMED here would be self-sealing, so the gate asserts the
+          # daemon is alive and the lifecycle state is one of the acceptable ones instead.
+          python -c "import json; x=json.load(open('/tmp/health.json')); assert x.get('status')=='ok', x.get('status'); assert x.get('healthy') is True, x.get('healthy'); assert x.get('engine_state') in ('AWAITING_SECRET','PAPER','ARMED'), x.get('engine_state')"
           curl -kfsS "$BASE/" | grep -Eiq '<html|<script|<div'
           curl -kfsS "$BASE/version.json" | python -c "import json,sys,os; assert json.load(sys.stdin).get('commit')==os.environ['GITHUB_SHA']"
 
