@@ -24,10 +24,10 @@ from gpkg.exchange.base import (
     Fill,
     Instrument,
     InstrumentUnknown,
-    MarginMode,
     Order,
     OrderRequest,
     OrderResult,
+    TimeInForce,
     OrderStatus,
     OrderType,
     PermissionDenied,
@@ -284,7 +284,14 @@ class BybitAdapter(ExchangeAdapter):
             body["orderLinkId"] = req.client_order_id
         if req.order_type is OrderType.LIMIT:
             body["price"] = req.price
-            body["timeInForce"] = "GTC"
+            # Honour the caller's routing decision instead of hardcoding GTC. An unconditional GTC
+            # made "rest passively at the micro-price" inexpressible at this layer, which is the
+            # decision worth ~7 bps per round trip. POST_ONLY is passed straight through: Bybit
+            # REJECTS a post-only order that would have crossed rather than silently executing it as
+            # a taker, so the venue — not our arithmetic — enforces that we do not pay the spread by
+            # accident. IOC is used only by the taker-crossing gate.
+            tif = req.time_in_force if isinstance(req.time_in_force, TimeInForce) else TimeInForce.GTC
+            body["timeInForce"] = tif.value
         if req.reduce_only:
             body["reduceOnly"] = True
         try:

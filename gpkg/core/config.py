@@ -95,6 +95,20 @@ class Config:
     max_daily_loss_pct: float = 2.0
     max_open_orders_per_market: int = 3
     taker_min_net_edge_bps: float = 12.0
+    # ---- execution routing (see gpkg/execution/routing.py) ----
+    # Prefer resting at the micro-price over crossing. Measured on a live BTCUSDT quote: a taker
+    # round trip costs 11.0 bps in fees and a maker round trip 4.0 bps, so resting is worth ~7 bps
+    # per trade — more than the entire edge hurdle the platform used to trade on.
+    #
+    # Whether this ENGAGES is decided by the caller supplying a quote: with no usable top-of-book
+    # the executor falls back to the existing market path unchanged, so enabling this cannot strand
+    # an order without a price to quote at.
+    maker_entry_enabled: bool = True
+    # Spec: pull and re-quote an unfilled order once it is older than this.
+    maker_max_quote_age_ms: int = 2_500
+    # Bounded re-quote attempts. Each requote is a new client order id, so the venue can still
+    # deduplicate a retry of any single attempt.
+    maker_max_requotes: int = 2
     max_signal_to_ack_drift_bps: float = 2.5
     max_concurrent_positions: int = 3
     min_arm_capital_usdt: float = 67.0
@@ -148,6 +162,9 @@ class Config:
             max_daily_loss_pct=float(os.getenv("GIGPILOT_MAX_DAILY_LOSS", "2.0")),
             max_open_orders_per_market=int(os.getenv("GIGPILOT_MAX_OPEN_ORDERS_PER_MARKET", "3")),
             taker_min_net_edge_bps=float(os.getenv("GIGPILOT_TAKER_MIN_NET_EDGE_BPS", "12.0")),
+            maker_entry_enabled=os.getenv("GIGPILOT_MAKER_ENTRY", "1") == "1",
+            maker_max_quote_age_ms=int(os.getenv("GIGPILOT_MAKER_MAX_QUOTE_AGE_MS", "2500")),
+            maker_max_requotes=int(os.getenv("GIGPILOT_MAKER_MAX_REQUOTES", "2")),
             max_signal_to_ack_drift_bps=float(os.getenv("GIGPILOT_MAX_SIGNAL_TO_ACK_DRIFT_BPS", "2.5")),
             min_arm_capital_usdt=float(os.getenv("GIGPILOT_MIN_ARM_CAPITAL_USDT", "67.0")),
             db_path=os.getenv("GIGPILOT_DB_PATH", "gigpilot.db"),

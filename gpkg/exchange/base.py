@@ -84,6 +84,24 @@ class OrderType(str, Enum):
     LIMIT = "Limit"
 
 
+class TimeInForce(str, Enum):
+    """How long an order lives, and whether it may take liquidity.
+
+    This exists because `timeInForce` was previously a hardcoded "GTC" literal buried in the Bybit
+    adapter's LIMIT branch. That made it impossible for the routing layer to express "rest passively"
+    — the single decision worth about 7 bps of edge per round trip (measured: taker fees 11.0 bps vs
+    maker 4.0 bps round-trip on a live BTCUSDT quote) — without forking the adapter.
+
+    POST_ONLY is the one that matters economically. Bybit rejects a post-only order that would have
+    crossed the book instead of silently executing it as a taker, so it is also a SAFETY property:
+    the venue enforces that we do not pay the spread by accident.
+    """
+
+    GTC = "GTC"            # rest until cancelled; may take liquidity if priced through the book
+    POST_ONLY = "PostOnly"  # must rest as a maker; venue rejects rather than crossing
+    IOC = "IOC"            # take what is available immediately, cancel the rest
+
+
 class OrderStatus(str, Enum):
     OPEN = "open"
     FILLED = "filled"
@@ -261,6 +279,9 @@ class OrderRequest:
     reduce_only: bool = False
     client_order_id: Optional[str] = None
     position_idx: int = 0
+    # Defaults to GTC so every existing caller keeps today's behaviour. The ENTRY path sets this
+    # explicitly from its routing decision; leaving it unset is what an un-routed order looks like.
+    time_in_force: TimeInForce = TimeInForce.GTC
 
     def validate(self) -> None:
         if self.order_type is OrderType.MARKET and not self.reduce_only and not self.client_order_id:

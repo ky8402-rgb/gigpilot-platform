@@ -102,6 +102,7 @@ from gpkg.risk.gate import Portfolio, RiskGate  # noqa: E402
 # 7. Executor (MIGRATED -> gpkg/execution/executor.py)
 # =============================================================================
 from gpkg.execution.executor import Executor  # noqa: E402
+from gpkg.execution.routing import QuoteSnapshot  # noqa: E402
 
 
 # =============================================================================
@@ -1057,17 +1058,83 @@ class GigPilot:
                  est.side, symbol, qty, notional, est.net_bps, tp, sl)
         try:
             # `qty_s` (the exact decimal string) goes on the wire, not the float round-trip of it.
-            res = await self.executor.open_protected(symbol, est.side, qty_s, tp, sl)
+            #
+            # The routing kwargs hand the executor a top-of-book so it can rest at the micro-price
+            # instead of crossing. If the book is unusable the executor falls back to its market path
+            # unchanged — see `Executor.open_protected`. `est.spread_bps` is the LIVE spread standing
+            # in for a peak; it is a real measurement, and the friction model doubles it, so it stays
+            # conservative. A rolling-maximum peak would be a stronger input and is a known gap.
+            res = await self.executor.open_protected(
+                symbol, est.side, qty_s, tp, sl,
+                quote_fn=lambda: self._quote_for(symbol),
+                tick_size=self.tick_size.get(symbol),
+                gross_edge_bps=est.gross_bps,
+                peak_spread_bps=est.spread_bps,
+                funding_bps=est.funding_bps,
+                impact_bps=est.slip_bps,
+                obi=self._book_imbalance(symbol),
+                # Distances, not just levels: a maker fill happens at the touch, not at the mid we
+                # estimated from, so the executor re-derives TP/SL from the realised fill to keep
+                # the intended risk. Without these it can only shift the levels, not re-scale them.
+                tp_bps=tp_bps,
+                sl_bps=stop_bps,
+            )
         except Exception as e:
             log.error("entry failed %s: %s", symbol, e)
             METRICS.inc("gigpilot_entry_errors_total", symbol=symbol); return
-        tid = self.store.open_trade(symbol, est.side, qty, entry_px, tp, sl,
+        if res.get("skipped"):
+            # The routing gate declined: the edge could not pay the spread. This is a correct
+            # outcome, not a failure, and it must be recorded as a skip so a strategy that has
+            # stopped trading is visible rather than looking like a broken engine.
+            log.info("entry SKIPPED %s %s: %s", est.side, symbol, res.get("reason"))
+            METRICS.inc("gigpilot_entry_skips_total", reason="routing_gate", symbol=symbol)
+            self.store.journal("ENTER_SKIPPED", symbol,
+                               {"side": est.side, "reason": res.get("reason"),
+                                "net_edge_bps": est.net_bps})
+            return
+        # Use the quantity that ACTUALLY filled. A partially-filled maker entry is a smaller
+        # position, and booking the planned size would make local state disagree with the venue on
+        # the first reconciliation.
+        filled = float(res.get("qty") or qty)
+        fill_px = float(res.get("fill_px") or entry_px)
+        # Book the protection that was ACTUALLY registered. The executor may have re-derived it from
+        # the fill, and recording our own pre-trade levels instead would make local state disagree
+        # with the venue on the first reconciliation.
+        tp = float(res.get("tp") or tp)
+        sl = float(res.get("sl") or sl)
+        tid = self.store.open_trade(symbol, est.side, filled, fill_px, tp, sl,
                                     res["orderLinkId"])
-        self.positions[symbol] = {"side": est.side, "qty": qty,
-                                  "entry": entry_px, "trade_id": tid}
+        self.positions[symbol] = {"side": est.side, "qty": filled,
+                                  "entry": fill_px, "trade_id": tid}
         self.store.journal("ENTER", symbol,
-                           {"side": est.side, "qty": qty, "entry": entry_px,
-                            "tp": tp, "sl": sl, "net_edge_bps": est.net_bps})
+                           {"side": est.side, "qty": filled, "entry": fill_px,
+                            "tp": tp, "sl": sl, "net_edge_bps": est.net_bps,
+                            "route": res.get("route")})
+
+    def _book_imbalance(self, symbol: str, levels: int = 5) -> float:
+        ms = self.markets.get(symbol)
+        if ms is None:
+            return 0.0
+        try:
+            return float(ms.imbalance(levels))
+        except Exception:
+            return 0.0
+
+    async def _quote_for(self, symbol: str) -> Optional[QuoteSnapshot]:
+        """Top-of-book for the routing layer, or None when the book is not readable.
+
+        None is the honest answer for "cannot price a passive order" and makes the executor fall back
+        to its market path. Returning a synthesised quote from `last` or `mid` would let the router
+        quote at a price the book never offered.
+        """
+        ms = self.markets.get(symbol)
+        if ms is None or not ms.bids or not ms.asks:
+            return None
+        bid_px, bid_qty = ms.bids[0]
+        ask_px, ask_qty = ms.asks[0]
+        return QuoteSnapshot(bid_px=float(bid_px), ask_px=float(ask_px),
+                             bid_qty=float(bid_qty), ask_qty=float(ask_qty),
+                             ts_ms=int(getattr(ms, "ts_book_ms", 0) or 0))
 
     async def _close_position(self, symbol: str, reason: str):
         local = self.positions.get(symbol)

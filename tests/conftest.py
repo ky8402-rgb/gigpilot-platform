@@ -47,6 +47,13 @@ class FakeREST:
         self.closed: list[dict] = []
         self.protections: list[dict] = []   # native TP/SL registrations (trading-stop)
         self.started = False
+        # Post-only entry quotes that this fake fills immediately, keyed by the child orderLinkId.
+        # A real book fills a passive order that is priced at the touch, and the engine now routes
+        # entries that way, so the fake has to be able to complete one — otherwise the lifecycle
+        # tests would only be able to observe a skip and would stop covering protect/close/accounting.
+        self.maker_fills: dict[str, dict] = {}
+        # Set to True to model a book that never trades against us (the quote goes stale instead).
+        self.maker_never_fills = False
         # orderLinkIds already seen -> a resubmit is answered with the duplicate code, exactly as
         # Bybit does when a retry follows a lost response.
         self._seen_links: set[str] = set()
@@ -73,7 +80,21 @@ class FakeREST:
         return list(self.position_legs)
 
     async def open_orders(self):
+        # A filled order is not open: it has left the realtime book, which is exactly the state that
+        # makes `order_history` necessary to tell "filled" from "cancelled".
         return []
+
+    async def order_history(self, symbol: str, order_link_id: str | None = None, limit: int = 50):
+        """Finalised orders. Mirrors BybitREST.order_history so the maker lifecycle can resolve a
+        terminal state instead of guessing — see `_MakerIO.state`."""
+        out = [v for v in self.maker_fills.values() if v.get("symbol") == symbol]
+        if order_link_id:
+            out = [v for v in out if v.get("orderLinkId") == order_link_id]
+        return out[: int(limit)]
+
+    async def cancel_order(self, **kw):
+        self.cancelled.append(kw)
+        return {}
 
     async def api_info(self):
         # Match BybitREST.api_info(): _req() already unwraps the venue's top-level result envelope.
@@ -133,6 +154,19 @@ class FakeREST:
         if link:
             self._seen_links.add(link)
         self.placed_orders.append(kw)
+        # A post-only entry is filled by the book at its limit price, unless the test asks for a book
+        # that never trades against us (which is what drives the stale-quote / requote path).
+        if kw.get("timeInForce") == "PostOnly" and not self.maker_never_fills:
+            self.maker_fills[link] = {
+                "orderId": f"fake-{len(self.placed_orders)}",
+                "orderLinkId": link,
+                "symbol": kw.get("symbol", ""),
+                "price": kw.get("price", "0"),
+                "qty": kw.get("qty", "0"),
+                "cumExecQty": kw.get("qty", "0"),
+                "avgPrice": kw.get("price", "0"),
+                "orderStatus": "Filled",
+            }
         return {"orderId": f"fake-{len(self.placed_orders)}", "orderLinkId": link}
 
 

@@ -145,6 +145,20 @@ class BybitREST:
     async def open_orders(self) -> list:
         return (await self._req("GET", "/v5/order/realtime", {"category": "linear", "settleCoin": "USDT"})).get("list", [])
 
+    async def order_history(self, symbol: str, order_link_id: str | None = None,
+                            limit: int = 50) -> list:
+        """Recently-finalised orders, optionally filtered to one client order id.
+
+        Needed to answer the question that decides whether an unfilled maker quote is safe to
+        abandon: an order missing from `/v5/order/realtime` has either FILLED or been cancelled, and
+        those demand opposite responses. Without this the two are indistinguishable, so a filled
+        order would look like an empty one and its position would be left unprotected.
+        """
+        params: dict = {"category": "linear", "symbol": symbol, "limit": int(limit)}
+        if order_link_id:
+            params["orderLinkId"] = order_link_id
+        return (await self._req("GET", "/v5/order/history", params)).get("list", [])
+
     async def api_info(self) -> dict:
         """Describe THIS API key: permissions and read-only status.
 

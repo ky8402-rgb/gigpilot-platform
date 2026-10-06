@@ -302,7 +302,12 @@ def evaluate_admission(
     net = g - total
     if not math.isfinite(net):
         return Admission(False, g, net, "friction_unbounded_depth_or_spread")
-    if net < float(hurdle_bps):
+    # INCLUSIVE at the boundary, with a tolerance so the verdict does not depend on float
+    # representation. A gross edge of `cost + 12.0` computes to 11.999999999999998 and would be
+    # refused, making the threshold un-achievable by construction and its behaviour non-deterministic
+    # across platforms. 1e-9 bps is ~1e-13 of notional — economically nothing — while removing the
+    # arbitrariness. The comparison is deliberately NOT loosened for values genuinely below the bar.
+    if net < float(hurdle_bps) - 1e-9:
         if g > 0:
             return Admission(
                 False, g, net,

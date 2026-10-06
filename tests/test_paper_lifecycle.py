@@ -48,7 +48,16 @@ async def test_full_lifecycle_arm_enter_protect_close_account(make_engine):
 
     assert len(fake.placed_orders) == 1, f"expected exactly one entry, got {fake.placed_orders}"
     entry = fake.placed_orders[0]
-    assert entry["orderType"] == "Market"
+    # The entry now RESTS rather than crossing: measured on a live BTCUSDT quote a taker round trip
+    # costs 11.0 bps in fees against 4.0 bps for a maker round trip, so crossing on entry gives up
+    # ~7 bps. The assertion moved from "Market" to a post-only limit at a real price, which is
+    # strictly stronger — it pins the routing DECISION, not merely that some order was sent.
+    assert entry["orderType"] == "Limit", f"entry should rest as a routed limit, got {entry}"
+    assert entry["timeInForce"] == "PostOnly", (
+        "entry must be post-only so the venue rejects rather than crosses; that is the safety "
+        "property stopping us from paying the spread by accident"
+    )
+    assert float(entry["price"]) > 0, "a resting entry must carry the price it rests at"
     assert entry["category"] == "linear"
     assert entry["orderLinkId"].startswith("gp-"), "orderLinkId must be traceable to this engine"
 
