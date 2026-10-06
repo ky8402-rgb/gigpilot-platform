@@ -49,6 +49,11 @@ from typing import Any, Iterable, Optional
 
 REDACTED = "***REDACTED***"
 BYBIT_SECRET = "bybit_api_secret"
+#: The OTHER half of the same credential, defined here beside the secret because the two must be
+#: resolved by one rule in one place: `BybitREST` signs with the key it sends in the header, and a
+#: mismatch is reported by the venue as an invalid signature — indistinguishable at the call site
+#: from a rotated secret.
+BYBIT_API_KEY = "bybit_api_key"
 
 
 class SecretRequired(RuntimeError):

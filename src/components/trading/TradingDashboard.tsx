@@ -61,6 +61,7 @@ import { ScriptingIdeView } from './ScriptingIdeView';
 import { ProfitSweepView } from './ProfitSweepView';
 import { WebResearchView } from './WebResearchView';
 import { RiskAndSafetyView } from './RiskAndSafetyView';
+import { CredentialVaultView } from './CredentialVaultView';
 import { CanaryAndAuditView } from './CanaryAndAuditView';
 import { AssetDashboard } from './AssetDashboard';
 import { OwnerAuthModal } from './OwnerAuthModal';
@@ -93,7 +94,7 @@ import { TradingReadinessBanner } from './TradingReadinessBanner';
 import { RegimeTransitionView } from './RegimeTransitionView';
 import { InventoryAwareGridView } from './InventoryAwareGridView';
 import { DecisionPipelineVisualizer } from './DecisionPipelineVisualizer';
-import { Activity, Scale, Shield, Zap } from 'lucide-react';
+import { Activity, KeyRound, Scale, Shield, Zap } from 'lucide-react';
 
 export type ActiveTerminalTab =
   | 'TERMINAL'
@@ -113,7 +114,8 @@ export type ActiveTerminalTab =
   | 'PROFIT_SWEEP'
   | 'WEB_RESEARCH'
   | 'RISK_SAFETY'
-  | 'SYSTEM_CANARY';
+  | 'SYSTEM_CANARY'
+  | 'CREDENTIAL_VAULT';
 
 export interface TradingDashboardProps {
   onLogout?: () => void;
@@ -714,6 +716,18 @@ export const TradingDashboard: React.FC<TradingDashboardProps> = ({ onLogout }) 
               <GitPullRequest className="w-3.5 h-3.5" />
               <span>Canary & Audit</span>
             </button>
+
+            <button
+              onClick={() => setActiveTab('CREDENTIAL_VAULT')}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-mono font-bold transition-all ${
+                activeTab === 'CREDENTIAL_VAULT'
+                  ? 'bg-amber-950/80 text-amber-300 border border-amber-700/80 shadow'
+                  : 'text-slate-400 hover:text-slate-200'
+              }`}
+            >
+              <KeyRound className="w-3.5 h-3.5" />
+              <span>Credential Vault</span>
+            </button>
           </div>
 
           <button
@@ -916,6 +930,13 @@ export const TradingDashboard: React.FC<TradingDashboardProps> = ({ onLogout }) 
             circuitBreakerActive={riskData.circuitBreakerActive}
             events={riskData.events || []}
             onRefreshState={loadFullState}
+          />
+        )}
+
+        {activeTab === 'CREDENTIAL_VAULT' && (
+          <CredentialVaultView
+            isOwnerAuth={isOwnerAuth}
+            onRequireAuth={() => setShowAuthModal(true)}
           />
         )}
 

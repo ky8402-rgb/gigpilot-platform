@@ -1256,3 +1256,142 @@ export async function fetchMLTournamentLatest(symbol = 'BTCUSDT'): Promise<MLTou
     { baseUrls: getMLRootBaseUrls() }
   );
 }
+
+
+/* ============================================================================================
+ * Credential vault — owner-only exchange credentials and the withdrawal allowlist.
+ *
+ * These calls carry LIVE exchange secrets in the request body. Nothing here persists them: the
+ * functions below deliberately have no cache, no module-level state, and no logging, and they never
+ * touch durable browser storage, session storage, or cookies. The server holds them in memory.
+ * ========================================================================================== */
+
+export interface VaultExchangeStatus {
+  label: string;
+  keyLoaded: boolean;
+  secretLoaded: boolean;
+  ready: boolean;
+  keyConsoleUrl: string;
+  requiredPermissions: string;
+  forbiddenPermissions: string;
+}
+
+export interface VaultWithdrawalAddress {
+  exchange: string;
+  network: string;
+  address: string;
+  label: string;
+  set_at_ms: number;
+}
+
+export interface CredentialVaultStatus {
+  success: boolean;
+  exchanges: Record<string, VaultExchangeStatus>;
+  withdrawalAddresses: Record<string, VaultWithdrawalAddress>;
+  withdrawalConfirmationPhrase: string;
+  persisted: boolean;
+  withdrawalExecutionEnabled: boolean;
+}
+
+export interface CredentialVerification {
+  attempted: boolean;
+  ok?: boolean;
+  message?: string;
+  withdrawalPermissionRefused?: boolean;
+}
+
+export interface StoreCredentialsResult {
+  success: boolean;
+  error?: string;
+  message?: string;
+  exchanges?: Record<string, VaultExchangeStatus>;
+  verification?: CredentialVerification;
+  persisted?: boolean;
+}
+
+/** GET /api/credentials/vault — which exchanges are loaded, and where profit may be sent. */
+export async function fetchCredentialVault(): Promise<CredentialVaultStatus> {
+  return await fetchWithFailover<CredentialVaultStatus>('/api/credentials/vault', {
+    baseUrls: getControlPlaneBaseUrls()
+  });
+}
+
+/**
+ * POST /api/credentials/exchange — load an exchange key pair into engine memory.
+ *
+ * 422 (invalid credentials) and 403 (confirmation required) are expected control-flow answers, so
+ * the structured body is returned to the UI instead of thrown.
+ */
+export async function storeExchangeCredentials(
+  exchange: string,
+  apiKey: string,
+  apiSecret: string
+): Promise<StoreCredentialsResult> {
+  try {
+    return await fetchWithFailover<StoreCredentialsResult>('/api/credentials/exchange', {
+      baseUrls: getControlPlaneBaseUrls(),
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ exchange, apiKey, apiSecret })
+    });
+  } catch (err: any) {
+    if (err?.data && typeof err.data === 'object') return err.data as StoreCredentialsResult;
+    return { success: false, error: err?.message || 'Credential request failed' };
+  }
+}
+
+export interface WithdrawalAddressResult {
+  success: boolean;
+  error?: string;
+  message?: string;
+  withdrawalAddresses?: Record<string, VaultWithdrawalAddress>;
+}
+
+/**
+ * POST /api/credentials/withdrawal-address — set the SINGLE destination profit may go to.
+ *
+ * `confirmation` must match the phrase the server publishes. This endpoint does not move funds and
+ * there is no endpoint that does: the allowlist is a destination record, not a transfer.
+ */
+export async function setWithdrawalAddress(
+  exchange: string,
+  network: string,
+  address: string,
+  confirmation: string,
+  label = ''
+): Promise<WithdrawalAddressResult> {
+  try {
+    return await fetchWithFailover<WithdrawalAddressResult>(
+      '/api/credentials/withdrawal-address',
+      {
+        baseUrls: getControlPlaneBaseUrls(),
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ exchange, network, address, confirmation, label })
+      }
+    );
+  } catch (err: any) {
+    if (err?.data && typeof err.data === 'object') return err.data as WithdrawalAddressResult;
+    return { success: false, error: err?.message || 'Withdrawal address request failed' };
+  }
+}
+
+/** POST /api/credentials/withdrawal-address/clear — forget the allowlisted destination. */
+export async function clearWithdrawalAddress(
+  exchange: string
+): Promise<WithdrawalAddressResult> {
+  try {
+    return await fetchWithFailover<WithdrawalAddressResult>(
+      '/api/credentials/withdrawal-address/clear',
+      {
+        baseUrls: getControlPlaneBaseUrls(),
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ exchange, network: '', address: '', confirmation: '' })
+      }
+    );
+  } catch (err: any) {
+    if (err?.data && typeof err.data === 'object') return err.data as WithdrawalAddressResult;
+    return { success: false, error: err?.message || 'Clear request failed' };
+  }
+}

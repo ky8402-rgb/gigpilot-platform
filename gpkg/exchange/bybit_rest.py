@@ -79,8 +79,33 @@ class BybitREST:
             )
         return self.cfg.api_secret
 
+    def _api_key(self) -> str:
+        """The API key to identify with, resolved by the SAME rule as `_secret()`.
+
+        Runtime-first, config-second, fail-closed when neither exists. This mirrors `_secret()`
+        deliberately, because the key and the secret are two halves of ONE credential: signing with
+        one key while sending another produces an "invalid signature" rejection that looks exactly
+        like a rotated secret at the call site. One rule, both halves.
+
+        Unlike the secret, the config fallback is not suppressed by `require_runtime_secret`. That
+        mode exists to stop a PERSISTED SECRET from ever signing; the key identifies, it does not
+        authorise, and the production deployment deliberately supplies the key while the operator
+        supplies the secret by hand. Raising here would break that arrangement rather than harden it.
+        """
+        from gpkg.core.runtime_secrets import BYBIT_API_KEY, RuntimeSecretStore, SecretRequired
+
+        live = RuntimeSecretStore.instance().get(BYBIT_API_KEY)
+        if live is not None and bool(live):
+            return live.reveal()
+        if self.cfg.api_key:
+            return self.cfg.api_key
+        raise SecretRequired(
+            "no API key available: enter one (POST /api/credentials/exchange) — an empty key cannot "
+            "be sent to the venue"
+        )
+
     def _sign(self, ts: str, payload: str) -> str:
-        msg = ts + self.cfg.api_key + self.cfg.recv_window + payload
+        msg = ts + self._api_key() + self.cfg.recv_window + payload
         secret = self._secret()
         # `del` the local as soon as the digest exists: the string is immutable, so this only drops
         # the reference, but it shortens the window in which a usable plaintext is reachable from
@@ -109,7 +134,7 @@ class BybitREST:
                     if method == "GET":
                         payload = urlencode(sorted(params.items()))
                         headers = {
-                            "X-BAPI-API-KEY": self.cfg.api_key,
+                            "X-BAPI-API-KEY": self._api_key(),
                             "X-BAPI-TIMESTAMP": ts,
                             "X-BAPI-RECV-WINDOW": self.cfg.recv_window,
                             "X-BAPI-SIGN": self._sign(ts, payload),
@@ -122,7 +147,7 @@ class BybitREST:
                     else:
                         bs = json.dumps(body or {}, separators=(",", ":"))
                         headers = {
-                            "X-BAPI-API-KEY": self.cfg.api_key,
+                            "X-BAPI-API-KEY": self._api_key(),
                             "X-BAPI-TIMESTAMP": ts,
                             "X-BAPI-RECV-WINDOW": self.cfg.recv_window,
                             "X-BAPI-SIGN": self._sign(ts, bs),

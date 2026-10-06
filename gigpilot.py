@@ -2021,6 +2021,152 @@ async def api_runtime_credential_status():
     }
 
 
+class _ExchangeCredentialsBody(_BaseModel):
+    """Owner-supplied exchange API key pair.
+
+    Both halves travel together and neither is persisted. Like `_ArmBody`, the values are plain
+    strings inside a Pydantic model this service never logs; the redaction filter covers the residual
+    case where one is ever serialised.
+    """
+
+    exchange: str
+    apiKey: str
+    apiSecret: str
+
+
+class _WithdrawalAddressBody(_BaseModel):
+    """The single destination profit may be withdrawn to.
+
+    `confirmation` must equal the published phrase. It is not a secret and it is not authentication —
+    it is a deliberate typing barrier that converts a one-click, script-driven redirect of future
+    profit into an act somebody had to intend.
+    """
+
+    exchange: str
+    network: str
+    address: str
+    label: str = ""
+    confirmation: str = ""
+
+
+@app.get("/api/credentials/vault", dependencies=[Depends(require_owner)])
+async def api_credential_vault_status():
+    """Exchange credential presence and the withdrawal allowlist. Never a secret, never a length.
+
+    Owner-gated rather than public: `exchange_status()` reports WHICH exchanges are loaded, which
+    tells an attacker where to aim. The public `/api/health` deliberately says nothing about it.
+    """
+    from gpkg.core.credential_vault import WITHDRAWAL_CONFIRMATION_PHRASE, CredentialVault
+
+    vault = CredentialVault.instance()
+    return {
+        "success": True,
+        "exchanges": vault.exchange_status(),
+        "withdrawalAddresses": vault.withdrawal_addresses(),
+        "withdrawalConfirmationPhrase": WITHDRAWAL_CONFIRMATION_PHRASE,
+        # Stated explicitly so the UI never has to imply it: nothing here survives a restart.
+        "persisted": False,
+        "withdrawalExecutionEnabled": False,
+    }
+
+
+@app.post("/api/credentials/exchange", dependencies=[Depends(require_owner)])
+async def api_store_exchange_credentials(body: _ExchangeCredentialsBody):
+    """Load one exchange's key pair into engine memory, then try to verify it live.
+
+    Verification is REPORTED, never a precondition for storing. A failed probe is usually a bad key,
+    but it can also be a venue outage or a rate limit, and refusing to store would leave an operator
+    unable to record credentials during exactly the incident they are trying to fix. Nothing is
+    weakened by storing them: the ARM gate re-runs the full check — withdrawal-permission refusal
+    included — before any live order, so unverified credentials can be held but never traded with.
+    """
+    from gpkg.core.credential_vault import CredentialVault
+
+    gp = get_gp()
+    vault = CredentialVault.instance()
+    try:
+        vault.store_exchange_credentials(body.exchange, body.apiKey, body.apiSecret)
+    except ValueError as e:
+        return JSONResponse(status_code=422, content={
+            "success": False, "error": "INVALID_CREDENTIALS", "message": str(e)})
+
+    exchange = str(body.exchange).strip().lower()
+    if exchange == "bybit":
+        # Runs the SAME probe boot and arming use, so a key that fails here would also fail the arm
+        # gate. Its most important output is the withdrawal-permission refusal.
+        ok, reason = await gp.verify_credentials()
+        verification = {
+            "attempted": True,
+            "ok": bool(ok),
+            "message": reason if not ok else "credentials verified against the venue",
+            "withdrawalPermissionRefused": bool(not ok and "withdrawal" in reason.lower()),
+        }
+    else:
+        verification = {
+            "attempted": False,
+            "message": (
+                "stored, but not verified: the trading engine routes to Bybit only, so a Binance key "
+                "has no code path to exercise. Storing it does NOT enable Binance trading."
+            ),
+        }
+
+    gp.store.journal("EXCHANGE_CREDENTIALS_LOADED", exchange,
+                     {"persisted": False, "verified": verification.get("ok")})
+    return {"success": True, "exchanges": vault.exchange_status(),
+            "verification": verification, "persisted": False}
+
+
+@app.post("/api/credentials/withdrawal-address", dependencies=[Depends(require_owner)])
+async def api_set_withdrawal_address(body: _WithdrawalAddressBody):
+    """Record the allowlisted withdrawal destination. Does NOT move funds and cannot be made to.
+
+    Validation is real: a Tron destination is Base58Check-verified, so a single mistyped character is
+    rejected rather than stored. See `gpkg/core/credential_vault.py` for why a mixed-case EVM address
+    is refused instead of waved through.
+    """
+    from gpkg.core.credential_vault import CredentialVault
+
+    gp = get_gp()
+    vault = CredentialVault.instance()
+    try:
+        addresses = vault.set_withdrawal_address(
+            body.exchange, body.network, body.address,
+            confirmation=body.confirmation, label=body.label,
+        )
+    except PermissionError as e:
+        return JSONResponse(status_code=403, content={
+            "success": False, "error": "CONFIRMATION_REQUIRED", "message": str(e)})
+    except ValueError as e:
+        return JSONResponse(status_code=422, content={
+            "success": False, "error": "INVALID_ADDRESS", "message": str(e)})
+
+    # Journalled by exchange and network. The address itself is not a secret and IS recorded: an
+    # allowlist change is the highest-risk action in the product, and an audit trail that omits the
+    # new value cannot answer the only question that matters after an incident — where did it point?
+    gp.store.journal("WITHDRAWAL_ADDRESS_SET", str(body.exchange).strip().lower(),
+                     {"network": str(body.network).strip().upper(),
+                      "address": str(body.address).strip(), "persisted": False})
+    return {"success": True, "withdrawalAddresses": addresses,
+            "withdrawalExecutionEnabled": False}
+
+
+@app.post("/api/credentials/withdrawal-address/clear", dependencies=[Depends(require_owner)])
+async def api_clear_withdrawal_address(body: _WithdrawalAddressBody):
+    """Remove an allowlisted destination. If it is gone, nothing may be withdrawn."""
+    from gpkg.core.credential_vault import CredentialVault
+
+    gp = get_gp()
+    vault = CredentialVault.instance()
+    try:
+        addresses = vault.clear_withdrawal_address(body.exchange)
+    except ValueError as e:
+        return JSONResponse(status_code=422, content={
+            "success": False, "error": "UNKNOWN_EXCHANGE", "message": str(e)})
+    gp.store.journal("WITHDRAWAL_ADDRESS_CLEARED", str(body.exchange).strip().lower(),
+                     {"persisted": False})
+    return {"success": True, "withdrawalAddresses": addresses}
+
+
 @app.post("/api/kill", dependencies=[Depends(require_owner)])
 async def api_kill():
     gp = get_gp()
