@@ -203,8 +203,21 @@ export async function fetchWithFailover<T>(
   throw lastError || new Error(`Live trading API unavailable for ${endpointPath}`);
 }
 
-export async function fetchTradingState(): Promise<MasterTradingState> {
-  return await fetchWithFailover<MasterTradingState>('/state');
+/**
+ * GET /api/state — the backend telemetry snapshot.
+ *
+ * RETURNS `Partial`, AND THAT IS THE POINT. `/api/state` does NOT carry `activeSymbol`: the selected
+ * symbol is a VIEW concern owned by the dashboard, not a fact the engine reports. Typing this as a
+ * complete `MasterTradingState` was a lie that let `setState(masterState)` replace the view state
+ * wholesale, erase `activeSymbol`, and crash the very next render on
+ * `state.activeSymbol.replace(...)`.
+ *
+ * The bug stayed invisible while the control plane was unreachable, because the assignment never ran;
+ * fixing the CORS allow-list let the fetch succeed and surfaced it. A `Partial` return makes the
+ * compiler reject a wholesale assignment, so this class of bug cannot come back.
+ */
+export async function fetchTradingState(): Promise<Partial<MasterTradingState>> {
+  return await fetchWithFailover<Partial<MasterTradingState>>('/state');
 }
 
 

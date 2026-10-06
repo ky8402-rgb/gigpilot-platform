@@ -121,6 +121,24 @@ export interface TradingDashboardProps {
   onLogout?: () => void;
 }
 
+const DEFAULT_SYMBOL = 'BTC/USDT';
+
+/**
+ * Fold a backend `/api/state` payload into the dashboard's view state.
+ *
+ * A wholesale assignment is only safe when the payload covers EVERY required view field, and
+ * `/api/state` does not: it is engine telemetry, whereas `activeSymbol` belongs to this component.
+ * Assigning it directly erased `activeSymbol` and crashed the next render on `activeSymbol.replace`.
+ */
+const mergeMasterState = (
+  prev: MasterTradingState,
+  incoming: Partial<MasterTradingState> | null | undefined
+): MasterTradingState => ({
+  ...prev,
+  ...(incoming || {}),
+  activeSymbol: incoming?.activeSymbol || prev.activeSymbol || DEFAULT_SYMBOL
+});
+
 export const TradingDashboard: React.FC<TradingDashboardProps> = ({ onLogout }) => {
   const [activeTab, setActiveTab] = useState<ActiveTerminalTab>('FUTURES_COMMAND');
   // Initialize with complete, realistic master state immediately so the app never blocks on loading
@@ -170,7 +188,9 @@ export const TradingDashboard: React.FC<TradingDashboardProps> = ({ onLogout }) 
     try {
       // 1. Fetch Core System State first
       const masterState = await fetchTradingState();
-      setState(masterState);
+      // MERGE, never replace — see `fetchTradingState`. The payload omits view-owned fields such as
+      // `activeSymbol`, and spreading it over the previous state keeps them intact.
+      setState(prev => mergeMasterState(prev, masterState));
       setGlobalKillSwitchActive(Boolean(masterState.GLOBAL_KILL_SWITCH_ACTIVE ?? masterState.killSwitch?.isActive));
       setIsLiveConnected(isEngineLiveConnected());
 
@@ -296,10 +316,13 @@ export const TradingDashboard: React.FC<TradingDashboardProps> = ({ onLogout }) 
     }
   };
 
-  const activePairInfo = pairs.find(p => p.symbol.replace(/[\/\-_]/g, '').toUpperCase() === state.activeSymbol.replace(/[\/\-_]/g, '').toUpperCase());
+  // Guaranteed non-empty for the entire render. `activeSymbol` is view-owned, and a render must never
+  // be able to crash on it: a crash guard firing on a cosmetic label loses the whole terminal.
+  const activeSymbol = state.activeSymbol || DEFAULT_SYMBOL;
+  const activePairInfo = pairs.find(p => p.symbol.replace(/[\/\-_]/g, '').toUpperCase() === activeSymbol.replace(/[\/\-_]/g, '').toUpperCase());
   const activePrice = (pairDetails?.currentPrice && pairDetails.currentPrice > 0)
     ? pairDetails.currentPrice
-    : (activePairInfo?.price || DEFAULT_PAIRS.find(p => p.symbol.replace(/[\/\-_]/g, '').toUpperCase() === state.activeSymbol.replace(/[\/\-_]/g, '').toUpperCase())?.price || 85859.20);
+    : (activePairInfo?.price || DEFAULT_PAIRS.find(p => p.symbol.replace(/[\/\-_]/g, '').toUpperCase() === activeSymbol.replace(/[\/\-_]/g, '').toUpperCase())?.price || 85859.20);
 
   if (activeTab === 'FUTURES_COMMAND') {
     return <FuturesCommandCenter />;
@@ -309,7 +332,7 @@ export const TradingDashboard: React.FC<TradingDashboardProps> = ({ onLogout }) 
     <div className="min-h-screen bg-[#070B14] text-slate-100 flex flex-col font-sans selection:bg-emerald-500 selection:text-black">
       {/* 1. Header Navigation & Emergency Kill Switch */}
       <HeaderNav
-        activeSymbol={state.activeSymbol}
+        activeSymbol={activeSymbol}
         onSelectSymbol={async (sym) => {
           setState(prev => ({
             ...prev,
@@ -750,7 +773,7 @@ export const TradingDashboard: React.FC<TradingDashboardProps> = ({ onLogout }) 
             {/* Left: Interactive Candlestick + Grid Overlay Chart */}
             <div className="lg:col-span-7 h-full">
               <InteractiveGridChart
-                symbol={state.activeSymbol}
+                symbol={activeSymbol}
                 candles={pairDetails?.candles || []}
                 orderBook={pairDetails?.orderBook || { bids: [], asks: [] }}
                 grid={state.activeGrid}
@@ -817,14 +840,14 @@ export const TradingDashboard: React.FC<TradingDashboardProps> = ({ onLogout }) 
           <RegimeTransitionView
             regime={state.currentRegime}
             currentPrice={activePrice}
-            symbol={state.activeSymbol}
+            symbol={activeSymbol}
             onRefresh={loadFullState}
           />
         )}
 
         {activeTab === 'INVENTORY_AWARE_GRID' && (
           <InventoryAwareGridView
-            activeSymbol={state.activeSymbol}
+            activeSymbol={activeSymbol}
             currentPrice={activePrice}
             marketRegime={state.currentRegime}
             activeGrid={state.activeGrid}
@@ -865,7 +888,7 @@ export const TradingDashboard: React.FC<TradingDashboardProps> = ({ onLogout }) 
           <div className="max-w-5xl mx-auto">
             <DecisionPipelineVisualizer
               decisionStats={state.decisionStats}
-              currentSymbol={state.activeSymbol}
+              currentSymbol={activeSymbol}
               onRefresh={loadFullState}
             />
           </div>
@@ -878,7 +901,7 @@ export const TradingDashboard: React.FC<TradingDashboardProps> = ({ onLogout }) 
             history={strategies.history}
             decisionStats={state.decisionStats}
             rollbackTelemetry={strategies.rollbackTelemetry}
-            activeSymbol={state.activeSymbol}
+            activeSymbol={activeSymbol}
             onRefresh={loadFullState}
             onPromoteChallenger={async (id) => {
               const res = await promoteChallenger(id);
@@ -899,7 +922,7 @@ export const TradingDashboard: React.FC<TradingDashboardProps> = ({ onLogout }) 
 
         {activeTab === 'ML_RESEARCH' && (
           <MLResearchAuditLog
-            activeSymbol={state.activeSymbol}
+            activeSymbol={activeSymbol}
             onRefresh={loadFullState}
           />
         )}

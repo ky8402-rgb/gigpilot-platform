@@ -22,7 +22,11 @@ import {
 import { AutonomyLevel, InventoryAwarenessMetrics, MarketRegime, TradingMode } from '../../types/trading';
 
 interface HeaderNavProps {
-  activeSymbol: string;
+  /**
+   * Optional on purpose. This is a display label, and a missing one must degrade to the default
+   * symbol rather than throw: `activeSymbol.replace(...)` used to crash the whole terminal.
+   */
+  activeSymbol?: string;
   onSelectSymbol: (sym: string) => void;
   pairs: Array<{
     symbol: string;
@@ -103,7 +107,7 @@ export const HeaderNav: React.FC<HeaderNavProps> = ({
     return pVal.toLocaleString(undefined, { minimumFractionDigits: 1, maximumFractionDigits: 2 });
   };
 
-  const normActive = activeSymbol.replace(/[\/\-_]/g, '').toUpperCase();
+  const normActive = (activeSymbol || 'BTC/USDT').replace(/[\/\-_]/g, '').toUpperCase();
   const activePairInfo = pairs.find(p => p.symbol.replace(/[\/\-_]/g, '').toUpperCase() === normActive) || {
     symbol: activeSymbol,
     price: 85859.20,

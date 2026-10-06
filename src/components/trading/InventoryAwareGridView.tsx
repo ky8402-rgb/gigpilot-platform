@@ -23,7 +23,9 @@ import {
 import { GridConfiguration, InventoryAwarenessMetrics, MarketRegime } from '../../types/trading';
 
 interface InventoryAwareGridViewProps {
-  activeSymbol: string;
+  /** Optional so a missing label degrades instead of throwing — same class as the crash that took
+   * the terminal down on `activeSymbol.replace(...)`. */
+  activeSymbol?: string;
   currentPrice: number;
   marketRegime: MarketRegime;
   activeGrid: GridConfiguration | null;
@@ -39,7 +41,7 @@ export const InventoryAwareGridView: React.FC<InventoryAwareGridViewProps> = ({
 
   const metrics: InventoryAwarenessMetrics | undefined = activeGrid?.inventoryAwareness;
 
-  const baseAsset = activeSymbol.split('/')[0] || 'BTC';
+  const baseAsset = (activeSymbol || 'BTC/USDT').split('/')[0] || 'BTC';
   // Fallback defaults if metrics not yet computed
   const currentBaseRatio = metrics?.currentBaseRatio ?? 0;
   const inventorySkew = metrics?.inventorySkew ?? 0;
