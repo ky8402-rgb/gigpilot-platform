@@ -1002,13 +1002,22 @@ export async function killGigPilot(): Promise<{ success: boolean; killed: boolea
 // same host candidates with that prefix stripped and reuse fetchWithFailover so owner-token
 // injection, timeouts and host failover are identical to every other owner-authenticated call.
 function getControlPlaneBaseUrls(): string[] {
-  return [
-    ...new Set(
-      getCandidateBaseUrls()
-        .map((u) => u.replace(/\/api\/trading\/?$/i, ''))
-        .filter((u) => u.length > 0)
-    )
-  ];
+  const candidates = getCandidateBaseUrls()
+    .map((u) => u.replace(/\/api\/trading\/?$/i, ''))
+    .filter((u) => u.length > 0);
+
+  // Amplify already reverse-proxies /api/* to the production EC2 control plane (amplify.yml).
+  // Prefer that same-origin path for owner auth so Safari/Chrome do not depend on cross-origin
+  // CORS for the security-critical login request. The backend origin remains a failover.
+  if (typeof window !== 'undefined' && window.location?.origin) {
+    const host = window.location.hostname;
+    const isAmplifyHost = host.endsWith('.amplifyapp.com');
+    if (isAmplifyHost) {
+      candidates.unshift(window.location.origin);
+    }
+  }
+
+  return [...new Set(candidates)];
 }
 
 /** A structured blocker/reason from the control plane. Shape mirrors the engine's reason objects. */
