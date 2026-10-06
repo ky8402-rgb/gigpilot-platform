@@ -240,26 +240,35 @@ def test_owner_tier_is_opt_in_and_public_tier_is_the_default(client):
 
 
 # =============================================================================================
-# Same-origin policy — a deliberate non-change
+# Cross-origin owner portal policy
 # =============================================================================================
-def test_no_wildcard_cors_is_configured(client):
-    """This endpoint serves an operational control plane for a single-owner account with a same-origin
-    SPA. There is NO CORSMiddleware and that is intentional: the absence of CORS response headers
-    means browsers block cross-origin reads, which is the safe default. Adding `allow_origins=["*"]`
-    would be a regression, and this test exists so that nobody adds it 'for completeness'.
-
-    If cross-origin access is ever genuinely required, it must be an explicit allow-list of exact
-    origins — not a wildcard — and this test should be replaced by one asserting the allow-list.
+def test_owner_portal_cors_is_exactly_allowlisted(client):
+    """The production SPA is on a known Amplify origin, so the API must allow that exact origin.
+    Arbitrary origins remain blocked; in particular, there is never a wildcard CORS response.
     """
-    import inspect
-    src = inspect.getsource(gigpilot)
-    assert "CORSMiddleware" not in src, (
-        "CORS middleware was added to the control plane. If deliberate, replace this test with one "
-        "asserting an explicit origin allow-list — never a wildcard on an owner-authenticated API."
+    production_origin = "https://main.d2qe2q720fbn3x.amplifyapp.com"
+    allowed = client.options(
+        "/api/auth/login",
+        headers={
+            "Origin": production_origin,
+            "Access-Control-Request-Method": "POST",
+            "Access-Control-Request-Headers": "content-type",
+        },
     )
-    r = client.get("/api/health", headers={"Origin": "https://evil.example.com"})
-    acao = r.headers.get("access-control-allow-origin")
-    assert acao != "*", f"wildcard CORS exposed the control plane: {acao!r}"
+    assert allowed.status_code in (200, 204), allowed.text
+    assert allowed.headers.get("access-control-allow-origin") == production_origin
+    assert allowed.headers.get("access-control-allow-credentials") == "true"
+
+    blocked = client.options(
+        "/api/auth/login",
+        headers={
+            "Origin": "https://evil.example.com",
+            "Access-Control-Request-Method": "POST",
+            "Access-Control-Request-Headers": "content-type",
+        },
+    )
+    assert blocked.headers.get("access-control-allow-origin") != "*"
+    assert blocked.headers.get("access-control-allow-origin") != "https://evil.example.com"
 
 
 # =============================================================================================
