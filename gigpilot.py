@@ -904,6 +904,18 @@ class GigPilot:
                 raise SystemExit(4)
             try:
                 kl = await self.rest.kline(s, "1", 200)
+                # Seed the chart's candle ring from the SAME warmup rows, which were previously used
+                # only for ATR and then discarded. Without this the ring starts empty and fills at one
+                # bar per minute, so a freshly-restarted terminal shows an almost blank chart for the
+                # first hour — which reads as "the chart is broken" even though the fix is live.
+                # REVERSED: Bybit returns klines newest-first, and the ring must be filled in
+                # ascending time order or every older bar is dropped by the out-of-order guard.
+                _ms = self.markets.get(s)
+                if _ms is not None:
+                    for _r in reversed(kl or []):
+                        if isinstance(_r, (list, tuple)) and len(_r) >= 5:
+                            _ms.apply_kline({"start": _r[0], "open": _r[1], "high": _r[2],
+                                             "low": _r[3], "close": _r[4]})
                 closes = [f(r[4]) for r in reversed(kl) if len(r) >= 5]
                 self.markets[s].closes_1m.extend(closes[-200:])
             except Exception as e:
