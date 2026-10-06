@@ -24,6 +24,127 @@ ML_COMMANDS = (
 )
 
 
+ARM_COMMANDS = ("arm", "disarm", "credential-status")
+
+
+def _api_base() -> str:
+    """Where the running engine listens. Overridable so the CLI works against a remote host."""
+    import os
+    return os.environ.get("GIGPILOT_API_BASE", "http://127.0.0.1:8000").rstrip("/")
+
+
+def _owner_token() -> str:
+    """Owner session token.
+
+    Taken from the environment when present so this can run unattended from a unit file or an SSH
+    session that already holds it; prompted for otherwise. It is NOT the API secret and is never
+    asked for on the same line, so the two cannot be confused.
+    """
+    import getpass
+    import os
+    tok = os.environ.get("GIGPILOT_OWNER_TOKEN", "").strip()
+    if tok:
+        return tok
+    return getpass.getpass("Owner session token (input hidden): ").strip()
+
+
+def _post(path: str, payload: dict, token: str) -> tuple[int, dict]:
+    import json
+    import urllib.error
+    import urllib.request
+
+    req = urllib.request.Request(
+        _api_base() + path,
+        data=json.dumps(payload).encode(),
+        headers={"Content-Type": "application/json", "Authorization": f"Bearer {token}"},
+        method="POST",
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=30) as r:
+            return r.status, json.loads(r.read().decode() or "{}")
+    except urllib.error.HTTPError as e:
+        body = e.read().decode(errors="replace")
+        try:
+            return e.code, json.loads(body or "{}")
+        except json.JSONDecodeError:
+            return e.code, {"raw": body[:400]}
+
+
+def _arm_cli(argv: list[str]) -> int:
+    """`gigpilot arm` — prompt for the API secret and arm this session.
+
+    §7: the secret is typed by hand, passed straight into one HTTP request, and dropped. It is never
+    written to a file, never exported into the environment, and never echoed — `getpass` keeps it off
+    the terminal and off the scrollback, which a `--secret` ARGUMENT would not (argv is visible in
+    `ps` to every user on the box).
+    """
+    import getpass
+    import json
+
+    if "--help" in argv or "-h" in argv:
+        print("usage: gigpilot arm [--json]\n"
+              "  Prompts (hidden input) for the Bybit API secret and arms live trading for this\n"
+              "  session only. The secret is held in engine memory and scrubbed on disarm.")
+        return 0
+    as_json = "--json" in argv
+
+    token = _owner_token()
+    if not token:
+        print("FATAL: an owner session token is required.", file=sys.stderr)
+        return 2
+
+    secret = getpass.getpass("Bybit API secret (input hidden, never stored): ").strip()
+    if not secret:
+        print("FATAL: no secret supplied; nothing armed.", file=sys.stderr)
+        return 2
+    try:
+        status, body = _post("/api/arm", {"apiSecret": secret}, token)
+    finally:
+        # Drop the local reference immediately. A long-lived process could otherwise keep the
+        # plaintext alive in this frame well past the request, and the whole point is that it should
+        # not outlive the arming call.
+        secret = ""
+        del secret
+
+    out = {"armed": body.get("armed"), "status": status,
+           "error": body.get("error"), "reasons": body.get("reasons"),
+           "runtimeSecretLoaded": body.get("runtimeSecretLoaded")}
+    print(json.dumps(out, indent=2) if as_json else
+          (f"armed={out['armed']} status={status} error={out['error'] or '-'}"))
+    return 0 if out["armed"] else 1
+
+
+def _disarm_cli(argv: list[str]) -> int:
+    import json
+
+    token = _owner_token()
+    if not token:
+        print("FATAL: an owner session token is required.", file=sys.stderr)
+        return 2
+    status, body = _post("/api/disarm", {}, token)
+    out = {"armed": body.get("armed"), "status": status,
+           "runtimeSecretCleared": body.get("runtimeSecretCleared")}
+    print(json.dumps(out, indent=2) if "--json" in argv else
+          f"armed={out['armed']} status={status} secretCleared={out['runtimeSecretCleared']}")
+    return 0 if status == 200 else 1
+
+
+def _credential_status_cli() -> int:
+    import json
+    import urllib.request
+
+    token = _owner_token()
+    if not token:
+        print("FATAL: an owner session token is required.", file=sys.stderr)
+        return 2
+    req = urllib.request.Request(_api_base() + "/api/credentials/runtime",
+                                headers={"Authorization": f"Bearer {token}"})
+    with urllib.request.urlopen(req, timeout=20) as r:
+        body = json.loads(r.read().decode() or "{}")
+    print(json.dumps({k: v for k, v in body.items() if k != "detail"}, indent=2))
+    return 0
+
+
 def main() -> int:
     if len(sys.argv) >= 3 and sys.argv[1] == "ml":
         command = sys.argv[2]
@@ -38,9 +159,18 @@ def main() -> int:
             f"available: {', '.join(ML_COMMANDS)}\n"
             f"  gigpilot ml tournament-status [--symbol BTCUSDT] [--format table]"
         )
+    if len(sys.argv) >= 2 and sys.argv[1] in ARM_COMMANDS:
+        command = sys.argv[1]
+        rest = sys.argv[2:]
+        if command == "arm":
+            return _arm_cli(rest)
+        if command == "disarm":
+            return _disarm_cli(rest)
+        return _credential_status_cli()
     raise SystemExit(
-        "usage: gigpilot ml <command> [--db PATH]\n"
-        f"  commands: {', '.join(ML_COMMANDS)}"
+        "usage: gigpilot <command>\n"
+        f"  ml:  {', '.join(ML_COMMANDS)}\n"
+        f"  live: {', '.join(ARM_COMMANDS)}"
     )
 
 

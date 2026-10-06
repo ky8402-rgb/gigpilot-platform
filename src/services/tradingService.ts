@@ -909,6 +909,103 @@ export async function killGigPilot(): Promise<{ success: boolean; killed: boolea
   });
 }
 
+// -------------------------------------------------------------
+// LIVE arm/disarm control plane with a per-session runtime API secret
+// -------------------------------------------------------------
+// The arm/disarm control plane is mounted at the API ROOT (/api/arm, /api/disarm,
+// /api/credentials/runtime), NOT under the /api/trading prefix the trading routes use. Derive the
+// same host candidates with that prefix stripped and reuse fetchWithFailover so owner-token
+// injection, timeouts and host failover are identical to every other owner-authenticated call.
+function getControlPlaneBaseUrls(): string[] {
+  return [
+    ...new Set(
+      getCandidateBaseUrls()
+        .map((u) => u.replace(/\/api\/trading\/?$/i, ''))
+        .filter((u) => u.length > 0)
+    )
+  ];
+}
+
+/** A structured blocker/reason from the control plane. Shape mirrors the engine's reason objects. */
+export interface ControlPlaneReason {
+  code?: string;
+  message?: string;
+  detail?: string;
+  [key: string]: unknown;
+}
+
+export interface RuntimeCredentialStatus {
+  success: boolean;
+  requireRuntimeSecret: boolean;
+  secretLoaded: boolean;
+  loaded: string[];
+  detail: Record<string, unknown>;
+  secretSource: 'runtime' | 'config' | 'none';
+  persisted: false;
+}
+
+/**
+ * GET /api/credentials/runtime — reports whether a runtime secret is required/loaded. The server
+ * never returns the secret value, only policy. `requireRuntimeSecret` drives the prompt: a deployment
+ * that does not require hand-entry must not ask for a secret on every arm.
+ */
+export async function fetchRuntimeCredentialStatus(): Promise<RuntimeCredentialStatus> {
+  return await fetchWithFailover<RuntimeCredentialStatus>('/api/credentials/runtime', {
+    baseUrls: getControlPlaneBaseUrls()
+  });
+}
+
+export interface ArmControlResult {
+  success: boolean;
+  armed: boolean;
+  error?: string;
+  reasons?: ControlPlaneReason[];
+  runtimeSecretLoaded?: boolean;
+  idempotent?: boolean;
+}
+
+/**
+ * POST /api/arm with the hand-entered runtime secret.
+ *
+ * The caller owns the secret: it is placed straight into the request body and is never stored,
+ * logged, or echoed back. 422 (rejected) and 428 (secret required) are normal control-flow
+ * responses, so their structured body is returned to the UI rather than thrown.
+ */
+export async function armLive(apiSecret?: string): Promise<ArmControlResult> {
+  try {
+    return await fetchWithFailover<ArmControlResult>('/api/arm', {
+      baseUrls: getControlPlaneBaseUrls(),
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ apiSecret: apiSecret ?? '' })
+    });
+  } catch (err: any) {
+    if (err?.data && typeof err.data === 'object') return err.data as ArmControlResult;
+    return { success: false, armed: false, error: err?.message || 'ARM request failed' };
+  }
+}
+
+export interface DisarmControlResult {
+  success: boolean;
+  armed: boolean;
+  runtimeSecretCleared?: boolean;
+  idempotent?: boolean;
+  error?: string;
+}
+
+/** POST /api/disarm — ends the armed session and scrubs the runtime secret from engine memory. */
+export async function disarmLive(): Promise<DisarmControlResult> {
+  try {
+    return await fetchWithFailover<DisarmControlResult>('/api/disarm', {
+      baseUrls: getControlPlaneBaseUrls(),
+      method: 'POST'
+    });
+  } catch (err: any) {
+    if (err?.data && typeof err.data === 'object') return err.data as DisarmControlResult;
+    return { success: false, armed: true, error: err?.message || 'DISARM request failed' };
+  }
+}
+
 export async function fetchGigPilotHealth(): Promise<{
   success: boolean;
   daemonRunning: boolean;

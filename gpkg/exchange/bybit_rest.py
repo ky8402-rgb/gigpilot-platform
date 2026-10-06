@@ -21,7 +21,7 @@ import aiohttp
 
 from gpkg.core.clock import f, now_ms
 from gpkg.core.config import Config
-from gpkg.core.errors import BybitError, DUPLICATE_ORDER_LINK_CODE
+from gpkg.core.errors import BybitError
 from gpkg.core.metrics import Metrics
 
 log = logging.getLogger("gigpilot")
@@ -52,9 +52,42 @@ class BybitREST:
             await self._sess.close()
             self._sess = None
 
+    def _secret(self) -> str:
+        """The API secret to sign with: runtime-injected first, config second — or FAIL.
+
+        ORDERING IS THE WHOLE POINT. A secret the operator typed for THIS armed session must win over
+        one left lying in `.env`, `os.environ` or Secrets Manager, otherwise the hand-entry control is
+        decorative: the system would silently keep signing with the persisted key.
+
+        `require_runtime_secret` makes the absence of a runtime secret a hard refusal rather than a
+        fallback to the persisted one. That is the difference between "we prefer runtime secrets" and
+        "the persisted secret can never be used for live signing", and only the second is a control.
+
+        This is also the only place in the process where the plaintext exists, and it exists for the
+        duration of one HMAC. It is deliberately not cached on the instance: caching would put the
+        secret on an object that gets `repr()`ed, logged and pickled.
+        """
+        from gpkg.core.runtime_secrets import BYBIT_SECRET, RuntimeSecretStore, SecretRequired
+
+        live = RuntimeSecretStore.instance().get(BYBIT_SECRET)
+        if live is not None and bool(live):
+            return live.reveal()
+        if getattr(self.cfg, "require_runtime_secret", False):
+            raise SecretRequired(
+                "no runtime API secret loaded: enter it to arm live trading "
+                "(POST /api/arm with apiSecret, or `gigpilot arm`)"
+            )
+        return self.cfg.api_secret
+
     def _sign(self, ts: str, payload: str) -> str:
         msg = ts + self.cfg.api_key + self.cfg.recv_window + payload
-        return hmac.new(self.cfg.api_secret.encode(), msg.encode(), hashlib.sha256).hexdigest()
+        secret = self._secret()
+        # `del` the local as soon as the digest exists: the string is immutable, so this only drops
+        # the reference, but it shortens the window in which a usable plaintext is reachable from
+        # this frame — including from a traceback captured while signing.
+        digest = hmac.new(secret.encode(), msg.encode(), hashlib.sha256).hexdigest()
+        del secret
+        return digest
 
     async def _req(
         self,

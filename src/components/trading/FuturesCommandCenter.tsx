@@ -1,10 +1,22 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { fetchFuturesUniverse, fetchGigPilotState, armGigPilot, disarmGigPilot, FuturesUniverseMarket } from '../../services/tradingService';
+import {
+  fetchFuturesUniverse,
+  fetchGigPilotState,
+  fetchRuntimeCredentialStatus,
+  armLive,
+  disarmLive,
+  ControlPlaneReason,
+  FuturesUniverseMarket
+} from '../../services/tradingService';
+import { ApiSecretModal } from './ApiSecretModal';
 
 type Candle = { t: number; o: number; h: number; l: number; c: number };
 
 const fmt = (n: number | null | undefined, d = 2) => n == null || !Number.isFinite(n) ? '—' : n.toLocaleString(undefined, { maximumFractionDigits: d });
 const pct = (n: number) => `${n >= 0 ? '+' : ''}${fmt(n, 2)}%`;
+
+const reasonText = (r: { reasons?: ControlPlaneReason[]; error?: string }) =>
+  (r.reasons || []).map((x) => x.message || x.detail || x.code).filter(Boolean).join(' ') || r.error || '';
 
 export const FuturesCommandCenter: React.FC = () => {
   const [markets, setMarkets] = useState<FuturesUniverseMarket[]>([]);
@@ -15,7 +27,12 @@ export const FuturesCommandCenter: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [action, setAction] = useState('');
   const [error, setError] = useState('');
+  const [notice, setNotice] = useState('');
   const [candles, setCandles] = useState<Candle[]>([]);
+  const [showSecretModal, setShowSecretModal] = useState(false);
+  const [secretSubmitting, setSecretSubmitting] = useState(false);
+  const [secretError, setSecretError] = useState<string | null>(null);
+  const [secretReasons, setSecretReasons] = useState<ControlPlaneReason[]>([]);
 
   const refresh = async () => {
     // `Promise.all` was the wrong combinator here. The market universe and the engine state are
@@ -66,13 +83,51 @@ export const FuturesCommandCenter: React.FC = () => {
   ).slice(0, 150), [markets, query, exchange]);
 
   const doArm = async () => {
-    setAction('ARMING'); setError('');
-    try { const r = await armGigPilot(); if (!r.success || !r.armed) throw new Error((r.reasons || []).map((x: any) => x.message).join(' ') || r.error || 'ARM blocked.'); await refresh(); }
-    catch (e: any) { setError(e?.message || 'ARM blocked.'); } finally { setAction(''); }
+    setAction('ARMING'); setError(''); setNotice('');
+    try {
+      // Toggling to LIVE ARMED always consults the runtime credential policy FIRST. If the
+      // deployment requires a hand-entered secret we must prompt — entry is per-session by design,
+      // so we never skip the prompt based on a "already loaded" signal.
+      const creds = await fetchRuntimeCredentialStatus();
+      if (creds.requireRuntimeSecret) {
+        setSecretError(null); setSecretReasons([]);
+        setShowSecretModal(true);
+        return;
+      }
+      const r = await armLive();
+      if (!r.success || !r.armed) throw new Error(reasonText(r) || 'ARM blocked.');
+      setNotice('Engine ARMED for this session.');
+      await refresh();
+    } catch (e: any) { setError(e?.message || 'ARM blocked.'); } finally { setAction(''); }
   };
+
+  const submitApiSecret = async (apiSecret: string) => {
+    setSecretSubmitting(true); setSecretError(null); setSecretReasons([]);
+    try {
+      const r = await armLive(apiSecret);
+      if (r.success && r.armed) {
+        setShowSecretModal(false);
+        setNotice('Engine ARMED for this session — the runtime API secret is held in engine memory only.');
+        await refresh();
+      } else {
+        setSecretError(r.error || 'ARM blocked.');
+        setSecretReasons(r.reasons || []);
+      }
+    } catch (e: any) {
+      setSecretError(e?.message || 'ARM request failed.');
+    } finally {
+      setSecretSubmitting(false);
+    }
+  };
+
   const doDisarm = async () => {
-    setAction('DISARMING'); setError('');
-    try { const r = await disarmGigPilot(); if (!r.success || r.armed !== false) throw new Error(r.error || 'DISARM not verified.'); await refresh(); }
+    setAction('DISARMING'); setError(''); setNotice('');
+    try {
+      const r = await disarmLive();
+      if (!r.success || r.armed !== false) throw new Error(r.error || 'DISARM not verified.');
+      setNotice(r.runtimeSecretCleared === false ? 'Engine DISARMED into safe standby.' : 'Engine DISARMED into safe standby — runtime API secret cleared from engine memory.');
+      await refresh();
+    }
     catch (e: any) { setError(e?.message || 'DISARM not verified.'); } finally { setAction(''); }
   };
 
@@ -90,6 +145,7 @@ export const FuturesCommandCenter: React.FC = () => {
     </header>
 
     {error && <div className="rounded-lg border border-rose-900 bg-rose-950/30 p-3 text-sm text-rose-300">{error}</div>}
+    {notice && <div className="rounded-lg border border-emerald-900 bg-emerald-950/30 p-3 text-sm text-emerald-300">{notice}</div>}
 
     <section className="grid grid-cols-2 lg:grid-cols-6 gap-3">
       {[
@@ -124,5 +180,16 @@ export const FuturesCommandCenter: React.FC = () => {
         <div className="rounded-xl border border-slate-800 bg-slate-950/80 p-4"><div className="text-xs uppercase tracking-wider text-slate-500 mb-3">System Health</div>{(state?.engines || []).slice(0,8).map((e:any)=><div key={e.id||e.name} className="flex justify-between text-xs py-1"><span>{e.name||e.id}</span><span className={/healthy|up|running/i.test(String(e.status))?'text-emerald-400':'text-amber-400'}>{e.status}</span></div>)}<div className="mt-3 text-xs">{state?.failClosedStatus?.failClosed ? '⛔ FAIL-CLOSED' : '✓ Safety boundary operational'}</div></div>
       </aside>
     </section>
+
+    {showSecretModal && (
+      <ApiSecretModal
+        isOpen
+        submitting={secretSubmitting}
+        error={secretError}
+        reasons={secretReasons}
+        onCancel={() => { setShowSecretModal(false); setSecretError(null); setSecretReasons([]); }}
+        onSubmit={submitApiSecret}
+      />
+    )}
   </div>;
 };

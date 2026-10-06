@@ -76,8 +76,11 @@ def redact(value: Optional[str], keep: int = 4) -> str:
 class ExchangeCredential:
     exchange: str
     api_key: str
-    api_secret: str
-    passphrase: str = ""          # KuCoin requires it; Bybit/Binance leave it empty
+    # repr=False on EVERY secret field. The generated __repr__ renders all fields, so without this a
+    # single `log.debug("%s", cred)` — or any traceback printing the object — publishes the live
+    # secret. `describe()` already redacted deliberately; this closes the accidental path.
+    api_secret: str = field(repr=False)
+    passphrase: str = field(default="", repr=False)  # KuCoin requires it; Bybit/Binance leave it empty
     label: str = ""
     allow_trade: bool = False     # autonomous routing requires this to be explicitly granted
     allow_read: bool = True

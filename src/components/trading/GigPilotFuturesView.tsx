@@ -26,11 +26,17 @@ import {
 import {
   GigPilotState,
   fetchGigPilotState,
-  armGigPilot,
-  disarmGigPilot,
+  fetchRuntimeCredentialStatus,
+  armLive,
+  disarmLive,
+  ControlPlaneReason,
   killGigPilot,
   fetchGigPilotHealth
 } from '../../services/tradingService';
+import { ApiSecretModal } from './ApiSecretModal';
+
+const reasonText = (r: { reasons?: ControlPlaneReason[]; error?: string }) =>
+  (r.reasons || []).map((x) => x.message || x.detail || x.code).filter(Boolean).join(' ') || r.error || '';
 
 export const GigPilotFuturesView: React.FC = () => {
   const [state, setState] = useState<GigPilotState | null>(null);
@@ -40,6 +46,10 @@ export const GigPilotFuturesView: React.FC = () => {
   const [autoRefresh, setAutoRefresh] = useState<boolean>(true);
   const [showArmModal, setShowArmModal] = useState<boolean>(false);
   const [showKillModal, setShowKillModal] = useState<boolean>(false);
+  const [showSecretModal, setShowSecretModal] = useState<boolean>(false);
+  const [secretSubmitting, setSecretSubmitting] = useState<boolean>(false);
+  const [secretError, setSecretError] = useState<string | null>(null);
+  const [secretReasons, setSecretReasons] = useState<ControlPlaneReason[]>([]);
 
   const loadState = async () => {
     try {
@@ -64,13 +74,14 @@ export const GigPilotFuturesView: React.FC = () => {
     try {
       setActionLoading('arm');
       setActionMessage(null);
-      const res = await armGigPilot();
+      // Policy was already checked on toggle; a deployment that does not require a runtime secret
+      // arms here with no secret supplied.
+      const res = await armLive();
       if (res.success && res.armed) {
         setActionMessage({ type: 'success', text: res.idempotent ? 'GigPilot is already ARMED; no duplicate worker or loop was created.' : 'GigPilot autonomous engine successfully ARMED after all safety gates passed.' });
         await loadState();
       } else {
-        const reasons = res.reasons?.map(r => r.message).join(' ') || res.error || 'ARM blocked by safety gates.';
-        setActionMessage({ type: 'error', text: reasons });
+        setActionMessage({ type: 'error', text: reasonText(res) || 'ARM blocked by safety gates.' });
         await loadState();
       }
     } catch (err: any) {
@@ -80,16 +91,62 @@ export const GigPilotFuturesView: React.FC = () => {
     }
   };
 
-  const handleArm = () => {
-    setShowArmModal(true);
+  const handleArm = async () => {
+    setActionMessage(null);
+    try {
+      setActionLoading('arm');
+      // Toggling to LIVE ARMED ALWAYS consults the runtime credential policy first. When the
+      // deployment requires a hand-entered secret we prompt unconditionally — entry is per-session
+      // by design, so a "secret already loaded" signal must never be used to skip the prompt.
+      const creds = await fetchRuntimeCredentialStatus();
+      if (creds.requireRuntimeSecret) {
+        setSecretError(null);
+        setSecretReasons([]);
+        setShowSecretModal(true);
+      } else {
+        setShowArmModal(true);
+      }
+    } catch (err: any) {
+      setActionMessage({ type: 'error', text: err?.message || 'Failed to check runtime credential policy' });
+    } finally {
+      setActionLoading(null);
+    }
+  };
+
+  const submitApiSecret = async (apiSecret: string) => {
+    setSecretSubmitting(true);
+    setSecretError(null);
+    setSecretReasons([]);
+    try {
+      const res = await armLive(apiSecret);
+      if (res.success && res.armed) {
+        setShowSecretModal(false);
+        setActionMessage({ type: 'success', text: 'GigPilot autonomous engine successfully ARMED for this session. The runtime API secret remains in engine memory only.' });
+        await loadState();
+      } else {
+        setSecretError(res.error || 'ARM blocked by safety gates.');
+        setSecretReasons(res.reasons || []);
+        await loadState();
+      }
+    } catch (err: any) {
+      setSecretError(err?.message || 'Error communicating with engine');
+    } finally {
+      setSecretSubmitting(false);
+    }
   };
 
   const handleDisarm = async () => {
     try {
       setActionLoading('disarm');
       setActionMessage(null);
-      const res = await disarmGigPilot();
-      setActionMessage({ type: 'success', text: 'GigPilot autonomous engine DISARMED into safe standby.' });
+      const res = await disarmLive();
+      if (!res.success || res.armed !== false) throw new Error(res.error || 'DISARM not verified.');
+      setActionMessage({
+        type: 'success',
+        text: res.runtimeSecretCleared === false
+          ? 'GigPilot autonomous engine DISARMED into safe standby.'
+          : 'GigPilot autonomous engine DISARMED into safe standby. Runtime API secret cleared from engine memory.'
+      });
       await loadState();
     } catch (err: any) {
       setActionMessage({ type: 'error', text: err?.message || 'Failed to disarm' });
@@ -604,6 +661,18 @@ export const GigPilotFuturesView: React.FC = () => {
             </div>
           </div>
         </div>
+      )}
+
+      {/* Per-session runtime API Secret modal (masked; never persisted in the browser) */}
+      {showSecretModal && (
+        <ApiSecretModal
+          isOpen
+          submitting={secretSubmitting}
+          error={secretError}
+          reasons={secretReasons}
+          onCancel={() => { setShowSecretModal(false); setSecretError(null); setSecretReasons([]); }}
+          onSubmit={submitApiSecret}
+        />
       )}
 
       {/* Kill Switch Confirmation Modal */}

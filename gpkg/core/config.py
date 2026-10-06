@@ -10,7 +10,7 @@ from __future__ import annotations
 import json
 import os
 import sys
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 LIVE_HOST = "https://api.bybit.com"
 WS_PUBLIC = "wss://stream.bybit.com/v5/public/linear"
@@ -62,9 +62,16 @@ def _maybe_load_local_keys() -> tuple[str, str]:
 @dataclass
 class Config:
     api_key: str
-    api_secret: str
+    # repr=False is a SECURITY control, not cosmetics. A dataclass renders every field in its
+    # generated __repr__, so `log.info("cfg=%s", cfg)` — or any traceback that prints the object —
+    # would publish the live API secret verbatim. With repr=False that same line is safe.
+    api_secret: str = field(repr=False)
     symbols: list[str]
-    api_passphrase: str = ""
+    api_passphrase: str = field(default="", repr=False)
+    # When True the API secret MUST come from the runtime store (entered by hand at arm time) and
+    # `api_secret` here is empty by construction. Any signed request without a runtime secret raises
+    # rather than falling back — see `BybitREST._secret`.
+    require_runtime_secret: bool = False
     host: str = LIVE_HOST
     ws_public: str = WS_PUBLIC
     ws_private: str = WS_PRIVATE
@@ -126,9 +133,21 @@ class Config:
 
     @staticmethod
     def from_env() -> "Config":
-        _maybe_load_aws_secret()
-        key, secret = _maybe_load_local_keys()
-        if not key or not secret:
+        # §7: when the operator must enter the secret by hand for each armed session, hydrating it
+        # from AWS Secrets Manager / .env / .bybit-quant-keys.json is exactly the persisted copy this
+        # mode exists to prevent. So hydration is SKIPPED entirely rather than merely overridden — a
+        # value that is never read cannot be leaked by a later code path, and skipping it also means
+        # the secret never reaches `os.environ` (readable via /proc/self/environ).
+        require_runtime = os.getenv("GIGPILOT_REQUIRE_RUNTIME_SECRET", "0") == "1"
+        if require_runtime:
+            key = os.getenv("BYBIT_API_KEY", "").strip()
+            secret = ""
+        else:
+            _maybe_load_aws_secret()
+            key, secret = _maybe_load_local_keys()
+        # The API KEY is still required: it is an identifier, not a secret, and signing needs both.
+        # The SECRET is only required when it is expected to come from config at all.
+        if not key or (not secret and not require_runtime):
             print("FATAL: BYBIT_API_KEY / BYBIT_API_SECRET required.", file=sys.stderr)
             sys.exit(2)
         host = os.getenv("GIGPILOT_HOST", LIVE_HOST).strip()
@@ -151,6 +170,7 @@ class Config:
         return Config(
             api_key=key,
             api_secret=secret,
+            require_runtime_secret=require_runtime,
             symbols=syms,
             arm=os.getenv("GIGPILOT_ARM", "0") == "1",
             execution_mode=execution_mode,

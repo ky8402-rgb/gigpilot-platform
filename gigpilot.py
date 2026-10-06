@@ -1468,19 +1468,77 @@ async def api_state():
     return JSONResponse(get_gp().snapshot())
 
 
+class _ArmBody(_BaseModel):
+    """Arming body.
+
+    `apiSecret` is accepted here and NEVER persisted (§7): it is placed in the in-memory runtime
+    store for the lifetime of the armed session and scrubbed on disarm. The field deliberately has no
+    default-repr path to a log — it is a plain str inside a Pydantic model, and Pydantic models are
+    not logged in this service; the redaction filter is the belt-and-braces for the case where one
+    ever is.
+    """
+
+    apiSecret: str = ""
+
+
 @app.post("/api/arm", dependencies=[Depends(require_owner)])
-async def api_arm():
+async def api_arm(body: _ArmBody | None = None):
+    """Arm live trading, optionally supplying the API secret for this session.
+
+    ORDER OF OPERATIONS IS DELIBERATE: the secret is validated and loaded BEFORE arming is attempted,
+    because arming performs credential preflight — it calls the venue — and that call cannot sign
+    without a secret. Loading afterwards would guarantee a failed preflight on every arm.
+    """
+    from gpkg.core.runtime_secrets import BYBIT_SECRET, RuntimeSecretStore
+
     gp = get_gp()
-    ok, reasons = await gp.arm()
+    store = RuntimeSecretStore.instance()
+    supplied = ((body.apiSecret if body else "") or "").strip()
+    pre_existing = store.has(BYBIT_SECRET)
+
+    if supplied and len(supplied) < 8:
+        # Reject the obviously-wrong before it is stored, and never echo the value back.
+        return JSONResponse(status_code=422, content={
+            "success": False, "armed": False, "error": "API_SECRET_TOO_SHORT",
+            "reasons": [{"code": "API_SECRET_TOO_SHORT",
+                         "detail": "the supplied secret is shorter than 8 characters"}],
+        })
+    if supplied:
+        store.set(BYBIT_SECRET, supplied, source="api_arm")
+    elif getattr(gp.cfg, "require_runtime_secret", False) and not pre_existing:
+        # Fail closed with an actionable message rather than letting the signer raise later, where
+        # the cause would be far less obvious.
+        return JSONResponse(status_code=428, content={
+            "success": False, "armed": False, "error": "API_SECRET_REQUIRED",
+            "reasons": [{"code": "API_SECRET_REQUIRED",
+                         "detail": "this deployment requires the API secret to be entered per "
+                                   "session; supply apiSecret to arm"}],
+        })
+
+    try:
+        ok, reasons = await gp.arm()
+    except Exception:
+        # Never leave a live secret loaded for an ARM THAT DID NOT HAPPEN. If this session failed to
+        # arm, the secret has no business remaining in memory.
+        if supplied:
+            store.clear(BYBIT_SECRET)
+        raise
+
     if not ok:
+        if supplied:
+            store.clear(BYBIT_SECRET)
         return JSONResponse(status_code=422, content={
             "success": False,
             "armed": False,
             "error": "ARM_BLOCKED",
             "reasons": reasons,
             "state": gp.snapshot(),
+            "runtimeSecretLoaded": store.has(BYBIT_SECRET),
         })
-    return {"success": True, "armed": True, "idempotent": any(r.get("code") == "ALREADY_ARMED" for r in reasons), "reasons": reasons, "state": gp.snapshot()}
+    return {"success": True, "armed": True,
+            "idempotent": any(r.get("code") == "ALREADY_ARMED" for r in reasons),
+            "reasons": reasons, "state": gp.snapshot(),
+            "runtimeSecretLoaded": store.has(BYBIT_SECRET)}
 
 
 @app.post("/api/disarm", dependencies=[Depends(require_owner)])
@@ -1489,7 +1547,36 @@ async def api_disarm():
     was_armed = gp.armed
     # Sticky: a disarm must survive a restart, otherwise `GIGPILOT_ARM=1` silently undoes it.
     gp.disarm("manual")
-    return {"success": True, "armed": False, "idempotent": not was_armed}
+    # §7: disarming ENDS the session, so the hand-entered secret is scrubbed here. Keeping it would
+    # turn "enter the secret each time you arm" into "enter it once and leave it resident", which is
+    # the persistence this control exists to remove.
+    from gpkg.core.runtime_secrets import RuntimeSecretStore
+    RuntimeSecretStore.instance().clear()
+    return {"success": True, "armed": False, "idempotent": not was_armed,
+            "runtimeSecretCleared": True}
+
+
+@app.get("/api/credentials/runtime", dependencies=[Depends(require_owner)])
+async def api_runtime_credential_status():
+    """Whether a runtime secret is loaded, and how — never the value, and never its length.
+
+    `require_runtime_secret` is surfaced so the dashboard can decide whether to prompt: a deployment
+    that does not require hand-entry should not nag the operator for a secret on every arm.
+    """
+    from gpkg.core.runtime_secrets import RuntimeSecretStore
+
+    gp = get_gp()
+    status = RuntimeSecretStore.instance().status()
+    return {
+        "success": True,
+        "requireRuntimeSecret": bool(getattr(gp.cfg, "require_runtime_secret", False)),
+        "secretLoaded": "bybit_api_secret" in status["loaded"],
+        "loaded": status["loaded"],
+        "detail": status["detail"],
+        "secretSource": ("runtime" if "bybit_api_secret" in status["loaded"]
+                         else ("config" if gp.cfg.api_secret else "none")),
+        "persisted": False,
+    }
 
 
 @app.post("/api/kill", dependencies=[Depends(require_owner)])
