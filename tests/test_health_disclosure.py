@@ -245,8 +245,19 @@ def test_owner_tier_is_opt_in_and_public_tier_is_the_default(client):
 def test_owner_portal_cors_is_exactly_allowlisted(client):
     """The production SPA is on a known Amplify origin, so the API must allow that exact origin.
     Arbitrary origins remain blocked; in particular, there is never a wildcard CORS response.
+
+    This test previously asserted the PLACEHOLDER app id (`main.d2qe2q720fbn3x`), which no deployment
+    serves, so it kept passing while the real SPA's origin was being refused with a 400 and the
+    operator saw only "Load failed". It now asserts the origin the deployment actually serves, and
+    fails if the allow-list is ever reverted to a placeholder.
     """
-    production_origin = "https://main.d2qe2q720fbn3x.amplifyapp.com"
+    from gigpilot import PRODUCTION_SPA_ORIGIN
+
+    production_origin = PRODUCTION_SPA_ORIGIN
+    assert "d2qe2q720fbn3x" not in production_origin, (
+        "the allow-list names the PLACEHOLDER Amplify app id, which serves nothing. The real app id is "
+        "the one the owner portal is loaded from."
+    )
     allowed = client.options(
         "/api/auth/login",
         headers={

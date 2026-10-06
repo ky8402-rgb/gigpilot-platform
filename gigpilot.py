@@ -1580,10 +1580,30 @@ app = FastAPI(title="GigPilot", lifespan=lifespan)
 # The production UI is hosted on AWS Amplify while the owner control plane runs on EC2.
 # Cross-origin access is therefore required for the browser to reach the authentication
 # endpoints. Keep this an explicit origin allow-list: never use "*" on the owner control plane.
+#: The Amplify app that actually serves the owner portal.
+#:
+#: THIS MUST BE THE REAL APP ID. It previously read `main.d2qe2q720fbn3x.amplifyapp.com`, which is a
+#: PLACEHOLDER that no deployment serves, while the SPA is served from `main.duvrxv7tfwy5t`. Every
+#: browser call from the real UI was therefore refused by this middleware with 400 "Disallowed CORS
+#: origin", which Safari reports to the operator as a bare "Load failed" on the login and 2FA screens.
+#: It read as configured, and the guard test asserted the same placeholder, so nothing caught it.
+PRODUCTION_SPA_ORIGIN = "https://main.duvrxv7tfwy5t.amplifyapp.com"
+
+
 def _cors_origins() -> list[str]:
+    """Explicit origin allow-list for the owner control plane.
+
+    Exactly-listed origins, never "*" and never a `*.amplifyapp.com` wildcard: the Amplify domain is
+    shared with every other customer's apps, so a wildcard would let an unrelated site read an
+    owner-authenticated response.
+
+    `CORS_ALLOWED_ORIGINS` (comma-separated) is the deployment's own list and is honoured in addition
+    to the defaults, so a new Amplify app or custom domain can be added by configuration instead of a
+    code change and a release.
+    """
     configured = os.getenv("CORS_ALLOWED_ORIGINS", "")
     defaults = [
-        "https://main.d2qe2q720fbn3x.amplifyapp.com",
+        PRODUCTION_SPA_ORIGIN,
         "https://gigpilot.com",
         "https://www.gigpilot.com",
     ]
