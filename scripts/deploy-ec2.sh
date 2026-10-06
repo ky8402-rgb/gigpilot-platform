@@ -52,7 +52,34 @@ set_env_value() {
 [ -n "${DATABASE_URL:-}" ] && set_env_value "DATABASE_URL" "$DATABASE_URL"
 [ -n "${GEMINI_API_KEY:-}" ] && set_env_value "GEMINI_API_KEY" "$GEMINI_API_KEY"
 [ -n "${BYBIT_API_KEY:-}" ] && set_env_value "BYBIT_API_KEY" "$BYBIT_API_KEY"
-[ -n "${BYBIT_API_SECRET:-}" ] && set_env_value "BYBIT_API_SECRET" "$BYBIT_API_SECRET"
+
+# ---- §7: runtime-only API secret -------------------------------------------------------------
+# When GIGPILOT_REQUIRE_RUNTIME_SECRET=1 the API secret must NEVER be written to .env: it is typed
+# by hand for each armed session and held only in engine memory. Writing it here would create
+# exactly the on-disk copy the control exists to remove, and the unit's EnvironmentFile makes it
+# world-readable to anything that can read the file.
+#
+# The migration is an ACTIVE removal, not just a skip: an .env left behind by an earlier deploy still
+# holds the secret on disk, and merely no longer writing it would leave that copy in place forever.
+remove_env_key() {
+  local key="$1" tmp
+  tmp="$(mktemp)"
+  grep -v "^$key=" "$APP_DIR/.env" > "$tmp" || true
+  chmod 600 "$tmp"
+  mv "$tmp" "$APP_DIR/.env"
+}
+
+if [ "${GIGPILOT_REQUIRE_RUNTIME_SECRET:-0}" = "1" ]; then
+  if grep -q '^BYBIT_API_SECRET=' "$APP_DIR/.env" 2>/dev/null; then
+    remove_env_key "BYBIT_API_SECRET"
+    echo "runtime-secret mode: removed the persisted BYBIT_API_SECRET from .env"
+  fi
+  set_env_value "GIGPILOT_REQUIRE_RUNTIME_SECRET" "1"
+  echo "runtime-secret mode ENABLED: the engine boots with no secret and signs nothing until"
+  echo "  an operator arms it. Expect trading_ready=false and HTTP 503 from /api/health until then."
+else
+  [ -n "${BYBIT_API_SECRET:-}" ] && set_env_value "BYBIT_API_SECRET" "$BYBIT_API_SECRET"
+fi
 
 if ! grep -qE '^DATABASE_URL=(postgres://|postgresql://)' "$APP_DIR/.env"; then
   echo "ERROR: production DATABASE_URL missing; refusing deployment."
