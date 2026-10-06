@@ -28,6 +28,7 @@ from typing import Any, AsyncIterator, Optional
 import aiohttp
 import uvicorn
 from fastapi import Depends, FastAPI, Request, Response
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import BaseModel as _BaseModel
 
@@ -1575,6 +1576,28 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(title="GigPilot", lifespan=lifespan)
+
+# The production UI is hosted on AWS Amplify while the owner control plane runs on EC2.
+# Cross-origin access is therefore required for the browser to reach the authentication
+# endpoints. Keep this an explicit origin allow-list: never use "*" on the owner control plane.
+def _cors_origins() -> list[str]:
+    configured = os.getenv("CORS_ALLOWED_ORIGINS", "")
+    defaults = [
+        "https://main.d2qe2q720fbn3x.amplifyapp.com",
+        "https://gigpilot.com",
+        "https://www.gigpilot.com",
+    ]
+    values = [item.strip().rstrip("/") for item in configured.split(",") if item.strip()]
+    return list(dict.fromkeys(values + defaults))
+
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=_cors_origins(),
+    allow_credentials=True,
+    allow_methods=["GET", "POST", "OPTIONS"],
+    allow_headers=["Authorization", "Content-Type", "Accept"],
+)
 
 
 @app.get("/health")
