@@ -29,6 +29,13 @@ class MarketState:
     next_funding_ms: int = 0
     trades: Deque = field(default_factory=lambda: deque(maxlen=512))
     closes_1m: Deque = field(default_factory=lambda: deque(maxlen=200))
+    #: Real 1-minute OHLC bars, upserted from the venue's `kline.1` stream.
+    #:
+    #: The terminal's chart reads `markets[].candles`, which the snapshot never emitted, so it showed
+    #: "Live candles unavailable" permanently while the venue was streaming bars the whole time.
+    #: Only OHLC is kept — never a level the venue did not send. `closes_1m` alone could not fill a
+    #: candle: deriving open/high/low from successive closes would be inventing price history.
+    candles_1m: Deque = field(default_factory=lambda: deque(maxlen=200))
     ts_book_ms: int = 0
     ts_tick_ms: int = 0
 
@@ -44,6 +51,46 @@ class MarketState:
             return float("inf")
         m = self.mid
         return float("inf") if m <= 0 else (self.asks[0][0] - self.bids[0][0]) / m * 1e4
+
+    @property
+    def best_bid(self) -> float:
+        return self.bids[0][0] if self.bids else 0.0
+
+    @property
+    def best_ask(self) -> float:
+        return self.asks[0][0] if self.asks else 0.0
+
+    def apply_kline(self, row: dict) -> None:
+        """Upsert one 1-minute bar from the venue's kline feed.
+
+        UPSERT, keyed on the bar's start time, and that is the whole point. Bybit re-sends the bar that
+        is still forming on every update, so appending would fill this ring with hundreds of copies of
+        a single minute and the chart would show one bar repeated. Re-keying on `start` lets the live
+        bar refresh in place and a new one append exactly once.
+
+        Returns without touching state if the bar is unusable (no start, no close), because a partial
+        bar is worse than a missing one: it would be plotted as real price history.
+        """
+        try:
+            t_ms = int(f(row.get("start")) or 0)
+        except (TypeError, ValueError):
+            return
+        o, h, l, c = (f(row.get("open")), f(row.get("high")), f(row.get("low")), f(row.get("close")))
+        if t_ms <= 0 or c <= 0 or o <= 0 or h <= 0 or l <= 0:
+            return
+        bar = {"t": t_ms, "o": o, "h": h, "l": l, "c": c}
+        if self.candles_1m and self.candles_1m[-1].get("t") == t_ms:
+            self.candles_1m[-1] = bar
+        elif not self.candles_1m or t_ms > self.candles_1m[-1].get("t", 0):
+            self.candles_1m.append(bar)
+        else:
+            # An out-of-order bar (a replayed snapshot) replaces its own slot rather than being
+            # appended, so the series stays sorted and non-duplicated.
+            for i in range(len(self.candles_1m) - 1, -1, -1):
+                if self.candles_1m[i].get("t") == t_ms:
+                    self.candles_1m[i] = bar
+                    return
+            return
 
     def apply_book_snapshot(self, b: list, a: list) -> None:
         self.bids = sorted(((f(p), f(s)) for p, s in b if f(s) > 0), key=lambda x: -x[0])

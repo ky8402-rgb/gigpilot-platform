@@ -192,7 +192,30 @@ export const FuturesCommandCenter: React.FC = () => {
       <aside className="space-y-4">
         <div className="rounded-xl border border-slate-800 bg-slate-950/80 p-4"><div className="text-xs uppercase tracking-wider text-slate-500">Execution Gate</div><div className={selected?.eligible?'text-emerald-300':'text-amber-300'}>{selected?.eligible?'ELIGIBLE':'BLOCKED / OBSERVE'}</div><div className="text-xs text-slate-500 mt-2">{selected?.reasons?.join(' · ') || 'No local quote violations detected.'}</div></div>
         <div className="rounded-xl border border-slate-800 bg-slate-950/80 p-4"><div className="text-xs uppercase tracking-wider text-slate-500 mb-3">Open Positions</div>{(state?.positions || []).length ? state.positions.map((p:any)=><div key={p.symbol} className="py-2 border-b border-slate-900"><div className="flex justify-between font-mono text-sm"><span>{p.symbol}</span><span>{p.side}</span></div><div className="text-xs text-slate-500">Qty {p.qty} · Entry {fmt(p.entry)} · uPnL {fmt(p.upnl)}</div></div>) : <div className="text-xs text-slate-600">No exchange-verified open positions.</div>}</div>
-        <div className="rounded-xl border border-slate-800 bg-slate-950/80 p-4"><div className="text-xs uppercase tracking-wider text-slate-500 mb-3">System Health</div>{(state?.engines || []).slice(0,8).map((e:any)=><div key={e.id||e.name} className="flex justify-between text-xs py-1"><span>{e.name||e.id}</span><span className={/healthy|up|running/i.test(String(e.status))?'text-emerald-400':'text-amber-400'}>{e.status}</span></div>)}<div className="mt-3 text-xs">{state?.failClosedStatus?.failClosed ? '⛔ FAIL-CLOSED' : '✓ Safety boundary operational'}</div></div>
+        <div className="rounded-xl border border-slate-800 bg-slate-950/80 p-4"><div className="text-xs uppercase tracking-wider text-slate-500 mb-3">System Health</div>{(state?.engines && state.engines.length > 0)
+          ? state.engines.slice(0, 8).map((e: any) => (
+              <div key={e.id || e.name} className="flex justify-between text-xs py-1">
+                <span>{e.name || e.id}</span>
+                <span className={/healthy|up|running/i.test(String(e.status)) ? 'text-emerald-400' : 'text-amber-400'}>{e.status}</span>
+              </div>
+            ))
+          : (
+            /* An empty list read as "no problems", when the truth is that this feed does not carry an
+               engine list at all. Engine health is its own endpoint (/api/trading/engines/health). */
+            <div className="text-xs text-slate-500">Not reported by this feed — see the Engine Health view.</div>
+          )}
+        <div className="mt-3 text-xs">
+          {/* THREE-STATE, ON PURPOSE. This line used to read
+                state?.failClosedStatus?.failClosed ? '⛔ FAIL-CLOSED' : '✓ Safety boundary operational'
+              and `failClosedStatus` is not a key this feed ever emits — so a MISSING measurement was
+              rendered as a positive safety assertion. Absence of a veto is not evidence: an
+              unmeasured safety state must read as unknown, never as ✓. */}
+          {state?.failClosedStatus === undefined
+            ? <span className="text-slate-500">○ Safety state not reported by this feed</span>
+            : (state.failClosedStatus?.failClosed
+                ? <span className="text-rose-400">⛔ FAIL-CLOSED</span>
+                : <span className="text-emerald-400">✓ Safety boundary operational</span>)}
+        </div></div>
       </aside>
     </section>
 

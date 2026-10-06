@@ -313,6 +313,10 @@ class BybitWS:
             if ms is None or not isinstance(data,list): return
             for row in data:
                 if not isinstance(row,dict): continue
+                # Before the confirmed-close bookkeeping, and on EVERY update rather than only on the
+                # confirmed one: the still-forming bar has to refresh in place so the last candle on
+                # the chart is live rather than one minute stale.
+                ms.apply_kline(row)
                 if bool(row.get("confirm")):
                     close=f(row.get("close"))
                     if close>0: ms.closes_1m.append(close)
@@ -1505,6 +1509,15 @@ class GigPilot:
             "markets": [{"symbol": s, "mid": m.mid, "last": m.last, "mark": m.mark,
                          "spread_bps": m.spread_bps if math.isfinite(m.spread_bps) else None,
                          "funding_rate": m.funding_rate,
+                         # MEASURED, not reconstructed. The terminal renders Bid, Ask and a candle
+                         # chart from these keys; it previously read three fields the snapshot never
+                         # emitted, so they showed "—" and "Live candles unavailable" while the L2
+                         # book and the kline.1 stream feeding them were both live in this process.
+                         # Deriving bid/ask from mid ± spread/2 would have looked identical and been
+                         # a fabrication; these are the book's actual best prices.
+                         "bid": m.best_bid,
+                         "ask": m.best_ask,
+                         "candles": list(m.candles_1m),
                          "tick_age_ms": now_ms() - m.ts_book_ms if m.ts_book_ms else None,
                          "imbalance": m.imbalance(self.cfg.book_levels),
                          "atr_bps": m.atr_bps(self.cfg.atr_period),
