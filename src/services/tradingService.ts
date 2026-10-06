@@ -737,7 +737,11 @@ export async function loginOwner(credentials: {
   emergencyPin?: string;
 }): Promise<{ success: boolean; token?: string; error?: string }> {
   try {
-    const res = await fetchWithFailover<{ success: boolean; token?: string; error?: string }>('/auth/login', {
+    // Owner authentication is mounted at the API root, not the legacy /api/trading
+    // compatibility surface. That compatibility route intentionally exposes status only;
+    // using it for login can never validate the password/TOTP pair.
+    const res = await fetchWithFailover<{ success: boolean; token?: string; error?: string }>('/api/auth/login', {
+      baseUrls: getControlPlaneBaseUrls(),
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(credentials)
