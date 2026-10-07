@@ -24,11 +24,12 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
+import asyncio  # noqa: E402
 import inspect  # noqa: E402
 
 import pytest  # noqa: E402
 
-from gpkg.ml.data import InsufficientDataError  # noqa: E402
+from gpkg.ml.data import InsufficientDataError, L2_REQUIRED, RateLimitedError  # noqa: E402
 from gpkg.persistence.store import Store  # noqa: E402
 
 
@@ -91,3 +92,138 @@ def test_measuring_nothing_is_not_the_same_as_measuring_zero(empty_store):
     assert report["kline_coverage"] == 0.0
     assert report["liquidity_snapshot_count"] < 10_000
     assert report["l2_48h_ready"] is False
+
+
+# --------------------------------------------------------------------------------------------------
+# VENUE-RESILIENCE — why the retry policy is tested directly
+# --------------------------------------------------------------------------------------------------
+# L2 depth is FORWARD-ONLY: Bybit publishes no historical order book, so a snapshot that is not taken
+# as it happens cannot be re-fetched later at any price. A throttle that ENDS a collection run does not
+# delay the data, it destroys it. That makes the retry policy load-bearing for a 7-day unattended run,
+# and makes `_get` worth testing even though it is private.
+
+class _FakeResp:
+    def __init__(self, status=200, body=None, headers=None):
+        self.status = status
+        self._body = {"retCode": 0, "result": {}} if body is None else body
+        self.headers = headers or {}
+
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, *exc):
+        return False
+
+    async def json(self):
+        return self._body
+
+
+class _FakeSession:
+    """Replays a scripted sequence, then keeps returning the last response."""
+
+    def __init__(self, responses):
+        self._responses = list(responses)
+        self.calls = 0
+
+    def get(self, url, params=None):
+        idx = min(self.calls, len(self._responses) - 1)
+        self.calls += 1
+        return self._responses[idx]
+
+
+def _sleep_recorder(record):
+    async def _sleep(seconds):
+        record.append(seconds)
+    return _sleep
+
+
+@pytest.fixture()
+def worker(tmp_path):
+    from gpkg.ml.data import HistoricalDataWorker
+    return HistoricalDataWorker(Store(str(tmp_path / "worker.db")))
+
+
+def test_a_throttled_request_is_retried_not_fatal(monkeypatch, worker):
+    slept = []
+    monkeypatch.setattr(asyncio, "sleep", _sleep_recorder(slept))
+    sess = _FakeSession([_FakeResp(429), _FakeResp(200)])
+    body = asyncio.run(worker._get(sess, "kline", {}))
+    assert body["retCode"] == 0
+    assert sess.calls == 2, "a 429 must be retried; ending the run loses forward-only data forever"
+
+
+def test_bybit_throttle_is_recognised_on_http_200(monkeypatch, worker):
+    """Bybit answers a throttle with retCode 10006 and HTTP 200 — status alone would miss it."""
+    slept = []
+    monkeypatch.setattr(asyncio, "sleep", _sleep_recorder(slept))
+    sess = _FakeSession([_FakeResp(200, {"retCode": 10006, "retMsg": "Too many visits"}),
+                         _FakeResp(200)])
+    body = asyncio.run(worker._get(sess, "kline", {}))
+    assert body["retCode"] == 0
+    assert sess.calls == 2
+
+
+def test_retry_after_wins_over_the_guessed_backoff(monkeypatch, worker):
+    slept = []
+    monkeypatch.setattr(asyncio, "sleep", _sleep_recorder(slept))
+    sess = _FakeSession([_FakeResp(429, headers={"Retry-After": "7"}), _FakeResp(200)])
+    asyncio.run(worker._get(sess, "kline", {}))
+    assert slept == [7.0], (
+        "the venue knows when its budget resets; a shorter guess just spends another 429"
+    )
+
+
+def test_a_bad_request_fails_immediately_and_is_never_retried(monkeypatch, worker):
+    """Retrying a request this code built wrong turns a clear error into a slow one."""
+    slept = []
+    monkeypatch.setattr(asyncio, "sleep", _sleep_recorder(slept))
+    sess = _FakeSession([_FakeResp(400), _FakeResp(200)])
+    with pytest.raises(RuntimeError, match="HTTP 400"):
+        asyncio.run(worker._get(sess, "kline", {}))
+    assert sess.calls == 1
+    assert slept == []
+
+
+def test_a_non_retryable_bybit_error_fails_immediately(monkeypatch, worker):
+    slept = []
+    monkeypatch.setattr(asyncio, "sleep", _sleep_recorder(slept))
+    sess = _FakeSession([_FakeResp(200, {"retCode": 10001, "retMsg": "params error"}),
+                         _FakeResp(200)])
+    with pytest.raises(RuntimeError, match="params error"):
+        asyncio.run(worker._get(sess, "kline", {}))
+    assert sess.calls == 1
+
+
+def test_exhausted_retries_report_rate_limited_not_a_generic_error(monkeypatch, worker):
+    """'Venue is throttling us' and 'the model failed' need different operator responses."""
+    slept = []
+    monkeypatch.setattr(asyncio, "sleep", _sleep_recorder(slept))
+    sess = _FakeSession([_FakeResp(429)])
+    with pytest.raises(RateLimitedError, match="giving up after 5 attempts"):
+        asyncio.run(worker._get(sess, "kline", {}))
+    assert sess.calls == 5, "bounded: an unbounded loop would never report that the venue is down"
+    assert len(slept) == 4, "no sleep after the final attempt"
+
+
+def test_the_backoff_is_capped_so_one_call_cannot_stall_the_run(monkeypatch, worker):
+    slept = []
+    monkeypatch.setattr(asyncio, "sleep", _sleep_recorder(slept))
+    sess = _FakeSession([_FakeResp(429, headers={"Retry-After": "99999"})])
+    with pytest.raises(RateLimitedError):
+        asyncio.run(worker._get(sess, "kline", {}))
+    assert max(slept) <= 30.0
+
+
+def test_the_backoff_grows_exponentially_when_the_venue_gives_no_hint():
+    from gpkg.ml.data import HistoricalDataWorker as W
+    assert [W._backoff_s(None, n) for n in (1, 2, 3, 4)] == [0.5, 1.0, 2.0, 4.0]
+    assert W._backoff_s("garbage", 3) == 2.0, "an unparseable Retry-After falls back, not crashes"
+
+
+def test_the_l2_threshold_has_exactly_one_definition():
+    """The gate, the CLI's ETA and the tests must not be able to drift apart."""
+    import inspect as _inspect
+    from gpkg.ml.data import HistoricalDataWorker as W
+    default = _inspect.signature(W.require_training_coverage).parameters[
+        "min_liquidity_snapshots"].default
+    assert default == L2_REQUIRED == 10_000

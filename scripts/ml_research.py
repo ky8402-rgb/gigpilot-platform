@@ -14,6 +14,7 @@ import json
 import os
 
 from gpkg.ml.audit import normalize_audit
+from gpkg.ml.data import L2_REQUIRED
 
 
 
@@ -30,6 +31,9 @@ def main() -> int:
     parser.add_argument("--population", type=int, default=12)
     parser.add_argument("--seed", type=int, default=7)
     parser.add_argument("--window-days", type=int, default=90)
+    parser.add_argument("--interval", type=float, default=None,
+                        help="collect-l2 snapshot period in seconds (default 60). L2 depth is "
+                             "FORWARD-ONLY, so the gate is reached in real elapsed time.")
     args = parser.parse_args()
 
     if args.command == "tournament-status":
@@ -166,8 +170,21 @@ def main() -> int:
         return 0
 
     if args.command == "collect-l2":
+        # The gate needs `L2_REQUIRED` snapshots PER SYMBOL and L2 is forward-only, so the operator is
+        # really choosing a duration. State the cost before starting instead of letting them discover
+        # it after a week of running.
+        interval = args.interval if args.interval and args.interval > 0 else 60.0
+        hours = L2_REQUIRED * interval / 3600.0
+        rate = len(worker.symbols) / interval
+        print(f"collect-l2: {len(worker.symbols)} symbols every {interval:g}s "
+              f"({rate:.2f} req/s) -> {L2_REQUIRED} snapshots/symbol in ~{hours:.1f}h "
+              f"({hours / 24:.1f} days) of CONTINUOUS uptime")
+        if hours > 24:
+            print("  NOTE: Bybit publishes no historical order book — this data cannot be backfilled "
+                  "later, so an interrupted run restarts the clock from the snapshots it kept.")
+
         async def run():
-            await worker.collect_forever()
+            await worker.collect_forever(interval_s=interval)
         asyncio.run(run())
         return 0
 

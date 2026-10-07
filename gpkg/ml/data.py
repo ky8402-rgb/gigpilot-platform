@@ -45,6 +45,29 @@ class LiquiditySnapshot:
     volume_1m: float
 
 
+# Bybit signals throttling TWO different ways, and both must be handled or a long collection dies
+# mid-run:
+#   * HTTP 429 (occasionally 403) with an optional `Retry-After` header
+#   * HTTP 200 carrying a non-zero `retCode` of 10006 ("Too many visits")
+# This matters more here than in most clients: L2 depth is FORWARD-ONLY. Bybit publishes no historical
+# order book, so depth that is not captured as it happens cannot be re-fetched later at any price. A
+# throttle that ends a collection run therefore destroys the data permanently rather than delaying it.
+# How many L2 snapshots per symbol the training gate demands. ONE definition: the gate, the CLI's
+# ETA projection and the tests all read this, so they cannot drift apart.
+L2_REQUIRED = 10_000
+
+RETRYABLE_STATUS = frozenset({429, 500, 502, 503, 504})
+RETRYABLE_RET_CODES = frozenset({10006})
+
+
+class RateLimitedError(RuntimeError):
+    """Retries were exhausted against a throttled/unavailable venue.
+
+    Distinct from a malformed request, which will never succeed and is raised immediately: the two
+    need different operator responses, and a slow failure would hide the real error.
+    """
+
+
 class InsufficientDataError(RuntimeError):
     """Raised when the historical depth a run REQUIRES is not present.
 
@@ -85,13 +108,58 @@ class HistoricalDataWorker:
             ))
         return out
 
-    async def _get(self, session: aiohttp.ClientSession, path: str, params: dict) -> dict:
-        async with session.get(f"{BYBIT_MARKET}/{path}", params=params) as resp:
-            resp.raise_for_status()
-            body = await resp.json()
-            if body.get("retCode") != 0:
-                raise RuntimeError(f"Bybit market API error: {body.get('retMsg', 'unknown')}")
-            return body
+    @staticmethod
+    def _backoff_s(retry_after: str | None, attempt: int, *, cap_s: float = 30.0) -> float:
+        """Exponential backoff, honouring `Retry-After` when the venue supplies it.
+
+        The venue's own instruction WINS: it knows when the budget resets, and a guessed backoff that
+        is too short just spends another 429. Capped so one throttled call cannot stall a collection
+        run indefinitely.
+        """
+        if retry_after:
+            try:
+                return min(max(0.0, float(str(retry_after).strip())), cap_s)
+            except (TypeError, ValueError):
+                pass  # HTTP-date form or junk: fall back to exponential
+        return min(0.5 * (2 ** (attempt - 1)), cap_s)
+
+    async def _get(self, session: aiohttp.ClientSession, path: str, params: dict,
+                   *, max_attempts: int = 5) -> dict:
+        """GET with BOUNDED retries against throttling and transient transport failure.
+
+        Tested directly despite being private: this method is the durability of forward-only market
+        data, and a retry policy is exactly the kind of code that looks correct and fails at 3am.
+        """
+        last = "no attempt made"
+        for attempt in range(1, max_attempts + 1):
+            delay = self._backoff_s(None, attempt)
+            try:
+                async with session.get(f"{BYBIT_MARKET}/{path}", params=params) as resp:
+                    if resp.status in RETRYABLE_STATUS:
+                        last = f"HTTP {resp.status}"
+                        delay = self._backoff_s(resp.headers.get("Retry-After"), attempt)
+                    elif resp.status >= 400:
+                        # Any other 4xx is a request this code built wrong. Retrying cannot fix it.
+                        raise RuntimeError(f"Bybit market HTTP {resp.status} for {path}")
+                    else:
+                        body = await resp.json()
+                        ret_code = body.get("retCode")
+                        if ret_code == 0:
+                            return body
+                        if ret_code not in RETRYABLE_RET_CODES:
+                            raise RuntimeError(
+                                f"Bybit market API error: {body.get('retMsg', 'unknown')}")
+                        last = f"retCode {ret_code}: {body.get('retMsg')}"
+            except aiohttp.ClientResponseError as exc:
+                last = f"HTTP {exc.status}"  # aiohttp raised before we could inspect the body
+                if exc.status not in RETRYABLE_STATUS:
+                    raise RuntimeError(f"Bybit market HTTP {exc.status} for {path}") from exc
+            except aiohttp.ClientError as exc:
+                last = f"{type(exc).__name__}: {exc}"  # transient transport failure
+            if attempt == max_attempts:
+                break
+            await asyncio.sleep(delay)
+        raise RateLimitedError(f"{path}: giving up after {max_attempts} attempts (last: {last})")
 
     async def ingest_klines(self, symbol: str, *, end_ms: int | None = None) -> int:
         end_ms = int(end_ms or now_ms())
@@ -238,7 +306,7 @@ class HistoricalDataWorker:
         }
 
     def require_training_coverage(self, symbol: str, *, min_kline_coverage: float = 0.98,
-                                   min_liquidity_snapshots: int = 10000) -> dict:
+                                   min_liquidity_snapshots: int = L2_REQUIRED) -> dict:
         report = self.coverage(symbol)
         if report["kline_coverage"] < min_kline_coverage:
             raise InsufficientDataError(
