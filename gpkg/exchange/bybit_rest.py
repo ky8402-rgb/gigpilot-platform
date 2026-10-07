@@ -118,7 +118,9 @@ class BybitREST:
         assert self._sess is not None
         params = params or {}
         url = self.cfg.host + path
-        last_err = None
+        # Explicitly `Exception | None`: the first assignment is a `BybitError`, so mypy inferred that
+        # narrow type and then rejected every later `last_err = e` for a transport exception.
+        last_err: Exception | None = None
         started = now_ms()
         #: Bulk public reads need a longer budget than a single-symbol call. `/v5/market/tickers`
         #: returns the WHOLE linear universe (~1-2 MB); the session default of 10s total is tight

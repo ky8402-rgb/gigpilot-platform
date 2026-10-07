@@ -31,7 +31,7 @@ from contextlib import asynccontextmanager
 from dataclasses import asdict
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
 import aiohttp
 import uvicorn
@@ -639,7 +639,9 @@ class GigPilot:
         self.force_disarm: bool = os.getenv("GIGPILOT_FORCE_DISARM","0").strip().lower() in ("1","true","yes","on")
         self.position_mode: str = "one-way"
         self._tasks: list[asyncio.Task] = []
-        self._task_factories: dict[str, callable] = {}
+        # `Callable`, not the builtin `callable`: that name is a FUNCTION, not a type, so the
+        # previous annotation was meaningless to a type checker and wrong to any reader.
+        self._task_factories: dict[str, Callable[..., Any]] = {}
         self._watchdog = TaskWatchdog(
             disarm=self.disarm,
             journal=self.store.journal,
@@ -1053,7 +1055,8 @@ class GigPilot:
     async def _arm_gate_check(self) -> tuple[bool, list[dict]]:
         reasons: list[dict] = []
         def block(code: str, message: str, details: dict | None = None):
-            item = {"code": code, "message": message}
+            # Annotated: `details` is a nested dict, and a bare literal infers `dict[str, str]`.
+            item: dict[str, Any] = {"code": code, "message": message}
             if details: item["details"] = details
             reasons.append(item)
 

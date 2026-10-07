@@ -153,7 +153,11 @@ class Executor:
         self,
         symbol: str,
         side: str,
-        qty: float,
+        # `float | str`. PRODUCTION passes the exact decimal STRING from `_round_qty` — the call
+        # site is explicit that the decimal string goes on the wire rather than a float round-trip
+        # of it — while the tests pass floats. Both are real callers, so the honest type is the
+        # union; `float` alone made the documented, intended call a type error.
+        qty: float | str,
         tp_price: float,
         sl_price: float,
         position_idx: int = 0,
