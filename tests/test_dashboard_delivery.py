@@ -28,6 +28,7 @@ from fastapi.testclient import TestClient
 
 from gpkg.web.dashboard import DIST_DIR, INDEX_PATH, mount_dashboard
 
+
 class TestDashboardDelivery(unittest.TestCase):
     def setUp(self):
         self.app = FastAPI(title="GigPilotTest")

@@ -45,7 +45,8 @@ import hmac
 import logging
 import threading
 import time
-from typing import Any, Iterable, Optional
+from collections.abc import Iterable
+from typing import Any
 
 REDACTED = "***REDACTED***"
 BYBIT_SECRET = "bybit_api_secret"
@@ -72,14 +73,14 @@ class SecretStr:
     place a secret is exposed.
     """
 
-    __slots__ = ("_value", "_scrubbed", "_variant_cache")
+    __slots__ = ("_scrubbed", "_value", "_variant_cache")
 
     def __init__(self, value: str) -> None:
         if not isinstance(value, str):
             raise TypeError("SecretStr requires a str")
         self._value = value
         self._scrubbed = False
-        self._variant_cache: Optional[tuple[str, ...]] = None
+        self._variant_cache: tuple[str, ...] | None = None
 
     # ---- explicit, auditable access ----
     def reveal(self) -> str:
@@ -165,14 +166,14 @@ class RuntimeSecretStore:
     """
 
     _lock = threading.RLock()
-    _singleton: Optional["RuntimeSecretStore"] = None
+    _singleton: RuntimeSecretStore | None = None
 
     def __init__(self) -> None:
         self._secrets: dict[str, SecretStr] = {}
         self._meta: dict[str, dict] = {}
 
     @classmethod
-    def instance(cls) -> "RuntimeSecretStore":
+    def instance(cls) -> RuntimeSecretStore:
         with cls._lock:
             if cls._singleton is None:
                 cls._singleton = RuntimeSecretStore()
@@ -202,7 +203,7 @@ class RuntimeSecretStore:
             self._secrets[name] = SecretStr(value)
             self._meta[name] = {"source": source, "set_at_ms": int(time.time() * 1000)}
 
-    def clear(self, name: Optional[str] = None) -> None:
+    def clear(self, name: str | None = None) -> None:
         """Scrub one secret, or all of them."""
         with self._lock:
             if name is None:
@@ -218,7 +219,7 @@ class RuntimeSecretStore:
             self._meta.pop(name, None)  # _meta values are plain dicts; the default is harmless here
 
     # ------------------------------------------------------------------ read
-    def get(self, name: str) -> Optional[SecretStr]:
+    def get(self, name: str) -> SecretStr | None:
         with self._lock:
             return self._secrets.get(name)
 
@@ -264,7 +265,7 @@ class SecretRedactingFilter(logging.Filter):
     catches what type discipline cannot.
     """
 
-    def __init__(self, store: Optional[RuntimeSecretStore] = None) -> None:
+    def __init__(self, store: RuntimeSecretStore | None = None) -> None:
         super().__init__()
         self._store = store or RuntimeSecretStore.instance()
 
@@ -309,7 +310,7 @@ def _redact(value: Any, variants: Iterable[str]) -> Any:
     return value
 
 
-def install_redaction(store: Optional[RuntimeSecretStore] = None) -> SecretRedactingFilter:
+def install_redaction(store: RuntimeSecretStore | None = None) -> SecretRedactingFilter:
     """Attach the redaction filter to the root logger and every existing handler."""
     store = store or RuntimeSecretStore.instance()
     f = SecretRedactingFilter(store)

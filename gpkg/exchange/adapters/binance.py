@@ -19,7 +19,6 @@ from __future__ import annotations
 
 import hashlib
 import hmac
-from typing import Optional
 from urllib.parse import urlencode
 
 from gpkg.core.clock import now_ms
@@ -65,7 +64,7 @@ class BinanceAdapter(ExchangeAdapter):
     name = "binance"
 
     def __init__(self, api_key: str = "", api_secret: str = "", allow_trade: bool = False,
-                 rest: Optional[RestClient] = None, sapi: Optional[RestClient] = None):
+                 rest: RestClient | None = None, sapi: RestClient | None = None):
         self.api_key = api_key
         self.api_secret = api_secret
         self.allow_trade = allow_trade
@@ -99,8 +98,8 @@ class BinanceAdapter(ExchangeAdapter):
         p["signature"] = sig
         return p
 
-    async def _get(self, path: str, params: Optional[dict] = None, signed: bool = True,
-                   host: Optional[RestClient] = None) -> dict:
+    async def _get(self, path: str, params: dict | None = None, signed: bool = True,
+                   host: RestClient | None = None) -> dict:
         client = host or self.rest
         p = self._signed_params(params or {}) if signed else dict(params or {})
         hdrs = self._headers() if signed else None
@@ -133,7 +132,7 @@ class BinanceAdapter(ExchangeAdapter):
                 return parsed
         raise InstrumentUnknown(self.name, f"{symbol} is not listed")
 
-    def _parse(self, it: dict) -> Optional[Instrument]:
+    def _parse(self, it: dict) -> Instrument | None:
         try:
             filters = {f.get("filterType"): f for f in (it.get("filters") or [])}
             lot = filters.get("LOT_SIZE") or filters.get("MARKET_LOT_SIZE") or {}
@@ -349,7 +348,7 @@ class BinanceAdapter(ExchangeAdapter):
                                 headers=self._headers())
 
     async def set_protection(self, symbol: str, side: Side, qty: str,
-                             take_profit: Optional[str], stop_loss: Optional[str]) -> None:
+                             take_profit: str | None, stop_loss: str | None) -> None:
         """Binance has no position-level TP/SL, so protection is placed as reduce-only triggers.
 
         `closePosition=true` makes each trigger flatten the whole position, which is the closest

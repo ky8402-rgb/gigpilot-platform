@@ -30,7 +30,6 @@ import os
 import secrets
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
-from typing import Optional
 
 from gpkg.core.clock import now_ms
 from gpkg.exchange.base import CredentialsMissing, ExchangeError
@@ -55,7 +54,7 @@ DEFAULT_STORE = ".gigpilot-data/exchange-credentials.enc"
 # =====================================================================================
 # Redaction — the only sanctioned way to render a credential
 # =====================================================================================
-def redact(value: Optional[str], keep: int = 4) -> str:
+def redact(value: str | None, keep: int = 4) -> str:
     """Render a secret for logs: never the whole thing, and never nothing.
 
     Keeping a short prefix lets an operator confirm WHICH key is in play without disclosing it.
@@ -117,10 +116,10 @@ class CredentialStore:
     lives in one encrypted file, written 0600.
     """
 
-    def __init__(self, path: Optional[str] = None, master_key: Optional[str] = None):
+    def __init__(self, path: str | None = None, master_key: str | None = None):
         self.path = Path(path or os.getenv("GIGPILOT_CREDENTIAL_STORE", DEFAULT_STORE))
         self._explicit_key = master_key
-        self._cache: Optional[dict[str, ExchangeCredential]] = None
+        self._cache: dict[str, ExchangeCredential] | None = None
 
     # -- master key ------------------------------------------------------------------
     def _master_key(self) -> str:
@@ -138,7 +137,7 @@ class CredentialStore:
             "failure this store exists to prevent.",
         )
 
-    def _fernet(self) -> "Fernet":
+    def _fernet(self) -> Fernet:
         if not _FERNET_AVAILABLE:
             raise CredentialsMissing(
                 "multi-exchange",
@@ -244,7 +243,7 @@ class CredentialStore:
         self.save(creds)
         return True
 
-    def get(self, exchange: str) -> Optional[ExchangeCredential]:
+    def get(self, exchange: str) -> ExchangeCredential | None:
         return self.load().get(exchange)
 
     def describe_all(self) -> list[dict]:

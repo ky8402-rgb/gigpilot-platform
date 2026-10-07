@@ -44,7 +44,6 @@ import secrets
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Optional
 
 from fastapi import HTTPException, Request
 
@@ -96,7 +95,7 @@ def base32_encode(raw: bytes) -> str:
 # --------------------------------------------------------------------------------------
 # TOTP (RFC 6238)
 # --------------------------------------------------------------------------------------
-def generate_totp(secret_base32: str, step_offset: int = 0, at: Optional[int] = None) -> str:
+def generate_totp(secret_base32: str, step_offset: int = 0, at: int | None = None) -> str:
     epoch = int(time.time() if at is None else at)
     counter = epoch // TOTP_STEP_SECONDS + step_offset
     key = base32_decode(secret_base32)
@@ -111,7 +110,7 @@ def generate_totp(secret_base32: str, step_offset: int = 0, at: Optional[int] = 
     return str(binary % (10**TOTP_DIGITS)).zfill(TOTP_DIGITS)
 
 
-def verify_totp(token: str, secret_base32: str, at: Optional[int] = None) -> bool:
+def verify_totp(token: str, secret_base32: str, at: int | None = None) -> bool:
     """Accepts the current step plus/minus one (a 90-second window for clock skew)."""
     candidate = (token or "").strip()
     if len(candidate) != TOTP_DIGITS or not candidate.isdigit():
@@ -160,7 +159,7 @@ def sign_token(payload: dict, secret: str) -> str:
     return f"{h}.{p}.{_b64url_encode(sig)}"
 
 
-def verify_token(token: str, secret: str, now: Optional[int] = None) -> dict:
+def verify_token(token: str, secret: str, now: int | None = None) -> dict:
     """Verify signature, algorithm, expiry and scope. Raises TokenError on any failure."""
     if not token or not secret:
         raise TokenError("missing token or secret")
@@ -219,7 +218,7 @@ class OwnerConfig:
         return json.dumps(self.__dict__, indent=2)
 
     @staticmethod
-    def from_dict(d: dict) -> "OwnerConfig":
+    def from_dict(d: dict) -> OwnerConfig:
         return OwnerConfig(
             owner_email=str(d.get("ownerEmail") or d.get("owner_email") or "ky8402@gmail.com"),
             password_salt=str(d.get("passwordSalt") or d.get("password_salt") or ""),
@@ -432,14 +431,14 @@ class LoginThrottle:
 class OwnerAuth:
     """Owns the single-owner credential and mints/validates session tokens."""
 
-    def __init__(self, config: Optional[OwnerConfig] = None,
-                 throttle: Optional[LoginThrottle] = None) -> None:
+    def __init__(self, config: OwnerConfig | None = None,
+                 throttle: LoginThrottle | None = None) -> None:
         self.config = config if config is not None else _load_or_create_config()
-        self._pending_totp_secret: Optional[str] = None
+        self._pending_totp_secret: str | None = None
         self.throttle = throttle or LoginThrottle()
 
     # -- first-run provisioning -----------------------------------------------------
-    def initiate_setup(self, email: Optional[str] = None) -> dict:
+    def initiate_setup(self, email: str | None = None) -> dict:
         """Mint a fresh TOTP secret and return an otpauth URL for the authenticator app."""
         self._pending_totp_secret = base32_encode(secrets.token_bytes(20))
         target = email or self.config.owner_email
@@ -458,7 +457,7 @@ class OwnerAuth:
         }
 
     def complete_setup(
-        self, password: str, totp_code: str, email: Optional[str] = None
+        self, password: str, totp_code: str, email: str | None = None
     ) -> tuple[bool, str, str]:
         """Bind a password + verified TOTP code to the owner account. Returns (ok, token, error)."""
         if not password or len(password) < 12:
@@ -510,7 +509,7 @@ class OwnerAuth:
             "hasPassword": bool(self.config.password_hash),
         }
 
-    def mint(self, email: Optional[str] = None, now: Optional[int] = None) -> str:
+    def mint(self, email: str | None = None, now: int | None = None) -> str:
         now = int(time.time()) if now is None else now
         return sign_token(
             {
@@ -522,7 +521,7 @@ class OwnerAuth:
             self.config.jwt_secret,
         )
 
-    def verify(self, token: str, now: Optional[int] = None) -> bool:
+    def verify(self, token: str, now: int | None = None) -> bool:
         try:
             verify_token(token, self.config.jwt_secret, now=now)
             return True
@@ -594,7 +593,7 @@ class OwnerAuth:
 # --------------------------------------------------------------------------------------
 # FastAPI integration
 # --------------------------------------------------------------------------------------
-_OWNER_AUTH: Optional[OwnerAuth] = None
+_OWNER_AUTH: OwnerAuth | None = None
 
 
 def get_owner_auth() -> OwnerAuth:
@@ -654,7 +653,7 @@ def clear_session_cookie(response, *, request: Request) -> None:
         response.delete_cookie(key=name, path="/")
 
 
-def extract_token(request: Request) -> Optional[str]:
+def extract_token(request: Request) -> str | None:
     """Session token from any supported carrier.
 
     ORDER: Authorization header, then cookie, then query/`x-owner-token`.

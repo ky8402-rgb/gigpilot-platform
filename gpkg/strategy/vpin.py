@@ -47,7 +47,6 @@ from __future__ import annotations
 import math
 from collections import deque
 from dataclasses import dataclass, replace
-from typing import Deque, Optional
 
 #: DEPRECATED — do not use for new wiring.
 #:
@@ -136,7 +135,7 @@ class VpinEngine:
     bias the buckets, and the buckets are the measurement.
     """
 
-    def __init__(self, config: Optional[VpinConfig] = None) -> None:
+    def __init__(self, config: VpinConfig | None = None) -> None:
         self.cfg = config or VpinConfig()
         if self.cfg.bucket_volume <= 0:
             raise ValueError("bucket_volume must be positive")
@@ -144,9 +143,9 @@ class VpinEngine:
             raise ValueError("window_buckets must be positive")
         # Completed buckets, most recent last. `window_buckets + 1` so a partial completion does not
         # momentarily shrink the window used for the VPIN sum.
-        self._buckets: Deque[_Bucket] = deque(maxlen=self.cfg.window_buckets)
+        self._buckets: deque[_Bucket] = deque(maxlen=self.cfg.window_buckets)
         self._open = _Bucket()
-        self._vpin_history: Deque[float] = deque(maxlen=max(1, self.cfg.history))
+        self._vpin_history: deque[float] = deque(maxlen=max(1, self.cfg.history))
         self._last_price = 0.0
         self._last_side = ""
         self._trades = 0
@@ -166,7 +165,7 @@ class VpinEngine:
         stale reference.
         """
         v = float(bucket_volume)
-        if not (v > 0) or v != v or v in (float("inf"), float("-inf")):
+        if not (v > 0) or v != v or v in (float("inf"), float("-inf")):  # noqa: PLR0124 — canonical NaN test on an already-coerced float, not a self-comparison
             raise ValueError("bucket_volume must be positive and finite")
         if self._trades or self._buckets:
             raise RuntimeError(
@@ -221,7 +220,7 @@ class VpinEngine:
 
     # ------------------------------------------------------------------ measure
     @property
-    def vpin(self) -> Optional[float]:
+    def vpin(self) -> float | None:
         """VPIN over the last N complete buckets, or None until N exist.
 
         None rather than 0.0: zero would assert "perfectly balanced flow", which is a claim we cannot
@@ -242,7 +241,7 @@ class VpinEngine:
     def trade_count(self) -> int:
         return self._trades
 
-    def threshold(self) -> Optional[float]:
+    def threshold(self) -> float | None:
         """The rolling percentile that defines 'unusually toxic' for this instrument.
 
         Computed over history with the most recent `threshold_lag_buckets` readings REMOVED, so the
@@ -260,7 +259,7 @@ class VpinEngine:
             return None
         return _percentile(sorted(hist), self.cfg.percentile)
 
-    def effective_threshold(self) -> Optional[float]:
+    def effective_threshold(self) -> float | None:
         """min(rolling p90, absolute floor).
 
         The floor is what stops a sustained burst from raising the bar out of reach. It is applied
@@ -376,8 +375,8 @@ class ToxicityPolicy:
 
     pause: bool = False
     widen_ticks: int = 0
-    vpin: Optional[float] = None
-    threshold: Optional[float] = None
+    vpin: float | None = None
+    threshold: float | None = None
     reason: str = ""
 
     @property
@@ -385,7 +384,7 @@ class ToxicityPolicy:
         return self.pause or self.widen_ticks > 0
 
 
-def toxicity_policy(engine: Optional[VpinEngine]) -> ToxicityPolicy:
+def toxicity_policy(engine: VpinEngine | None) -> ToxicityPolicy:
     """Translate the coin into a quoting decision. Absent engine = no restriction."""
     if engine is None:
         return ToxicityPolicy(reason="no_vpin_engine")

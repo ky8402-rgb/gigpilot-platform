@@ -32,8 +32,8 @@ import pytest
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
-from gpkg.api import auth as auth_mod  # noqa: E402
-from gpkg.api.auth import OwnerAuth  # noqa: E402
+from gpkg.api import auth as auth_mod
+from gpkg.api.auth import OwnerAuth
 
 
 @pytest.fixture(autouse=True)

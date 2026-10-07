@@ -10,9 +10,9 @@ paper execution.
 from __future__ import annotations
 
 import math
+from collections.abc import Iterable
 from dataclasses import dataclass
 from statistics import mean, pstdev
-from typing import Iterable
 
 from gpkg.core.clock import now_ms
 from gpkg.ml.data import align_point_in_time
@@ -25,7 +25,6 @@ from gpkg.ml.lifecycle import (
     evaluate_candidate,
 )
 from gpkg.persistence.store import Store
-
 
 FEATURES = ("obi", "ewma_vol_bps", "spread_z", "volume_accel")
 

@@ -34,10 +34,10 @@ sys.path.insert(0, str(ROOT))
 os.environ.setdefault("BYBIT_API_KEY", "test-key")
 os.environ.setdefault("BYBIT_API_SECRET", "test-secret")
 
-from fastapi.testclient import TestClient  # noqa: E402
+from fastapi.testclient import TestClient
 
-import gigpilot  # noqa: E402
-from gpkg.api.auth import (  # noqa: E402
+import gigpilot
+from gpkg.api.auth import (
     SESSION_COOKIE,
     SESSION_COOKIE_HOST_PREFIXED,
     OwnerAuth,

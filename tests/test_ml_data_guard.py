@@ -24,13 +24,17 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
-import asyncio  # noqa: E402
-import inspect  # noqa: E402
+import asyncio
+import inspect
 
-import pytest  # noqa: E402
+import pytest
 
-from gpkg.ml.data import InsufficientDataError, L2_REQUIRED, RateLimitedError  # noqa: E402
-from gpkg.persistence.store import Store  # noqa: E402
+from gpkg.ml.data import (
+    L2_REQUIRED,
+    InsufficientDataError,
+    RateLimitedError,
+)
+from gpkg.persistence.store import Store
 
 
 @pytest.fixture()
@@ -223,6 +227,7 @@ def test_the_backoff_grows_exponentially_when_the_venue_gives_no_hint():
 def test_the_l2_threshold_has_exactly_one_definition():
     """The gate, the CLI's ETA and the tests must not be able to drift apart."""
     import inspect as _inspect
+
     from gpkg.ml.data import HistoricalDataWorker as W
     default = _inspect.signature(W.require_training_coverage).parameters[
         "min_liquidity_snapshots"].default
@@ -242,7 +247,8 @@ def test_the_ml_cli_stays_importable_without_aiohttp():
             "import scripts.ml_research\n"
             "print('ok')\n")
     proc = subprocess.run([sys.executable, "-c", code], cwd=ROOT,
-                          capture_output=True, text=True, timeout=120)
+                          capture_output=True, text=True, timeout=120,
+                          check=False)  # the assertion below inspects returncode itself
     assert proc.returncode == 0, (
         "scripts/ml_research.py must import with aiohttp ABSENT because it runs under system python "
         f"on the host. stderr: {proc.stderr[-400:]}"

@@ -1,13 +1,23 @@
 from __future__ import annotations
 
-import pytest
 from pathlib import Path
+
+import pytest
 
 from gigpilot import AccountingReconciler, Reconciler
 from gpkg.core.config import Config
 from gpkg.exchange.base import (
-    AccountSnapshot, ExchangeAdapter, FeeRate, Fill, Order, OrderRequest, OrderResult,
-    OrderStatus, Position, Side, Ticker,
+    AccountSnapshot,
+    ExchangeAdapter,
+    FeeRate,
+    Fill,
+    Order,
+    OrderRequest,
+    OrderResult,
+    OrderStatus,
+    Position,
+    Side,
+    Ticker,
 )
 
 

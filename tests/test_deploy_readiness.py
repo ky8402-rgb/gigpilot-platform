@@ -28,7 +28,7 @@ import pytest
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
-from gpkg.core.engine_state import (  # noqa: E402
+from gpkg.core.engine_state import (
     ARMED,
     AWAITING_SECRET,
     DEPLOY_ACCEPTABLE_STATES,
@@ -172,6 +172,7 @@ async def test_engine_boots_without_a_secret_and_reports_awaiting_secret(make_en
 # =============================================================================================
 def _client_for(monkeypatch, engine):
     from fastapi.testclient import TestClient
+
     import gigpilot as gp
 
     monkeypatch.setattr(gp, "get_gp", lambda: engine)

@@ -3,7 +3,14 @@ from __future__ import annotations
 import pytest
 
 from gpkg.core.metrics import Metrics
-from gpkg.ml.lifecycle import DriftReport, ModelEvidence, ModelState, NetTrade, CostBreakdown, ValidationConfig
+from gpkg.ml.lifecycle import (
+    CostBreakdown,
+    DriftReport,
+    ModelEvidence,
+    ModelState,
+    NetTrade,
+    ValidationConfig,
+)
 from gpkg.ml.registry import ModelRegistry
 from gpkg.persistence.store import Store
 

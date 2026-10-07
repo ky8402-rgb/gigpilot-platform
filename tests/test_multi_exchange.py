@@ -22,19 +22,19 @@ import pytest
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
-from gpkg.exchange.base import (  # noqa: E402
+from gpkg.exchange.base import (
     AccountSnapshot,
     CredentialsMissing,
     OrderRequest,
     OrderType,
     Side,
 )
-from gpkg.exchange.credentials import (  # noqa: E402
+from gpkg.exchange.credentials import (
     CredentialStore,
     ExchangeCredential,
     redact,
 )
-from gpkg.exchange.registry import ExchangeRegistry  # noqa: E402
+from gpkg.exchange.registry import ExchangeRegistry
 
 MASTER = "test-master-key-with-enough-entropy-for-stretching"
 
@@ -213,8 +213,8 @@ def test_kucoin_symbol_mapping_round_trips():
 
 
 def test_bybit_parses_perpetual():
-    from gpkg.exchange.adapters.bybit import BybitAdapter
     from gpkg.core.config import Config
+    from gpkg.exchange.adapters.bybit import BybitAdapter
     a = BybitAdapter(Config(api_key="k", api_secret="s", symbols=[], db_path=":memory:"))
     i = a._parse_instrument(BYBIT_PERP)
     assert i is not None

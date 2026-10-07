@@ -28,7 +28,7 @@ import pytest
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
-from gpkg.core.credential_vault import (  # noqa: E402
+from gpkg.core.credential_vault import (
     WITHDRAWAL_CONFIRMATION_PHRASE,
     CredentialVault,
     validate_withdrawal_address,
@@ -258,6 +258,7 @@ def test_clearing_a_destination_leaves_nothing_withdrawable():
 # =============================================================================================
 def _owner_client(make_engine, monkeypatch):
     from fastapi.testclient import TestClient
+
     import gigpilot as gp
     from gpkg.api import auth as auth_mod
 

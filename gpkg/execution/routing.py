@@ -31,7 +31,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from decimal import ROUND_DOWN, ROUND_UP, Decimal
-from typing import TYPE_CHECKING, Literal, Optional
+from typing import TYPE_CHECKING, Literal
 
 if TYPE_CHECKING:  # import only for typing: `vpin` must not be pulled in at runtime by the router
     from gpkg.strategy.vpin import ToxicityPolicy
@@ -312,7 +312,7 @@ def plan_entry(
     fee_rate_bps: float | None = None,
     notional_usd: float = 0.0,
     depth_notional_usd: float = 0.0,
-    toxicity: Optional["ToxicityPolicy"] = None,
+    toxicity: ToxicityPolicy | None = None,
 ) -> EntryPlan:
     """Prefer resting at the micro-price; take only when the 12 bps gate is genuinely cleared.
 
@@ -358,7 +358,7 @@ def plan_entry(
         )
 
     widen = max(0, int(getattr(toxicity, "widen_ticks", 0))) if toxicity is not None else 0
-    if can_quote and mp == mp:  # NaN check without importing math for one comparison
+    if can_quote and mp == mp:  # NaN check without importing math for one comparison  # noqa: PLR0124 — canonical NaN test on an already-coerced float, not a self-comparison
         try:
             limit = round_passive(mp, float(tick), side,
                                   bid_px=quote.bid_px, ask_px=quote.ask_px,

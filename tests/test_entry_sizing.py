@@ -22,8 +22,8 @@ import pytest
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
-from gpkg.core.config import Config  # noqa: E402
-from gpkg.execution.executor import Executor  # noqa: E402
+from gpkg.core.config import Config
+from gpkg.execution.executor import Executor
 
 
 def make_executor(step: float = 0.001, min_qty: float = 0.01):

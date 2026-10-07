@@ -1,7 +1,10 @@
 import inspect
+
 from gpkg.market.state import MarketState
 from gpkg.paper.engine import PaperTradingEngine
 from gpkg.persistence.store import Store
+
+
 class EmptyRegistry:
     def list(self): return []
 def test_paper_engine_has_no_live_exchange_execution_dependency(tmp_path):

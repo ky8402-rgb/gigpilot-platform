@@ -29,10 +29,14 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
-from gpkg.core.config import Config  # noqa: E402
-from gpkg.exchange.adapters import BinanceAdapter, BybitAdapter, KucoinAdapter  # noqa: E402
-from gpkg.exchange.base import ExchangeError  # noqa: E402
-from gpkg.exchange.registry import ExchangeRegistry  # noqa: E402
+from gpkg.core.config import Config
+from gpkg.exchange.adapters import (
+    BinanceAdapter,
+    BybitAdapter,
+    KucoinAdapter,
+)
+from gpkg.exchange.base import ExchangeError
+from gpkg.exchange.registry import ExchangeRegistry
 
 PASS, FAIL = [], []
 

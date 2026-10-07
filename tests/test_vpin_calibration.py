@@ -24,8 +24,12 @@ import pytest
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
-from gpkg.strategy.vpin import DEFAULT_BUCKET_VOLUME, VpinConfig, VpinEngine  # noqa: E402
-from gpkg.strategy.vpin_calibration import (  # noqa: E402
+from gpkg.strategy.vpin import (
+    DEFAULT_BUCKET_VOLUME,
+    VpinConfig,
+    VpinEngine,
+)
+from gpkg.strategy.vpin_calibration import (
     BUCKETS_PER_DAY,
     FALLBACK_BUCKET_VOLUME,
     GENERIC_FALLBACK_BUCKET_VOLUME,

@@ -31,6 +31,7 @@ REQUIRED = {
 
 def _client(make_engine, monkeypatch):
     from fastapi.testclient import TestClient
+
     import gigpilot as gp
     from gpkg.api import auth as auth_mod
 

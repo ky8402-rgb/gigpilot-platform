@@ -61,7 +61,7 @@ def _vpin_bucket_overrides(symbols: list[str]) -> dict[str, float]:
         except ValueError:
             print(f"FATAL: GIGPILOT_VPIN_BUCKET_{sym} is not a number: {raw!r}", file=sys.stderr)
             sys.exit(2)
-        if not (value > 0) or value != value or value in (float("inf"), float("-inf")):
+        if not (value > 0) or value != value or value in (float("inf"), float("-inf")):  # noqa: PLR0124 — canonical NaN test on an already-coerced float, not a self-comparison
             print(f"FATAL: GIGPILOT_VPIN_BUCKET_{sym} must be positive and finite: {raw!r}",
                   file=sys.stderr)
             sys.exit(2)
@@ -181,7 +181,7 @@ class Config:
     log_level: str = "INFO"
 
     @staticmethod
-    def from_env() -> "Config":
+    def from_env() -> Config:
         # §7: when the operator must enter the secret by hand for each armed session, hydrating it
         # from AWS Secrets Manager / .env / .bybit-quant-keys.json is exactly the persisted copy this
         # mode exists to prevent. So hydration is SKIPPED entirely rather than merely overridden — a

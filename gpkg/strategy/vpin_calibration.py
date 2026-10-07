@@ -47,7 +47,8 @@ a degraded measurement, and the only way an operator can tell is if the system s
 """
 from __future__ import annotations
 
-from typing import Any, Optional, Sequence
+from collections.abc import Sequence
+from typing import Any
 
 #: Target samples per 24-hour cycle. A full VPIN window (window_buckets = 50) is then ~1 trading day.
 BUCKETS_PER_DAY = 50
@@ -80,7 +81,7 @@ SOURCE_FALLBACK_SYMBOL = "fallback_symbol"
 SOURCE_FALLBACK_GENERIC = "fallback_generic"
 
 
-def bucket_volume_from_adv(adv_24h: Optional[float]) -> Optional[float]:
+def bucket_volume_from_adv(adv_24h: float | None) -> float | None:
     """V = ADV_24h / BUCKETS_PER_DAY, or None when ADV is not usable.
 
     None rather than a default: an unmeasurable ADV is not a measurement of zero, and silently
@@ -92,7 +93,7 @@ def bucket_volume_from_adv(adv_24h: Optional[float]) -> Optional[float]:
         adv = float(adv_24h)
     except (TypeError, ValueError):
         return None
-    if not (adv > 0.0) or adv != adv or adv in (float("inf"), float("-inf")):
+    if not (adv > 0.0) or adv != adv or adv in (float("inf"), float("-inf")):  # noqa: PLR0124 — canonical NaN test on an already-coerced float, not a self-comparison
         return None
     return adv / float(BUCKETS_PER_DAY)
 
@@ -100,9 +101,9 @@ def bucket_volume_from_adv(adv_24h: Optional[float]) -> Optional[float]:
 def adv_from_klines(
     rows: Sequence[Sequence[Any]],
     *,
-    now_ms_value: Optional[int] = None,
+    now_ms_value: int | None = None,
     window_ms: int = DAY_MS,
-) -> Optional[float]:
+) -> float | None:
     """Sum the BASE volume of the last `window_ms` of klines. None when nothing is usable.
 
     Bybit returns klines NEWEST FIRST as `[startMs, open, high, low, close, volume, turnover]`, so
@@ -121,7 +122,7 @@ def adv_from_klines(
             vol = float(row[5])
         except (TypeError, ValueError):
             continue
-        if vol != vol or vol < 0 or vol in (float("inf"), float("-inf")):
+        if vol != vol or vol < 0 or vol in (float("inf"), float("-inf")):  # noqa: PLR0124 — canonical NaN test on an already-coerced float, not a self-comparison
             continue
         parsed.append((ts, vol))
     if not parsed:
@@ -141,8 +142,8 @@ def adv_from_klines(
 def resolve_bucket_volume(
     symbol: str,
     *,
-    adv_24h: Optional[float] = None,
-    override: Optional[float] = None,
+    adv_24h: float | None = None,
+    override: float | None = None,
 ) -> tuple[float, str]:
     """Resolve the bucket volume for `symbol` and report WHERE it came from.
 
@@ -179,7 +180,7 @@ def is_degraded_source(source: str) -> bool:
     return source in {SOURCE_FALLBACK_SYMBOL, SOURCE_FALLBACK_GENERIC}
 
 
-def describe_resolution(symbol: str, volume: float, source: str, adv_24h: Optional[float]) -> str:
+def describe_resolution(symbol: str, volume: float, source: str, adv_24h: float | None) -> str:
     """One-line, secret-free explanation for logs and telemetry."""
     sym = str(symbol or "").strip().upper()
     adv_txt = "n/a" if adv_24h is None else f"{float(adv_24h):.4f}"

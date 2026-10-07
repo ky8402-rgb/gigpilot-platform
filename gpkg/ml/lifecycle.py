@@ -17,11 +17,11 @@ Safety properties:
 """
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import dataclass, field
 from enum import Enum
 from math import erf, isfinite, log, sqrt
 from statistics import mean, pstdev
-from typing import Sequence
 
 
 class ModelState(str, Enum):
@@ -160,7 +160,7 @@ class PurgedWalkForward:
             test_end = test_start + self.test_size
             if test_end > n:
                 break
-            folds.append((range(0, train_end), range(test_start, test_end)))
+            folds.append((range(train_end), range(test_start, test_end)))
             train_end = test_end
         return folds
 

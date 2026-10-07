@@ -14,7 +14,6 @@ import hashlib
 import hmac
 import json
 import logging
-from typing import Optional
 from urllib.parse import urlencode
 
 import aiohttp
@@ -28,9 +27,9 @@ log = logging.getLogger("gigpilot")
 
 
 class BybitREST:
-    def __init__(self, cfg: Config, metrics: Optional[Metrics] = None):
+    def __init__(self, cfg: Config, metrics: Metrics | None = None):
         self.cfg = cfg
-        self._sess: Optional[aiohttp.ClientSession] = None
+        self._sess: aiohttp.ClientSession | None = None
         if metrics is None:
             try:
                 import gigpilot
@@ -104,8 +103,8 @@ class BybitREST:
         self,
         method: str,
         path: str,
-        params: Optional[dict] = None,
-        body: Optional[dict] = None,
+        params: dict | None = None,
+        body: dict | None = None,
         signed: bool = True,
         retries: int = 3,
     ) -> dict:

@@ -8,14 +8,14 @@ import asyncio
 import hashlib
 import hmac
 import logging
-from typing import Any, Optional
+from typing import Any
 from urllib.parse import urlencode
 
 import aiohttp
 
 from gpkg.core.clock import f, now_ms
 from gpkg.core.config import Config
-from gpkg.core.errors import BinanceError, BINANCE_DUPLICATE_ORDER_CODE
+from gpkg.core.errors import BINANCE_DUPLICATE_ORDER_CODE, BinanceError
 from gpkg.core.metrics import Metrics
 from gpkg.exchange.base import ExchangeAdapter
 
@@ -32,10 +32,10 @@ class BinanceAdapter(ExchangeAdapter):
     def duplicate_order_code(self) -> int:
         return BINANCE_DUPLICATE_ORDER_CODE
 
-    def __init__(self, cfg: Config, metrics: Optional[Metrics] = None, host: str = BINANCE_FUTURES_HOST):
+    def __init__(self, cfg: Config, metrics: Metrics | None = None, host: str = BINANCE_FUTURES_HOST):
         self.cfg = cfg
         self.host = host
-        self._sess: Optional[aiohttp.ClientSession] = None
+        self._sess: aiohttp.ClientSession | None = None
         self._metrics = metrics
 
     async def start(self) -> None:
@@ -57,8 +57,8 @@ class BinanceAdapter(ExchangeAdapter):
         self,
         method: str,
         path: str,
-        params: Optional[dict] = None,
-        body: Optional[dict] = None,
+        params: dict | None = None,
+        body: dict | None = None,
         signed: bool = True,
         retries: int = 3,
     ) -> Any:

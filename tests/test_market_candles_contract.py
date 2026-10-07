@@ -19,7 +19,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
-from gpkg.market.state import MarketState  # noqa: E402
+from gpkg.market.state import MarketState
 
 
 def _bar(start, o, h, l, c):

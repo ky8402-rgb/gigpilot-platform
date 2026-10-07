@@ -24,9 +24,10 @@ landed just before it.
 from __future__ import annotations
 
 import logging
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from decimal import Decimal
-from typing import Awaitable, Callable, Optional, Protocol
+from typing import Protocol
 
 from gpkg.execution.routing import (
     DEFAULT_MAX_QUOTE_AGE_MS,
@@ -51,11 +52,11 @@ class MakerIO(Protocol):
     async def cancel(self, order_id: str, link: str) -> None:
         ...
 
-    async def state(self, link: str) -> "FillState":
+    async def state(self, link: str) -> FillState:
         """Current fill state for our client order id. Must never raise for an unknown order."""
         ...
 
-    async def book(self) -> Optional[QuoteSnapshot]:
+    async def book(self) -> QuoteSnapshot | None:
         ...
 
 

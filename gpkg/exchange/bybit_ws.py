@@ -14,7 +14,7 @@ import hmac
 import json
 import logging
 import time
-from typing import Callable, Coroutine, Optional
+from collections.abc import Callable, Coroutine
 
 import aiohttp
 
@@ -31,8 +31,8 @@ class BybitWS:
         self,
         cfg: Config,
         markets: dict[str, MarketState],
-        on_private_event: Optional[Callable[[dict], Coroutine]] = None,
-        metrics: Optional[Metrics] = None,
+        on_private_event: Callable[[dict], Coroutine] | None = None,
+        metrics: Metrics | None = None,
     ):
         self.cfg = cfg
         self.markets = markets

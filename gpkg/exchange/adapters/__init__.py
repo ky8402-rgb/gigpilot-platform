@@ -8,8 +8,8 @@ missing optional dependency for one venue cannot prevent the others from loading
 """
 from __future__ import annotations
 
-from gpkg.exchange.adapters.bybit import BybitAdapter
 from gpkg.exchange.adapters.binance import BinanceAdapter
+from gpkg.exchange.adapters.bybit import BybitAdapter
 from gpkg.exchange.adapters.kucoin import KucoinAdapter
 
-__all__ = ["BybitAdapter", "BinanceAdapter", "KucoinAdapter"]
+__all__ = ["BinanceAdapter", "BybitAdapter", "KucoinAdapter"]

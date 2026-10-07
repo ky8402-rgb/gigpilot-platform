@@ -5,9 +5,9 @@ from __future__ import annotations
 from typing import Any
 
 from gpkg.exchange.base import ExchangeAdapter
+from gpkg.exchange.binance_rest import BinanceAdapter
 from gpkg.exchange.bybit_rest import BybitREST
 from gpkg.exchange.bybit_ws import BybitWS
-from gpkg.exchange.binance_rest import BinanceAdapter
 from gpkg.exchange.kucoin_rest import KuCoinAdapter
 from gpkg.exchange.okx_rest import OKXAdapter
 
@@ -27,10 +27,10 @@ def get_adapter(exchange_name: str, cfg: Any, **kwargs: Any) -> ExchangeAdapter:
 
 
 __all__ = [
-    "ExchangeAdapter",
+    "BinanceAdapter",
     "BybitREST",
     "BybitWS",
-    "BinanceAdapter",
+    "ExchangeAdapter",
     "KuCoinAdapter",
     "OKXAdapter",
     "get_adapter",

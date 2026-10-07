@@ -24,17 +24,16 @@ from __future__ import annotations
 import sys
 from decimal import Decimal
 from pathlib import Path
-from typing import Optional
 
 import pytest
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
-from gpkg.core.config import Config  # noqa: E402
-from gpkg.execution.executor import Executor  # noqa: E402
-from gpkg.execution.maker import FillState, run_maker_entry  # noqa: E402
-from gpkg.execution.routing import (  # noqa: E402
+from gpkg.core.config import Config
+from gpkg.execution.executor import Executor
+from gpkg.execution.maker import FillState, run_maker_entry
+from gpkg.execution.routing import (
     DEFAULT_MAX_QUOTE_AGE_MS,
     DEFAULT_TAKER_HURDLE_BPS,
     QuoteSnapshot,
@@ -45,7 +44,7 @@ from gpkg.execution.routing import (  # noqa: E402
     round_passive,
     should_requote,
 )
-from gpkg.ml.friction import BYBIT_TAKER_FEE_BPS  # noqa: E402
+from gpkg.ml.friction import BYBIT_TAKER_FEE_BPS
 
 
 # =============================================================================================
@@ -281,7 +280,7 @@ class _Clock:
 class _FakeIO:
     """Scriptable maker surface. `fill_after_ms=None` models a book that never trades with us."""
 
-    def __init__(self, clock: _Clock, *, fill_after_ms: Optional[int] = None,
+    def __init__(self, clock: _Clock, *, fill_after_ms: int | None = None,
                  partial: float = 0.0, reject_post_only: bool = False,
                  book_flips: bool = True) -> None:
         self.clock = clock
@@ -424,7 +423,7 @@ class _RoutingREST:
     async def place_order(self, **kw):
         link = kw.get("orderLinkId", "")
         if link in self._links:
-            from gpkg.core.errors import BybitError, DUPLICATE_ORDER_LINK_CODE
+            from gpkg.core.errors import DUPLICATE_ORDER_LINK_CODE, BybitError
             raise BybitError(DUPLICATE_ORDER_LINK_CODE, "duplicate")
         self._links.add(link)
         self.orders.append(kw)
@@ -577,7 +576,7 @@ async def test_declining_to_trade_is_metric_visible():
                                   gross_edge_bps=6.0, peak_spread_bps=1.0)
     assert res["skipped"] is True
     assert res["qty"] == "0"
-    assert "reason" in res and res["reason"]
+    assert res.get("reason")
 
 
 @pytest.mark.asyncio

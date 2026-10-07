@@ -47,8 +47,9 @@ from __future__ import annotations
 import json
 import math
 import random
+from collections.abc import Sequence
 from dataclasses import asdict, dataclass, field, replace
-from typing import Any, Sequence
+from typing import Any
 
 from gpkg.core.clock import now_ms
 from gpkg.ml.friction import (
@@ -129,7 +130,7 @@ class CandidateParams:
         )
 
     @staticmethod
-    def from_genes(symbol: str, family: str, g: Sequence[float]) -> "CandidateParams":
+    def from_genes(symbol: str, family: str, g: Sequence[float]) -> CandidateParams:
         lo = max(1.0, min(g[1], g[0]))
         hi = max(lo + 1.0, max(g[0], g[1]))
         return CandidateParams(

@@ -39,9 +39,9 @@ sys.path.insert(0, str(ROOT))
 os.environ.setdefault("BYBIT_API_KEY", "test-key")
 os.environ.setdefault("BYBIT_API_SECRET", "test-secret")
 
-from gpkg.core.config import Config  # noqa: E402
-from gpkg.core.logging import JsonFormatter  # noqa: E402
-from gpkg.core.runtime_secrets import (  # noqa: E402
+from gpkg.core.config import Config
+from gpkg.core.logging import JsonFormatter
+from gpkg.core.runtime_secrets import (
     BYBIT_SECRET,
     REDACTED,
     RuntimeSecretStore,
@@ -52,8 +52,8 @@ from gpkg.core.runtime_secrets import (  # noqa: E402
     safe_exception_message,
     scrub_text,
 )
-from gpkg.exchange.bybit_rest import BybitREST  # noqa: E402
-from gpkg.exchange.credentials import ExchangeCredential  # noqa: E402
+from gpkg.exchange.bybit_rest import BybitREST
+from gpkg.exchange.credentials import ExchangeCredential
 
 SECRET = "MYSECRET_b8f1c2a4d6e8f0a2b4c6d8e0f2a4b6c8"
 
@@ -74,7 +74,7 @@ def clean_store():
     lambda s: str(s),
     lambda s: f"{s}",
     lambda s: "%s" % s,
-    lambda s: "{}".format(s),
+    lambda s: f"{s}",
     lambda s: f"{s!r}",
     lambda s: f"{s!s}",
     lambda s: "".join([s]),
@@ -415,6 +415,7 @@ class _FakeGP:
 @pytest.fixture
 def client(monkeypatch):
     from fastapi.testclient import TestClient
+
     import gigpilot
     from gpkg.api.auth import OwnerAuth, OwnerConfig, hash_password
 

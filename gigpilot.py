@@ -17,13 +17,21 @@ Invariants
 """
 
 from __future__ import annotations
-import asyncio, hashlib, hmac, json, math, os, time
-from pathlib import Path
+
+import asyncio
+import hashlib
+import hmac
+import json
+import math
+import os
+import time
 from collections import deque
+from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from dataclasses import asdict
 from datetime import datetime, timezone
-from typing import Any, AsyncIterator, Optional
+from pathlib import Path
+from typing import Any
 
 import aiohttp
 import uvicorn
@@ -32,104 +40,36 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import BaseModel as _BaseModel
 
-
 # =============================================================================
 # 0. Utilities (MIGRATED -> gpkg/core/clock.py)
 # =============================================================================
-from gpkg.core.clock import now_ms, now_iso, f  # noqa: E402
-
+from gpkg.core.clock import f, now_iso, now_ms
 
 # =============================================================================
 # 1. Config (MIGRATED -> gpkg/core/config.py)
 # =============================================================================
-from gpkg.core.config import (  # noqa: E402
-    Config,
-    LIVE_HOST,
-    WS_PUBLIC,
-    WS_PRIVATE,
+from gpkg.core.config import (
     FORBIDDEN,
-    _maybe_load_local_keys,
+    LIVE_HOST,
+    WS_PRIVATE,
+    WS_PUBLIC,
+    Config,
     _maybe_load_aws_secret,
+    _maybe_load_local_keys,
 )
-
 
 # =============================================================================
 # 2. Logging + Metrics (MIGRATED -> gpkg/core/logging.py, gpkg/core/metrics.py)
 # =============================================================================
-from gpkg.core.logging import JsonFormatter, setup_logging  # noqa: E402
+from gpkg.core.logging import JsonFormatter, setup_logging
 
 log = setup_logging("INFO")
 
 
 # MIGRATED -> gpkg/core/metrics.py. Re-exported so existing references keep resolving.
-from gpkg.core.metrics import Metrics  # noqa: E402
-
+from gpkg.core.metrics import Metrics
 
 METRICS = Metrics()
-from gpkg.core.watchdog import TaskWatchdog  # noqa: E402
-
-
-# =============================================================================
-# 3. Bybit REST v5 (MIGRATED -> gpkg/exchange/bybit_rest.py)
-# =============================================================================
-# MIGRATED -> gpkg/core/errors.py. Re-exported so every existing reference (and the deployed engine,
-# which imports this module) keeps resolving unchanged.
-from gpkg.core.errors import BybitError, DUPLICATE_ORDER_LINK_CODE  # noqa: E402
-from gpkg.exchange.bybit_rest import BybitREST  # noqa: E402
-from gpkg.exchange.adapters.bybit import BybitAdapter  # noqa: E402
-
-
-# =============================================================================
-# 4. Market state (MIGRATED -> gpkg/market/state.py)
-# =============================================================================
-from gpkg.market.state import MarketState  # noqa: E402
-
-
-# =============================================================================
-# 5. Edge engine (MIGRATED -> gpkg/strategy/edge.py)
-# =============================================================================
-from gpkg.strategy.edge import EdgeEstimate, EdgeEngine  # noqa: E402
-
-
-# =============================================================================
-# 6. Risk gate (MIGRATED -> gpkg/risk/gate.py)
-# =============================================================================
-from gpkg.risk.gate import Portfolio, RiskGate  # noqa: E402
-
-
-# =============================================================================
-# 7. Executor (MIGRATED -> gpkg/execution/executor.py)
-# =============================================================================
-from gpkg.execution.executor import Executor  # noqa: E402
-from gpkg.execution.routing import QuoteSnapshot  # noqa: E402
-from gpkg.strategy.vpin import (  # noqa: E402
-    VpinConfig,
-    VpinEngine,
-    toxicity_policy,
-)
-from gpkg.strategy.vpin_calibration import (  # noqa: E402
-    KLINE_INTERVAL as VPIN_KLINE_INTERVAL,
-    KLINE_LOOKBACK_BARS as VPIN_KLINE_LOOKBACK_BARS,
-    adv_from_klines,
-    describe_resolution,
-    is_degraded_source,
-    resolve_bucket_volume,
-)
-from gpkg.core.engine_state import (  # noqa: E402
-    assess_engine_state,
-    ready_for_arming,
-)
-
-
-# =============================================================================
-# 8. Store (MIGRATED -> gpkg/persistence/store.py)
-# =============================================================================
-from gpkg.persistence.store import Store  # noqa: E402
-from gpkg.ml.registry import ModelRegistry  # noqa: E402
-from gpkg.paper.engine import PaperTradingEngine  # noqa: E402
-from gpkg.core.ops import operational_snapshot  # noqa: E402
-
-
 # =============================================================================
 # 8b. Control-plane owner authentication (MIGRATED -> gpkg/api/auth.py)
 # =============================================================================
@@ -137,7 +77,7 @@ from gpkg.core.ops import operational_snapshot  # noqa: E402
 # boundary (server/trading/ownerAuth.ts); the Python control plane previously enforced NOTHING, so
 # an unauthenticated caller could arm live trading or trip the kill switch. Absence of a check is
 # not a neutral default on a control plane that can move money.
-from gpkg.api.auth import (  # noqa: E402
+from gpkg.api.auth import (
     TOKEN_TTL_SECONDS,
     OwnerAuth,
     clear_session_cookie,
@@ -146,7 +86,66 @@ from gpkg.api.auth import (  # noqa: E402
     require_owner,
     set_session_cookie,
 )
+from gpkg.core.engine_state import (
+    assess_engine_state,
+    ready_for_arming,
+)
 
+# =============================================================================
+# 3. Bybit REST v5 (MIGRATED -> gpkg/exchange/bybit_rest.py)
+# =============================================================================
+# MIGRATED -> gpkg/core/errors.py. Re-exported so every existing reference (and the deployed engine,
+# which imports this module) keeps resolving unchanged.
+from gpkg.core.errors import DUPLICATE_ORDER_LINK_CODE, BybitError
+from gpkg.core.ops import operational_snapshot
+from gpkg.core.watchdog import TaskWatchdog
+from gpkg.exchange.adapters.bybit import BybitAdapter
+from gpkg.exchange.bybit_rest import BybitREST
+
+# =============================================================================
+# 7. Executor (MIGRATED -> gpkg/execution/executor.py)
+# =============================================================================
+from gpkg.execution.executor import Executor
+from gpkg.execution.routing import QuoteSnapshot
+
+# =============================================================================
+# 4. Market state (MIGRATED -> gpkg/market/state.py)
+# =============================================================================
+from gpkg.market.state import MarketState
+from gpkg.ml.registry import ModelRegistry
+from gpkg.paper.engine import PaperTradingEngine
+
+# =============================================================================
+# 8. Store (MIGRATED -> gpkg/persistence/store.py)
+# =============================================================================
+from gpkg.persistence.store import Store
+
+# =============================================================================
+# 6. Risk gate (MIGRATED -> gpkg/risk/gate.py)
+# =============================================================================
+from gpkg.risk.gate import Portfolio, RiskGate
+
+# =============================================================================
+# 5. Edge engine (MIGRATED -> gpkg/strategy/edge.py)
+# =============================================================================
+from gpkg.strategy.edge import EdgeEngine, EdgeEstimate
+from gpkg.strategy.vpin import (
+    VpinConfig,
+    VpinEngine,
+    toxicity_policy,
+)
+from gpkg.strategy.vpin_calibration import (
+    KLINE_INTERVAL as VPIN_KLINE_INTERVAL,
+)
+from gpkg.strategy.vpin_calibration import (
+    KLINE_LOOKBACK_BARS as VPIN_KLINE_LOOKBACK_BARS,
+)
+from gpkg.strategy.vpin_calibration import (
+    adv_from_klines,
+    describe_resolution,
+    is_degraded_source,
+    resolve_bucket_volume,
+)
 
 # =============================================================================
 # 9a. PUBLIC RE-EXPORT SURFACE
@@ -423,14 +422,14 @@ class Reconciler:
         self.rest = rest.rest if self.adapter is not None and hasattr(rest, "rest") else rest
         self.store = store; self.positions = positions
         self.healthy = False
-        self.last_error: Optional[str] = "not_run"
+        self.last_error: str | None = "not_run"
         self.last_run_ms = 0
         # Trade AUTHORIZATION, tracked separately from authentication.
         # `healthy`/`last_error` describe whether signed REST calls succeed at all (reads). A key can
         # pass that while being refused on every order-mutating endpoint — which is exactly the
         # production state — so readiness must be gated on the permission probe below, not on reads.
         self.trade_permissions_ok = False
-        self.trade_permissions_error: Optional[str] = "not_run"
+        self.trade_permissions_error: str | None = "not_run"
         self.trade_permissions_ms = 0
 
     async def run_once(self):
@@ -611,7 +610,7 @@ class GigPilot:
         self.step_size: dict[str, float] = {}
         self.tick_size: dict[str, float] = {}
         self.min_qty: dict[str, float] = {}
-        self.executor: Optional[Executor] = None
+        self.executor: Executor | None = None
         self.edge = EdgeEngine(cfg); self.risk = RiskGate(cfg)
         self.positions: dict[str, dict] = {}
         self.reconciler = Reconciler(cfg, self.exchange, self.store, self.positions)
@@ -1026,7 +1025,7 @@ class GigPilot:
 
     async def _arm_gate_check(self) -> tuple[bool, list[dict]]:
         reasons: list[dict] = []
-        def block(code: str, message: str, details: Optional[dict] = None):
+        def block(code: str, message: str, details: dict | None = None):
             item = {"code": code, "message": message}
             if details: item["details"] = details
             reasons.append(item)
@@ -1481,7 +1480,7 @@ class GigPilot:
         except Exception:
             return 0.0
 
-    async def _quote_for(self, symbol: str) -> Optional[QuoteSnapshot]:
+    async def _quote_for(self, symbol: str) -> QuoteSnapshot | None:
         """Top-of-book for the routing layer, or None when the book is not readable.
 
         None is the honest answer for "cannot price a passive order" and makes the executor fall back
@@ -1597,7 +1596,7 @@ class GigPilot:
 # =============================================================================
 # 13. FastAPI app
 # =============================================================================
-_GP: Optional[GigPilot] = None
+_GP: GigPilot | None = None
 
 
 def get_gp() -> GigPilot:
@@ -1917,7 +1916,7 @@ async def api_auth_status(request: Request):
     return auth.status(auth.verify(extract_token(request) or ""))
 
 
-def _throttled_response(auth) -> Optional[JSONResponse]:
+def _throttled_response(auth) -> JSONResponse | None:
     """429 + Retry-After when the login throttle is engaged.
 
     Checked BEFORE any credential comparison, so a locked-out caller cannot even make the server do
@@ -2246,7 +2245,10 @@ async def api_credential_vault_status():
     Owner-gated rather than public: `exchange_status()` reports WHICH exchanges are loaded, which
     tells an attacker where to aim. The public `/api/health` deliberately says nothing about it.
     """
-    from gpkg.core.credential_vault import WITHDRAWAL_CONFIRMATION_PHRASE, CredentialVault
+    from gpkg.core.credential_vault import (
+        WITHDRAWAL_CONFIRMATION_PHRASE,
+        CredentialVault,
+    )
 
     vault = CredentialVault.instance()
     return {
@@ -2449,6 +2451,7 @@ new EventSource('/events').onmessage=e=>{try{upd(JSON.parse(e.data))}catch(_){}}
 
 
 from gpkg.api.compat import register_compat_routes
+
 register_compat_routes(app, get_gp)
 
 from gpkg.web.dashboard import mount_dashboard

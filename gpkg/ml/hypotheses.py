@@ -21,7 +21,6 @@ from gpkg.ml.lifecycle import (
 )
 from gpkg.persistence.store import Store
 
-
 HORIZON_BARS = 5
 MIN_ROWS = 50_000
 L2_REQUIRED_MS = 48 * 3_600_000

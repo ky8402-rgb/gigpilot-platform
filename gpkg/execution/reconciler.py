@@ -8,7 +8,6 @@ Invariants:
 from __future__ import annotations
 
 import logging
-from typing import Optional
 
 from gpkg.core.clock import f, now_ms
 from gpkg.core.config import Config
@@ -26,7 +25,7 @@ class Reconciler:
         rest: BybitREST,
         store: Store,
         positions: dict,
-        metrics: Optional[Metrics] = None,
+        metrics: Metrics | None = None,
     ):
         self.cfg = cfg
         self.rest = rest
@@ -34,11 +33,11 @@ class Reconciler:
         self.positions = positions
         self._metrics = metrics
         self.healthy = False
-        self.last_error: Optional[str] = "not_run"
+        self.last_error: str | None = "not_run"
         self.last_run_ms = 0
         # Trade AUTHORIZATION, tracked separately from authentication.
         self.trade_permissions_ok = False
-        self.trade_permissions_error: Optional[str] = "not_run"
+        self.trade_permissions_error: str | None = "not_run"
         self.trade_permissions_ms = 0
 
     async def run_once(self) -> None:

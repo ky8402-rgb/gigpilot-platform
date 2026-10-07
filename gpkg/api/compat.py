@@ -4,10 +4,13 @@ Every live mutation remains owner-authenticated and fail-closed. Legacy manual o
 intentionally disabled because the production architecture is autonomous futures-only execution.
 """
 from __future__ import annotations
+
 import math
+
 from fastapi import APIRouter, Depends, Request
 from fastapi.responses import JSONResponse
-from gpkg.api.auth import require_owner, get_owner_auth, extract_token
+
+from gpkg.api.auth import extract_token, get_owner_auth, require_owner
 
 #: Shown when the daemon has come up with NO credential in memory. This is the one state where a
 #: restart can have left something at the venue that nothing local can close, so it is stated loudly

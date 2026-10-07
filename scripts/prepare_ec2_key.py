@@ -10,12 +10,13 @@ Handles multiple paste formats from GitHub Actions secrets:
 - Windows CRLF line endings
 """
 
-import os
-import sys
-import re
 import base64
+import os
+import re
 import subprocess
+import sys
 from pathlib import Path
+
 
 def log(msg: str):
     print(f"[SSH Key Normalizer] {msg}", flush=True)
@@ -29,7 +30,7 @@ def main():
     target_path = Path(os.path.expanduser("~/.ssh/id_rsa"))
     target_path.parent.mkdir(parents=True, exist_ok=True)
 
-    log(f"Input key metadata - length: {len(raw_key)}, lines: {len(raw_key.splitlines())}, prefix: {repr(raw_key[:35])}, suffix: {repr(raw_key[-35:])}")
+    log(f"Input key metadata - length: {len(raw_key)}, lines: {len(raw_key.splitlines())}, prefix: {raw_key[:35]!r}, suffix: {raw_key[-35:]!r}")
 
     # 1. Strip surrounding quotes if present
     if (raw_key.startswith('"') and raw_key.endswith('"')) or \
@@ -69,7 +70,8 @@ def main():
         res = subprocess.run(
             ["puttygen", str(ppk_path), "-O", "private-openssh", "-o", str(target_path)],
             capture_output=True,
-            text=True
+            text=True,
+            check=False,  # returncode is inspected below
         )
         if res.returncode == 0:
             target_path.chmod(0o600)
@@ -110,7 +112,8 @@ def main():
 
     # 9. Verify with ssh-keygen if available
     try:
-        res = subprocess.run(["ssh-keygen", "-y", "-f", str(target_path)], capture_output=True, text=True)
+        res = subprocess.run(["ssh-keygen", "-y", "-f", str(target_path)], capture_output=True,
+                             text=True, check=False)  # returncode decides the branch
         if res.returncode == 0:
             log(f"Key verification PASSED. Generated public key: {res.stdout.strip()[:35]}...")
             # Save corresponding .pub file

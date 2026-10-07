@@ -18,8 +18,8 @@ execution to the executor behind the risk gate.
 from __future__ import annotations
 
 import logging
+from collections.abc import Iterable
 from dataclasses import dataclass, field
-from typing import Iterable, Optional
 
 from gpkg.core.clock import now_ms
 from gpkg.exchange.base import (
@@ -87,7 +87,7 @@ class ExchangeRegistry:
     def add(self, adapter: ExchangeAdapter) -> None:
         self._adapters[adapter.name] = adapter
 
-    def get(self, exchange: str) -> Optional[ExchangeAdapter]:
+    def get(self, exchange: str) -> ExchangeAdapter | None:
         return self._adapters.get(exchange)
 
     @property

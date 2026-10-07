@@ -1,10 +1,20 @@
 """Conservative kline baseline for PAPER only; missing depth is never fabricated."""
 from __future__ import annotations
+
 import math
 from dataclasses import replace
 from statistics import fmean
+
 from gpkg.core.clock import now_ms
-from gpkg.ml.lifecycle import CostBreakdown,ModelState,NetTrade,PurgedWalkForward,ValidationConfig,evaluate_candidate
+from gpkg.ml.lifecycle import (
+    CostBreakdown,
+    ModelState,
+    NetTrade,
+    PurgedWalkForward,
+    ValidationConfig,
+    evaluate_candidate,
+)
+
 
 def conservative_friction_bps(peak_spread_bps,taker_fee_bps,impact_bps=1.0):
     return 2*max(0.0,peak_spread_bps)+2*max(0.0,taker_fee_bps)+max(0.0,impact_bps)

@@ -54,7 +54,6 @@ import re
 import threading
 import time
 from dataclasses import dataclass
-from typing import Optional
 
 from gpkg.core.runtime_secrets import BYBIT_SECRET, RuntimeSecretStore
 
@@ -214,13 +213,13 @@ class CredentialVault:
     """Owner-only credential entry and withdrawal allowlist. Memory-only, like the store beneath it."""
 
     _lock = threading.RLock()
-    _singleton: Optional["CredentialVault"] = None
+    _singleton: CredentialVault | None = None
 
     def __init__(self) -> None:
         self._addresses: dict[str, dict] = {}
 
     @classmethod
-    def instance(cls) -> "CredentialVault":
+    def instance(cls) -> CredentialVault:
         with cls._lock:
             if cls._singleton is None:
                 cls._singleton = CredentialVault()
@@ -322,7 +321,7 @@ class CredentialVault:
         with self._lock:
             return {k: dict(v) for k, v in self._addresses.items()}
 
-    def withdrawal_destination(self, exchange: str) -> Optional[str]:
+    def withdrawal_destination(self, exchange: str) -> str | None:
         """The single allowed destination for an exchange, or None.
 
         The intended consumer is a future withdrawal path, which must look its destination up HERE

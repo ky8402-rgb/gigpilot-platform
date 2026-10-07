@@ -22,7 +22,7 @@ OUT = ROOT / "migration" / "node_surface.json"
 
 def _routes(text: str, pattern: str) -> list[str]:
     found = []
-    for m in re.finditer(pattern, text, re.M):
+    for m in re.finditer(pattern, text, re.MULTILINE):
         path = m.group(2)
         # `.all([...])` registers a list of paths.
         paths = re.findall(r"['\"]([^'\"]+)['\"]", path) if path.startswith("[") else [path]
@@ -37,7 +37,7 @@ def http_surface() -> dict:
     routes = (ROOT / "server" / "trading" / "routes.ts").read_text(encoding="utf8")
     for e in _routes(routes, r"^tradingRouter\.(get|post|put|delete)\(\s*['\"]([^'\"]+)['\"]"):
         endpoints.append({"method": e.split()[0], "path": e.split()[1], "mount": "/api/trading", "source": "server/trading/routes.ts"})
-    for m in re.finditer(r"tradingRouter\.all\(\s*\[([^\]]+)\]", routes, re.M):
+    for m in re.finditer(r"tradingRouter\.all\(\s*\[([^\]]+)\]", routes, re.MULTILINE):
         for p in re.findall(r"['\"]([^'\"]+)['\"]", m.group(1)):
             endpoints.append({"method": "ANY", "path": p, "mount": "/api/trading", "source": "server/trading/routes.ts (.all)"})
 
@@ -48,7 +48,7 @@ def http_surface() -> dict:
     gh = (ROOT / "server" / "githubRoutes.ts").read_text(encoding="utf8")
     for e in _routes(gh, r"githubRoutes\.(get|post|put|delete)\(\s*['\"]([^'\"]+)['\"]"):
         endpoints.append({"method": e.split()[0], "path": e.split()[1], "mount": "/api/github", "source": "server/githubRoutes.ts"})
-    for m in re.finditer(r"githubRoutes\.all\(\s*\[([^\]]+)\]", gh, re.M):
+    for m in re.finditer(r"githubRoutes\.all\(\s*\[([^\]]+)\]", gh, re.MULTILINE):
         for p in re.findall(r"['\"]([^'\"]+)['\"]", m.group(1)):
             endpoints.append({"method": "ANY", "path": p, "mount": "/api/github", "source": "server/githubRoutes.ts (.all)"})
 

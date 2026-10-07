@@ -6,6 +6,7 @@ from collections import deque
 from dataclasses import dataclass
 from statistics import pstdev
 from typing import Any
+
 from gpkg.core.clock import now_iso, now_ms
 from gpkg.ml.lifecycle import ModelEvidence, ModelState
 from gpkg.persistence.store import Store

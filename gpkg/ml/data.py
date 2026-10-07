@@ -17,7 +17,6 @@ import aiohttp
 from gpkg.core.clock import now_ms
 from gpkg.persistence.store import Store
 
-
 BYBIT_MARKET = "https://api.bybit.com/v5/market"
 
 

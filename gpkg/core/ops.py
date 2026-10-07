@@ -1,6 +1,10 @@
 """Authenticated operational telemetry."""
-import os,shutil,subprocess,time
+import os
+import shutil
+import subprocess
+import time
 from pathlib import Path
+
 _CACHE=(0.0,{})
 def _svc(name):
     def run(arg):

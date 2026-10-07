@@ -23,7 +23,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
-import gigpilot as gp  # noqa: E402  (import is side-effect free: main() is __main__-guarded)
+import gigpilot as gp
 
 failures: list[str] = []
 checks = 0

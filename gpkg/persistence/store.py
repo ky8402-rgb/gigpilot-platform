@@ -11,7 +11,6 @@ from __future__ import annotations
 import json
 import sqlite3
 from datetime import datetime, timezone
-from typing import Optional
 
 from gpkg.core.clock import f, now_ms
 
@@ -88,7 +87,7 @@ class Store:
         """)
         self._conn.commit()
 
-    def journal(self, kind: str, symbol: Optional[str], payload: dict) -> None:
+    def journal(self, kind: str, symbol: str | None, payload: dict) -> None:
         self._conn.execute(
             "INSERT INTO journal(ts_ms,kind,symbol,payload) VALUES(?,?,?,?)",
             (now_ms(), kind, symbol, json.dumps(payload, default=str)),
@@ -139,7 +138,7 @@ class Store:
         cols = ["id", "ts_ms", "symbol", "side", "qty", "entry", "tp", "sl", "order_link_id"]
         return [dict(zip(cols, r)) for r in cur.fetchall()]
 
-    def match_closed_trade(self, symbol: str, closing_side: str, created_ms: int) -> Optional[dict]:
+    def match_closed_trade(self, symbol: str, closing_side: str, created_ms: int) -> dict | None:
         entry_side = "Sell" if closing_side == "Buy" else "Buy"
         row = self._conn.execute(
             """
@@ -164,7 +163,7 @@ class Store:
         self._conn.execute("INSERT OR REPLACE INTO kv(k,v) VALUES(?,?)", (k, v))
         self._conn.commit()
 
-    def kv_get(self, k: str) -> Optional[str]:
+    def kv_get(self, k: str) -> str | None:
         r = self._conn.execute("SELECT v FROM kv WHERE k=?", (k,)).fetchone()
         return r[0] if r else None
 
@@ -176,7 +175,7 @@ class Store:
         evidence: dict,
         *,
         reason: str,
-        expected_from_state: Optional[str] = None,
+        expected_from_state: str | None = None,
     ) -> None:
         """Atomically persist current ML evidence and append its transition audit record.
 
@@ -318,7 +317,7 @@ class Store:
         return [{"ts_ms": int(ts), "model_id": mid, "outcome": out, "reason": reason, "payload": json.loads(payload)}
                 for ts, mid, out, reason, payload in rows]
 
-    def ml_get_evidence(self, model_id: str) -> Optional[dict]:
+    def ml_get_evidence(self, model_id: str) -> dict | None:
         row = self._conn.execute(
             "SELECT state,verified,evidence_json,updated_ms FROM ml_model_evidence WHERE model_id=?",
             (model_id,),
@@ -347,7 +346,7 @@ class Store:
             "updated_ms": int(row[4]),
         } for row in rows]
 
-    def ml_events(self, model_id: Optional[str] = None, limit: int = 100) -> list[dict]:
+    def ml_events(self, model_id: str | None = None, limit: int = 100) -> list[dict]:
         limit = max(1, min(int(limit), 1000))
         if model_id:
             rows = self._conn.execute(

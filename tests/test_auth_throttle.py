@@ -19,11 +19,10 @@ import sys
 import time
 from pathlib import Path
 
-
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
-from gpkg.api.auth import (  # noqa: E402
+from gpkg.api.auth import (
     LoginThrottle,
     OwnerAuth,
     OwnerConfig,
@@ -212,6 +211,7 @@ def test_login_route_returns_429_with_retry_after(monkeypatch):
     os.environ.setdefault("BYBIT_API_KEY", "d")
     os.environ.setdefault("BYBIT_API_SECRET", "d")
     from fastapi.testclient import TestClient
+
     import gigpilot
 
     auth = make_auth(max_failures=2)

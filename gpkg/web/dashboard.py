@@ -8,7 +8,6 @@ from __future__ import annotations
 import json
 import os
 from pathlib import Path
-from typing import Optional
 
 from fastapi import FastAPI, Response
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
@@ -24,7 +23,7 @@ DEFAULT_FALLBACK_HTML = """<!doctype html>
 <body><div id="root"><h1>GigPilot Platform</h1><p>Initializing dashboard...</p></div></body></html>"""
 
 
-def mount_dashboard(app: FastAPI, dist_dir: Optional[Path] = None, fallback_html: Optional[str] = None) -> None:
+def mount_dashboard(app: FastAPI, dist_dir: Path | None = None, fallback_html: str | None = None) -> None:
     """Mounts static asset serving and SPA routing onto the FastAPI application."""
     target_dist = dist_dir or DIST_DIR
     target_index = target_dist / "index.html"

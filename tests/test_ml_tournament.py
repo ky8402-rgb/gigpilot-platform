@@ -29,7 +29,7 @@ import pytest
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
-from gpkg.ml.friction import (  # noqa: E402
+from gpkg.ml.friction import (
     BYBIT_MAKER_FEE_BPS,
     BYBIT_TAKER_FEE_BPS,
     DEFAULT_HURDLE_BPS,
@@ -44,8 +44,13 @@ from gpkg.ml.friction import (  # noqa: E402
     taker_crossing_allowed,
     worst_case_spread_bps,
 )
-from gpkg.ml.lifecycle import CostBreakdown, ModelEvidence, ModelState, NetTrade  # noqa: E402
-from gpkg.ml.tournament import (  # noqa: E402
+from gpkg.ml.lifecycle import (
+    CostBreakdown,
+    ModelEvidence,
+    ModelState,
+    NetTrade,
+)
+from gpkg.ml.tournament import (
     STRICT_GATE,
     CandidateParams,
     _fold_geometry,
@@ -213,7 +218,7 @@ def test_the_engines_config_matches_the_spec_exactly():
 # =============================================================================================
 def test_folds_span_the_dataset_not_just_the_front():
     n = 129_599
-    ts = list(range(0, n))
+    ts = list(range(n))
     folds = _fold_geometry(ts, STRICT_GATE)
     assert len(folds) == 5, "must produce exactly 5 folds; one fewer silently fails the fold gate"
     covered = sum(te.stop - te.start for _tr, te in folds)
@@ -225,7 +230,7 @@ def test_folds_span_the_dataset_not_just_the_front():
 
 
 def test_folds_never_overlap_and_are_strictly_ordered():
-    ts = list(range(0, 20_000))
+    ts = list(range(20_000))
     folds = _fold_geometry(ts, STRICT_GATE)
     prev_end = -1
     for tr, te in folds:
@@ -235,7 +240,7 @@ def test_folds_never_overlap_and_are_strictly_ordered():
 
 
 def test_fold_geometry_degrades_safely_on_tiny_datasets():
-    assert _fold_geometry(list(range(0, 100)), STRICT_GATE) == []
+    assert _fold_geometry(list(range(100)), STRICT_GATE) == []
 
 
 # =============================================================================================
@@ -369,8 +374,8 @@ def test_a_genuinely_good_candidate_can_pass_all_four_gates():
     always-false predicate. Without it, 'no candidate cleared the gates' on real data cannot be
     distinguished from a broken gate, and the whole tournament's negative results mean nothing.
     """
-    from gpkg.ml.tournament import evaluate_params
     from gpkg.core.clock import now_ms
+    from gpkg.ml.tournament import evaluate_params
 
     class _S:
         def ml_market_range(self, *a, **k):

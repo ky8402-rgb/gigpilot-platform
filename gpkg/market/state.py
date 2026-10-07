@@ -12,7 +12,6 @@ from __future__ import annotations
 import math
 from collections import deque
 from dataclasses import dataclass, field
-from typing import Deque
 
 from gpkg.core.clock import f, now_ms
 
@@ -27,15 +26,15 @@ class MarketState:
     index: float = 0.0
     funding_rate: float = 0.0
     next_funding_ms: int = 0
-    trades: Deque = field(default_factory=lambda: deque(maxlen=512))
-    closes_1m: Deque = field(default_factory=lambda: deque(maxlen=200))
+    trades: deque = field(default_factory=lambda: deque(maxlen=512))
+    closes_1m: deque = field(default_factory=lambda: deque(maxlen=200))
     #: Real 1-minute OHLC bars, upserted from the venue's `kline.1` stream.
     #:
     #: The terminal's chart reads `markets[].candles`, which the snapshot never emitted, so it showed
     #: "Live candles unavailable" permanently while the venue was streaming bars the whole time.
     #: Only OHLC is kept — never a level the venue did not send. `closes_1m` alone could not fill a
     #: candle: deriving open/high/low from successive closes would be inventing price history.
-    candles_1m: Deque = field(default_factory=lambda: deque(maxlen=200))
+    candles_1m: deque = field(default_factory=lambda: deque(maxlen=200))
     ts_book_ms: int = 0
     ts_tick_ms: int = 0
 

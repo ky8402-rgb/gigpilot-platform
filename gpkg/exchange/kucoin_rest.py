@@ -10,14 +10,14 @@ import hashlib
 import hmac
 import json
 import logging
-from typing import Any, Optional
+from typing import Any
 from urllib.parse import urlencode
 
 import aiohttp
 
 from gpkg.core.clock import f, now_ms
 from gpkg.core.config import Config
-from gpkg.core.errors import KuCoinError, KUCOIN_DUPLICATE_ORDER_CODE
+from gpkg.core.errors import KUCOIN_DUPLICATE_ORDER_CODE, KuCoinError
 from gpkg.core.metrics import Metrics
 from gpkg.exchange.base import ExchangeAdapter
 
@@ -34,11 +34,11 @@ class KuCoinAdapter(ExchangeAdapter):
     def duplicate_order_code(self) -> int:
         return KUCOIN_DUPLICATE_ORDER_CODE
 
-    def __init__(self, cfg: Config, metrics: Optional[Metrics] = None, host: str = KUCOIN_FUTURES_HOST, passphrase: str = ""):
+    def __init__(self, cfg: Config, metrics: Metrics | None = None, host: str = KUCOIN_FUTURES_HOST, passphrase: str = ""):
         self.cfg = cfg
         self.host = host
         self.passphrase = passphrase or getattr(cfg, "api_passphrase", "")
-        self._sess: Optional[aiohttp.ClientSession] = None
+        self._sess: aiohttp.ClientSession | None = None
         self._metrics = metrics
 
     def _to_kucoin_symbol(self, symbol: str) -> str:
@@ -76,8 +76,8 @@ class KuCoinAdapter(ExchangeAdapter):
         self,
         method: str,
         path: str,
-        params: Optional[dict] = None,
-        body: Optional[dict] = None,
+        params: dict | None = None,
+        body: dict | None = None,
         signed: bool = True,
         retries: int = 3,
     ) -> Any:

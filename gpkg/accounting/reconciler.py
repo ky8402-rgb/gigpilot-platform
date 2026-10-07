@@ -5,7 +5,6 @@ Never fabricates local accounting rows; unmatched closes emit ACCT_ORPHAN audit 
 from __future__ import annotations
 
 import logging
-from typing import Optional
 
 from gpkg.core.clock import f
 from gpkg.core.metrics import Metrics
@@ -21,7 +20,7 @@ class AccountingReconciler:
     Unmatched exchange closes emit ACCT_ORPHAN — never fabricate a local row.
     """
 
-    def __init__(self, rest: BybitREST, store: Store, metrics: Optional[Metrics] = None):
+    def __init__(self, rest: BybitREST, store: Store, metrics: Metrics | None = None):
         self.rest = rest
         self.store = store
         self._metrics = metrics

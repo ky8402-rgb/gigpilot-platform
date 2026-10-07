@@ -6,19 +6,19 @@ from __future__ import annotations
 
 import asyncio
 import base64
-from datetime import datetime, timezone
 import hashlib
 import hmac
 import json
 import logging
-from typing import Any, Optional
+from datetime import datetime, timezone
+from typing import Any
 from urllib.parse import urlencode
 
 import aiohttp
 
 from gpkg.core.clock import f
 from gpkg.core.config import Config
-from gpkg.core.errors import OKXError, OKX_DUPLICATE_ORDER_CODE
+from gpkg.core.errors import OKX_DUPLICATE_ORDER_CODE, OKXError
 from gpkg.core.metrics import Metrics
 from gpkg.exchange.base import ExchangeAdapter
 
@@ -35,11 +35,11 @@ class OKXAdapter(ExchangeAdapter):
     def duplicate_order_code(self) -> int:
         return OKX_DUPLICATE_ORDER_CODE
 
-    def __init__(self, cfg: Config, metrics: Optional[Metrics] = None, host: str = OKX_HOST, passphrase: str = ""):
+    def __init__(self, cfg: Config, metrics: Metrics | None = None, host: str = OKX_HOST, passphrase: str = ""):
         self.cfg = cfg
         self.host = host
         self.passphrase = passphrase or getattr(cfg, "api_passphrase", "")
-        self._sess: Optional[aiohttp.ClientSession] = None
+        self._sess: aiohttp.ClientSession | None = None
         self._metrics = metrics
 
     def _to_inst_id(self, symbol: str) -> str:
@@ -70,8 +70,8 @@ class OKXAdapter(ExchangeAdapter):
         self,
         method: str,
         path: str,
-        params: Optional[dict] = None,
-        body: Optional[dict] = None,
+        params: dict | None = None,
+        body: dict | None = None,
         signed: bool = True,
         retries: int = 3,
     ) -> Any:

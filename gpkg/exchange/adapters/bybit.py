@@ -11,8 +11,6 @@ mapping lives in the adapter rather than in a shared helper.
 """
 from __future__ import annotations
 
-from typing import Optional
-
 from gpkg.core.config import Config
 from gpkg.core.errors import BybitError
 from gpkg.exchange.base import (
@@ -27,13 +25,13 @@ from gpkg.exchange.base import (
     Order,
     OrderRequest,
     OrderResult,
-    TimeInForce,
     OrderStatus,
     OrderType,
     PermissionDenied,
     Position,
     Side,
     Ticker,
+    TimeInForce,
 )
 from gpkg.exchange.bybit_rest import BybitREST
 
@@ -60,7 +58,7 @@ def _unified(symbol: str, quote: str = "USDT") -> str:
 class BybitAdapter(ExchangeAdapter):
     name = "bybit"
 
-    def __init__(self, cfg: Config, rest: Optional[BybitREST] = None, metrics=None):
+    def __init__(self, cfg: Config, rest: BybitREST | None = None, metrics=None):
         self.cfg = cfg
         self.rest = rest or BybitREST(cfg, metrics=metrics)
         self._cache: dict[str, Instrument] = {}
@@ -93,7 +91,7 @@ class BybitAdapter(ExchangeAdapter):
         self._cache[symbol] = parsed
         return parsed
 
-    def _parse_instrument(self, it: dict) -> Optional[Instrument]:
+    def _parse_instrument(self, it: dict) -> Instrument | None:
         try:
             lot = it.get("lotSizeFilter") or {}
             pr = it.get("priceFilter") or {}
@@ -331,7 +329,7 @@ class BybitAdapter(ExchangeAdapter):
         await self.rest.cancel_all(symbol)
 
     async def set_protection(self, symbol: str, side: Side, qty: str,
-                             take_profit: Optional[str], stop_loss: Optional[str]) -> None:
+                             take_profit: str | None, stop_loss: str | None) -> None:
         """Position-level native TP/SL — it lives on the venue, so it survives this process dying."""
         body = {
             "category": "linear",

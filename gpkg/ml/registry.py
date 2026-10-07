@@ -6,8 +6,8 @@ and refuses any live-eligible state for unverified evidence.
 """
 from __future__ import annotations
 
+import builtins
 from dataclasses import asdict, replace
-from typing import List
 
 from gpkg.core.metrics import Metrics
 from gpkg.persistence.store import Store
@@ -20,7 +20,6 @@ from .lifecycle import (
     ValidationConfig,
     should_rollback,
 )
-
 
 _ALLOWED: dict[ModelState | None, set[ModelState]] = {
     None: {ModelState.RESEARCH, ModelState.VALIDATED},
@@ -98,7 +97,7 @@ class ModelRegistry:
     def rollback_if_needed(
         self,
         model_id: str,
-        live_trades: List[NetTrade],
+        live_trades: builtins.list[NetTrade],
         drift: DriftReport,
         *,
         config: ValidationConfig = ValidationConfig(),

@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 import os
 import pty
-import sys
 import select
+import sys
 
 AUTH_CODE = sys.argv[1] if len(sys.argv) > 1 else ""
 

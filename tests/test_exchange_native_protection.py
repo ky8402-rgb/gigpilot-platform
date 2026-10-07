@@ -27,17 +27,16 @@ from __future__ import annotations
 import asyncio
 import sys
 from pathlib import Path
-from typing import Optional
 
 import pytest
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
-from gpkg.api.compat import BOOT_WARNING, _with_boot_warning  # noqa: E402
-from gpkg.core.config import Config  # noqa: E402
-from gpkg.exchange.bybit_rest import BybitREST  # noqa: E402
-from gpkg.execution.executor import Executor  # noqa: E402
+from gpkg.api.compat import BOOT_WARNING, _with_boot_warning
+from gpkg.core.config import Config
+from gpkg.exchange.bybit_rest import BybitREST
+from gpkg.execution.executor import Executor
 
 TICK = 0.1
 REF = 25_000.0
@@ -46,7 +45,7 @@ REF = 25_000.0
 class _RecordingREST:
     """Stands in for BybitREST and records the exact body the entry path would send."""
 
-    def __init__(self, fail_first_with: Optional[str] = None) -> None:
+    def __init__(self, fail_first_with: str | None = None) -> None:
         self.calls: list[dict] = []
         self._fail_first_with = fail_first_with
 

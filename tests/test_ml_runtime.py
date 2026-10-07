@@ -7,9 +7,16 @@ import pytest
 from gpkg.market.state import MarketState
 from gpkg.ml.lifecycle import ModelEvidence, ModelState, TradingAuthorization
 from gpkg.ml.runtime import (
-    EwmaVolatilityForecaster, ImpactResidualForecaster, Regime, StrategyCandidate,
-    book_impact_bps, confidence_probability_score, detect_regime, extract_features,
-    position_notional, select_verified_strategy,
+    EwmaVolatilityForecaster,
+    ImpactResidualForecaster,
+    Regime,
+    StrategyCandidate,
+    book_impact_bps,
+    confidence_probability_score,
+    detect_regime,
+    extract_features,
+    position_notional,
+    select_verified_strategy,
 )
 
 

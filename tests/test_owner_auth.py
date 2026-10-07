@@ -21,7 +21,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
-from gpkg.api.auth import (  # noqa: E402
+from gpkg.api.auth import (
     OwnerAuth,
     OwnerConfig,
     base32_decode,

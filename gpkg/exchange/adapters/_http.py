@@ -17,7 +17,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
-from typing import Any, Optional
+from typing import Any
 from urllib.parse import urlencode
 
 import aiohttp
@@ -37,7 +37,7 @@ class RestClient:
         self.exchange = exchange
         self.base_url = base_url.rstrip("/")
         self.timeout_s = timeout_s
-        self._sess: Optional[aiohttp.ClientSession] = None
+        self._sess: aiohttp.ClientSession | None = None
 
     async def start(self) -> None:
         if self._sess is None:
@@ -55,9 +55,9 @@ class RestClient:
         self,
         method: str,
         path: str,
-        params: Optional[dict] = None,
-        body: Optional[dict] = None,
-        headers: Optional[dict] = None,
+        params: dict | None = None,
+        body: dict | None = None,
+        headers: dict | None = None,
         *,
         retries: int = DEFAULT_RETRIES,
         idempotent: bool = True,
@@ -65,7 +65,7 @@ class RestClient:
         assert self._sess is not None, "RestClient.start() must be awaited first"
         params = params or {}
         url = f"{self.base_url}{path}"
-        last: Optional[Exception] = None
+        last: Exception | None = None
 
         # A mutating call with no dedup key is not safe to replay. One attempt only.
         attempts = retries if (idempotent or method.upper() == "GET") else 1

@@ -6,12 +6,13 @@ or authorize an unverified model; final capital authorization remains in lifecyc
 """
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import dataclass
 from enum import Enum
 from math import isfinite, log, sqrt
-from typing import Sequence
 
 from gpkg.market.state import MarketState
+
 from .lifecycle import ModelEvidence, ModelState, TradingAuthorization
 
 

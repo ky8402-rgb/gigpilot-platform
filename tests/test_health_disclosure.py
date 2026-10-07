@@ -34,10 +34,10 @@ sys.path.insert(0, str(ROOT))
 os.environ.setdefault("BYBIT_API_KEY", "test-key")
 os.environ.setdefault("BYBIT_API_SECRET", "test-secret")
 
-from fastapi.testclient import TestClient  # noqa: E402
+from fastapi.testclient import TestClient
 
-import gigpilot  # noqa: E402
-from gpkg.api.auth import OwnerAuth, OwnerConfig, hash_password  # noqa: E402
+import gigpilot
+from gpkg.api.auth import OwnerAuth, OwnerConfig, hash_password
 
 SENSITIVE = [
     "host",
@@ -314,7 +314,7 @@ def test_testclient_users_have_httpx_declared():
     assert users, "expected at least one TestClient-based gate; the detection logic may be stale"
 
     dev = (ROOT / "requirements-dev.txt").read_text()
-    assert re.search(r"^\s*httpx", dev, re.M), (
+    assert re.search(r"^\s*httpx", dev, re.MULTILINE), (
         f"{len(users)} gate(s) use fastapi.testclient but httpx is not declared in "
         f"requirements-dev.txt: {sorted(users)}"
     )
@@ -378,6 +378,6 @@ def test_no_declared_runtime_dependency_is_unused():
     unused = []
     for dep in deps:
         mod = import_map.get(dep, dep.replace("-", "_"))
-        if not re.search(rf"^\s*(import|from)\s+{re.escape(mod)}\b", blob, re.M):
+        if not re.search(rf"^\s*(import|from)\s+{re.escape(mod)}\b", blob, re.MULTILINE):
             unused.append(dep)
     assert not unused, f"declared but never imported: {unused}"

@@ -194,7 +194,7 @@ class FakeREST:
         return {}
 
     async def place_order(self, **kw):
-        from gpkg.core.errors import BybitError, DUPLICATE_ORDER_LINK_CODE
+        from gpkg.core.errors import DUPLICATE_ORDER_LINK_CODE, BybitError
 
         link = kw.get("orderLinkId", "")
         if link and link in self._seen_links:

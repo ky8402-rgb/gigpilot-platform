@@ -22,18 +22,18 @@ sys.path.insert(0, str(ROOT))
 
 # NOTE: alias the monolith as `engine`, never `gp` — `gp` is exactly the alias several scripts use
 # for gigpilot, and it is what collided when this package was briefly named `gp`.
-import gigpilot as engine  # noqa: E402
-from gpkg.core import errors as core_errors  # noqa: E402
-from gpkg.core import metrics as core_metrics  # noqa: E402
-from gpkg.core import clock as core_clock  # noqa: E402
-from gpkg.core import config as core_config  # noqa: E402
-from gpkg.core import logging as core_logging  # noqa: E402
-from gpkg.exchange import bybit_rest as ex_rest  # noqa: E402
-from gpkg.market import state as mkt_state  # noqa: E402
-from gpkg.strategy import edge as strat_edge  # noqa: E402
-from gpkg.risk import gate as risk_gate  # noqa: E402
-from gpkg.execution import executor as exec_module  # noqa: E402
-from gpkg.persistence import store as persist_store  # noqa: E402
+import gigpilot as engine
+from gpkg.core import clock as core_clock
+from gpkg.core import config as core_config
+from gpkg.core import errors as core_errors
+from gpkg.core import logging as core_logging
+from gpkg.core import metrics as core_metrics
+from gpkg.exchange import bybit_rest as ex_rest
+from gpkg.execution import executor as exec_module
+from gpkg.market import state as mkt_state
+from gpkg.persistence import store as persist_store
+from gpkg.risk import gate as risk_gate
+from gpkg.strategy import edge as strat_edge
 
 failures: list[str] = []
 checks = 0

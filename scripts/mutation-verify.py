@@ -242,10 +242,12 @@ def run_one(mut: Mutation) -> tuple[bool, bool]:
 
         if mut.ident in NODE_CHECKS:
             _, args = NODE_CHECKS[mut.ident]
-            proc = subprocess.run(["node", *args], cwd=tmp, capture_output=True, text=True)
+            proc = subprocess.run(["node", *args], cwd=tmp, capture_output=True, text=True,
+                                  check=False)  # a failing mutant is the expected outcome
         else:
             proc = subprocess.run(
                 [_interpreter(), "-m", "pytest", *mut.tests, "-q", "--no-header"],
+                check=False,  # a failing mutant is the expected outcome
                 cwd=tmp, capture_output=True, text=True,
             )
         return True, proc.returncode != 0
@@ -288,7 +290,7 @@ def main() -> int:
         else:
             verdict = "VACUOUS (regression NOT caught)"
             vacuous.append(mut.ident)
-        print(f"{mut.ident:<26} {str(applied):<9} {str(detected):<10} {verdict}")
+        print(f"{mut.ident:<26} {applied!s:<9} {detected!s:<10} {verdict}")
 
     print("-" * 100)
     caught = len(MUTATIONS) - len(vacuous) - len(unapplied)

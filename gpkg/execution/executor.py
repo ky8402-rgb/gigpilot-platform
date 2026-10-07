@@ -12,17 +12,17 @@ import asyncio
 import logging
 import math
 import uuid
+from collections.abc import Awaitable, Callable
 from decimal import ROUND_FLOOR, Decimal, InvalidOperation
-from typing import TYPE_CHECKING, Awaitable, Callable, Optional
+from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:  # typing-only: the executor must not import the strategy package at runtime
     from gpkg.strategy.vpin import ToxicityPolicy
 
-from gpkg.core.config import Config
 from gpkg.core.clock import now_ms
-from gpkg.core.errors import BybitError, DUPLICATE_ORDER_LINK_CODE
+from gpkg.core.config import Config
+from gpkg.core.errors import DUPLICATE_ORDER_LINK_CODE, BybitError
 from gpkg.core.metrics import Metrics
-from gpkg.exchange.bybit_rest import BybitREST
 from gpkg.exchange.base import (
     ExchangeAdapter,
     OrderRequest,
@@ -30,6 +30,7 @@ from gpkg.exchange.base import (
     Side,
     TimeInForce,
 )
+from gpkg.exchange.bybit_rest import BybitREST
 from gpkg.execution.maker import FillState, run_maker_entry
 from gpkg.execution.routing import EntryPlan, QuoteSnapshot, plan_entry
 
@@ -145,16 +146,16 @@ class Executor:
         sl_price: float,
         position_idx: int = 0,
         *,
-        quote_fn: Optional[Callable[[], Awaitable[Optional[QuoteSnapshot]]]] = None,
-        tick_size: Optional[float] = None,
-        gross_edge_bps: Optional[float] = None,
-        peak_spread_bps: Optional[float] = None,
+        quote_fn: Callable[[], Awaitable[QuoteSnapshot | None]] | None = None,
+        tick_size: float | None = None,
+        gross_edge_bps: float | None = None,
+        peak_spread_bps: float | None = None,
         funding_bps: float = 0.0,
         impact_bps: float = 0.0,
         obi: float = 0.0,
-        tp_bps: Optional[float] = None,
-        sl_bps: Optional[float] = None,
-        toxicity: Optional["ToxicityPolicy"] = None,
+        tp_bps: float | None = None,
+        sl_bps: float | None = None,
+        toxicity: ToxicityPolicy | None = None,
     ) -> dict:
         """Enter with protection, routing the entry through the maker/taker decision.
 
@@ -280,7 +281,7 @@ class Executor:
         return await self._protect_entry(
             symbol, side, qty_s, tp_price, sl_price, position_idx, link, route="market")
 
-    async def _open_position_qty(self, symbol: str) -> Optional[float]:
+    async def _open_position_qty(self, symbol: str) -> float | None:
         """Absolute position size for `symbol`, or None when it cannot be determined.
 
         None is deliberately distinct from 0.0: 0.0 asserts "flat" and is a safe basis for abandoning
@@ -305,7 +306,7 @@ class Executor:
             return None
 
     @property
-    def adapter_or_none(self) -> Optional[ExchangeAdapter]:
+    def adapter_or_none(self) -> ExchangeAdapter | None:
         """Typed accessor for the optional adapter.
 
         WHY THIS EXISTS: `if getattr(self, "adapter", None) is not None:` does NOT narrow the
@@ -323,8 +324,8 @@ class Executor:
         return float((_dec(px) / t).to_integral_value() * t)
 
     def _protection_kwargs(self, side: str, ref_px: float, *,
-                           tp_bps: Optional[float], sl_bps: Optional[float],
-                           tick_size: Optional[float]) -> dict:
+                           tp_bps: float | None, sl_bps: float | None,
+                           tick_size: float | None) -> dict:
         """TP/SL to ATTACH to the entry order, anchored to the price it will fill at.
 
         Why attach rather than follow up: the previous sequence placed the entry and then made a second
@@ -408,8 +409,8 @@ class Executor:
         fill_px: float,
         tp_price: float,
         sl_price: float,
-        tp_bps: Optional[float],
-        sl_bps: Optional[float],
+        tp_bps: float | None,
+        sl_bps: float | None,
         tick_size: float,
     ) -> tuple[float, float]:
         """Re-derive TP/SL from the realised fill, then verify they sit on the correct side.
@@ -458,15 +459,15 @@ class Executor:
     async def _plan_entry(
         self,
         *,
-        quote_fn: Callable[[], Awaitable[Optional[QuoteSnapshot]]],
+        quote_fn: Callable[[], Awaitable[QuoteSnapshot | None]],
         side: str,
         tick_size: float,
-        gross_edge_bps: Optional[float],
-        peak_spread_bps: Optional[float],
+        gross_edge_bps: float | None,
+        peak_spread_bps: float | None,
         funding_bps: float = 0.0,
         impact_bps: float = 0.0,
         obi: float = 0.0,
-        toxicity: Optional["ToxicityPolicy"] = None,
+        toxicity: ToxicityPolicy | None = None,
     ) -> EntryPlan:
         """Read the book and ask the routing policy what to do.
 
@@ -488,9 +489,9 @@ class Executor:
         )
 
     async def _submit_order(self, symbol: str, side: str, qty_s: str, position_idx: int,
-                            link: str, *, price: Optional[str] = None,
+                            link: str, *, price: str | None = None,
                             tif: TimeInForce = TimeInForce.GTC,
-                            protection: Optional[dict] = None) -> None:
+                            protection: dict | None = None) -> None:
         """The single submission point for entries. Never bypasses `_place_idempotent`.
 
         `protection` rides on the entry order so the venue arms TP/SL at the instant of the fill.
@@ -527,9 +528,9 @@ class Executor:
             body["timeInForce"] = tif.value
         await self._place_entry(link, body, protection)
 
-    def _cross_protection(self, side: str, quote: Optional[QuoteSnapshot],
-                          tp_bps: Optional[float], sl_bps: Optional[float],
-                          tick_size: Optional[float]) -> dict:
+    def _cross_protection(self, side: str, quote: QuoteSnapshot | None,
+                          tp_bps: float | None, sl_bps: float | None,
+                          tick_size: float | None) -> dict:
         """Protection anchored to the TOUCH we are about to cross into.
 
         The crossing price is the touch, so that is the best pre-trade estimate of the fill and the
@@ -544,8 +545,8 @@ class Executor:
         return {}
 
     async def _submit_taker_cross(self, symbol: str, side: str, qty_s: str, position_idx: int,
-                                  link: str, *, quote: Optional[QuoteSnapshot],
-                                  protection: Optional[dict] = None) -> None:
+                                  link: str, *, quote: QuoteSnapshot | None,
+                                  protection: dict | None = None) -> None:
         """Cross the spread with an aggressive IOC limit.
 
         IOC rather than MARKET so the fill is price-capped: a market order into a thin book can
@@ -553,7 +554,7 @@ class Executor:
         approved. If the touch is unknown we fall back to MARKET — the gate has already established
         the edge is large enough to pay for crossing.
         """
-        price_s: Optional[str] = None
+        price_s: str | None = None
         if quote is not None and quote.is_usable():
             tif = TimeInForce.IOC
             px = quote.ask_px if side == "Buy" else quote.bid_px
@@ -577,7 +578,7 @@ class Executor:
 
     async def _protect_entry(self, symbol: str, side: str, qty_s: str, tp_price: float,
                              sl_price: float, position_idx: int, link: str, *,
-                             route: str, extra: Optional[dict] = None) -> dict:
+                             route: str, extra: dict | None = None) -> dict:
         """Register native TP/SL, and flatten if that fails.
 
         Unchanged semantics from the original path: a position that cannot be protected must not
@@ -712,7 +713,7 @@ class _MakerIO:
     concluding "no fill", which is what makes an unresolvable read safe rather than silent.
     """
 
-    def __init__(self, ex: "Executor", symbol: str, position_idx: int, *, quote_fn,
+    def __init__(self, ex: Executor, symbol: str, position_idx: int, *, quote_fn,
                  protection_fn=None) -> None:
         self.ex = ex
         self.symbol = symbol
@@ -723,7 +724,7 @@ class _MakerIO:
         # rest price IS the fill price — so it is the only correct anchor available pre-trade.
         self.protection_fn = protection_fn
 
-    async def book(self) -> Optional[QuoteSnapshot]:
+    async def book(self) -> QuoteSnapshot | None:
         try:
             return await self.quote_fn()
         except Exception as exc:

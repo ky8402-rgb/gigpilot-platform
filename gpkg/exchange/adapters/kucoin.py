@@ -30,7 +30,6 @@ from __future__ import annotations
 import base64
 import hashlib
 import hmac
-from typing import Optional
 
 from gpkg.core.clock import now_ms
 from gpkg.exchange.adapters._http import RestClient
@@ -74,7 +73,7 @@ class KucoinAdapter(ExchangeAdapter):
     name = "kucoin"
 
     def __init__(self, api_key: str = "", api_secret: str = "", passphrase: str = "",
-                 allow_trade: bool = False, rest: Optional[RestClient] = None):
+                 allow_trade: bool = False, rest: RestClient | None = None):
         self.api_key = api_key
         self.api_secret = api_secret
         self.passphrase = passphrase
@@ -123,8 +122,8 @@ class KucoinAdapter(ExchangeAdapter):
             raise ExchangeError(self.name, msg, code=code)
         return resp.get("data")
 
-    async def _signed(self, method: str, path: str, params: Optional[dict] = None,
-                      body: Optional[dict] = None, idempotent: bool = True):
+    async def _signed(self, method: str, path: str, params: dict | None = None,
+                      body: dict | None = None, idempotent: bool = True):
         import json as _json
         body_str = _json.dumps(body, separators=(",", ":")) if body else ""
         headers = self._headers(method, path, body_str)
@@ -149,7 +148,7 @@ class KucoinAdapter(ExchangeAdapter):
                 return parsed
         raise InstrumentUnknown(self.name, f"{symbol} is not listed")
 
-    def _parse(self, it: dict) -> Optional[Instrument]:
+    def _parse(self, it: dict) -> Instrument | None:
         try:
             sym = it.get("symbol") or ""
             base_raw = it.get("baseCurrency") or ""
@@ -179,7 +178,7 @@ class KucoinAdapter(ExchangeAdapter):
         except Exception:
             return None
 
-    def unified_to_native(self, unified: str) -> Optional[str]:
+    def unified_to_native(self, unified: str) -> str | None:
         """`BTC/USDT` -> `XBTUSDTM`. Exposed because callers must not guess the mapping."""
         if "/" not in unified:
             return None
@@ -369,7 +368,7 @@ class KucoinAdapter(ExchangeAdapter):
         await self._signed("DELETE", "/api/v1/orders", {"symbol": symbol})
 
     async def set_protection(self, symbol: str, side: Side, qty: str,
-                             take_profit: Optional[str], stop_loss: Optional[str]) -> None:
+                             take_profit: str | None, stop_loss: str | None) -> None:
         """KuCoin has no position-level TP/SL, so both legs are reduce-only stop orders."""
         if not take_profit and not stop_loss:
             return

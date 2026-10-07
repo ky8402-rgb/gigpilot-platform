@@ -38,7 +38,6 @@ from __future__ import annotations
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Optional
 
 
 # =====================================================================================
@@ -47,7 +46,7 @@ from typing import Optional
 class ExchangeError(Exception):
     """Base for every venue-side failure. Adapters must never let a raw library error escape."""
 
-    def __init__(self, exchange: str, message: str, code: Optional[str] = None, retryable: bool = False):
+    def __init__(self, exchange: str, message: str, code: str | None = None, retryable: bool = False):
         super().__init__(f"[{exchange}] {message}" + (f" (code={code})" if code else ""))
         self.exchange = exchange
         self.message = message
@@ -275,9 +274,9 @@ class OrderRequest:
     side: Side
     qty: str
     order_type: OrderType = OrderType.MARKET
-    price: Optional[str] = None
+    price: str | None = None
     reduce_only: bool = False
-    client_order_id: Optional[str] = None
+    client_order_id: str | None = None
     position_idx: int = 0
     # Defaults to GTC so every existing caller keeps today's behaviour. The ENTRY path sets this
     # explicitly from its routing decision; leaving it unset is what an un-routed order looks like.
@@ -288,8 +287,8 @@ class OrderRequest:
     # a crash between the two left a naked leveraged position with no local daemon (and, in
     # runtime-secret mode, no credential) able to close it. `None` means "not attached here" — the
     # post-fill protection path still runs and remains authoritative.
-    take_profit: Optional[str] = None
-    stop_loss: Optional[str] = None
+    take_profit: str | None = None
+    stop_loss: str | None = None
 
     def validate(self) -> None:
         if self.order_type is OrderType.MARKET and not self.reduce_only and not self.client_order_id:
@@ -308,7 +307,7 @@ class OrderResult:
     exchange: str
     symbol: str
     order_id: str
-    client_order_id: Optional[str]
+    client_order_id: str | None
     status: OrderStatus
     filled_qty: float = 0.0
     avg_price: float = 0.0
@@ -321,7 +320,7 @@ class Order:
     exchange: str
     symbol: str
     order_id: str
-    client_order_id: Optional[str]
+    client_order_id: str | None
     side: Side
     qty: float
     price: float
@@ -420,7 +419,7 @@ class ExchangeAdapter(ABC):
 
     @abstractmethod
     async def set_protection(self, symbol: str, side: Side, qty: str,
-                             take_profit: Optional[str], stop_loss: Optional[str]) -> None:
+                             take_profit: str | None, stop_loss: str | None) -> None:
         """Register NATIVE take-profit / stop-loss so protection survives this process dying."""
 
     def supports_native_protection(self) -> bool:

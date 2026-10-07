@@ -32,10 +32,10 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
-import pytest  # noqa: E402
+import pytest
 
-from gpkg.core import config as config_mod  # noqa: E402
-from gpkg.core.config import Config  # noqa: E402
+from gpkg.core import config as config_mod
+from gpkg.core.config import Config
 
 
 # ------------------------------------------------------------------------------------------------

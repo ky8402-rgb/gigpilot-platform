@@ -1,7 +1,14 @@
 from __future__ import annotations
 
 from gpkg.ml.data import align_point_in_time
-from gpkg.ml.lifecycle import CostBreakdown, ModelState, NetTrade, ValidationConfig, evaluate_candidate, PurgedWalkForward
+from gpkg.ml.lifecycle import (
+    CostBreakdown,
+    ModelState,
+    NetTrade,
+    PurgedWalkForward,
+    ValidationConfig,
+    evaluate_candidate,
+)
 
 
 def test_point_in_time_alignment_rejects_future_and_uses_latest_snapshot():

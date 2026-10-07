@@ -1,12 +1,20 @@
 from __future__ import annotations
 
-import pytest
 from pathlib import Path
+
+import pytest
 
 from gpkg.core.config import Config
 from gpkg.exchange.base import (
-    AccountSnapshot, ExchangeAdapter, FeeRate, OrderRequest, OrderResult,
-    OrderStatus, Position, Side, Ticker,
+    AccountSnapshot,
+    ExchangeAdapter,
+    FeeRate,
+    OrderRequest,
+    OrderResult,
+    OrderStatus,
+    Position,
+    Side,
+    Ticker,
 )
 from gpkg.execution.executor import Executor
 

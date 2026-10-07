@@ -28,12 +28,12 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
-import pytest  # noqa: E402
+import pytest
 
-from gpkg.core.config import Config  # noqa: E402
-from gpkg.core.clock import now_ms  # noqa: E402
-from gpkg.market.state import MarketState  # noqa: E402
-from gpkg.strategy.edge import EdgeEngine  # noqa: E402
+from gpkg.core.clock import now_ms
+from gpkg.core.config import Config
+from gpkg.market.state import MarketState
+from gpkg.strategy.edge import EdgeEngine
 
 HURDLE = 3.0
 ONEWAY_FEE_BPS = 5.5  # VIP0 linear taker, as returned by the venue

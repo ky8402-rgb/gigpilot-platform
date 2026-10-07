@@ -16,7 +16,6 @@ import os
 from gpkg.ml.audit import normalize_audit
 
 
-
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("command", choices=(
@@ -70,6 +69,7 @@ def main() -> int:
 
     if args.command == "tournament":
         import time as _time
+
         from gpkg.ml.data import HistoricalDataWorker, InsufficientDataError
         from gpkg.ml.tournament import run_tournament
         from gpkg.persistence.store import Store

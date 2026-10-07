@@ -24,8 +24,13 @@ import pytest
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
-from gpkg.execution.routing import QuoteSnapshot, micro_price, plan_entry, round_passive  # noqa: E402
-from gpkg.strategy.vpin import (  # noqa: E402
+from gpkg.execution.routing import (
+    QuoteSnapshot,
+    micro_price,
+    plan_entry,
+    round_passive,
+)
+from gpkg.strategy.vpin import (
     ToxicityPolicy,
     VpinConfig,
     VpinEngine,
@@ -344,7 +349,7 @@ def test_widening_moves_a_buy_away_from_the_ask_and_a_sell_away_from_the_bid():
 def test_widening_never_produces_a_crossing_price():
     """The passive guarantee must survive the retreat, or the venue rejects our post-only order and
     we get no fill at all."""
-    for extra in range(0, 6):
+    for extra in range(6):
         b = round_passive(micro_price(100.0, 100.2, 1, 1), 0.1, "Buy",
                           bid_px=100.0, ask_px=100.2, extra_ticks=extra)
         s = round_passive(micro_price(100.0, 100.2, 1, 1), 0.1, "Sell",
