@@ -16,13 +16,18 @@ BOOT_WARNING = ("SYSTEM REBOOTED: Credentials purged. Verify exchange manually f
                 "positions.")
 
 
-def _with_boot_warning(payload: dict) -> dict:
+def _with_boot_warning(payload: dict, engine_state: str | None = None) -> dict:
     """Attach the reboot warning to a COPY, keyed on the engine state.
 
     A copy, because `snapshot()` returns the engine's live dict; mutating it would leak the warning
     into every other consumer of the same object.
+
+    `engine_state` is passed EXPLICITLY by the callers rather than read only off the payload: the
+    snapshot's shape is not guaranteed to carry the field, and silently depending on it made this a
+    no-op that still looked wired.
     """
-    if payload.get("engine_state") == "AWAITING_SECRET":
+    state = payload.get("engine_state") or engine_state
+    if state == "AWAITING_SECRET":
         return {**payload, "boot_warning": BOOT_WARNING}
     return payload
 
@@ -79,8 +84,9 @@ def register_compat_routes(app, get_gp):
         auth=get_owner_auth(); return auth.status(auth.verify(extract_token(request) or ""))
     async def _read(request,symbol=None,id=None,challengerId=None):
         gp=_gp(); path=request.url.path; s=gp.snapshot()
-        if path.endswith("/state"): return _with_boot_warning(s)
-        if path.endswith("/health"): return _with_boot_warning({"status":"healthy" if s.get("reconciliation",{}).get("healthy") else "degraded",**s})
+        _state = gp.engine_state  # property, not a method
+        if path.endswith("/state"): return _with_boot_warning(s, _state)
+        if path.endswith("/health"): return _with_boot_warning({"status":"healthy" if s.get("reconciliation",{}).get("healthy") else "degraded",**s}, _state)
         if path.endswith("/readiness"): return {"ready":bool(s.get("armable")),"armed":s.get("armed"),"blockers":[] if s.get("armable") else ["live safety preflight has not passed"]}
         if path.endswith("/risk"): return {"equity":s.get("equity"),"gross_notional":s.get("gross_notional"),"margin_ratio":s.get("margin_ratio"),"armed":s.get("armed"),"position_mode":s.get("position_mode"),"hurdle_bps":s.get("hurdle_bps")}
         if path.endswith("/reconciliation/status"): return s.get("reconciliation",{})

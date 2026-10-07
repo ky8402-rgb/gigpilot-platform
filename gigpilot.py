@@ -1846,6 +1846,13 @@ async def health(request: Request):
         "authenticated": is_owner,
     }
 
+    # The reboot banner. In the PUBLIC tier on purpose: it is advisory, it discloses nothing about
+    # configuration or credential state, and the operator must be able to see it without the owner
+    # tier succeeding — which matters, because the whole condition is "the credential is gone".
+    if state == "AWAITING_SECRET":
+        from gpkg.api.compat import BOOT_WARNING
+        payload["boot_warning"] = BOOT_WARNING
+
     if is_owner:
         payload.update({
             # ---- OWNER TIER ----------------------------------------------------------
