@@ -611,6 +611,12 @@ class GigPilot:
         #: Why the last entry attempt did not happen, surfaced to the operator. `None` means no
         #: attempt has been blocked. A silent `return` is indistinguishable from "no signal".
         self.positioning_status: str = ""
+        #: SELF-DIAGNOSIS of the PUBLIC market-data path. The public WebSocket and the REST client
+        #: are SEPARATE connections, so a broken REST path presents as a live, fresh feed with an
+        #: empty market list — the venue looks half-dead. Nothing recorded WHY, and the only route
+        #: that could report it is owner-gated, so the cause was invisible unless an operator watched.
+        self.market_feed_ok: bool = False
+        self.market_feed_error: str = ""
         self.executor: Executor | None = None
         self.edge = EdgeEngine(cfg); self.risk = RiskGate(cfg)
         self.positions: dict[str, dict] = {}
@@ -837,9 +843,30 @@ class GigPilot:
         """True when POST /api/arm will accept a runtime secret."""
         return ready_for_arming(self.engine_state)
 
+    async def _probe_market_feed(self) -> None:
+        """One probe of the PUBLIC ticker read, recorded for the health payload.
+
+        Best-effort and NON-FATAL: this is diagnostic, not a gate, so a failure here must never stop
+        the daemon. It exists because the condition it describes is otherwise indistinguishable from
+        a healthy system — the WebSocket stays connected and the feed stays fresh while every REST
+        read fails.
+        """
+        try:
+            rows = await self.rest.tickers()
+            self.market_feed_ok = bool(rows)
+            self.market_feed_error = ""
+            log.info("market feed probe: %d symbols", len(rows))
+        except Exception as exc:
+            self.market_feed_ok = False
+            # Sanitised and TRUNCATED: type plus a short reason. No stack, no headers.
+            self.market_feed_error = f"{type(exc).__name__}: {exc}"[:160]
+
     async def start(self):
         log.info("GigPilot starting — host=%s symbols=%s", self.cfg.host, self.cfg.symbols)
         await self.rest.start()
+        # Probe the public market-data path at boot so the reason exists even if no operator ever
+        # opens the view that would otherwise trigger it.
+        await self._probe_market_feed()
 
         # --- Startup credential verification, conditional on a secret EXISTING -------------
         # Two genuinely different situations that used to be collapsed into one:
@@ -1883,6 +1910,11 @@ async def health(request: Request):
         "service": "Autonomous Crypto Grid Trading Platform",
         "healthy": healthy, "public_ws": public_ok,
         "private_ws": private_ok, "feed_fresh": fresh,
+        # Public market-data diagnostics. Deliberately PUBLIC: this is the venue ticker read, it
+        # discloses no credential or configuration state, and the whole problem it solves is that
+        # REST can fail while the socket stays up — a condition nobody could previously see.
+        "market_feed": {"ok": bool(getattr(gp, "market_feed_ok", False)),
+                        "error": str(getattr(gp, "market_feed_error", ""))[:160]},
         # ---- arming lifecycle, PUBLIC on purpose -------------------------------------------
         # The deploy gate is an UNAUTHENTICATED `curl` in verify-production.sh, and it must be able
         # to tell "the daemon is up and waiting for a secret" apart from "the daemon is broken". So

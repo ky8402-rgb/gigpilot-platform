@@ -144,7 +144,12 @@ def register_compat_routes(app, get_gp):
         gp=_gp()
         try:
             rows = await gp.rest.tickers()
+            gp.market_feed_ok = bool(rows)
+            gp.market_feed_error = ""
         except Exception as e:
+            # Record WHY, so the condition is readable from /api/health without an owner session.
+            gp.market_feed_ok = False
+            gp.market_feed_error = f"{type(e).__name__}: {e}"[:160]
             # Fail VISIBLY and CLOSED. Returning an empty list here would render as "this venue has no
             # markets", which is a different and much more dangerous claim than "the venue could not be
             # read", and would hide a broken feed behind a plausible-looking screen.
