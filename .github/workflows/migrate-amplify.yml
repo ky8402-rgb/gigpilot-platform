@@ -58,7 +58,7 @@ jobs:
         with:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID || secrets.ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY || secrets.AWS }}
-          aws-region: ${{ secrets.AWS_REGION || 'us-east-1' }}
+          aws-region: ${{ secrets.AMPLIFY_REGION || 'ap-south-1' }}
 
       - name: Run Migration Script
         env:
@@ -66,7 +66,11 @@ jobs:
           AMPLIFY_APP_NAME: ${{ github.event.inputs.amplify_app_name }}
           AMPLIFY_APP_ID: ${{ secrets.AMPLIFY_APP_ID || 'd2qe2q720fbn3x' }}
           FORCE_MIGRATE: ${{ github.event.inputs.force }}
-          AWS_REGION: ${{ secrets.AWS_REGION || 'us-east-1' }}
+          # Named AWS_REGION because `scripts/migrate-amplify-backend.sh` reads that exact
+          # variable — the NAME is fixed by the consumer, the VALUE is the Amplify region.
+          # Default is Mumbai, not us-east-1: Amplify is not in us-east-1 for this account, and
+          # the previous default made the app look missing.
+          AWS_REGION: ${{ secrets.AMPLIFY_REGION || 'ap-south-1' }}
           SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
         run: |
           chmod +x ./scripts/migrate-amplify-backend.sh

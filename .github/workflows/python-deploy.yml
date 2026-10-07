@@ -105,6 +105,17 @@ jobs:
     needs: validate
     runs-on: ubuntu-latest
     env:
+      # AMPLIFY LIVES IN MUMBAI (ap-south-1). This variable is deliberately NOT derived from
+      # `AWS_REGION`. The old form was `secrets.AWS_REGION || 'us-east-1'`, which meant that when the
+      # secret WAS set to us-east-1 the default never applied and the secret silently won — so
+      # `aws amplify get-app` queried the wrong region, the app was "not found", and the ENTIRE
+      # Amplify trigger was SKIPPED with an informational notice rather than failing. The frontend
+      # deploy was therefore never triggered or verified by CI, and nothing went red.
+      #
+      # A dedicated variable is required rather than a new default: any fallback to AWS_REGION
+      # reintroduces exactly that bug. Override with a repository secret named AMPLIFY_REGION if the
+      # app is ever moved.
+      AMPLIFY_REGION: ${{ secrets.AMPLIFY_REGION || 'ap-south-1' }}
       AWS_REGION: ${{ secrets.AWS_REGION || 'us-east-1' }}
       AMPLIFY_APP_ID: ${{ secrets.AMPLIFY_APP_ID || 'd2qe2q720fbn3x' }}
       AMPLIFY_BRANCH: main
@@ -134,7 +145,7 @@ jobs:
         with:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID || secrets.ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY || secrets.AWS }}
-          aws-region: ${{ env.AWS_REGION }}
+          aws-region: ${{ env.AMPLIFY_REGION }}
 
       - name: Validate AWS Session & Amplify Access
         id: auth_gate
@@ -145,8 +156,9 @@ jobs:
             exit 0
           fi
 
-          if ! aws amplify get-app --app-id "$AMPLIFY_APP_ID" --region "$AWS_REGION" >/tmp/amplify-app.json 2>&1; then
-            echo "::notice title=Amplify Access Notice::Amplify App ID '$AMPLIFY_APP_ID' is inaccessible or does not exist in region '$AWS_REGION'. Skipping Amplify trigger."
+          if ! aws amplify get-app --app-id "$AMPLIFY_APP_ID" --region "$AMPLIFY_REGION" >/tmp/amplify-app.json 2>&1; then
+            echo "::error title=Amplify Region Mismatch::Amplify App ID '$AMPLIFY_APP_ID' was not found in region '$AMPLIFY_REGION'. The frontend was NOT triggered and NOT verified. The app is likely in another region — set a repository secret AMPLIFY_REGION to the region shown in the Amplify console (Mumbai is ap-south-1)."
+            echo "::warning title=Amplify Skipped::Frontend trigger and SHA verification did not run for this release."
             echo "can_deploy=false" >> "$GITHUB_OUTPUT"
             exit 0
           fi
@@ -161,7 +173,7 @@ jobs:
           import json, os, subprocess
           app=json.load(open("/tmp/amplify-app.json"))["app"]
           assert app["appId"] == os.environ["AMPLIFY_APP_ID"]
-          branches=subprocess.check_output(["aws","amplify","list-branches","--app-id",os.environ["AMPLIFY_APP_ID"],"--region",os.environ["AWS_REGION"],"--query","branches[].branchName","--output","text"], text=True).split()
+          branches=subprocess.check_output(["aws","amplify","list-branches","--app-id",os.environ["AMPLIFY_APP_ID"],"--region",os.environ["AMPLIFY_REGION"],"--query","branches[].branchName","--output","text"], text=True).split()
           assert os.environ["AMPLIFY_BRANCH"] in branches, branches
           PY
 
@@ -179,7 +191,7 @@ jobs:
           set -euo pipefail
           python - <<'PY'
           import json, os, subprocess
-          app=os.environ["AMPLIFY_APP_ID"]; region=os.environ["AWS_REGION"]; url=os.environ["BACKEND_URL"]
+          app=os.environ["AMPLIFY_APP_ID"]; region=os.environ["AMPLIFY_REGION"]; url=os.environ["BACKEND_URL"]
           raw=subprocess.check_output(["aws","amplify","get-app","--app-id",app,"--region",region,"--query","app.environmentVariables","--output","json"], text=True)
           env=json.loads(raw or "{}")
           for key in ("API_BASE_URL","REACT_APP_API_URL","VITE_BACKEND_URL","VITE_API_BASE_URL","VITE_API_URL"): env[key]=url
@@ -191,7 +203,7 @@ jobs:
         if: steps.auth_gate.outputs.can_deploy == 'true'
         run: |
           set -euo pipefail
-          aws amplify start-job --app-id "$AMPLIFY_APP_ID" --branch-name "$AMPLIFY_BRANCH" --job-type RELEASE --region "$AWS_REGION" --output json >/tmp/amplify-release.json
+          aws amplify start-job --app-id "$AMPLIFY_APP_ID" --branch-name "$AMPLIFY_BRANCH" --job-type RELEASE --region "$AMPLIFY_REGION" --output json >/tmp/amplify-release.json
           JOB_ID="$(python -c 'import json; print(json.load(open("/tmp/amplify-release.json"))["jobSummary"]["jobId"])')"
           test -n "$JOB_ID"
           echo "job_id=$JOB_ID" >> "$GITHUB_OUTPUT"
@@ -204,7 +216,7 @@ jobs:
           set -euo pipefail
           deadline=$((SECONDS+900))
           while [ "$SECONDS" -lt "$deadline" ]; do
-            aws amplify get-job --app-id "$AMPLIFY_APP_ID" --branch-name "$AMPLIFY_BRANCH" --job-id "$JOB_ID" --region "$AWS_REGION" --output json >/tmp/amplify-job.json
+            aws amplify get-job --app-id "$AMPLIFY_APP_ID" --branch-name "$AMPLIFY_BRANCH" --job-id "$JOB_ID" --region "$AMPLIFY_REGION" --output json >/tmp/amplify-job.json
             set +e
             python - <<'PY'
           import json, os, sys
@@ -233,7 +245,7 @@ jobs:
         if: steps.auth_gate.outputs.can_deploy == 'true'
         run: |
           set -euo pipefail
-          DOMAIN="$(aws amplify get-app --app-id "$AMPLIFY_APP_ID" --region "$AWS_REGION" --query 'app.defaultDomain' --output text)"
+          DOMAIN="$(aws amplify get-app --app-id "$AMPLIFY_APP_ID" --region "$AMPLIFY_REGION" --query 'app.defaultDomain' --output text)"
           test -n "$DOMAIN" && test "$DOMAIN" != "None"
           export FRONTEND_URL="https://$AMPLIFY_BRANCH.$DOMAIN"
           curl --fail --silent --show-error --location --max-time 30 "$FRONTEND_URL" -o /tmp/index.html
