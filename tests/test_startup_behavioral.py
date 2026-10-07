@@ -73,14 +73,14 @@ _BOOT_SCRIPT = textwrap.dedent(
     if mode == "with-secret":
         from gpkg.core.runtime_secrets import BYBIT_SECRET, RuntimeSecretStore
         RuntimeSecretStore.instance().set(BYBIT_SECRET, "typed-by-operator-for-this-session")
-    elif mode == "stub-paper":
+    elif mode == "stub-disarmed":
         # A stub whose `engine_state` is a real PROPERTY returning a non-AWAITING value. This is the
         # negative banner case, and it stays offline: a live credential would send boot into venue
         # verification, which is not what this assertion is about.
         class _Stub:
             @property
             def engine_state(self):
-                return "PAPER"
+                return "DISARMED"
             async def start(self):
                 return None
             async def stop(self):
@@ -172,7 +172,7 @@ def test_no_banner_once_the_engine_is_past_awaiting_secret(tmp_path):
     cannot show the condition is actually FALSE when the state moves on — and a warning that is always
     on is not a warning. Runs against a stubbed engine so no venue call is involved.
     """
-    r = _boot(tmp_path, mode="stub-paper")
+    r = _boot(tmp_path, mode="stub-disarmed")
     assert r.get("RESULT_RAISED") == "none", r["_stdout_tail"]
     assert r.get("RESULT_BANNER") == "no", (
         f"banner fired outside AWAITING_SECRET. got {r.get('RESULT_BANNER')!r}\n{r['_stdout_tail']}"

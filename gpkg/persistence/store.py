@@ -72,18 +72,6 @@ class Store:
         );
         CREATE INDEX IF NOT EXISTS ix_ml_research_audits_model
             ON ml_research_audits(model_id, ts_ms);
-        CREATE TABLE IF NOT EXISTS paper_trades (
-            id INTEGER PRIMARY KEY AUTOINCREMENT, open_ts_ms INTEGER NOT NULL, close_ts_ms INTEGER,
-            symbol TEXT NOT NULL, side TEXT NOT NULL, qty REAL NOT NULL, entry_px REAL NOT NULL, exit_px REAL,
-            entry_fee_usd REAL NOT NULL DEFAULT 0, exit_fee_usd REAL NOT NULL DEFAULT 0,
-            entry_slippage_bps REAL NOT NULL DEFAULT 0, exit_slippage_bps REAL NOT NULL DEFAULT 0,
-            realized_pnl_usd REAL NOT NULL DEFAULT 0, model_id TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'open');
-        CREATE INDEX IF NOT EXISTS ix_paper_trades_status ON paper_trades(status, symbol);
-        CREATE TABLE IF NOT EXISTS paper_fills (
-            id INTEGER PRIMARY KEY AUTOINCREMENT, ts_ms INTEGER NOT NULL, trade_id INTEGER NOT NULL,
-            symbol TEXT NOT NULL, side TEXT NOT NULL, qty REAL NOT NULL, reference_px REAL NOT NULL,
-            fill_px REAL NOT NULL, slippage_bps REAL NOT NULL, fee_usd REAL NOT NULL, reason TEXT NOT NULL, model_id TEXT NOT NULL);
-        CREATE INDEX IF NOT EXISTS ix_paper_fills_trade ON paper_fills(trade_id, ts_ms);
         """)
         self._conn.commit()
 
@@ -273,32 +261,12 @@ class Store:
         count=int(row[0] or 0) if row else 0; first=int(row[1]) if row and row[1] is not None else None; last=int(row[2]) if row and row[2] is not None else None
         return {"rows":count,"first_ts_ms":first,"last_ts_ms":last,"span_ms":(last-first) if first is not None and last is not None else 0}
 
-    def paper_open_trade(self,symbol,side,qty,entry_px,entry_fee_usd,entry_slippage_bps,model_id)->int:
-        cur=self._conn.execute("""INSERT INTO paper_trades(open_ts_ms,symbol,side,qty,entry_px,entry_fee_usd,entry_slippage_bps,model_id,status)
-                                 VALUES(?,?,?,?,?,?,?,?, 'open')""",(now_ms(),symbol,side,qty,entry_px,entry_fee_usd,entry_slippage_bps,model_id)); self._conn.commit()
-        if cur.lastrowid is None:
-            raise RuntimeError("SQLite did not return a paper trade id")
-        return int(cur.lastrowid)
-
-    def paper_close_trade(self,trade_id,exit_px,exit_fee_usd,exit_slippage_bps,realized_pnl_usd):
-        self._conn.execute("""UPDATE paper_trades SET status='closed',close_ts_ms=?,exit_px=?,exit_fee_usd=?,exit_slippage_bps=?,realized_pnl_usd=?
-                              WHERE id=? AND status='open'""",(now_ms(),exit_px,exit_fee_usd,exit_slippage_bps,realized_pnl_usd,trade_id)); self._conn.commit()
-
-    def paper_record_fill(self,trade_id,symbol,side,qty,reference_px,fill_px,slippage_bps,fee_usd,reason,model_id):
-        self._conn.execute("""INSERT INTO paper_fills(ts_ms,trade_id,symbol,side,qty,reference_px,fill_px,slippage_bps,fee_usd,reason,model_id)
-                              VALUES(?,?,?,?,?,?,?,?,?,?,?)""",(now_ms(),trade_id,symbol,side,qty,reference_px,fill_px,slippage_bps,fee_usd,reason,model_id)); self._conn.commit()
-
-    def paper_open_trades(self)->list[dict]:
-        rows=self._conn.execute("""SELECT id,open_ts_ms,symbol,side,qty,entry_px,entry_fee_usd,entry_slippage_bps,model_id
-                                   FROM paper_trades WHERE status='open' ORDER BY id""").fetchall()
-        cols=["id","open_ts_ms","symbol","side","qty","entry_px","entry_fee_usd","entry_slippage_bps","model_id"]; return [dict(zip(cols,r)) for r in rows]
-
-    def paper_stats(self)->dict:
-        row=self._conn.execute("""SELECT COUNT(*),COALESCE(SUM(CASE WHEN realized_pnl_usd>0 THEN 1 ELSE 0 END),0),COALESCE(SUM(realized_pnl_usd),0)
-                                  FROM paper_trades WHERE status='closed'""").fetchone()
-        fill=self._conn.execute("SELECT COUNT(*),COALESCE(AVG(slippage_bps),0) FROM paper_fills").fetchone(); closed=int(row[0] or 0); wins=int(row[1] or 0)
-        return {"closed_trades":closed,"wins":wins,"win_rate":wins/closed if closed else 0.0,"realized_pnl_usd":f(row[2] if row else 0),
-                "fills":int(fill[0] or 0) if fill else 0,"avg_slippage_bps":f(fill[1] if fill else 0)}
+    def ml_market_symbols(self, kind: str) -> list[str]:
+        """Symbols with at least one row of `kind`. Used by the operator-facing ingestion indicator."""
+        rows = self._conn.execute(
+            "SELECT DISTINCT symbol FROM ml_market_data WHERE kind=? ORDER BY symbol", (kind,),
+        ).fetchall()
+        return [str(r[0]) for r in rows]
 
     def ml_research_audit(self, model_id: str, outcome: str, reason: str, payload: dict) -> None:
         self._conn.execute(

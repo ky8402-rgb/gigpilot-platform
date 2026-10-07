@@ -34,7 +34,6 @@ from gpkg.core.engine_state import (
     DEPLOY_ACCEPTABLE_STATES,
     DISARMED,
     ENGINE_STATES,
-    PAPER,
     assess_engine_state,
     is_deploy_acceptable,
     ready_for_arming,
@@ -51,10 +50,13 @@ def test_state_machine_truth_table():
                 execution_mode="live", armed=False)
     assert assess_engine_state(**base) == DISARMED
     assert assess_engine_state(**{**base, "armed": True}) == ARMED
-    assert assess_engine_state(**{**base, "execution_mode": "paper"}) == PAPER
-    # Paper stays paper even when armed: the operator's arm request is real, but the exchange
-    # boundary is never crossed in paper mode.
-    assert assess_engine_state(**{**base, "execution_mode": "paper", "armed": True}) == PAPER
+    # LIVE-ONLY: a non-live mode is a CONFIGURATION ERROR (`Config.from_env` refuses it and exits),
+    # not a state. If one somehow reaches the assessor it reports DISARMED — never a simulation
+    # state — so an unexpected mode reads as "idle and doing nothing" rather than "running safely".
+    for mode in ("paper", "sim", "testnet", ""):
+        assert assess_engine_state(**{**base, "execution_mode": mode}) == DISARMED, mode
+        assert assess_engine_state(**{**base, "execution_mode": mode,
+                                      "armed": True}) == DISARMED, mode
 
 
 def test_awaiting_secret_dominates_every_other_input():
@@ -95,17 +97,19 @@ def test_a_loaded_secret_only_ever_adds_capability_never_removes_it():
 
 def test_ready_for_arming_is_true_only_while_awaiting_the_secret():
     assert ready_for_arming(AWAITING_SECRET) is True
-    for other in (PAPER, ARMED, DISARMED, "nonsense"):
+    for other in (ARMED, DISARMED, "nonsense"):
         assert ready_for_arming(other) is False, other
 
 
 def test_deploy_accepts_every_state_that_does_not_require_live_credentials():
     assert AWAITING_SECRET in DEPLOY_ACCEPTABLE_STATES
-    assert PAPER in DEPLOY_ACCEPTABLE_STATES
     assert ARMED in DEPLOY_ACCEPTABLE_STATES
+    # DISARMED is now acceptable BY DESIGN. The mode is unconditionally live and the deploy pins
+    # GIGPILOT_LIVE_ARMED=0, so "live mode, boundary closed, idle" is the NORMAL resting state after
+    # a rollout rather than a fault — requiring ARMED would make every deploy self-sealing.
+    assert DISARMED in DEPLOY_ACCEPTABLE_STATES
     assert is_deploy_acceptable(AWAITING_SECRET) is True
-    # DISARMED is deliberately NOT acceptable: live mode was requested and the engine is not live.
-    assert DISARMED not in DEPLOY_ACCEPTABLE_STATES
+    assert "PAPER" not in ENGINE_STATES, "live-only: there is no simulation state"
 
 
 # =============================================================================================
@@ -334,7 +338,7 @@ def test_gate_script_asserts_the_lifecycle_contract(script):
     text = script.read_text(encoding="utf-8")
     assert "engine_state" in text, f"{script.name} does not assert engine_state"
     assert 'status="ok"' in text.replace(" ", "") or 'status": "ok"' in text or "status=ok" in text
-    for state in ("AWAITING_SECRET", "PAPER", "ARMED"):
+    for state in ("AWAITING_SECRET", "ARMED", "DISARMED"):
         assert state in text, f"{script.name} does not accept {state}"
     assert "healthy" in text
 

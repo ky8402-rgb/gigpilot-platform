@@ -182,8 +182,8 @@ print("true" if isinstance(d,dict) and d.get("healthy") is True else "false")' 2
   [[ "$SYS_STATUS" == "ok" ]] || LIFECYCLE_PROBLEMS="${LIFECYCLE_PROBLEMS} status='${SYS_STATUS}' (expected 'ok');"
   [[ "$HEALTHY_FLAG" == "true" ]] || LIFECYCLE_PROBLEMS="${LIFECYCLE_PROBLEMS} healthy='${HEALTHY_FLAG}' (expected true);"
   case "$ENGINE_STATE" in
-    AWAITING_SECRET|PAPER|ARMED) ;;
-    *) LIFECYCLE_PROBLEMS="${LIFECYCLE_PROBLEMS} engine_state='${ENGINE_STATE}' (expected AWAITING_SECRET, PAPER or ARMED);" ;;
+    AWAITING_SECRET|ARMED|DISARMED) ;;
+    *) LIFECYCLE_PROBLEMS="${LIFECYCLE_PROBLEMS} engine_state='${ENGINE_STATE}' (expected AWAITING_SECRET, ARMED or DISARMED);" ;;
   esac
 
   if [[ -z "$LIFECYCLE_PROBLEMS" ]]; then

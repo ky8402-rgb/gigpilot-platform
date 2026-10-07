@@ -71,7 +71,7 @@ class _Reconciler:
 class _Cfg:
     staleness_ms = 5000
     host = "https://api-demo-secret-host.example.com"
-    execution_mode = "paper"
+    execution_mode = "live"
     require_runtime_secret = False
 
 

@@ -25,8 +25,6 @@ THE STATES
   AWAITING_SECRET  runtime-secret mode with no secret loaded. The process is UP and will accept a
                    secret; nothing can be signed until one arrives. This is a healthy, intended
                    resting state — NOT a fault.
-  PAPER            execution_mode is not live. Signals and telemetry only; the exchange boundary is
-                   never crossed.
   ARMED            live execution mode with the engine armed. Capital can move.
   DISARMED         live execution mode, not armed (kill switch, sticky disarm, or a refused
                    preflight). Deliberately NOT in DEPLOY_ACCEPTABLE_STATES: live mode was
@@ -42,16 +40,15 @@ capability, never grants it.
 from __future__ import annotations
 
 AWAITING_SECRET = "AWAITING_SECRET"
-PAPER = "PAPER"
 ARMED = "ARMED"
 DISARMED = "DISARMED"
 
 #: Every state this module can report. Ordered by lifecycle.
-ENGINE_STATES: tuple[str, ...] = (AWAITING_SECRET, PAPER, ARMED, DISARMED)
+ENGINE_STATES: tuple[str, ...] = (AWAITING_SECRET, ARMED, DISARMED)
 
 #: States a DEPLOYMENT may legitimately observe. A release must never require that live trading has
 #: already been armed with credentials: arming is an owner action performed after the rollout.
-DEPLOY_ACCEPTABLE_STATES: tuple[str, ...] = (AWAITING_SECRET, PAPER, ARMED)
+DEPLOY_ACCEPTABLE_STATES: tuple[str, ...] = (AWAITING_SECRET, ARMED, DISARMED)
 
 
 def assess_engine_state(
@@ -71,7 +68,11 @@ def assess_engine_state(
     if require_runtime_secret and not secret_loaded:
         return AWAITING_SECRET
     if str(execution_mode or "").strip().lower() != "live":
-        return PAPER
+        # A non-live mode is now a CONFIGURATION ERROR, not a state: `Config.from_env` refuses it and
+        # exits, so reaching here means something bypassed that. Report DISARMED — never a simulation
+        # state — so an unexpected mode reads as "idle and doing nothing" rather than "running safely
+        # in paper", which is the ambiguity this change exists to remove.
+        return DISARMED
     return ARMED if armed else DISARMED
 
 

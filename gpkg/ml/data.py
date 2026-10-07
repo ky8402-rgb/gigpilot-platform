@@ -51,9 +51,11 @@ class LiquiditySnapshot:
 # This matters more here than in most clients: L2 depth is FORWARD-ONLY. Bybit publishes no historical
 # order book, so depth that is not captured as it happens cannot be re-fetched later at any price. A
 # throttle that ends a collection run therefore destroys the data permanently rather than delaying it.
-# How many L2 snapshots per symbol the training gate demands. ONE definition: the gate, the CLI's
-# ETA projection and the tests all read this, so they cannot drift apart.
-L2_REQUIRED = 10_000
+# Re-exported from the dependency-free module so that a caller which only needs the number does not
+# have to import aiohttp along with it. `from gpkg.ml.data import L2_REQUIRED` keeps working.
+from gpkg.core.constants import (
+    L2_REQUIRED,
+)
 
 RETRYABLE_STATUS = frozenset({429, 500, 502, 503, 504})
 RETRYABLE_RET_CODES = frozenset({10006})

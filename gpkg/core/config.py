@@ -115,7 +115,7 @@ class Config:
     ws_public: str = WS_PUBLIC
     ws_private: str = WS_PRIVATE
     arm: bool = False
-    execution_mode: str = "paper"
+    execution_mode: str = "live"
     live_armed: bool = False
     recv_window: str = "5000"
     edge_hurdle_bps: float = 3.0
@@ -206,18 +206,27 @@ class Config:
             print(f"FATAL: host must be exactly {LIVE_HOST}.", file=sys.stderr)
             sys.exit(2)
         syms = [s.strip().upper() for s in os.getenv("GIGPILOT_SYMBOLS", "BTCUSDT,ETHUSDT,SOLUSDT").split(",") if s.strip()]
-        execution_mode = os.getenv("GIGPILOT_EXECUTION_MODE", "paper").strip().lower()
+        # LIVE-ONLY. There is no paper option: any other value is refused outright rather than
+        # silently falling back, because a simulator that can be reached by configuration is exactly
+        # the ambiguity live-only is meant to remove.
+        execution_mode = os.getenv("GIGPILOT_EXECUTION_MODE", "live").strip().lower()
         live_armed = os.getenv("GIGPILOT_LIVE_ARMED", "0") == "1"
         if not syms:
             print("FATAL: GIGPILOT_SYMBOLS empty.", file=sys.stderr)
             sys.exit(2)
-        if execution_mode not in {"paper", "live"}:
-            print("FATAL: GIGPILOT_EXECUTION_MODE must be paper or live.", file=sys.stderr)
+        if execution_mode != "live":
+            print(f"FATAL: GIGPILOT_EXECUTION_MODE must be 'live' (got {execution_mode!r}); "
+                  "this platform is live-only and has no simulation mode.", file=sys.stderr)
             sys.exit(2)
-        if execution_mode == "live" and not live_armed:
-            # Live execution is deliberately fail-closed: configuration alone cannot arm capital.
-            print("FATAL: live execution requires GIGPILOT_LIVE_ARMED=1.", file=sys.stderr)
-            sys.exit(2)
+        if not live_armed:
+            # NOT fatal, and deliberately so. Now that the mode is unconditionally "live", a closed
+            # boundary is the NORMAL resting state rather than a misconfiguration — the deploy pins
+            # GIGPILOT_LIVE_ARMED=0 on purpose. The gate itself is unchanged and still ANDed with
+            # `execution_mode` at the execution boundary, so configuration alone still cannot arm
+            # capital: the boundary additionally needs the runtime secret and an explicit owner ARM.
+            print("NOTICE: GIGPILOT_LIVE_ARMED=0 — the exchange boundary stays CLOSED. The engine "
+                  "collects signals and remains idle; it does not fall back to a simulation.",
+                  file=sys.stderr)
         return Config(
             api_key=key,
             api_secret=secret,

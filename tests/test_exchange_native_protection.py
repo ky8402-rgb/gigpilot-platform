@@ -215,7 +215,7 @@ def test_the_reboot_warning_is_attached_only_while_awaiting_a_secret():
     assert awaiting["boot_warning"] == BOOT_WARNING
     assert "Verify exchange manually for unmanaged positions" in BOOT_WARNING
 
-    for steady in ("PAPER", "ARMED", "DISARMED"):
+    for steady in ("ARMED", "DISARMED"):
         assert "boot_warning" not in _with_boot_warning({"engine_state": steady})
 
 

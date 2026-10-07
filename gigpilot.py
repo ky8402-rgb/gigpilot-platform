@@ -113,7 +113,6 @@ from gpkg.execution.routing import QuoteSnapshot
 # =============================================================================
 from gpkg.market.state import MarketState
 from gpkg.ml.registry import ModelRegistry
-from gpkg.paper.engine import PaperTradingEngine
 
 # =============================================================================
 # 8. Store (MIGRATED -> gpkg/persistence/store.py)
@@ -189,9 +188,9 @@ PRIVATE_WS_SECRET_POLL_S = 5.0
 
 
 class BybitWS:
-    def __init__(self, cfg: Config, markets: dict, on_private_event=None, on_public_event=None,
+    def __init__(self, cfg: Config, markets: dict, on_private_event=None,
                  signing_secret=None):
-        self.cfg=cfg; self.markets=markets; self.on_private_event=on_private_event; self.on_public_event=on_public_event
+        self.cfg=cfg; self.markets=markets; self.on_private_event=on_private_event
         # ONE secret-resolution rule for the whole process. The private socket signs with the same
         # runtime-first / config-second / fail-closed resolver the REST client uses, injected here
         # rather than reimplemented. It previously read `cfg.api_secret` DIRECTLY, so in
@@ -306,7 +305,6 @@ class BybitWS:
             if mtype == "snapshot": ms.apply_book_snapshot(b, a)
             else: ms.apply_book_delta(b, a)
             METRICS.set("gigpilot_tick_age_ms", now_ms() - ms.ts_book_ms, symbol=sym)
-            if self.on_public_event: self.on_public_event("book", sym, ms, data)
         elif topic.startswith("kline.1."):
             sym=topic.split(".",2)[2]; ms=self.markets.get(sym)
             if ms is None or not isinstance(data,list): return
@@ -319,7 +317,6 @@ class BybitWS:
                 if bool(row.get("confirm")):
                     close=f(row.get("close"))
                     if close>0: ms.closes_1m.append(close)
-                if self.on_public_event: self.on_public_event("kline",sym,ms,row)
         elif topic.startswith("tickers."):
             sym = topic.split(".", 1)[1]; ms = self.markets.get(sym)
             if ms is None or not isinstance(data, dict): return
@@ -616,12 +613,11 @@ class GigPilot:
         self.reconciler = Reconciler(cfg, self.exchange, self.store, self.positions)
         self.accounting = AccountingReconciler(self.exchange, self.store)
         self.fee_rate_bps: dict[str, float] = {}
-        self.paper = PaperTradingEngine(self.store,self.model_registry,self.markets,self.fee_rate_bps,hurdle_bps=max(8.0,self.cfg.edge_hurdle_bps),starting_equity=f(os.getenv("GIGPILOT_PAPER_EQUITY"),10000.0),stale_ms=500)
         # The private socket authenticates through the REST client's own secret resolver, so there is
         # exactly ONE rule for which key is in force (runtime-first, config-second, fail closed) and
         # the socket and every signed REST call can never disagree about it.
         self.ws = BybitWS(cfg, self.markets, on_private_event=self._on_private,
-                          on_public_event=self._on_public_market, signing_secret=self.rest._secret)
+                          signing_secret=self.rest._secret)
         # Per-symbol VPIN bucket-size provenance, populated at boot by `_calibrate_vpin_buckets`.
         # Surfaced in the owner health tier so a fallback-sized bucket is visible to the operator
         # instead of being a silent property of the run.
@@ -828,7 +824,7 @@ class GigPilot:
         """Whether capital can move RIGHT NOW: live execution mode AND the engine armed.
 
         Distinct from `self.armed`, which is the operator's arm request and can be True while the
-        engine is still in PAPER mode where the exchange boundary is never crossed.
+        exchange boundary is still closed by `live_armed`, in which case the engine is idle.
         """
         return bool(self.cfg.execution_mode == "live" and self.armed)
 
@@ -955,7 +951,6 @@ class GigPilot:
             try: await self.rest.set_leverage(s, self.cfg.max_leverage)
             except Exception as e: log.warning("set_leverage %s: %s", s, e)
 
-        self.paper.warmup()
         self.armed, arm_source = self._restore_arm_state()
         if self.force_disarm:
             self.armed=False; arm_source="GIGPILOT_FORCE_DISARM"; self._persist_arm_state(self.ARM_DISARMED)
@@ -1031,7 +1026,7 @@ class GigPilot:
             reasons.append(item)
 
         if self.force_disarm:
-            block("LIVE_EXECUTION_POLICY", "Real-capital execution is policy-disarmed while live paper qualification is active.")
+            block("LIVE_EXECUTION_POLICY", "Real-capital execution is policy-disarmed by GIGPILOT_FORCE_DISARM.")
         # A runtime-injected secret COUNTS as credentials.
         #
         # In runtime-secret mode `cfg.api_secret` is deliberately empty — the secret is typed per
@@ -1196,14 +1191,6 @@ class GigPilot:
             log.warning("MANUAL ARM: all safety gates passed")
         return True, reasons
 
-    # ---------- public market events -> isolated paper engine ----------
-    def _on_public_market(self, kind: str, symbol: str, ms: MarketState, payload: dict):
-        try:
-            if kind=="book": self.paper.on_book(symbol,ms)
-            elif kind=="kline": self.paper.on_kline(symbol,payload)
-        except Exception as e:
-            log.error("paper market handler %s %s: %s",kind,symbol,e); METRICS.inc("gigpilot_paper_errors_total",kind=kind,symbol=symbol)
-
     # ---------- private WS events ----------
     async def _on_private(self, msg: dict):
         topic = msg.get("topic"); data = msg.get("data")
@@ -1345,8 +1332,9 @@ class GigPilot:
                     self.signals[sym] = est
 
         if not self.armed: return
-        # Paper mode may collect signals/telemetry but is never allowed to cross the exchange
-        # execution boundary. Live capital requires the explicit runtime mode plus dual confirmation.
+        # Signals and telemetry are collected but the exchange boundary is NOT crossed until both
+        # `live_armed` (policy) and the runtime secret (credential) are present. This is the ONLY
+        # execution path: there is no fallback to a simulation, so an unarmed engine is simply idle.
         if self.cfg.execution_mode != "live" or not self.cfg.live_armed:
             return
 
@@ -1553,7 +1541,6 @@ class GigPilot:
                         for s, m in self.markets.items()],
             "events": list(self.last_events)[-30:],
             "live_execution_policy": "FORCE_DISARMED" if self.force_disarm else "OWNER_GATED",
-            "paper": self.paper.snapshot(),
             "ops": operational_snapshot(self.store, self.cfg.db_path),
             "ml": {
                 "models": [
