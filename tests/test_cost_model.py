@@ -40,18 +40,18 @@ ONEWAY_FEE_BPS = 5.5  # VIP0 linear taker, as returned by the venue
 
 
 def make_cfg(**over):
-    base = dict(
-        api_key="k",
-        api_secret="s",
-        symbols=["BTCUSDT"],
-        edge_hurdle_bps=HURDLE,
-        fee_round_trip_multiple=2.0,
-        adverse_selection_factor=0.5,
-        slippage_factor=0.5,
-        signal_fair_shift_bps=30.0,
-        staleness_ms=1500,
-        book_levels=5,
-    )
+    base = {
+        "api_key": "k",
+        "api_secret": "s",
+        "symbols": ["BTCUSDT"],
+        "edge_hurdle_bps": HURDLE,
+        "fee_round_trip_multiple": 2.0,
+        "adverse_selection_factor": 0.5,
+        "slippage_factor": 0.5,
+        "signal_fair_shift_bps": 30.0,
+        "staleness_ms": 1500,
+        "book_levels": 5,
+    }
     base.update(over)
     return Config(**base)
 

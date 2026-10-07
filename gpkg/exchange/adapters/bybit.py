@@ -251,7 +251,7 @@ class BybitAdapter(ExchangeAdapter):
         perms = info.get("permissions") or {}
         for group_name, values in perms.items():
             if isinstance(values, dict):
-                normalized = {str(v).strip().lower() for v in values.keys()}
+                normalized = {str(v).strip().lower() for v in values}
                 if any("withdraw" in v for v in normalized):
                     return False, f"API key has withdrawal permission in {group_name}; refusing live execution"
             if isinstance(values, (list, tuple, set)):

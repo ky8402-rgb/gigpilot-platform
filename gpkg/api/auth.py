@@ -39,6 +39,7 @@ import binascii
 import hashlib
 import hmac
 import json
+import logging
 import os
 import secrets
 import time
@@ -46,6 +47,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from fastapi import HTTPException, Request
+
+log = logging.getLogger("gigpilot.auth")
 
 # RFC 4648 Base32 alphabet (TOTP secrets are shared with authenticator apps as ASCII base32).
 _B32 = "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567"
@@ -273,8 +276,8 @@ def _load_dotenv_once() -> None:
             if candidate.is_file():
                 load_dotenv(dotenv_path=candidate, override=False)
                 return
-        except Exception:
-            continue
+        except Exception as exc:
+            log.debug("unable to load dotenv file %s: %s", candidate, exc)
 
 
 def _load_or_create_config() -> OwnerConfig:

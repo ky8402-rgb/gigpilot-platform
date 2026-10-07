@@ -529,13 +529,13 @@ class Executor:
                 stop_loss=protection.get("stopLoss"),
             ))
             return
-        body = dict(
-            category="linear",
-            symbol=symbol,
-            side=side,
-            qty=qty_s,
-            positionIdx=position_idx,
-        )
+        body = {
+            "category": "linear",
+            "symbol": symbol,
+            "side": side,
+            "qty": qty_s,
+            "positionIdx": position_idx,
+        }
         if price is None:
             body["orderType"] = "Market"
         else:

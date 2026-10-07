@@ -40,14 +40,14 @@ def _client(make_engine, monkeypatch):
     monkeypatch.delenv("OWNER_SESSION_SECRET", raising=False)
     auth_mod._OWNER_AUTH = None
 
-    engine, fake = make_engine()
+    engine, _fake = make_engine()
     monkeypatch.setattr(gp, "get_gp", lambda: engine)
     client = TestClient(gp.app, raise_server_exceptions=False)
     return client, {"Authorization": f"Bearer {auth_mod.get_owner_auth().mint()}"}, engine
 
 
 def test_universe_matches_the_ui_contract(make_engine, monkeypatch):
-    client, headers, engine = _client(make_engine, monkeypatch)
+    client, headers, _engine = _client(make_engine, monkeypatch)
     r = client.get("/api/trading/futures/universe", headers=headers)
     assert r.status_code == 200, r.text
     body = r.json()

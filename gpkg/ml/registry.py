@@ -21,6 +21,8 @@ from .lifecycle import (
     should_rollback,
 )
 
+_DEFAULT_VALIDATION_CONFIG = ValidationConfig()
+
 _ALLOWED: dict[ModelState | None, set[ModelState]] = {
     None: {ModelState.RESEARCH, ModelState.VALIDATED},
     ModelState.RESEARCH: {ModelState.RESEARCH, ModelState.VALIDATED},
@@ -100,7 +102,7 @@ class ModelRegistry:
         live_trades: builtins.list[NetTrade],
         drift: DriftReport,
         *,
-        config: ValidationConfig = ValidationConfig(),
+        config: ValidationConfig = _DEFAULT_VALIDATION_CONFIG,
     ) -> tuple[bool, str, ModelEvidence]:
         current = self.get(model_id)
         if current is None:

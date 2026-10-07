@@ -26,12 +26,12 @@ import math
 import os
 import time
 from collections import deque
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Callable
 from contextlib import asynccontextmanager
 from dataclasses import asdict
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any
 
 import aiohttp
 import uvicorn
@@ -163,16 +163,29 @@ from gpkg.strategy.vpin_calibration import (
 # `DUPLICATE_ORDER_LINK_CODE`, `Metrics`, `Config`, `LIVE_HOST`, ...) precisely so that cannot happen
 # quietly.
 __all__ = [
-    # gpkg.core.config
-    "Config", "LIVE_HOST", "WS_PUBLIC", "WS_PRIVATE", "FORBIDDEN",
-    "_maybe_load_local_keys", "_maybe_load_aws_secret",
-    # gpkg.core.logging / metrics
-    "JsonFormatter", "setup_logging", "Metrics",
+    "DUPLICATE_ORDER_LINK_CODE",
+    "FORBIDDEN",
+    "LIVE_HOST",
+    "TOKEN_TTL_SECONDS",
+    "WS_PRIVATE",
+    "WS_PUBLIC",
     # gpkg.core.errors
-    "BybitError", "DUPLICATE_ORDER_LINK_CODE",
+    "BybitError",
+    # gpkg.core.config
+    "Config",
+    # gpkg.core.logging / metrics
+    "JsonFormatter",
+    "Metrics",
     # gpkg.api.auth
-    "OwnerAuth", "TOKEN_TTL_SECONDS", "get_owner_auth", "owner_authenticated", "require_owner",
-    "set_session_cookie", "clear_session_cookie",
+    "OwnerAuth",
+    "_maybe_load_aws_secret",
+    "_maybe_load_local_keys",
+    "clear_session_cookie",
+    "get_owner_auth",
+    "owner_authenticated",
+    "require_owner",
+    "set_session_cookie",
+    "setup_logging",
 ]
 
 
@@ -267,9 +280,9 @@ class BybitWS:
         backoff = 1.0
         while not self._stop.is_set():
             try:
-                async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(
-                        total=None, sock_connect=10, sock_read=60)) as sess:
-                    async with sess.ws_connect(self.cfg.ws_public, heartbeat=20) as ws:
+                async with aiohttp.ClientSession(
+                    timeout=aiohttp.ClientTimeout(total=None, sock_connect=10, sock_read=60)
+                ) as sess, sess.ws_connect(self.cfg.ws_public, heartbeat=20) as ws:
                         self._public_ok = True
                         METRICS.set("gigpilot_ws_connected", 1, stream="public")
                         backoff = 1.0
@@ -369,9 +382,9 @@ class BybitWS:
                 await asyncio.sleep(PRIVATE_WS_SECRET_POLL_S)
                 continue
             try:
-                async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(
-                        total=None, sock_connect=10, sock_read=60)) as sess:
-                    async with sess.ws_connect(self.cfg.ws_private, heartbeat=20) as ws:
+                async with aiohttp.ClientSession(
+                    timeout=aiohttp.ClientTimeout(total=None, sock_connect=10, sock_read=60)
+                ) as sess, sess.ws_connect(self.cfg.ws_private, heartbeat=20) as ws:
                         expires = int((time.time() + 10) * 1000)
                         sig = hmac.new(secret.encode(),
                                        f"GET/realtime{expires}".encode(),
@@ -1372,7 +1385,7 @@ class GigPilot:
         await asyncio.sleep(3)
         while not self._stop.is_set():
             try: await self._strategy_tick()
-            except Exception as e: log.error("strategy tick: %s", e, exc_info=True)
+            except Exception: log.exception("strategy tick")
             try: await asyncio.wait_for(self._stop.wait(), timeout=1.5)
             except asyncio.TimeoutError: pass
 

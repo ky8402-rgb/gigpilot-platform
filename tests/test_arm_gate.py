@@ -66,7 +66,7 @@ async def test_blocks_when_not_authorized_to_trade(make_engine):
     permission probe reveals that order placement would be refused. Arming on this key would create
     an engine that reports itself live and then fails on every entry.
     """
-    engine, fake = await _engine(make_engine, trade_permission=False)
+    engine, _fake = await _engine(make_engine, trade_permission=False)
     ok, reasons = await engine.arm()
     assert ok is False, "armed on a key that cannot place futures orders"
     assert engine.armed is False

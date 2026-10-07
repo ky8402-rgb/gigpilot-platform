@@ -25,6 +25,7 @@ from __future__ import annotations
 import os
 import sys
 from pathlib import Path
+from typing import ClassVar
 
 import pytest
 
@@ -123,7 +124,7 @@ def test_secure_defaults_on_and_requires_an_explicit_opt_out(monkeypatch):
     class _Req:
         class url:
             scheme = "http"
-        headers: dict = {}
+        headers: ClassVar[dict] = {}
     monkeypatch.delenv("GIGPILOT_COOKIE_INSECURE", raising=False)
     assert cookie_is_secure(_Req()) is False, "plain http with no forwarded proto is not secure"
     monkeypatch.setenv("GIGPILOT_COOKIE_INSECURE", "1")
@@ -142,7 +143,7 @@ def test_forwarded_proto_is_honoured_behind_a_proxy():
     class _Req:
         class url:
             scheme = "http"
-        headers = {"x-forwarded-proto": "https"}
+        headers: ClassVar[dict] = {"x-forwarded-proto": "https"}
     os.environ.pop("GIGPILOT_COOKIE_INSECURE", None)
     assert cookie_is_secure(_Req()) is True
 

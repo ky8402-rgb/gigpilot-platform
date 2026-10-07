@@ -81,12 +81,12 @@ def main():
             log(f"puttygen conversion failed: {res.stderr}")
 
     # 6. Check if user accidentally provided public key
-    if raw_key.startswith("ssh-rsa ") or raw_key.startswith("ssh-ed25519 ") or raw_key.startswith("ecdsa-"):
+    if raw_key.startswith(("ssh-rsa ", "ssh-ed25519 ", "ecdsa-")):
         log("⚠️ WARNING: The provided secret is an SSH PUBLIC key, not a PRIVATE key (.pem)!")
         log("EC2 SSH requires the private key file downloaded when creating the AWS key pair.")
 
     # 7. Handle raw base64 RSA/OpenSSH key body without headers (e.g. starts with MIIE...)
-    if (raw_key.startswith("MIIE") or raw_key.startswith("MIIB")) and "BEGIN" not in raw_key:
+    if (raw_key.startswith(("MIIE", "MIIB"))) and "BEGIN" not in raw_key:
         log("Detected raw base64 RSA private key without PEM headers. Wrapping with standard PEM markers...")
         body_clean = "".join(raw_key.split())
         chunks = [body_clean[i:i+64] for i in range(0, len(body_clean), 64)]

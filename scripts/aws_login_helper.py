@@ -34,10 +34,9 @@ else:
             output += chunk
             sys.stdout.write(chunk.decode('utf-8', errors='replace'))
             sys.stdout.flush()
-            if b'Enter the authorization code' in output and not sent:
-                if AUTH_CODE:
-                    os.write(master, (AUTH_CODE + '\n').encode('utf-8'))
-                    sent = True
+            if b'Enter the authorization code' in output and not sent and AUTH_CODE:
+                os.write(master, (AUTH_CODE + '\n').encode('utf-8'))
+                sent = True
         else:
             break
     _, status = os.waitpid(pid, 0)

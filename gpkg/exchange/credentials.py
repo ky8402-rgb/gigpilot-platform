@@ -22,8 +22,6 @@ bolted on later. Binance and Bybit leave it empty.
 """
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
-
 import base64
 import hashlib
 import json
@@ -32,6 +30,7 @@ import os
 import secrets
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from gpkg.core.clock import now_ms
 from gpkg.exchange.base import CredentialsMissing, ExchangeError
@@ -220,7 +219,7 @@ class CredentialStore:
         return dict(out)
 
     def save(self, creds: dict[str, ExchangeCredential]) -> None:
-        for name, c in creds.items():
+        for c in creds.values():
             self._assert_storable(c)
         payload = {"version": 1, "saved_ms": now_ms(),
                    "credentials": {k: asdict(v) for k, v in creds.items()}}

@@ -100,7 +100,7 @@ def test_health_declares_not_trading_ready_when_unverified(authed_client):
     stays public so monitoring can still alarm on it, so BOTH tiers are asserted: that way a future
     change to the split cannot silently break either audience.
     """
-    client, engine, token, _owner = authed_client
+    client, _engine, token, _owner = authed_client
 
     anon = client.get("/health").json()
     assert anon.get("trading_ready") is False, "trading_ready must remain visible to monitoring"
@@ -128,7 +128,7 @@ def test_login_requires_the_right_secret(authed_client):
 
 
 def test_status_endpoint_reports_configuration_without_secrets(authed_client):
-    client, _engine, _token, owner = authed_client
+    client, _engine, _token, _owner = authed_client
     r = client.get("/api/auth/status")
     assert r.status_code == 200
     body = r.json()

@@ -61,8 +61,7 @@ class BybitWS:
             try:
                 async with aiohttp.ClientSession(
                     timeout=aiohttp.ClientTimeout(total=None, sock_connect=10, sock_read=60)
-                ) as sess:
-                    async with sess.ws_connect(self.cfg.ws_public, heartbeat=20) as ws:
+                ) as sess, sess.ws_connect(self.cfg.ws_public, heartbeat=20) as ws:
                         self._public_ok = True
                         if self._metrics:
                             self._metrics.set("gigpilot_ws_connected", 1, stream="public")
@@ -142,8 +141,7 @@ class BybitWS:
             try:
                 async with aiohttp.ClientSession(
                     timeout=aiohttp.ClientTimeout(total=None, sock_connect=10, sock_read=60)
-                ) as sess:
-                    async with sess.ws_connect(self.cfg.ws_private, heartbeat=20) as ws:
+                ) as sess, sess.ws_connect(self.cfg.ws_private, heartbeat=20) as ws:
                         expires = int((time.time() + 10) * 1000)
                         # Resolved by the SAME rule as REST, not read off `cfg`. Reading
                         # `cfg.api_secret` here meant runtime-secret mode authenticated REST and then

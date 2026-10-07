@@ -86,7 +86,7 @@ def test_automatic_rollback_is_durable_and_removes_live_eligibility(tmp_path):
     reg.transition("m1", ModelState.PAPER, reason="paper")
     reg.transition("m1", ModelState.CANARY, reason="canary")
 
-    rolled, reason, current = reg.rollback_if_needed(
+    rolled, _reason, current = reg.rollback_if_needed(
         "m1",
         [trade(-2.0, i) for i in range(30)],
         DriftReport(0.01, False, "stable"),

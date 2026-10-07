@@ -43,7 +43,7 @@ WINDOW = 5
 
 
 def engine(**kw) -> VpinEngine:
-    cfg = dict(bucket_volume=BUCKET, window_buckets=WINDOW, min_history_for_threshold=3, history=100)
+    cfg = {"bucket_volume": BUCKET, "window_buckets": WINDOW, "min_history_for_threshold": 3, "history": 100}
     cfg.update(kw)
     return VpinEngine(VpinConfig(**cfg))
 

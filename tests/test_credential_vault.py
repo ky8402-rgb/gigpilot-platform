@@ -287,7 +287,7 @@ def test_endpoints_are_owner_gated(make_engine, monkeypatch):
 
 
 def test_storing_credentials_over_http_never_echoes_them(make_engine, monkeypatch):
-    client, headers, engine, _ = _owner_client(make_engine, monkeypatch)
+    client, headers, _engine, _ = _owner_client(make_engine, monkeypatch)
     key, secret = "api-key-over-http-123456", "api-secret-over-http-abcdefgh"
 
     r = client.post("/api/credentials/exchange",

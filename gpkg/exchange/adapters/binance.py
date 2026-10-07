@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import hashlib
 import hmac
+from typing import Any
 from urllib.parse import urlencode
 
 from gpkg.core.clock import now_ms
@@ -214,7 +215,8 @@ class BinanceAdapter(ExchangeAdapter):
     async def positions(self) -> list[Position]:
         rows = await self._get("/fapi/v2/positionRisk", {})
         out: list[Position] = []
-        for p in rows if isinstance(rows, list) else []:
+        response_rows: list[dict[str, Any]] = rows if isinstance(rows, list) else []
+        for p in response_rows:
             amt = float(p.get("positionAmt") or 0.0)
             if amt == 0:
                 continue
@@ -235,7 +237,8 @@ class BinanceAdapter(ExchangeAdapter):
     async def open_orders(self) -> list[Order]:
         rows = await self._get("/fapi/v1/openOrders", {})
         out: list[Order] = []
-        for o in rows if isinstance(rows, list) else []:
+        response_rows: list[dict[str, Any]] = rows if isinstance(rows, list) else []
+        for o in response_rows:
             out.append(Order(
                 exchange=self.name,
                 symbol=o.get("symbol", ""),
@@ -253,7 +256,8 @@ class BinanceAdapter(ExchangeAdapter):
     async def closed_pnl(self, limit: int = 100) -> list[Fill]:
         rows = await self._get("/fapi/v1/income", {"limit": limit})
         out: list[Fill] = []
-        for r in rows if isinstance(rows, list) else []:
+        response_rows: list[dict[str, Any]] = rows if isinstance(rows, list) else []
+        for r in response_rows:
             amt = float(r.get("income") or 0.0)
             kind = r.get("incomeType", "")
             out.append(Fill(
@@ -301,7 +305,7 @@ class BinanceAdapter(ExchangeAdapter):
 
     async def place_order(self, req: OrderRequest) -> OrderResult:
         req.validate()
-        params = {
+        params: dict[str, str] = {
             "symbol": req.symbol,
             "side": req.side.value.upper(),
             "type": req.order_type.value.upper(),
@@ -310,6 +314,8 @@ class BinanceAdapter(ExchangeAdapter):
         if req.client_order_id:
             params["newClientOrderId"] = req.client_order_id
         if req.order_type is OrderType.LIMIT:
+            if req.price is None:
+                raise ValueError("LIMIT order requires a price")
             params["price"] = req.price
             params["timeInForce"] = "GTC"
         if req.reduce_only:

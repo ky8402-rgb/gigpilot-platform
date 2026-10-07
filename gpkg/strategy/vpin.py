@@ -295,7 +295,7 @@ class VpinEngine:
         if frac < self.cfg.widen_fraction:
             return 0
         scaled = (frac - self.cfg.widen_fraction) / max(1e-9, 1.0 - self.cfg.widen_fraction)
-        return max(1, min(self.cfg.max_widen_ticks, int(math.ceil(scaled * self.cfg.max_widen_ticks))))
+        return max(1, min(self.cfg.max_widen_ticks, math.ceil(scaled * self.cfg.max_widen_ticks)))
 
     def should_pause(self) -> bool:
         """True when flow is so one-sided that NOT quoting is the better trade.
@@ -361,7 +361,7 @@ def _percentile(ordered: list[float], q: float) -> float:
         return ordered[0]
     qq = max(0.0, min(100.0, float(q))) / 100.0
     pos = qq * (len(ordered) - 1)
-    lo = int(math.floor(pos))
+    lo = math.floor(pos)
     hi = min(lo + 1, len(ordered) - 1)
     if lo == hi:
         return ordered[lo]

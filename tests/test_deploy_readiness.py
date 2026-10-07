@@ -46,8 +46,8 @@ VERIFY_SCRIPTS = [ROOT / "verify-production.sh", ROOT / "scripts" / "verify-prod
 # THE STATE MACHINE
 # =============================================================================================
 def test_state_machine_truth_table():
-    base = dict(require_runtime_secret=False, secret_loaded=True,
-                execution_mode="live", armed=False)
+    base = {"require_runtime_secret": False, "secret_loaded": True,
+                "execution_mode": "live", "armed": False}
     assert assess_engine_state(**base) == DISARMED
     assert assess_engine_state(**{**base, "armed": True}) == ARMED
     # LIVE-ONLY: a non-live mode is a CONFIGURATION ERROR (`Config.from_env` refuses it and exits),

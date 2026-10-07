@@ -243,7 +243,10 @@ def _psi_baseline(rows: list[FeatureRow]) -> dict[str, float]:
     return {name: mean(getattr(r, name) for r in rows) for name in FEATURES}
 
 
-def train_candidate(store: Store, symbol: str, *, config: TrainingConfig = TrainingConfig(),
+_DEFAULT_TRAINING_CONFIG = TrainingConfig()
+
+
+def train_candidate(store: Store, symbol: str, *, config: TrainingConfig = _DEFAULT_TRAINING_CONFIG,
                     end_ms: int | None = None, require_coverage: bool = True) -> TrainingResult:
     # Same precondition as the tournament, for the same reason: a model fitted on no history is not a
     # weak model, it is an ABSENT MEASUREMENT, and the two must never be reported alike.

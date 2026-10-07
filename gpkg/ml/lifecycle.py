@@ -17,6 +17,7 @@ Safety properties:
 """
 from __future__ import annotations
 
+import itertools
 from collections.abc import Sequence
 from dataclasses import dataclass, field
 from enum import Enum
@@ -81,6 +82,9 @@ class ValidationConfig:
     min_t_stat: float = 0.0
     min_oos_sharpe: float = 0.0
     min_edge_bps: float = 0.0
+
+
+_DEFAULT_VALIDATION_CONFIG = ValidationConfig()
 
 
 @dataclass(frozen=True)
@@ -150,7 +154,7 @@ class PurgedWalkForward:
         self.purge = purge
 
     def split(self, timestamps_ms: Sequence[int]) -> list[tuple[range, range]]:
-        if any(b <= a for a, b in zip(timestamps_ms, timestamps_ms[1:])):
+        if any(b <= a for a, b in itertools.pairwise(timestamps_ms)):
             raise ValueError("timestamps must be strictly increasing; duplicates/leakage are refused")
         n = len(timestamps_ms)
         folds: list[tuple[range, range]] = []
@@ -195,7 +199,7 @@ def evaluate_candidate(
     walk_forward_folds: int,
     evaluated_at_ms: int,
     data_cutoff_ms: int,
-    config: ValidationConfig = ValidationConfig(),
+    config: ValidationConfig = _DEFAULT_VALIDATION_CONFIG,
 ) -> ModelEvidence:
     """Convert genuinely OOS closed trades into a promotion-grade evidence record."""
 
@@ -342,7 +346,7 @@ def should_rollback(
     live_trades: Sequence[NetTrade],
     drift: DriftReport,
     *,
-    config: ValidationConfig = ValidationConfig(),
+    config: ValidationConfig = _DEFAULT_VALIDATION_CONFIG,
 ) -> tuple[bool, str]:
     if not evidence.verified or evidence.state not in (ModelState.CANARY, ModelState.CHAMPION):
         return True, "model is not in an approved live state"
