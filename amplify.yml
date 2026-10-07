@@ -13,7 +13,23 @@ frontend:
     build:
       commands:
         - npm run build:client || npm run build
-        - echo "{\"commit\":\"${AWS_COMMIT_ID:-${AWS_COMMIT_SHA:-unknown}}\"}" > dist/version.json
+        # version.json records the commit the ARTIFACT was built from, and the deploy workflow
+        # verifies the live frontend against it. `AWS_COMMIT_ID` cannot be trusted on its own: a
+        # RELEASE job — which is what the deploy workflow triggers — reports the literal string
+        # "HEAD" instead of a SHA, so the verification compared "HEAD" against the real commit and
+        # failed on every release WHILE THE BUILD ITSELF SUCCEEDED. The failure looked like a bad
+        # deploy when the artifact was in fact correct and only its self-report was wrong.
+        #
+        # The build phase runs against a real checkout, so `git rev-parse HEAD` is authoritative
+        # here. "HEAD" and empty are both treated as "ask git"; anything that already looks like a
+        # SHA is kept.
+        - |
+          COMMIT="${AWS_COMMIT_ID:-}"
+          case "$COMMIT" in
+            ""|HEAD|head|refs/heads/*) COMMIT="$(git rev-parse HEAD 2>/dev/null || echo unknown)" ;;
+          esac
+          printf '{"commit":"%s"}\n' "$COMMIT" > dist/version.json
+          echo "version.json commit -> $COMMIT"
   artifacts:
     baseDirectory: dist
     files:
