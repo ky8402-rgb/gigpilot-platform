@@ -9,7 +9,28 @@ from fastapi import APIRouter, Depends, Request
 from fastapi.responses import JSONResponse
 from gpkg.api.auth import require_owner, get_owner_auth, extract_token
 
+#: Shown when the daemon has come up with NO credential in memory. This is the one state where a
+#: restart can have left something at the venue that nothing local can close, so it is stated loudly
+#: rather than left for the operator to infer from a status field.
+BOOT_WARNING = ("SYSTEM REBOOTED: Credentials purged. Verify exchange manually for unmanaged "
+                "positions.")
+
+
+def _with_boot_warning(payload: dict) -> dict:
+    """Attach the reboot warning to a COPY, keyed on the engine state.
+
+    A copy, because `snapshot()` returns the engine's live dict; mutating it would leak the warning
+    into every other consumer of the same object.
+    """
+    if payload.get("engine_state") == "AWAITING_SECRET":
+        return {**payload, "boot_warning": BOOT_WARNING}
+    return payload
+
+
 def register_compat_routes(app, get_gp):
+
+
+
     router=APIRouter()
 
     def _gp():
@@ -58,8 +79,8 @@ def register_compat_routes(app, get_gp):
         auth=get_owner_auth(); return auth.status(auth.verify(extract_token(request) or ""))
     async def _read(request,symbol=None,id=None,challengerId=None):
         gp=_gp(); path=request.url.path; s=gp.snapshot()
-        if path.endswith("/state"): return s
-        if path.endswith("/health"): return {"status":"healthy" if s.get("reconciliation",{}).get("healthy") else "degraded",**s}
+        if path.endswith("/state"): return _with_boot_warning(s)
+        if path.endswith("/health"): return _with_boot_warning({"status":"healthy" if s.get("reconciliation",{}).get("healthy") else "degraded",**s})
         if path.endswith("/readiness"): return {"ready":bool(s.get("armable")),"armed":s.get("armed"),"blockers":[] if s.get("armable") else ["live safety preflight has not passed"]}
         if path.endswith("/risk"): return {"equity":s.get("equity"),"gross_notional":s.get("gross_notional"),"margin_ratio":s.get("margin_ratio"),"armed":s.get("armed"),"position_mode":s.get("position_mode"),"hurdle_bps":s.get("hurdle_bps")}
         if path.endswith("/reconciliation/status"): return s.get("reconciliation",{})

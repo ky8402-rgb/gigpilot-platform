@@ -294,6 +294,16 @@ class BybitAdapter(ExchangeAdapter):
             body["timeInForce"] = tif.value
         if req.reduce_only:
             body["reduceOnly"] = True
+        # Attach protection to the ORDER, not in a follow-up call: the venue then arms TP/SL the moment
+        # the fill happens, leaving no interval in which the position is unprotected.
+        if req.take_profit:
+            body["takeProfit"] = req.take_profit
+        if req.stop_loss:
+            body["stopLoss"] = req.stop_loss
+        if req.take_profit or req.stop_loss:
+            body["tpTriggerBy"] = "MarkPrice"
+            body["slTriggerBy"] = "MarkPrice"
+            body["tpslMode"] = "Full"
         try:
             r = await self.rest.place_order(**body)
         except BybitError as e:

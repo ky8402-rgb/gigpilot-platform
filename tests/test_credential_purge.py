@@ -166,8 +166,10 @@ def test_graceful_shutdown_scrubs_the_runtime_store():
     restart was precisely the case that did not scrub.
     """
     src = (ROOT / "gigpilot.py").read_text(encoding="utf-8")
+    # Bounded by the END OF THE FUNCTION, not a character count. A fixed window silently stops
+    # covering the body once anything above it grows — which is how this assertion first broke.
     start = src.index("async def lifespan")
-    block = src[start:start + 1400]
+    block = src[start:src.index("\napp = FastAPI(", start)]
     assert "RuntimeSecretStore" in block, "the shutdown path must clear the runtime store"
     assert ".clear()" in block
     assert "await gp.stop()" in block, "and it must run after the engine has stopped"

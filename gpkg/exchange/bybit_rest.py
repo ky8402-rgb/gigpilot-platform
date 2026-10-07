@@ -241,5 +241,22 @@ class BybitREST:
     async def cancel_all(self, symbol: str) -> dict:
         return await self._req("POST", "/v5/order/cancel-all", body={"category": "linear", "symbol": symbol})
 
+    async def enable_cancel_on_disconnect(self, enabled: bool = True) -> dict:
+        """Turn Bybit's Cancel on Disconnect on (or off) for the credentials in use.
+
+        The venue then cancels every OPEN, UNFILLED order if our connection to it drops — including
+        when the crash is on our side and no local code is left to send a cancel. That is the half of
+        the dead-man's switch that unfilled orders need.
+
+        It is NOT the other half. CoD cancels ORDERS, not POSITIONS: a filled position is untouched,
+        which is why the entry order also carries its own TP/SL. The two controls cover different
+        failure modes and neither substitutes for the other.
+
+        Configured per API key and it persists venue-side, so this is idempotent and safe to re-assert
+        on every arm.
+        """
+        return await self._req("POST", "/v5/order/disconnected-cancel-all",
+                               body={"disconnectedCancelAll": bool(enabled)})
+
     async def trading_stop(self, **kw) -> dict:
         return await self._req("POST", "/v5/position/trading-stop", body=kw)

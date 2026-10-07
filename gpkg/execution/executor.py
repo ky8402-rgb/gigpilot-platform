@@ -192,7 +192,11 @@ class Executor:
                 toxicity=toxicity,
             )
             if plan.mode == "maker":
-                io = _MakerIO(self, symbol, position_idx, quote_fn=quote_fn)
+                io = _MakerIO(
+                    self, symbol, position_idx, quote_fn=quote_fn,
+                    protection_fn=lambda px: self._protection_kwargs(
+                        side, px, tp_bps=tp_bps, sl_bps=sl_bps, tick_size=tick_size),
+                )
                 outcome = await run_maker_entry(
                     io, side=side, qty=qty_s, tick=float(tick_size), link_prefix=link,
                     now_ms=now_ms, sleep=asyncio.sleep,
@@ -247,8 +251,10 @@ class Executor:
                 if plan.taker is not None and plan.taker.allowed:
                     if self._metrics:
                         self._metrics.inc("gigpilot_entry_routing_total", mode="taker_cross")
-                    await self._submit_taker_cross(symbol, side, qty_s, position_idx, link,
-                                                   quote=await quote_fn())
+                    cross_quote = await quote_fn()
+                    await self._submit_taker_cross(
+                        symbol, side, qty_s, position_idx, link, quote=cross_quote,
+                        protection=self._cross_protection(side, cross_quote, tp_bps, sl_bps, tick_size))
                     return await self._protect_entry(
                         symbol, side, qty_s, tp_price, sl_price, position_idx, link,
                         route="taker", extra={"taker_net_bps": round(plan.taker.net_bps, 4),
@@ -257,8 +263,10 @@ class Executor:
             if quote_fn is not None and plan.mode == "taker":
                 if self._metrics:
                     self._metrics.inc("gigpilot_entry_routing_total", mode="taker_cross")
-                await self._submit_taker_cross(symbol, side, qty_s, position_idx, link,
-                                               quote=await quote_fn())
+                cross_quote2 = await quote_fn()
+                await self._submit_taker_cross(
+                    symbol, side, qty_s, position_idx, link, quote=cross_quote2,
+                    protection=self._cross_protection(side, cross_quote2, tp_bps, sl_bps, tick_size))
                 return await self._protect_entry(
                     symbol, side, qty_s, tp_price, sl_price, position_idx, link,
                         route="taker",
@@ -266,8 +274,9 @@ class Executor:
                                if plan.taker else 0.0})
             return self._skip_entry(symbol, side, plan, reason=plan.reason)
 
-        # ---- unchanged legacy path: no book supplied ----
-        await self._submit_order(symbol, side, qty_s, position_idx, link)
+        # ---- legacy path: no book supplied, so levels come from the caller's pre-trade estimate ----
+        await self._submit_order(symbol, side, qty_s, position_idx, link,
+                                 protection=self._protection_from_levels(tp_price, sl_price))
         return await self._protect_entry(
             symbol, side, qty_s, tp_price, sl_price, position_idx, link, route="market")
 
@@ -312,6 +321,84 @@ class Executor:
         if t <= 0 or not math.isfinite(px):
             return px
         return float((_dec(px) / t).to_integral_value() * t)
+
+    def _protection_kwargs(self, side: str, ref_px: float, *,
+                           tp_bps: Optional[float], sl_bps: Optional[float],
+                           tick_size: Optional[float]) -> dict:
+        """TP/SL to ATTACH to the entry order, anchored to the price it will fill at.
+
+        Why attach rather than follow up: the previous sequence placed the entry and then made a second
+        call to register TP/SL. A crash in between left a naked leveraged position that nothing local
+        could close — and in runtime-secret mode the credential is gone too, so there is no local
+        rescue at all. Attaching moves the bound to the VENUE, which is the only party still running.
+
+        The anchor is the price the order actually rests at, NOT the mid. For a maker entry that rest
+        price IS the fill price, so the levels land correctly; anchoring to the mid is what produced
+        the zero-distance stop the post-fill path exists to repair.
+        """
+        if tp_bps is None or sl_bps is None or tick_size is None:
+            return {}
+        try:
+            px, tk = float(ref_px), float(tick_size)
+        except (TypeError, ValueError):
+            return {}
+        if not (px > 0 and tk > 0 and math.isfinite(px)):
+            return {}
+        buy = str(side).strip().lower() in {"buy", "long"}
+        if buy:
+            tp, sl = px * (1.0 + float(tp_bps) / 1e4), px * (1.0 - float(sl_bps) / 1e4)
+        else:
+            tp, sl = px * (1.0 - float(tp_bps) / 1e4), px * (1.0 + float(sl_bps) / 1e4)
+        tp, sl = self._round_nearest_tick(tp, tk), self._round_nearest_tick(sl, tk)
+        # Same geometry guard as the post-fill path: a stop at or inside the entry is an instant
+        # stop-out, and anchoring to a resting price makes that reachable.
+        if buy:
+            if sl >= px:
+                sl = self._round_nearest_tick(px - tk, tk)
+            if tp <= px:
+                tp = self._round_nearest_tick(px + tk, tk)
+        else:
+            if sl <= px:
+                sl = self._round_nearest_tick(px + tk, tk)
+            if tp >= px:
+                tp = self._round_nearest_tick(px - tk, tk)
+        return {"takeProfit": f"{tp}", "stopLoss": f"{sl}", "tpTriggerBy": "MarkPrice",
+                "slTriggerBy": "MarkPrice", "tpslMode": "Full"}
+
+    @staticmethod
+    def _protection_from_levels(tp_price: float, sl_price: float) -> dict:
+        """Attach the caller's ABSOLUTE levels (market entry, where the fill is only estimated).
+
+        The post-fill re-anchor still corrects these to the realised price, so a worse-than-expected
+        fill is repaired rather than inherited. Attaching them means the tail is bounded from the
+        moment the fill happens instead of one round trip later.
+        """
+        if not (tp_price > 0 and sl_price > 0):
+            return {}
+        return {"takeProfit": f"{tp_price}", "stopLoss": f"{sl_price}",
+                "tpTriggerBy": "MarkPrice", "slTriggerBy": "MarkPrice", "tpslMode": "Full"}
+
+    async def _place_entry(self, link: str, body: dict, protection: dict) -> None:
+        """Submit an entry with attached protection, degrading to a bare order if the venue refuses.
+
+        The fallback is deliberately NARROW — it fires only when the rejection names the protection
+        fields. A blanket retry would mask unrelated failures and could resubmit an order that was
+        rejected for a real reason. With it, attaching protection can only ever ADD a bound: if the
+        venue will not accept them, behaviour is exactly what it is today.
+        """
+        if not protection:
+            await self._place_idempotent(link, **body)
+            return
+        try:
+            await self._place_idempotent(link, **body, **protection)
+        except Exception as exc:
+            blob = f"{exc}".lower()
+            if not any(k in blob for k in ("takeprofit", "stoploss", "tpsl", "tp_", "sl_")):
+                raise
+            log.warning(
+                "entry protection rejected by the venue (%s) — resubmitting WITHOUT attached TP/SL; "
+                "post-fill protection still applies and remains authoritative", exc)
+            await self._place_idempotent(link, **body)
 
     def _protection_from_fill(
         self,
@@ -402,8 +489,13 @@ class Executor:
 
     async def _submit_order(self, symbol: str, side: str, qty_s: str, position_idx: int,
                             link: str, *, price: Optional[str] = None,
-                            tif: TimeInForce = TimeInForce.GTC) -> None:
-        """The single submission point for entries. Never bypasses `_place_idempotent`."""
+                            tif: TimeInForce = TimeInForce.GTC,
+                            protection: Optional[dict] = None) -> None:
+        """The single submission point for entries. Never bypasses `_place_idempotent`.
+
+        `protection` rides on the entry order so the venue arms TP/SL at the instant of the fill.
+        """
+        protection = protection or {}
         adapter = self.adapter_or_none
         if adapter is not None:
             await adapter.place_order(OrderRequest(
@@ -416,6 +508,8 @@ class Executor:
                 time_in_force=tif,
                 client_order_id=link,
                 position_idx=position_idx,
+                take_profit=protection.get("takeProfit"),
+                stop_loss=protection.get("stopLoss"),
             ))
             return
         body = dict(
@@ -431,10 +525,27 @@ class Executor:
             body["orderType"] = "Limit"
             body["price"] = price
             body["timeInForce"] = tif.value
-        await self._place_idempotent(link, **body)
+        await self._place_entry(link, body, protection)
+
+    def _cross_protection(self, side: str, quote: Optional[QuoteSnapshot],
+                          tp_bps: Optional[float], sl_bps: Optional[float],
+                          tick_size: Optional[float]) -> dict:
+        """Protection anchored to the TOUCH we are about to cross into.
+
+        The crossing price is the touch, so that is the best pre-trade estimate of the fill and the
+        correct anchor. Reading the book first is also what keeps the anchor honest: without a usable
+        book there is no estimate, and the caller's absolute levels are used instead.
+        """
+        if quote is not None and quote.is_usable():
+            buy = str(side).strip().lower() in {"buy", "long"}
+            return self._protection_kwargs(side, quote.ask_px if buy else quote.bid_px,
+                                           tp_bps=tp_bps, sl_bps=sl_bps,
+                                           tick_size=tick_size)
+        return {}
 
     async def _submit_taker_cross(self, symbol: str, side: str, qty_s: str, position_idx: int,
-                                  link: str, *, quote: Optional[QuoteSnapshot]) -> None:
+                                  link: str, *, quote: Optional[QuoteSnapshot],
+                                  protection: Optional[dict] = None) -> None:
         """Cross the spread with an aggressive IOC limit.
 
         IOC rather than MARKET so the fill is price-capped: a market order into a thin book can
@@ -449,7 +560,8 @@ class Executor:
             price_s = f"{px}"
         else:
             tif = TimeInForce.GTC
-        await self._submit_order(symbol, side, qty_s, position_idx, link, price=price_s, tif=tif)
+        await self._submit_order(symbol, side, qty_s, position_idx, link, price=price_s, tif=tif,
+                                 protection=protection)
 
     def _skip_entry(self, symbol: str, side: str, plan: EntryPlan, *, reason: str) -> dict:
         """Decline the entry. No order is sent and no position is opened.
@@ -600,11 +712,16 @@ class _MakerIO:
     concluding "no fill", which is what makes an unresolvable read safe rather than silent.
     """
 
-    def __init__(self, ex: "Executor", symbol: str, position_idx: int, *, quote_fn) -> None:
+    def __init__(self, ex: "Executor", symbol: str, position_idx: int, *, quote_fn,
+                 protection_fn=None) -> None:
         self.ex = ex
         self.symbol = symbol
         self.position_idx = position_idx
         self.quote_fn = quote_fn
+        # Maps the price this quote will rest at -> the TP/SL to attach. A callback rather than fixed
+        # levels because the rest price is chosen inside the quoting loop, and for a maker fill that
+        # rest price IS the fill price — so it is the only correct anchor available pre-trade.
+        self.protection_fn = protection_fn
 
     async def book(self) -> Optional[QuoteSnapshot]:
         try:
@@ -615,6 +732,7 @@ class _MakerIO:
 
     async def place_post_only(self, price: Decimal, link: str, side: str, qty: str) -> str:
         buy = str(side).strip().lower() in {"buy", "long", "bid"}
+        prot = self.protection_fn(float(price)) if self.protection_fn else {}
         ex_adapter = self.ex.adapter_or_none
         if ex_adapter is not None:
             res = await ex_adapter.place_order(OrderRequest(
@@ -627,6 +745,8 @@ class _MakerIO:
                 time_in_force=TimeInForce.POST_ONLY,
                 client_order_id=link,
                 position_idx=self.position_idx,
+                take_profit=prot.get("takeProfit"),
+                stop_loss=prot.get("stopLoss"),
             ))
             return res.order_id or ""
         r = await self.ex._place_idempotent(
@@ -639,6 +759,10 @@ class _MakerIO:
             price=str(price),
             timeInForce=TimeInForce.POST_ONLY.value,
             positionIdx=self.position_idx,
+            # A post-only entry can carry native TP/SL: Bybit supports `timeInForce=PostOnly` alongside
+            # `takeProfit`/`stopLoss` on /v5/order/create, so resting passively and being protected from
+            # the instant of the fill are not in tension.
+            **prot,
         )
         return (r or {}).get("orderId", "")
 

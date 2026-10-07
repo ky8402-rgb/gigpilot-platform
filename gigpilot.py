@@ -1174,6 +1174,23 @@ class GigPilot:
         if not ok:
             return False, reasons
         if not self.armed:
+            # Push the UNFILLED-ORDER half of the dead-man's switch to the venue before arming. It is
+            # configured per API key and persists venue-side, and it only bites when no local code is
+            # left to send a cancel — i.e. exactly the failure this whole design is about.
+            #
+            # Best-effort and deliberately NON-FATAL: a venue hiccup must not block arming, but it is
+            # logged at error level rather than swallowed, because a silently missing control is worse
+            # than a missing one. (This is the opposite trade-off to `_protect_entry`, which flattens
+            # and raises — there the position already exists, here it does not.)
+            try:
+                await self.rest.enable_cancel_on_disconnect(True)
+                log.warning(
+                    "Cancel on Disconnect ENABLED: if our connection drops, the venue cancels open "
+                    "unfilled orders. Open POSITIONS are unaffected — those are bounded by the TP/SL "
+                    "attached to each entry order."
+                )
+            except Exception as exc:
+                log.error("could not enable Cancel on Disconnect: %s", exc)
             self.armed = True
             self._persist_arm_state(self.ARM_ARMED)
             self.store.journal("ARM", None, {"hurdle_bps": self.cfg.edge_hurdle_bps})
@@ -1595,6 +1612,17 @@ async def lifespan(app: FastAPI):
     gp = get_gp()
     await gp.start()
     try:
+        # ANNOUNCE THE UNSAFE STATE ON STDOUT, not only in the structured log. A restart purges the
+        # credential, and a restart is exactly when the operator is least likely to be watching: the
+        # one thing that could now be sitting at the venue unmanaged is a filled position whose local
+        # owner has no secret left to close it. Rotating logs roll; a banner on the console does not.
+        if gp.engine_state() == "AWAITING_SECRET":
+            print("!" * 96, flush=True)
+            print("SYSTEM REBOOTED: Credentials purged. Verify exchange manually for unmanaged "
+                  "positions.", flush=True)
+            print("  engine_state=AWAITING_SECRET — nothing can be signed until an operator supplies "
+                  "the key/secret.", flush=True)
+            print("!" * 96, flush=True)
         yield
     finally:
         await gp.stop()

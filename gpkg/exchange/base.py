@@ -282,6 +282,14 @@ class OrderRequest:
     # Defaults to GTC so every existing caller keeps today's behaviour. The ENTRY path sets this
     # explicitly from its routing decision; leaving it unset is what an un-routed order looks like.
     time_in_force: TimeInForce = TimeInForce.GTC
+    # EXCHANGE-NATIVE PROTECTION. When set, these ride on the ENTRY order itself, so the venue
+    # applies them the instant the order fills. That closes the window in which a position exists
+    # unprotected: the previous design placed the entry, then made a SECOND call to attach TP/SL, and
+    # a crash between the two left a naked leveraged position with no local daemon (and, in
+    # runtime-secret mode, no credential) able to close it. `None` means "not attached here" — the
+    # post-fill protection path still runs and remains authoritative.
+    take_profit: Optional[str] = None
+    stop_loss: Optional[str] = None
 
     def validate(self) -> None:
         if self.order_type is OrderType.MARKET and not self.reduce_only and not self.client_order_id:

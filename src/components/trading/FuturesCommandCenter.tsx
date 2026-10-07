@@ -167,6 +167,14 @@ export const FuturesCommandCenter: React.FC = () => {
 
     {error && <div className="rounded-lg border border-rose-900 bg-rose-950/30 p-3 text-sm text-rose-300">{error}</div>}
     {notice && <div className="rounded-lg border border-emerald-900 bg-emerald-950/30 p-3 text-sm text-emerald-300">{notice}</div>}
+    {/* Credentials do not survive a restart, so a cold boot can leave a position at the venue that
+        nothing local is able to close. Stated as a banner rather than left for the operator to infer
+        from an "AWAITING_SECRET" status chip. */}
+    {(state as any)?.boot_warning && (
+      <div role="alert" className="rounded-lg border-2 border-amber-600 bg-amber-950/40 p-3 text-sm font-semibold text-amber-200">
+        {(state as any).boot_warning}
+      </div>
+    )}
 
     <section className="grid grid-cols-2 lg:grid-cols-6 gap-3">
       {[
