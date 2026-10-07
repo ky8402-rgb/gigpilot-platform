@@ -26,6 +26,12 @@ from gpkg.core.metrics import Metrics
 log = logging.getLogger("gigpilot")
 
 
+#: Bybit signals throttling with a non-zero `retCode` on an HTTP 200, and 10006 ("Too many visits")
+#: is the one that matters. `gpkg/ml/data.py` already retries it; this client raised it, which made a
+#: rate limit fatal for the whole dashboard.
+RETRYABLE_RET_CODES = frozenset({10006})
+
+
 class BybitREST:
     def __init__(self, cfg: Config, metrics: Metrics | None = None):
         self.cfg = cfg
@@ -152,8 +158,20 @@ class BybitREST:
                         data = await r.json()
                 if not isinstance(data, dict):
                     raise BybitError(-1, f"non-dict: {data}")
-                if data.get("retCode") != 0:
-                    raise BybitError(int(data.get("retCode", -1)), data.get("retMsg", "?"))
+                ret_code = int(data.get("retCode", -1) or 0)
+                if ret_code != 0:
+                    message = str(data.get("retMsg", "?"))
+                    if ret_code in RETRYABLE_RET_CODES:
+                        # A THROTTLE IS NOT A FAILURE. Raising here made "too many visits" fatal for
+                        # the calling route — and since the public WebSocket is a SEPARATE connection,
+                        # a throttled REST client presents as a half-dead venue: the feed ticks, the
+                        # market list is empty. Retry with backoff instead, matching the ML collector.
+                        last_err = BybitError(ret_code, message)
+                        log.warning("REST %s %s throttled (retCode %s) attempt %d/%d",
+                                    method, path, ret_code, attempt + 1, retries)
+                        await asyncio.sleep(min(0.5 * (2 ** attempt), 8.0))
+                        continue
+                    raise BybitError(ret_code, message)
                 return data.get("result", {})
             except BybitError:
                 raise
