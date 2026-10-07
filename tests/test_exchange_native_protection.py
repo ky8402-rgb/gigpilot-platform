@@ -235,6 +235,11 @@ def test_the_daemon_announces_the_state_on_stdout_at_boot():
     block = src[i:i + 1600]
     assert "SYSTEM REBOOTED: Credentials purged" in block
     assert "print(" in block and "flush=True" in block, "a console banner must not sit in a buffer"
+    # `engine_state` is a PROPERTY. Calling it raised TypeError inside startup, so the app failed to
+    # boot and the deploy failed while the whole suite was green — a grep test cannot see that, so
+    # assert the call SHAPE explicitly.
+    assert "gp.engine_state()" not in block, "engine_state is a property, not a method"
+    assert "gp.engine_state ==" in block
 
 
 def test_the_ui_renders_the_warning_as_an_alert():

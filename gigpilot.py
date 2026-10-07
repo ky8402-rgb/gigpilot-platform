@@ -1616,7 +1616,10 @@ async def lifespan(app: FastAPI):
         # credential, and a restart is exactly when the operator is least likely to be watching: the
         # one thing that could now be sitting at the venue unmanaged is a filled position whose local
         # owner has no secret left to close it. Rotating logs roll; a banner on the console does not.
-        if gp.engine_state() == "AWAITING_SECRET":
+        # `engine_state` is a PROPERTY on GigPilot, not a method. Calling it raised
+        # TypeError: 'str' object is not callable — inside startup, so the app failed to boot and the
+        # deploy health check failed while every unit test was green.
+        if gp.engine_state == "AWAITING_SECRET":
             print("!" * 96, flush=True)
             print("SYSTEM REBOOTED: Credentials purged. Verify exchange manually for unmanaged "
                   "positions.", flush=True)
