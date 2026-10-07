@@ -210,13 +210,29 @@ def test_cancel_on_disconnect_is_not_a_position_close():
 # ------------------------------------------------------------------------------------------------
 # 4. Boot alert
 # ------------------------------------------------------------------------------------------------
-def test_the_reboot_warning_is_attached_only_while_awaiting_a_secret():
-    awaiting = _with_boot_warning({"engine_state": "AWAITING_SECRET", "equity": 1.0})
-    assert awaiting["boot_warning"] == BOOT_WARNING
+def test_the_reboot_warning_requires_EVIDENCE_of_a_prior_armed_session():
+    """GATED ON EVIDENCE, not merely on the engine state.
+
+    This used to fire whenever engine_state was AWAITING_SECRET — which is the NORMAL steady state of a
+    system whose operator has not entered credentials yet. It asserted "SYSTEM REBOOTED: Credentials
+    purged" on a machine that had never held a credential and may never have been restarted, and it
+    appeared on every dashboard load. An alarm that always fires is not an alarm, it is wallpaper, and
+    it trains the operator to ignore the one case that matters.
+    """
     assert "Verify exchange manually for unmanaged positions" in BOOT_WARNING
 
+    # AWAITING_SECRET with NO prior armed session: no reboot alarm.
+    assert "boot_warning" not in _with_boot_warning(
+        {"engine_state": "AWAITING_SECRET", "equity": 1.0}, "AWAITING_SECRET", False)
+
+    # AWAITING_SECRET WITH a prior armed session: the warning is warranted.
+    risky = _with_boot_warning({"engine_state": "AWAITING_SECRET", "equity": 1.0},
+                               "AWAITING_SECRET", True)
+    assert risky["boot_warning"] == BOOT_WARNING
+
+    # Any other state: never.
     for steady in ("ARMED", "DISARMED"):
-        assert "boot_warning" not in _with_boot_warning({"engine_state": steady})
+        assert "boot_warning" not in _with_boot_warning({"engine_state": steady}, steady, True)
 
 
 def test_the_warning_is_attached_to_a_copy_not_the_live_snapshot():

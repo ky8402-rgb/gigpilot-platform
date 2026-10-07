@@ -175,7 +175,13 @@ export async function fetchWithFailover<T>(
       lastSyncTimestamp = new Date().toISOString();
 
       if (!res.ok) {
-        const errMsg = data?.error || data?.message || `API error HTTP ${res.status}`;
+        // BOTH the code and the cause. Preferring `error` alone discarded `message`, which the
+        // backend populates with the real reason — the dashboard showed a bare "TICKERS_UNAVAILABLE"
+        // while the response carried "REST GET /v5/market/tickers failed: ...". An error code with no
+        // cause is unactionable for an operator and unhelpful for anyone trying to fix it.
+        const errMsg = data?.error
+          ? (data?.message ? `${data.error}: ${data.message}` : String(data.error))
+          : (data?.message || `API error HTTP ${res.status}`);
         const clientErr = new Error(errMsg);
         (clientErr as any).status = res.status;
         (clientErr as any).data = data;

@@ -19,7 +19,8 @@ BOOT_WARNING = ("SYSTEM REBOOTED: Credentials purged. Verify exchange manually f
                 "positions.")
 
 
-def _with_boot_warning(payload: dict, engine_state: str | None = None) -> dict:
+def _with_boot_warning(payload: dict, engine_state: str | None = None,
+                       unmanaged_risk: bool = False) -> dict:
     """Attach the reboot warning to a COPY, keyed on the engine state.
 
     A copy, because `snapshot()` returns the engine's live dict; mutating it would leak the warning
@@ -30,7 +31,10 @@ def _with_boot_warning(payload: dict, engine_state: str | None = None) -> dict:
     no-op that still looked wired.
     """
     state = payload.get("engine_state") or engine_state
-    if state == "AWAITING_SECRET":
+    # GATED ON EVIDENCE, not merely on the state. AWAITING_SECRET is the normal steady state of an
+    # uncredentialed system; warning "SYSTEM REBOOTED: Credentials purged" there asserts a restart that
+    # may never have happened. See `GigPilot.may_have_unmanaged_positions`.
+    if state == "AWAITING_SECRET" and unmanaged_risk:
         return {**payload, "boot_warning": BOOT_WARNING}
     return payload
 
@@ -88,8 +92,9 @@ def register_compat_routes(app, get_gp):
     async def _read(request,symbol=None,id=None,challengerId=None):
         gp=_gp(); path=request.url.path; s=gp.snapshot()
         _state = gp.engine_state  # property, not a method
-        if path.endswith("/state"): return _with_boot_warning(s, _state)
-        if path.endswith("/health"): return _with_boot_warning({"status":"healthy" if s.get("reconciliation",{}).get("healthy") else "degraded",**s}, _state)
+        _risk = getattr(gp, "may_have_unmanaged_positions", False)
+        if path.endswith("/state"): return _with_boot_warning(s, _state, _risk)
+        if path.endswith("/health"): return _with_boot_warning({"status":"healthy" if s.get("reconciliation",{}).get("healthy") else "degraded",**s}, _state, _risk)
         if path.endswith("/readiness"): return {"ready":bool(s.get("armable")),"armed":s.get("armed"),"blockers":[] if s.get("armable") else ["live safety preflight has not passed"]}
         if path.endswith("/risk"): return {"equity":s.get("equity"),"gross_notional":s.get("gross_notional"),"margin_ratio":s.get("margin_ratio"),"armed":s.get("armed"),"position_mode":s.get("position_mode"),"hurdle_bps":s.get("hurdle_bps")}
         if path.endswith("/reconciliation/status"): return s.get("reconciliation",{})

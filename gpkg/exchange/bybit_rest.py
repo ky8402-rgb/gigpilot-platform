@@ -107,11 +107,18 @@ class BybitREST:
         body: dict | None = None,
         signed: bool = True,
         retries: int = 3,
+        timeout_s: float | None = None,
     ) -> dict:
         assert self._sess is not None
         params = params or {}
         url = self.cfg.host + path
         last_err = None
+        started = now_ms()
+        #: Bulk public reads need a longer budget than a single-symbol call. `/v5/market/tickers`
+        #: returns the WHOLE linear universe (~1-2 MB); the session default of 10s total is tight
+        #: enough on a high-latency route that a slow-but-successful read is indistinguishable from an
+        #: outage. `timeout_s` lets the caller say so instead of guessing.
+        req_timeout = aiohttp.ClientTimeout(total=timeout_s) if timeout_s else None
         for attempt in range(retries):
             try:
                 if signed:
@@ -124,7 +131,7 @@ class BybitREST:
                             "X-BAPI-RECV-WINDOW": self.cfg.recv_window,
                             "X-BAPI-SIGN": self._sign(ts, payload),
                         }
-                        async with self._sess.get(url, params=params, headers=headers) as r:
+                        async with self._sess.get(url, params=params, headers=headers, timeout=req_timeout) as r:
                             data = await r.json()
                             rem = r.headers.get("X-Bapi-Limit-Status")
                             if rem and self._metrics:
@@ -141,7 +148,7 @@ class BybitREST:
                         async with self._sess.post(url, data=bs, headers=headers) as r:
                             data = await r.json()
                 else:
-                    async with self._sess.get(url, params=params) as r:
+                    async with self._sess.get(url, params=params, timeout=req_timeout) as r:
                         data = await r.json()
                 if not isinstance(data, dict):
                     raise BybitError(-1, f"non-dict: {data}")
@@ -154,10 +161,16 @@ class BybitREST:
                 last_err = e
                 log.warning("REST %s %s attempt %d: %s", method, path, attempt + 1, e)
                 await asyncio.sleep(0.4 * (2**attempt))
-        raise RuntimeError(f"REST {method} {path} failed: {last_err}")
+        # NAME the exception type and the elapsed time. `str(TimeoutError())` is EMPTY, so the old
+        # message read "failed: " with nothing after it — the single most likely failure mode for a
+        # bulk read produced the least informative error in the codebase.
+        raise RuntimeError(
+            f"REST {method} {path} failed after {retries} attempt(s) in "
+            f"{now_ms() - started}ms: {type(last_err).__name__}: {last_err}")
 
     async def tickers(self) -> list:
-        return (await self._req("GET", "/v5/market/tickers", {"category": "linear"}, signed=False)).get("list", [])
+        return (await self._req("GET", "/v5/market/tickers", {"category": "linear"},
+                              signed=False, timeout_s=45.0)).get("list", [])
 
     async def kline(self, symbol: str, interval: str = "1", limit: int = 200) -> list:
         return (
