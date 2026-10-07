@@ -1721,11 +1721,30 @@ def _cors_origins() -> list[str]:
     code change and a release.
     """
     configured = os.getenv("CORS_ALLOWED_ORIGINS", "")
+    # The control plane is reachable at the EC2 host in BOTH schemes, and the owner portal is served
+    # from it directly (not only through Amplify). An origin missing from this list is refused by the
+    # middleware with 400 "Disallowed CORS origin" — and Safari/WebKit surfaces that to the operator as
+    # a bare "Load failed" on the login/2FA screen, with no hint that CORS is the cause. That is the
+    # SAME failure the note above describes, recurring for the direct-origin case.
+    #
+    # `http://` origins are permitted because the bare IP is served over plain HTTP; that is a
+    # transport-security compromise (an http page cannot be trusted to carry the owner password), so
+    # prefer https://35-154-110-156.sslip.io, which is also listed. Removing the http entries is safe
+    # once the portal is only ever opened over TLS.
+    CONTROL_PLANE_HOSTS = (
+        "35-154-110-156.sslip.io",
+        "35.154.110.156",
+    )
     defaults = [
         PRODUCTION_SPA_ORIGIN,
         "https://gigpilot.com",
         "https://www.gigpilot.com",
     ]
+    for host in CONTROL_PLANE_HOSTS:
+        defaults.append(f"https://{host}")
+        defaults.append(f"http://{host}")
+    # Vite dev servers, so a local portal is not blocked by the same middleware.
+    defaults += ["http://localhost:5173", "http://127.0.0.1:5173"]
     values = [item.strip().rstrip("/") for item in configured.split(",") if item.strip()]
     return list(dict.fromkeys(values + defaults))
 

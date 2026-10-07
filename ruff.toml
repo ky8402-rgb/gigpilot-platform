@@ -1,0 +1,16 @@
+# Ruff configuration — PROJECT STANDARD, not a suppression list.
+#
+# `select` is deliberately absent so the active rule set is inherited unchanged; this file only records
+# the two rules the project has consciously decided against. Adding a `select` here would silently
+# replace the rule set and hide findings unrelated to this decision.
+[lint]
+ignore = [
+    # Broad `except Exception` in TEARDOWN, METRICS and SUPERVISION paths. The contract there is
+    # "must never raise": a failing scrub, a failing metric increment or a failing watchdog journal
+    # must not take down the loop it is reporting on. Narrowing these to concrete types would let an
+    # unexpected exception escape the very handlers that exist to absorb it.
+    "BLE001",
+    # `try/except/pass` for the same reason. Every instance carries a comment stating why the swallow
+    # is deliberate.
+    "S110",
+]

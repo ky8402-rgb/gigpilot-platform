@@ -60,13 +60,13 @@ def main():
         log("Detected PuTTY .ppk format. Converting to OpenSSH...")
         ppk_path = target_path.parent / "key.ppk"
         ppk_path.write_text(raw_key.replace("\r", "") + "\n")
-        
+
         try:
             subprocess.run(["which", "puttygen"], check=True, stdout=subprocess.DEVNULL)
         except Exception:
             subprocess.run(["sudo", "apt-get", "update", "-qq"], check=False)
             subprocess.run(["sudo", "apt-get", "install", "-y", "-qq", "putty-tools"], check=False)
-        
+
         res = subprocess.run(
             ["puttygen", str(ppk_path), "-O", "private-openssh", "-o", str(target_path)],
             capture_output=True,

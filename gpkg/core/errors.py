@@ -1,4 +1,4 @@
-"""Exchange error taxonomy for Bybit, Binance, KuCoin, and OKX.
+"""Exchange error taxonomy for Bybit, Binance, and KuCoin.
 
 Extracted so every layer (exchange, execution, accounting, risk) can raise and
 catch unified and exchange-specific error types without importing the engine.
@@ -51,20 +51,7 @@ class KuCoinError(ExchangeError):
         return f"KuCoin {self.code}: {self.msg}"
 
 
-class OKXError(ExchangeError):
-    """A business error returned by OKX v5 SWAP API."""
-
-    def __init__(self, code: int, msg: str):
-        super().__init__(code, msg)
-        self.code = code
-        self.msg = msg
-
-    def __str__(self) -> str:
-        return f"OKX {self.code}: {self.msg}"
-
-
 # Duplicate client order ID codes per exchange
 DUPLICATE_ORDER_LINK_CODE = 110072
 BINANCE_DUPLICATE_ORDER_CODE = -2011
 KUCOIN_DUPLICATE_ORDER_CODE = 300000
-OKX_DUPLICATE_ORDER_CODE = 51000
