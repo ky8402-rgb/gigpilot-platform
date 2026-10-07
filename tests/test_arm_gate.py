@@ -75,11 +75,26 @@ async def test_blocks_when_not_authorized_to_trade(make_engine):
 
 
 @pytest.mark.asyncio
-async def test_blocks_on_insufficient_capital(make_engine):
+async def test_low_capital_does_not_block_the_arm(make_engine):
+    """NO HARDCODED ACCOUNT FLOOR.
+
+    `min_arm_capital_usdt` (67 USDT) refused to arm an operator whose capital was usable at a smaller
+    size, and a constant cannot know what the venue will accept. The real threshold is a PER-ORDER
+    minimum read from the instrument spec, so below it the engine arms and stays IDLE while the
+    dashboard says why. Refusing the ARM also buried the true reason behind a number the operator
+    could never reconcile with Bybit's own screen.
+    """
     engine, _ = await _engine(make_engine, equity=1.0)
+    # What boot reads from the instrument spec (`lotSizeFilter.minNotionalValue`). Seeded explicitly
+    # because this fixture does not run the instrument loop, and the assertion is about the ARM
+    # decision rather than about fixture wiring.
+    engine.min_notional = {"BTCUSDT": 5.0, "ETHUSDT": 5.0}
     ok, reasons = await engine.arm()
-    assert ok is False, "an account below the ARM capital minimum must not arm"
-    assert "INSUFFICIENT_CAPITAL" in {r["code"] for r in reasons}, reasons
+    assert "INSUFFICIENT_CAPITAL" not in {r["code"] for r in reasons}, reasons
+    assert ok is True, f"low capital must not refuse the arm: {reasons}"
+    assert engine.positioning_status == "INSUFFICIENT_EXCHANGE_MINIMUM", (
+        "the engine must say WHY it cannot size, not fail silently"
+    )
 
 
 @pytest.mark.asyncio
@@ -136,8 +151,18 @@ async def test_blocks_on_hedge_position_mode(make_engine):
 
 @pytest.mark.asyncio
 async def test_blocked_arm_is_journalled(make_engine):
-    """A refused ARM must leave an audit trail — that is what makes it reviewable."""
-    engine, _ = await _engine(make_engine, equity=1.0)
+    """A refused ARM must leave an audit trail — that is what makes it reviewable.
+
+    Blocked here by STALE MARKET DATA rather than by capital: capital is no longer a blocking gate,
+    so a capital-based fixture would assert nothing.
+    """
+    from gpkg.core.clock import now_ms
+
+    engine, _ = await _engine(make_engine)
+    old = now_ms() - 60_000
+    for ms in engine.markets.values():
+        ms.ts_book_ms = old
+        ms.ts_tick_ms = old
     await engine.arm()
     rows = engine.store._conn.execute(
         "SELECT COUNT(*) FROM journal WHERE kind='ARM_BLOCKED'"

@@ -23,6 +23,11 @@ class Portfolio:
     equity: float = 0.0
     daily_pnl: float = 0.0
     gross_notional: float = 0.0
+    #: USDT the venue reports as usable right now (`availableToWithdraw`, falling back to equity).
+    #: Distinct from `equity`, which includes unrealised PnL and margin already committed. Sizing
+    #: reads THIS: sizing off equity would let a position be opened against margin that is already
+    #: spent, which the venue would refuse.
+    available_usdt: float = 0.0
     symbol_notional: dict[str, float] = field(default_factory=dict)
     open_positions: int = 0
     margin_ratio: float = 0.0

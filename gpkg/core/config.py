@@ -167,7 +167,12 @@ class Config:
     vpin_bucket_volume: dict = field(default_factory=dict)
     max_signal_to_ack_drift_bps: float = 2.5
     max_concurrent_positions: int = 3
-    min_arm_capital_usdt: float = 67.0
+    #: Fraction of AVAILABLE (venue-reported free) USDT the engine may deploy. The directive is to use
+    #: the working capital rather than park it behind a magic account floor; 5% is held back for fees
+    #: and adverse ticks. This is a CEILING on the risk-based size, not a target: sizing straight to it
+    #: would ignore stop distance, which is how a "large" position ends up risking many times the
+    #: per-trade budget. The per-symbol and gross notional caps still apply on top.
+    capital_usage_pct: float = 95.0
     atr_period: int = 14
     stop_atr_mult: float = 2.0
     tp_atr_mult: float = 2.5
@@ -247,7 +252,7 @@ class Config:
             maker_max_requotes=int(os.getenv("GIGPILOT_MAKER_MAX_REQUOTES", "2")),
             vpin_bucket_volume=_vpin_bucket_overrides(syms),
             max_signal_to_ack_drift_bps=float(os.getenv("GIGPILOT_MAX_SIGNAL_TO_ACK_DRIFT_BPS", "2.5")),
-            min_arm_capital_usdt=float(os.getenv("GIGPILOT_MIN_ARM_CAPITAL_USDT", "67.0")),
+            capital_usage_pct=float(os.getenv("GIGPILOT_CAPITAL_USAGE_PCT", "95.0")),
             db_path=os.getenv("GIGPILOT_DB_PATH", "gigpilot.db"),
             log_level=os.getenv("GIGPILOT_LOG_LEVEL", "INFO"),
         )

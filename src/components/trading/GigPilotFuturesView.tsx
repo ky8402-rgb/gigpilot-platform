@@ -1,28 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import {
-  Shield,
-  ShieldAlert,
-  ShieldCheck,
-  Zap,
-  Activity,
-  AlertTriangle,
-  Play,
-  Square,
-  RefreshCw,
-  TrendingUp,
-  TrendingDown,
-  Layers,
-  Database,
-  Lock,
-  Radio,
-  ExternalLink,
-  DollarSign,
-  PieChart,
-  Clock,
-  ArrowRight,
-  Flame,
-  CheckCircle2
-} from 'lucide-react';
+import { Activity, AlertTriangle, ArrowRight, CheckCircle2, Clock, Database, DollarSign, ExternalLink, Flame, Layers, Lock, PieChart, Play, Radio, RefreshCw, Shield, ShieldAlert, ShieldCheck, Square, TrendingDown, TrendingUp, Wallet, Zap } from 'lucide-react';
 import {
   GigPilotState,
   fetchGigPilotState,
@@ -398,6 +375,33 @@ export const GigPilotFuturesView: React.FC = () => {
             </div>
           </div>
 
+          {/* LIVE CAPITAL — what the venue reports as free, how much is deployed, and what the
+              exchange will actually accept. Without the third figure the operator cannot tell
+              "under-capitalised" from "no edge", which is exactly the ambiguity the old hardcoded
+              notional floor created. */}
+          {(() => {
+            const cap = state?.capital;
+            const belowMin = cap?.positioning === 'INSUFFICIENT_EXCHANGE_MINIMUM';
+            return (
+              <div className="p-5 bg-zinc-900/90 border border-emerald-500/20 rounded-2xl">
+                <div className="flex items-center justify-between mb-3">
+                  <div className="flex items-center gap-2"><Wallet className="w-5 h-5 text-emerald-400" /><h3 className="text-sm font-bold font-mono text-white uppercase">Live Capital</h3></div>
+                  <span className={`text-xs font-mono ${belowMin ? 'text-amber-300' : 'text-emerald-400'}`}>{belowMin ? 'INSUFFICIENT EXCHANGE MINIMUM' : 'WITHIN EXCHANGE LIMITS'}</span>
+                </div>
+                <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 text-xs font-mono">
+                  <div className="bg-zinc-950/60 rounded-lg p-3"><div className="text-slate-500">Equity</div><div className="text-lg font-bold text-white">${fmt(cap?.equity_usd ?? 0,2)}</div></div>
+                  <div className="bg-zinc-950/60 rounded-lg p-3"><div className="text-slate-500">Available USDT</div><div className="text-lg font-bold text-emerald-400">${fmt(cap?.available_usdt ?? 0,2)}</div></div>
+                  <div className="bg-zinc-950/60 rounded-lg p-3"><div className="text-slate-500">Deployed</div><div className="text-lg font-bold text-white">${fmt(cap?.deployed_notional_usd ?? 0,2)}</div></div>
+                  <div className="bg-zinc-950/60 rounded-lg p-3"><div className="text-slate-500">Exchange Min / Order</div><div className="text-lg font-bold text-cyan-400">${fmt(cap?.min_order_notional_usd ?? 0,2)}</div></div>
+                </div>
+                {belowMin && (
+                  <div role="alert" className="mt-3 rounded-lg border border-amber-700 bg-amber-950/40 p-3 text-xs font-semibold text-amber-200">
+                    Insufficient Exchange Minimum — available capital is below Bybit's minimum order for this symbol. The engine is armed and IDLE; it will not submit an order the venue would reject. No action needed beyond funding the account.
+                  </div>
+                )}
+              </div>
+            );
+          })()}
           {/* L2 INGESTION PROGRESS — the phase that gates the ML pipeline, made observable without
               querying the database. `l2_depth.min_symbol` is the headline because the gate is applied
               PER SYMBOL: a total across symbols can look close to 10,000 while every symbol is far

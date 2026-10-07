@@ -607,6 +607,10 @@ class GigPilot:
         self.step_size: dict[str, float] = {}
         self.tick_size: dict[str, float] = {}
         self.min_qty: dict[str, float] = {}
+        self.min_notional: dict[str, float] = {}
+        #: Why the last entry attempt did not happen, surfaced to the operator. `None` means no
+        #: attempt has been blocked. A silent `return` is indistinguishable from "no signal".
+        self.positioning_status: str = ""
         self.executor: Executor | None = None
         self.edge = EdgeEngine(cfg); self.risk = RiskGate(cfg)
         self.positions: dict[str, dict] = {}
@@ -894,6 +898,7 @@ class GigPilot:
             self.step_size[s] = f(lot.get("qtyStep"), 0.0)
             self.tick_size[s] = f(price.get("tickSize"), 0.01)
             self.min_qty[s] = f(lot.get("minOrderQty"), 0.0)
+            self.min_notional[s] = f(lot.get("minNotionalValue"), 0.0)
             if self.step_size[s] <= 0:
                 log.critical("BOOT REFUSED: qtyStep missing for %s", s)
                 raise SystemExit(4)
@@ -927,7 +932,7 @@ class GigPilot:
 
         await self._calibrate_vpin_buckets()
 
-        self.executor = Executor(self.cfg, self.exchange, self.step_size, metrics=METRICS, min_sizes=self.min_qty)
+        self.executor = Executor(self.cfg, self.exchange, self.step_size, metrics=METRICS, min_sizes=self.min_qty, min_notionals=self.min_notional)
 
         # --- Anchor day_start_equity, restore from KV if same UTC day ---
         await self._refresh_portfolio()
@@ -1066,9 +1071,23 @@ class GigPilot:
                     available = f(usdt.get("availableToWithdraw"), usdt_equity)
                     eligible_values = [x for x in (usdt_equity, usdt_wallet, available) if x >= 0]
                     eligible = min(eligible_values) if eligible_values else 0.0
-                    if eligible < self.cfg.min_arm_capital_usdt:
-                        block("INSUFFICIENT_CAPITAL", "Eligible USDT capital is below the configured ARM minimum.",
-                              {"eligible_usdt": eligible, "required_usdt": self.cfg.min_arm_capital_usdt})
+                    self.portfolio.available_usdt = max(0.0, eligible)
+                    # NO HARDCODED ACCOUNT FLOOR. `min_arm_capital_usdt` (67 USDT) refused to ARM an
+                    # operator whose capital was perfectly usable at a smaller size, and the venue —
+                    # not a constant — is the authority on what it will accept. The real threshold is
+                    # a PER-ORDER minimum read from the instrument spec, so below it the engine simply
+                    # stays idle and the UI reports why. Refusing the ARM would also have hidden the
+                    # actual reason behind a number the operator cannot reconcile with Bybit's.
+                    _floor = max([v for v in self.min_notional.values() if v > 0], default=0.0)
+                    if _floor <= 0:
+                        log.warning("ARM: exchange minimum notional unknown for %s; eligibility will "
+                                    "be enforced per order at submit time", self.cfg.symbols)
+                    elif eligible < _floor:
+                        self.positioning_status = "INSUFFICIENT_EXCHANGE_MINIMUM"
+                        log.warning(
+                            "ARM: available USDT %.2f is below the exchange minimum order %.2f — the "
+                            "engine will arm and stay IDLE; it will not submit an order the venue "
+                            "would refuse", eligible, _floor)
                     if usdt_equity > 0:
                         self.portfolio.equity = usdt_equity
         except Exception as e:
@@ -1226,6 +1245,21 @@ class GigPilot:
             for w in data:
                 eq = f(w.get("totalEquity"))
                 if eq > 0: self.portfolio.equity = eq
+                self.portfolio.available_usdt = self._available_usdt(w)
+
+    @staticmethod
+    def _available_usdt(account: dict) -> float:
+        """Free USDT the venue will actually let us deploy.
+
+        `availableToWithdraw` is the number that decides whether an order can be placed, and it is
+        NOT equity: equity carries unrealised PnL and margin already committed. Falls back to the
+        USDT equity only when the venue omits the field.
+        """
+        coins = account.get("coin") or []
+        usdt = next((c for c in coins if str(c.get("coin", "")).upper() == "USDT"), None)
+        if not usdt:
+            return 0.0
+        return max(0.0, f(usdt.get("availableToWithdraw"), f(usdt.get("equity"), 0.0)))
 
     # ---------- portfolio refresh (trade_id preserved) ----------
     async def _refresh_portfolio(self):
@@ -1235,6 +1269,7 @@ class GigPilot:
                 eq = f(lst[0].get("totalEquity"))
                 if eq > 0: self.portfolio.equity = eq
                 self.portfolio.margin_ratio = f(lst[0].get("accountIMRate"), 0.0)
+                self.portfolio.available_usdt = self._available_usdt(lst[0])
         except Exception as e:
             log.warning("wallet refresh: %s", e)
         try:
@@ -1360,9 +1395,31 @@ class GigPilot:
         stop_bps = max(self.cfg.min_stop_bps, self.cfg.stop_atr_mult * atr_bps)
         tp_bps = max(self.cfg.tp_atr_mult * atr_bps, stop_bps * 1.2)
         risk_usd = equity * self.cfg.risk_per_trade_pct / 100.0
+        # Deployable capital is what the VENUE reports as free, not equity: equity includes unrealised
+        # PnL and margin already committed, so sizing off it would open against margin that is spent.
+        available = self.portfolio.available_usdt or equity
+        budget = available * (self.cfg.capital_usage_pct / 100.0)
         notional = min(risk_usd / (stop_bps / 1e4),
-                       equity * self.cfg.max_symbol_notional_pct / 100.0)
-        if notional < 10: return
+                       equity * self.cfg.max_symbol_notional_pct / 100.0,
+                       budget)
+        if notional <= 0:
+            return
+        # THE ONLY SIZE FLOOR IS THE EXCHANGE'S, read from the instrument spec. This replaces a
+        # hardcoded `notional < 10` that silently returned — indistinguishable from "no signal", so an
+        # operator could not tell under-capitalisation from an absence of edge. Now the reason is
+        # named, metric'd and surfaced.
+        min_notional = self.min_notional.get(symbol, 0.0)
+        if min_notional > 0 and notional < min_notional:
+            self.positioning_status = "INSUFFICIENT_EXCHANGE_MINIMUM"
+            log.warning(
+                "entry skipped %s: order notional %.2f USDT is below the exchange minimum %.2f USDT "
+                "(available %.2f, budget %.2f) — the engine stays idle rather than submitting an "
+                "order the venue will refuse", symbol, notional, min_notional, available, budget)
+            METRICS.inc("gigpilot_entry_skips_total", reason="insufficient_exchange_minimum",
+                        symbol=symbol)
+            return
+        self.positioning_status = ""
+
         entry_px = ms.asks[0][0] if est.side == "Buy" else ms.bids[0][0]
         if entry_px <= 0: return
         step = self.step_size.get(symbol, 0.0)
@@ -1383,9 +1440,10 @@ class GigPilot:
         # Entry-time minimum-size eligibility. Submitting below `minOrderQty` is guaranteed to be
         # rejected by Bybit, so this is a clean pre-trade skip rather than a wasted round trip and a
         # logged exchange error. It is checked on ENTRY only — never on the exit/unwind path.
-        size_ok, size_reason = self.executor.check_entry_size(symbol, qty_s)
+        size_ok, size_reason = self.executor.check_entry_size(symbol, qty_s, entry_px)
         if not size_ok:
-            log.info("skip entry %s: %s", symbol, size_reason)
+            self.positioning_status = "INSUFFICIENT_EXCHANGE_MINIMUM"
+            log.warning("skip entry %s: below the exchange minimum (%s)", symbol, size_reason)
             METRICS.inc("gigpilot_entry_skips_total", reason=size_reason, symbol=symbol)
             return
         leverage = notional / equity
@@ -1541,6 +1599,15 @@ class GigPilot:
                         for s, m in self.markets.items()],
             "events": list(self.last_events)[-30:],
             "live_execution_policy": "FORCE_DISARMED" if self.force_disarm else "OWNER_GATED",
+            "capital": {
+                "equity_usd": round(self.portfolio.equity, 4),
+                "available_usdt": round(self.portfolio.available_usdt, 4),
+                "deployed_notional_usd": round(self.portfolio.gross_notional, 4),
+                "min_order_notional_usd": round(
+                    max([v for v in self.min_notional.values() if v > 0], default=0.0), 4),
+                "capital_usage_pct": self.cfg.capital_usage_pct,
+                "positioning": self.positioning_status or "OK",
+            },
             "ops": operational_snapshot(self.store, self.cfg.db_path),
             "ml": {
                 "models": [

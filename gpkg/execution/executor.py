@@ -69,6 +69,7 @@ class Executor:
         step_sizes: dict[str, float],
         metrics: Metrics | None = None,
         min_sizes: dict[str, float] | None = None,
+        min_notionals: dict[str, float] | None = None,
     ):
         self.cfg = cfg
         # Backward-compatible constructor for tests/migration, but production passes an
@@ -78,6 +79,10 @@ class Executor:
         self.rest = rest.rest if self.adapter is not None and hasattr(rest, "rest") else rest
         self.step_size = step_sizes
         self.min_size = min_sizes or {}
+        #: Bybit's `lotSizeFilter.minNotionalValue`. The EXCHANGE minimum, read from the instrument
+        #: spec rather than hardcoded, so the eligibility decision tracks reality instead of a number
+        #: someone typed once. A quantity can clear `minOrderQty` and still be refused for notional.
+        self.min_notional = min_notionals or {}
         self._metrics = metrics
 
     def _round_qty(self, symbol: str, qty) -> str:
@@ -120,7 +125,7 @@ class Executor:
             raise RuntimeError(f"qty {qty} rounds to 0 at step {step} for {symbol}")
         return _fmt_qty(v)
 
-    def check_entry_size(self, symbol: str, qty) -> tuple[bool, str]:
+    def check_entry_size(self, symbol: str, qty, price: float | None = None) -> tuple[bool, str]:
         """Entry-time eligibility: the rounded quantity must satisfy the instrument minimum.
 
         Submitting below `minOrderQty` is rejected by Bybit, so catching it here turns a guaranteed
@@ -135,6 +140,13 @@ class Executor:
         mn = _dec(self.min_size.get(symbol, 0.0))
         if mn > 0 and _dec(qty_s) < mn:
             return False, f"qty_{qty_s}_below_min_{_fmt_qty(mn)}"
+        # NOTIONAL minimum, checked only when a price is supplied (the exit/unwind path does not pass
+        # one, and must never be blocked by an entry-eligibility rule).
+        if price is not None and price > 0:
+            min_notional = _dec(self.min_notional.get(symbol, 0.0))
+            if min_notional > 0 and _dec(qty_s) * _dec(price) < min_notional:
+                return False, (f"notional_{float(_dec(qty_s) * _dec(price)):.2f}"
+                               f"_below_min_{float(min_notional):.2f}")
         return True, "ok"
 
     async def open_protected(

@@ -125,7 +125,8 @@ class FakeREST:
     async def instrument(self, symbol: str):
         return {
             "symbol": symbol,
-            "lotSizeFilter": {"qtyStep": "0.001", "minOrderQty": "0.001", "maxOrderQty": "1000"},
+            "lotSizeFilter": {"qtyStep": "0.001", "minOrderQty": "0.001", "maxOrderQty": "1000",
+                              "minNotionalValue": "5"},
             "priceFilter": {"tickSize": "0.1"},
         }
 
