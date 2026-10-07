@@ -5,6 +5,7 @@ import {
   fetchRuntimeCredentialStatus,
   armLive,
   disarmLive,
+  storeExchangeCredentials,
   ControlPlaneReason,
   FuturesUniverseMarket
 } from '../../services/tradingService';
@@ -111,9 +112,19 @@ export const FuturesCommandCenter: React.FC = () => {
     } catch (e: any) { setError(e?.message || 'ARM blocked.'); } finally { setAction(''); }
   };
 
-  const submitApiSecret = async (apiSecret: string) => {
+  const submitApiSecret = async (apiSecret: string, apiKey: string) => {
     setSecretSubmitting(true); setSecretError(null); setSecretReasons([]);
     try {
+      // The key and the secret are two halves of ONE credential — the engine signs with the key it
+      // SENDS — so a supplied key has to reach the same memory-only store before arming. A blank field
+      // means this deployment already holds a key and the operator is supplying only the secret half.
+      if (apiKey.trim()) {
+        const stored = await storeExchangeCredentials('bybit', apiKey.trim(), apiSecret);
+        if (!stored.success) {
+          setSecretError(stored.message || stored.error || 'That API key was rejected.');
+          return;
+        }
+      }
       const r = await armLive(apiSecret);
       if (r.success && r.armed) {
         setShowSecretModal(false);

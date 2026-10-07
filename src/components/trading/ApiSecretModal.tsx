@@ -8,7 +8,7 @@ interface ApiSecretModalProps {
   error?: string | null;
   reasons?: ControlPlaneReason[];
   onCancel: () => void;
-  onSubmit: (apiSecret: string) => void | Promise<void>;
+  onSubmit: (apiSecret: string, apiKey: string) => void | Promise<void>;
 }
 
 /**
@@ -32,6 +32,10 @@ export const ApiSecretModal: React.FC<ApiSecretModalProps> = ({
 }) => {
   const [apiSecret, setApiSecret] = useState<string>('');
   const [showSecret, setShowSecret] = useState<boolean>(false);
+  // The KEY is the other half of the same credential. It is masked too: half a credential is still a
+  // credential, and a key leaks a signature-verifiable identifier in screenshots and screen shares.
+  const [apiKey, setApiKey] = useState<string>('');
+  const [showKey, setShowKey] = useState<boolean>(false);
 
   if (!isOpen) return null;
 
@@ -40,17 +44,20 @@ export const ApiSecretModal: React.FC<ApiSecretModalProps> = ({
     const value = apiSecret;
     if (!value.trim() || submitting) return;
     try {
-      await onSubmit(value);
+      await onSubmit(value, apiKey);
     } finally {
-      // The secret must not outlive the request. Clear it immediately after the promise settles,
-      // success OR failure, so nothing can read it back from state.
+      // Neither half may outlive the request. Both are cleared immediately after the promise settles,
+      // success OR failure, so nothing can read them back from component state.
       setApiSecret('');
+      setApiKey('');
     }
   };
 
   const handleCancel = () => {
     setApiSecret('');
+    setApiKey('');
     setShowSecret(false);
+    setShowKey(false);
     onCancel();
   };
 
@@ -67,6 +74,45 @@ export const ApiSecretModal: React.FC<ApiSecretModalProps> = ({
         </p>
 
         <form onSubmit={handleSubmit} autoComplete="off" className="space-y-3">
+          <label
+            htmlFor="gigpilot-runtime-api-key"
+            className="block text-[11px] font-semibold text-slate-300"
+          >
+            API Key{' '}
+            <span className="text-slate-500 font-normal">
+              (required only if this deployment has no key configured)
+            </span>
+          </label>
+          <div className="relative">
+            <KeyRound className="w-4 h-4 text-slate-500 absolute left-3 top-1/2 -translate-y-1/2" />
+            <input
+              id="gigpilot-runtime-api-key"
+              name="gigpilot-runtime-api-key"
+              type={showKey ? 'text' : 'password'}
+              value={apiKey}
+              onChange={(e) => setApiKey(e.target.value)}
+              autoComplete="new-password"
+              autoCapitalize="off"
+              autoCorrect="off"
+              spellCheck={false}
+              aria-autocomplete="none"
+              data-lpignore="true"
+              data-1p-ignore="true"
+              disabled={submitting}
+              placeholder="Leave blank to use the configured key…"
+              className="w-full pl-9 pr-10 py-2 bg-slate-950 border border-slate-800 rounded-lg text-xs text-slate-100 focus:outline-none focus:border-amber-500 disabled:opacity-60"
+            />
+            <button
+              type="button"
+              onClick={() => setShowKey((v) => !v)}
+              className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-300"
+              title={showKey ? 'Hide key' : 'Show key'}
+              aria-label={showKey ? 'Hide key' : 'Show key'}
+            >
+              {showKey ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+            </button>
+          </div>
+
           <label
             htmlFor="gigpilot-runtime-api-secret"
             className="block text-[11px] font-semibold text-slate-300"
@@ -124,8 +170,9 @@ export const ApiSecretModal: React.FC<ApiSecretModalProps> = ({
           )}
 
           <div className="rounded-lg bg-slate-950/80 border border-slate-800 p-2.5 text-[11px] text-slate-400 leading-relaxed">
-            The secret is held in engine memory for this session only and is never written to disk or
-            stored in your browser. It is cleared the moment you disarm.
+            Both halves are held in engine memory for this session only and are never written to disk
+            or stored in your browser. They are cleared the moment you disarm, and the key is scrubbed
+            with the secret — disarming ends the session, not just the secret half of it.
           </div>
 
           <div className="flex justify-end gap-3 pt-1">

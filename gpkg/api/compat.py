@@ -118,6 +118,26 @@ def register_compat_routes(app, get_gp):
 
         configured = set(gp.cfg.symbols)
 
+        # MAKER FEE — measured, not assumed.
+        #
+        # `/v5/account/fee-rate` returns the ACCOUNT's own tier, so this is ONE call per request rather
+        # than one per symbol. With no credential loaded (AWAITING_SECRET) the call cannot be signed, so
+        # it falls back to the published VIP0 baseline — but it is then LABELLED `baseline` and travels
+        # with `makerFeeBpsSource`, so a measurement and an assumption are never presented alike. Showing
+        # a hardcoded 2.0 bps as fact would be a fabricated number on any account with volume, and this
+        # panel exists precisely to judge whether an edge clears cost.
+        maker_bps: float = 2.0
+        maker_src: str = "baseline"
+        probe = next(iter(gp.cfg.symbols), None)
+        if probe:
+            try:
+                fee = await gp.rest.fee_rate(probe)
+                raw = fee.get("makerFeeRate")
+                if raw not in (None, ""):
+                    maker_bps, maker_src = round(abs(float(raw)) * 10_000, 6), "measured"
+            except Exception:
+                pass  # keep the LABELLED baseline; never invent a measured value
+
         def num(row, key):
             """Ticker fields arrive as strings and are sometimes empty; never raise, never NaN."""
             try:
@@ -150,24 +170,41 @@ def register_compat_routes(app, get_gp):
                 "bid": bid,
                 "ask": ask,
                 "spreadBps": ((ask - bid) / mid * 1e4) if (bid > 0 and ask > 0 and mid > 0) else 0.0,
-                "tickSize": None,  # no instrument tick available for the whole venue
+                # The venue's REAL price tick, resolved from the instrument spec at boot.
+                "tickSize": gp.tick_size.get(sym),
                 "qtyStep": gp.step_size.get(sym),
-                "makerFeeBps": None,  # the engine only resolves the taker side
+                "makerFeeBps": maker_bps,
+                "makerFeeBpsSource": maker_src,
                 "takerFeeBps": gp.fee_rate_bps.get(sym),
                 "eligible": sym in configured,
                 "reasons": ([] if sym in configured
                             else ["not in the engine's configured trading universe"]),
             })
         markets.sort(key=lambda m: (not m["eligible"], -(m["volume24h"] or 0.0)))
-        return {"success": True, "category": "linear", "markets": markets}
+        return {"success": True, "category": "linear",
+                "makerFeeBps": maker_bps, "makerFeeBpsSource": maker_src, "markets": markets}
 
     async def _mutate(request,symbol=None,id=None,challengerId=None):
         gp=_gp(); path=request.url.path
         if path.endswith("/gigpilot/arm") or path.endswith("/autonomy"):
             ok,reasons=await gp.arm(); return JSONResponse(status_code=200 if ok else 422,content={"success":ok,"armed":gp.armed,"reasons":reasons,"state":gp.snapshot()})
-        if path.endswith("/gigpilot/disarm") or path.endswith("/kill-switch/deactivate"): gp.disarm("manual"); return {"success":True,"armed":False}
-        if path.endswith("/gigpilot/kill") or path.endswith("/kill-switch/trigger"): gp.kill(); return {"success":True,"killed":True,"armed":False}
-        if path.endswith("/kill-switch/toggle") or path.endswith("/mode"): gp.disarm("mode_change"); return {"success":True,"armed":False,"fail_closed":True}
+        # EVERY stop path goes through the one implementation. These used to flip `armed` and nothing
+        # else, so pressing stop on this door left orders resting on the venue and the hand-entered
+        # credential resident in memory — the same button, with weaker safety depending on the route.
+        if path.endswith("/gigpilot/disarm") or path.endswith("/kill-switch/deactivate"):
+            from gigpilot import perform_disarm
+            return await perform_disarm(gp, "manual")
+        if path.endswith("/gigpilot/kill") or path.endswith("/kill-switch/trigger"):
+            from gigpilot import cancel_and_scrub
+            gp.kill()
+            out = await cancel_and_scrub(gp)
+            out.update({"success": True, "killed": True, "armed": False})
+            return out
+        if path.endswith("/kill-switch/toggle") or path.endswith("/mode"):
+            from gigpilot import perform_disarm
+            out = await perform_disarm(gp, "mode_change")
+            out["fail_closed"] = True
+            return out
         if "/order/" in path: return JSONResponse(status_code=409,content={"success":False,"error":"MANUAL_ORDER_DISABLED","message":"Autonomous futures execution is the sole live order path; direct/manual order submission is disabled."})
         if path.endswith("/reconciliation/audit"): await gp.reconciler.run_once(); return gp.snapshot().get("reconciliation",{})
         if path.endswith("/decisions/evaluate"): return {"tradable":False,"reason":"Only live verified net-edge decisions may authorize execution","signals":gp.snapshot().get("signals",[])}

@@ -2051,19 +2051,93 @@ async def api_arm(body: _ArmBody | None = None):
             "runtimeSecretLoaded": store.has(BYBIT_SECRET)}
 
 
+async def cancel_and_scrub(gp) -> dict:
+    """Cancel resting orders, then scrub the runtime credential.
+
+    SHARED BY EVERY STOP PATH — `/api/disarm`, `/gigpilot/disarm`, `/kill-switch/deactivate`,
+    `/mode` and the kill switch. It was previously duplicated: the real route scrubbed and the
+    compatibility routes merely flipped `armed`. Two doors to the same button with different safety
+    behaviour is how an operator ends up pressing "stop" on the door that leaves orders resting and the
+    credential resident.
+
+    ORDERING IS LOAD-BEARING. Cancelling is a SIGNED call, so it needs the credential that the next
+    step removes; the scrub therefore runs in a `finally` that executes even if the venue call hangs or
+    raises. Scrubbing first would make every cancellation fail and look like a venue outage.
+    """
+    cancelled: list = []
+    cancel_errors: list = []
+    orders_before = None
+    try:
+        orders_before = len(await gp.exchange.open_orders())
+    except Exception as e:
+        cancel_errors.append(f"open_orders: {e}")
+    try:
+        for sym in gp.cfg.symbols:
+            try:
+                await gp.exchange.cancel_all(sym)
+                cancelled.append(sym)
+            except Exception as e:
+                cancel_errors.append(f"cancel_all {sym}: {e}")
+    finally:
+        # §7: ending the session scrubs the hand-entered secret. Keeping it would turn "enter the
+        # secret each time you arm" into "enter it once and leave it resident".
+        from gpkg.core.runtime_secrets import RuntimeSecretStore
+        RuntimeSecretStore.instance().clear()
+
+    # Positions are NOT flattened, deliberately: cancel and flatten are different instructions, and
+    # quietly closing a position on a stop would be a market order nobody asked for. Report what
+    # remains so "disarmed" is never read as "flat".
+    open_positions = None
+    try:
+        open_positions = len(await gp.exchange.positions())
+    except Exception:
+        pass
+
+    return {"cancelledSymbols": cancelled, "openOrdersBefore": orders_before,
+            "cancelErrors": cancel_errors, "openPositionsRemaining": open_positions,
+            "runtimeSecretCleared": True,
+            "positionNote": ("Open positions are NOT closed by disarm; they remain until explicitly "
+                             "flattened.")}
+
+
+async def perform_disarm(gp, reason: str = "manual") -> dict:
+    """The one disarm behaviour. Sticky, so a restart cannot silently re-arm via `GIGPILOT_ARM=1`."""
+    was_armed = gp.armed
+    gp.disarm(reason)
+    out = await cancel_and_scrub(gp)
+    out.update({"success": True, "armed": False, "idempotent": not was_armed})
+    return out
+
+
 @app.post("/api/disarm", dependencies=[Depends(require_owner)])
 async def api_disarm():
-    gp = get_gp()
-    was_armed = gp.armed
-    # Sticky: a disarm must survive a restart, otherwise `GIGPILOT_ARM=1` silently undoes it.
-    gp.disarm("manual")
-    # §7: disarming ENDS the session, so the hand-entered secret is scrubbed here. Keeping it would
-    # turn "enter the secret each time you arm" into "enter it once and leave it resident", which is
-    # the persistence this control exists to remove.
-    from gpkg.core.runtime_secrets import RuntimeSecretStore
-    RuntimeSecretStore.instance().clear()
-    return {"success": True, "armed": False, "idempotent": not was_armed,
-            "runtimeSecretCleared": True}
+    return await perform_disarm(get_gp(), "manual")
+
+
+@app.api_route("/api/updates/rollout", methods=["GET", "POST"],
+               dependencies=[Depends(require_owner)])
+async def api_updates_rollout():
+    """There is no updater, and this says so.
+
+    The React service has a `requestRollout` POST with NO caller in any component (`selfUpdater.ts` is
+    never instantiated), so nothing the UI renders was ever blocked by this route's absence.
+
+    It deliberately does NOT return a success or an "up_to_date". A fabricated `{"status":"up_to_date"}`
+    asserts that an update check ran and found the release current; a fabricated success on POST asserts
+    that a rollout was performed. Neither happened, and this is the operator's deployment. It follows
+    the same fail-closed convention as the other unwired capabilities
+    (`RESEARCH_NOT_VERIFIED`, `OPTIMIZER_NOT_VERIFIED`).
+    """
+    return JSONResponse(status_code=501, content={
+        "success": False,
+        "error": "UPDATER_NOT_WIRED",
+        "updaterWired": False,
+        "fail_closed": True,
+        "message": ("No self-update mechanism is implemented or instantiated in this build; the "
+                    "running release cannot be compared against, or moved to, another. Deployments "
+                    "are performed by the CI workflow."),
+        "rolledOut": False,
+    })
 
 
 @app.get("/api/credentials/runtime", dependencies=[Depends(require_owner)])

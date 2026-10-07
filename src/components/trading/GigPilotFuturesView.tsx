@@ -29,6 +29,7 @@ import {
   fetchRuntimeCredentialStatus,
   armLive,
   disarmLive,
+  storeExchangeCredentials,
   ControlPlaneReason,
   killGigPilot,
   fetchGigPilotHealth
@@ -113,11 +114,20 @@ export const GigPilotFuturesView: React.FC = () => {
     }
   };
 
-  const submitApiSecret = async (apiSecret: string) => {
+  const submitApiSecret = async (apiSecret: string, apiKey: string) => {
     setSecretSubmitting(true);
     setSecretError(null);
     setSecretReasons([]);
     try {
+      // Both halves of the credential go to the same memory-only store before arming; the engine signs
+      // with the key it SENDS, so a key entered here must actually reach the signer.
+      if (apiKey.trim()) {
+        const stored = await storeExchangeCredentials('bybit', apiKey.trim(), apiSecret);
+        if (!stored.success) {
+          setSecretError(stored.message || stored.error || 'That API key was rejected.');
+          return;
+        }
+      }
       const res = await armLive(apiSecret);
       if (res.success && res.armed) {
         setShowSecretModal(false);
