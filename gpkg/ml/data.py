@@ -45,6 +45,17 @@ class LiquiditySnapshot:
     volume_1m: float
 
 
+class InsufficientDataError(RuntimeError):
+    """Raised when the historical depth a run REQUIRES is not present.
+
+    Its own type, not a bare RuntimeError, for one reason: "there is no data" and "the model failed"
+    are different operational states with different remedies, and a generic exception made them
+    indistinguishable in the log. A tournament that ran over an empty database printed a confident
+    `evaluated=35 admitted=0` — which reads as a rigorous negative result and was actually a verdict
+    over nothing. Callers can now surface INSUFFICIENT_DATA explicitly.
+    """
+
+
 class HistoricalDataWorker:
     def __init__(
         self,
@@ -230,12 +241,12 @@ class HistoricalDataWorker:
                                    min_liquidity_snapshots: int = 10000) -> dict:
         report = self.coverage(symbol)
         if report["kline_coverage"] < min_kline_coverage:
-            raise RuntimeError(
+            raise InsufficientDataError(
                 f"{symbol}: insufficient 1m history {report['kline_coverage']:.3%}; "
                 f"requires {min_kline_coverage:.3%} over {self.days} days"
             )
         if report["liquidity_snapshot_count"] < min_liquidity_snapshots:
-            raise RuntimeError(
+            raise InsufficientDataError(
                 f"{symbol}: insufficient historical L2 snapshots "
                 f"{report['liquidity_snapshot_count']} < {min_liquidity_snapshots}; "
                 "historical depth is not fabricated"

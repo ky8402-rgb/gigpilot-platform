@@ -67,7 +67,7 @@ def main() -> int:
 
     if args.command == "tournament":
         import time as _time
-        from gpkg.ml.data import HistoricalDataWorker
+        from gpkg.ml.data import HistoricalDataWorker, InsufficientDataError
         from gpkg.ml.tournament import run_tournament
         from gpkg.persistence.store import Store
         store = Store(args.db)
@@ -92,6 +92,21 @@ def main() -> int:
                 else:
                     print("  no candidate cleared the strict gates "
                           "(net>=8.0 bps, sharpe>1.8, pf>1.75, t>3.0)")
+            except InsufficientDataError as exc:
+                # ITS OWN STATE, not a generic failure. "There is not enough history to measure
+                # anything" and "the model failed" have different remedies, and collapsing them made
+                # an empty database look like a rigorous negative result.
+                report = worker.coverage(symbol)
+                store.ml_research_audit(f"tournament-{symbol.lower()}-insufficient-data", "REJECTED",
+                                        str(exc), {"symbol": symbol, **report})
+                print(f"{symbol} INSUFFICIENT_DATA {exc}")
+                print(f"  coverage={report['kline_coverage']:.3%} "
+                      f"bars={report['kline_count']}/{report['expected_1m_bars']} "
+                      f"l2_snapshots={report['liquidity_snapshot_count']}/10000 "
+                      f"funding={report['funding_count']}")
+                print("  remedy: python3 scripts/ml_research.py ingest   (klines, backfillable)"
+                      "  +  collect-l2   (L2, FORWARD-ONLY — cannot be backfilled)")
+                rc = 2
             except Exception as exc:
                 store.ml_research_audit(f"tournament-{symbol.lower()}-error", "ERROR", str(exc),
                                         {"symbol": symbol})
@@ -129,7 +144,7 @@ def main() -> int:
         return 0
 
     from gpkg.ml.baseline import qualify_conservative_baseline, register_baseline_paper
-    from gpkg.ml.data import HistoricalDataWorker
+    from gpkg.ml.data import HistoricalDataWorker, InsufficientDataError
     from gpkg.ml.registry import ModelRegistry
     from gpkg.ml.training import (
         TrainingConfig,
@@ -170,6 +185,11 @@ def main() -> int:
                 store.ml_research_audit(f"market-data-{symbol.lower()}-funding-basis", "ERROR", str(exc), {"symbol": symbol})
             result=train_candidate(store,symbol,config=config); print(symbol,result.state.value,result.verified,result.reason)
             if result.verified: register_validated_candidate(store,registry,result); strict_verified=True
+        except InsufficientDataError as exc:
+            report = worker.coverage(symbol)
+            store.ml_research_audit(f"alpha-{symbol.lower()}-insufficient-data","REJECTED",str(exc),{"symbol":symbol,**report})
+            print(symbol, "INSUFFICIENT_DATA", str(exc))
+            rc = 2
         except Exception as exc:
             store.ml_research_audit(f"alpha-{symbol.lower()}-training-error","ERROR",str(exc),{"symbol":symbol}); print(symbol,"STRICT_REJECTED",str(exc))
         try:

@@ -806,12 +806,24 @@ def run_tournament(
     notional_usd: float = 0.0,
     depth_notional_usd: float = 0.0,
     elite: int = 4,
+    require_coverage: bool = True,
 ) -> TournamentResult:
     """Evolve a population of hypotheses over real data and return the full audit.
 
     The search optimises ONLY `mean_net_bps` under the strict gates. Fitness is net edge, never
     gross — optimising gross edge is the mistake the whole friction model exists to prevent.
+
+    REFUSES TO RUN WITHOUT THE HISTORY IT NEEDS. Enforced HERE rather than at the CLI so that every
+    caller is guarded, not just this repo's script. Without it, an empty database produced
+    `evaluated=35 admitted=0`: that reads as a rigorous negative result and was in fact a verdict
+    formed over no data at all — the most misleading thing this system can emit, precisely because it
+    looks like science.
     """
+    if require_coverage:
+        # Imported locally: this module is imported by the test suite that also exercises synthetic
+        # fixtures, and a top-level import here would couple the two.
+        from gpkg.ml.data import HistoricalDataWorker
+        HistoricalDataWorker(store, days=max(90, int(window_days))).require_training_coverage(symbol)
     started = now_ms()
     end_ms = int(end_ms or started)
     start_ms = end_ms - int(window_days) * 86_400_000

@@ -537,7 +537,13 @@ def test_repeated_candidates_are_not_reported_twice():
             return self.kv.get(k)
 
     st = _Store()
-    res = run_tournament(st, "SYN", generations=3, population_size=6, seed=4, window_days=90)
+    # `require_coverage=False` ON PURPOSE, and it is the only sanctioned use of that flag: `_Store`
+    # here is a synthetic in-memory fixture that invents its klines, so this exercises the SEARCH
+    # MECHANICS and makes no claim about market data. The guard exists to stop a tournament scoring a
+    # real database that has no history in it — see tests/test_ml_data_guard.py, which pins that the
+    # flag is keyword-only and defaults to True.
+    res = run_tournament(st, "SYN", generations=3, population_size=6, seed=4, window_days=90,
+                         require_coverage=False)
     ids = [r["model_id"] for r in res.rejected_summary]
     assert len(ids) == len(set(ids)), f"duplicate candidates reported: {len(ids)} rows, {len(set(ids))} unique"
     audit_ids = [a[0] for a in st.audits if a[1] in ("ADMIT", "REJECT")]

@@ -245,7 +245,12 @@ def _psi_baseline(rows: list[FeatureRow]) -> dict[str, float]:
 
 
 def train_candidate(store: Store, symbol: str, *, config: TrainingConfig = TrainingConfig(),
-                    end_ms: int | None = None) -> TrainingResult:
+                    end_ms: int | None = None, require_coverage: bool = True) -> TrainingResult:
+    # Same precondition as the tournament, for the same reason: a model fitted on no history is not a
+    # weak model, it is an ABSENT MEASUREMENT, and the two must never be reported alike.
+    if require_coverage:
+        from gpkg.ml.data import HistoricalDataWorker
+        HistoricalDataWorker(store, days=max(90, int(config.days))).require_training_coverage(symbol)
     end_ms = int(end_ms or now_ms())
     start_ms = end_ms - config.days * 86_400_000
     model_id = f"alpha-{symbol.lower()}-{end_ms}"
