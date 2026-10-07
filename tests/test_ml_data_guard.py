@@ -227,3 +227,24 @@ def test_the_l2_threshold_has_exactly_one_definition():
     default = _inspect.signature(W.require_training_coverage).parameters[
         "min_liquidity_snapshots"].default
     assert default == L2_REQUIRED == 10_000
+
+
+def test_the_ml_cli_stays_importable_without_aiohttp():
+    """The deployed `/usr/local/bin/gigpilot` wrapper runs under SYSTEM python, which has no aiohttp.
+
+    That is why every heavy import in `scripts/ml_research.py` is lazy BY DESIGN. A module-level
+    `from gpkg.ml.data import ...` breaks EVERY subcommand at once, including ones that never touch the
+    network — and on the real host it failed only AFTER the app had been activated and health-checked,
+    so a green-looking release was reported as a failure. This pins the lazy-import discipline.
+    """
+    import subprocess
+    code = ("import sys; sys.modules['aiohttp'] = None\n"
+            "import scripts.ml_research\n"
+            "print('ok')\n")
+    proc = subprocess.run([sys.executable, "-c", code], cwd=ROOT,
+                          capture_output=True, text=True, timeout=120)
+    assert proc.returncode == 0, (
+        "scripts/ml_research.py must import with aiohttp ABSENT because it runs under system python "
+        f"on the host. stderr: {proc.stderr[-400:]}"
+    )
+    assert "ok" in proc.stdout

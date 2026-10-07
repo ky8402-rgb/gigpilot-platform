@@ -14,7 +14,6 @@ import json
 import os
 
 from gpkg.ml.audit import normalize_audit
-from gpkg.ml.data import L2_REQUIRED
 
 
 
@@ -170,6 +169,12 @@ def main() -> int:
         return 0
 
     if args.command == "collect-l2":
+        # Imported HERE, like every other heavy import in this file: `gpkg.ml.data` pulls in aiohttp,
+        # and the deployed `gigpilot` wrapper runs under system python, which does not have it. A
+        # module-level import made `gigpilot ml audit-summary` die with
+        #   ModuleNotFoundError: No module named 'aiohttp'
+        # and failed the deploy AFTER the app had already been activated and health-checked.
+        from gpkg.ml.data import L2_REQUIRED
         # The gate needs `L2_REQUIRED` snapshots PER SYMBOL and L2 is forward-only, so the operator is
         # really choosing a duration. State the cost before starting instead of letting them discover
         # it after a week of running.
