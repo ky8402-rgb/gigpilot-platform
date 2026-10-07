@@ -19,9 +19,9 @@ import pytest
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
-from gpkg.core.config import Config  # noqa: E402
-from gpkg.core.errors import BybitError  # noqa: E402
-from gpkg.exchange.bybit_rest import RETRYABLE_RET_CODES, BybitREST  # noqa: E402
+from gpkg.core.config import Config
+from gpkg.core.errors import BybitError
+from gpkg.exchange.bybit_rest import RETRYABLE_RET_CODES, BybitREST
 
 
 class _Resp:

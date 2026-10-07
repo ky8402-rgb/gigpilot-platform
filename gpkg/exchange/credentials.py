@@ -22,6 +22,8 @@ bolted on later. Binance and Bybit leave it empty.
 """
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
 import base64
 import hashlib
 import json
@@ -38,13 +40,25 @@ log = logging.getLogger("gigpilot")
 
 # Fernet (AES-128-CBC + HMAC-SHA256). `cryptography` is a declared dependency; a missing library is
 # a hard error rather than a reason to store secrets in the clear.
-try:
+# The OPTIONAL-dependency fallback, expressed ONCE instead of suppressed at every use site.
+# mypy analyses the `TYPE_CHECKING` branch, so it sees the REAL classes and needs no `# type: ignore`;
+# the interpreter never runs that branch and takes the `else`, which is the graceful degradation.
+# The previous form assigned `None`/`Exception` over the imported names behind two `# type: ignore`
+# comments, which is exactly the "suppress rather than express" pattern — and it still leaked an error,
+# because `InvalidToken = Exception` rebinds a TYPE, which `ignore[assignment]` does not cover.
+if TYPE_CHECKING:  # pragma: no cover
     from cryptography.fernet import Fernet, InvalidToken
-    _FERNET_AVAILABLE = True
-except Exception:  # pragma: no cover - exercised only when the dep is absent
-    Fernet = None  # type: ignore[assignment]
-    InvalidToken = Exception  # type: ignore[assignment,misc]
-    _FERNET_AVAILABLE = False
+
+    _FERNET_AVAILABLE: bool
+else:
+    try:
+        from cryptography.fernet import Fernet, InvalidToken
+
+        _FERNET_AVAILABLE = True
+    except ImportError:  # pragma: no cover - exercised only when the dep is absent
+        Fernet = None
+        InvalidToken = Exception
+        _FERNET_AVAILABLE = False
 
 
 MASTER_KEY_ENV = ("GIGPILOT_MASTER_KEY", "EXCHANGE_CREDENTIAL_MASTER_KEY")
@@ -117,7 +131,9 @@ class CredentialStore:
     """
 
     def __init__(self, path: str | None = None, master_key: str | None = None):
-        self.path = Path(path or os.getenv("GIGPILOT_CREDENTIAL_STORE", DEFAULT_STORE))
+        # `or DEFAULT_STORE` on the OUTSIDE: `os.getenv` is `str | None`, so `path or os.getenv(...)`
+        # could still be None and `Path(None)` raises — the fallback has to cover the env var too.
+        self.path = Path(path or os.getenv("GIGPILOT_CREDENTIAL_STORE") or DEFAULT_STORE)
         self._explicit_key = master_key
         self._cache: dict[str, ExchangeCredential] | None = None
 

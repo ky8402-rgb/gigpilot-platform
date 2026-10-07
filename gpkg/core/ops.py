@@ -9,7 +9,9 @@ from gpkg.core.constants import (
     L2_REQUIRED,  # dependency-free: ops.py is imported at app top level
 )
 
-_CACHE=(0.0,{})
+#: (timestamp, payload). NOTE: keyed by TIME ONLY, not by store/db_path — correct in production,
+#: where one process serves one store, but it means two different stores share a cache within the TTL.
+_CACHE: tuple[float, dict] = (0.0, {})
 def _svc(name):
     def run(arg):
         try:

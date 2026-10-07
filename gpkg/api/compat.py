@@ -116,7 +116,7 @@ def register_compat_routes(app, get_gp):
         if path.endswith("/autonomous-optimizer/status"): return {"status":"fail_closed","enabled":False,"reason":"Python-native optimizer parity is not independently verified"}
         if path.endswith("/sweep/info"): return {"enabled":False,"reason":"withdrawal/sweep automation is disabled until owner-authenticated Python parity is verified"}
         if path.endswith("/exchanges/credentials"): return {"configured":bool(s.get("reconciliation",{}).get("healthy"))}
-        if path.endswith("/status") or path.endswith("/auth-status"): return await _auth_status(request)
+        if path.endswith(("/status", "/auth-status")): return await _auth_status(request)
         if path.endswith("/webhook-info"): return {"enabled":False,"reason":"deployment webhook is pipeline-owned"}
         if path.startswith("/api/github/"): return {"status":"python","managed_by":"GitHub Actions","fail_closed":True}
         return {"status":"ok","python":True,"path":path}
@@ -226,21 +226,21 @@ def register_compat_routes(app, get_gp):
 
     async def _mutate(request,symbol=None,id=None,challengerId=None):
         gp=_gp(); path=request.url.path
-        if path.endswith("/gigpilot/arm") or path.endswith("/autonomy"):
+        if path.endswith(("/gigpilot/arm", "/autonomy")):
             ok,reasons=await gp.arm(); return JSONResponse(status_code=200 if ok else 422,content={"success":ok,"armed":gp.armed,"reasons":reasons,"state":gp.snapshot()})
         # EVERY stop path goes through the one implementation. These used to flip `armed` and nothing
         # else, so pressing stop on this door left orders resting on the venue and the hand-entered
         # credential resident in memory — the same button, with weaker safety depending on the route.
-        if path.endswith("/gigpilot/disarm") or path.endswith("/kill-switch/deactivate"):
+        if path.endswith(("/gigpilot/disarm", "/kill-switch/deactivate")):
             from gigpilot import perform_disarm
             return await perform_disarm(gp, "manual")
-        if path.endswith("/gigpilot/kill") or path.endswith("/kill-switch/trigger"):
+        if path.endswith(("/gigpilot/kill", "/kill-switch/trigger")):
             from gigpilot import cancel_and_scrub
             gp.kill()
             out = await cancel_and_scrub(gp)
             out.update({"success": True, "killed": True, "armed": False})
             return out
-        if path.endswith("/kill-switch/toggle") or path.endswith("/mode"):
+        if path.endswith(("/kill-switch/toggle", "/mode")):
             from gigpilot import perform_disarm
             out = await perform_disarm(gp, "mode_change")
             out["fail_closed"] = True
@@ -249,7 +249,7 @@ def register_compat_routes(app, get_gp):
         if path.endswith("/reconciliation/audit"): await gp.reconciler.run_once(); return gp.snapshot().get("reconciliation",{})
         if path.endswith("/decisions/evaluate"): return {"tradable":False,"reason":"Only live verified net-edge decisions may authorize execution","signals":gp.snapshot().get("signals",[])}
         if path.endswith("/research/analyze"): return JSONResponse(status_code=503,content={"success":False,"error":"RESEARCH_NOT_VERIFIED","fail_closed":True})
-        if path.endswith("/autonomous-optimizer/run") or path.endswith("/autonomous-optimizer/toggle"): return JSONResponse(status_code=503,content={"success":False,"error":"OPTIMIZER_NOT_VERIFIED","fail_closed":True})
+        if path.endswith(("/autonomous-optimizer/run", "/autonomous-optimizer/toggle")): return JSONResponse(status_code=503,content={"success":False,"error":"OPTIMIZER_NOT_VERIFIED","fail_closed":True})
         if path.endswith("/exchanges/keys"): return JSONResponse(status_code=403,content={"success":False,"error":"Credential mutation is deployment/owner controlled"})
         if path.startswith("/api/github/") or path=="/api/deploy": return JSONResponse(status_code=403,content={"success":False,"error":"Deployment administration is pipeline-owned"})
         return {"success":True,"status":"accepted","fail_closed":True,"path":path}
