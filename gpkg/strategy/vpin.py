@@ -165,7 +165,7 @@ class VpinEngine:
         stale reference.
         """
         v = float(bucket_volume)
-        if not (v > 0) or v != v or v in (float("inf"), float("-inf")):  # noqa: PLR0124 — canonical NaN test on an already-coerced float, not a self-comparison
+        if not (v > 0) or math.isnan(v) or v in (float("inf"), float("-inf")):
             raise ValueError("bucket_volume must be positive and finite")
         if self._trades or self._buckets:
             raise RuntimeError(

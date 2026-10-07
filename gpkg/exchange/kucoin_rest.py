@@ -272,7 +272,7 @@ class KuCoinAdapter(ExchangeAdapter):
         side = "buy" if str(kw.get("side", "")).lower() in ("buy", "long") else "sell"
         order_type = "market" if str(kw.get("orderType", "")).lower() == "market" else "limit"
 
-        body = {
+        body: dict[str, Any] = {
             "clientOid": str(kw.get("orderLinkId", "")),
             "symbol": sym,
             "side": side,

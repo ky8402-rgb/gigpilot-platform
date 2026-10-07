@@ -15,7 +15,10 @@ class TaskWatchdog:
         self,
         *,
         disarm: Callable[[str], None],
-        journal: Callable[[str, str, dict], None],
+        # `Store.journal` accepts `symbol: str | None`, and system-level events (watchdog
+        # trips, ARM, circuit opens) genuinely have no symbol. The narrow annotation was the defect —
+        # the call site was right.
+        journal: Callable[[str, str | None, dict], None],
         metric_inc: Callable[..., None],
         max_failures: int = 3,
         window_s: float = 60.0,

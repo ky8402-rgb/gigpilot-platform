@@ -47,6 +47,7 @@ a degraded measurement, and the only way an operator can tell is if the system s
 """
 from __future__ import annotations
 
+import math
 from collections.abc import Sequence
 from typing import Any
 
@@ -93,7 +94,7 @@ def bucket_volume_from_adv(adv_24h: float | None) -> float | None:
         adv = float(adv_24h)
     except (TypeError, ValueError):
         return None
-    if not (adv > 0.0) or adv != adv or adv in (float("inf"), float("-inf")):  # noqa: PLR0124 — canonical NaN test on an already-coerced float, not a self-comparison
+    if not (adv > 0.0) or math.isnan(adv) or adv in (float("inf"), float("-inf")):
         return None
     return adv / float(BUCKETS_PER_DAY)
 
@@ -122,7 +123,7 @@ def adv_from_klines(
             vol = float(row[5])
         except (TypeError, ValueError):
             continue
-        if vol != vol or vol < 0 or vol in (float("inf"), float("-inf")):  # noqa: PLR0124 — canonical NaN test on an already-coerced float, not a self-comparison
+        if math.isnan(vol) or vol < 0 or vol in (float("inf"), float("-inf")):
             continue
         parsed.append((ts, vol))
     if not parsed:

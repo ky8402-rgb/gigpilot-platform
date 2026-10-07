@@ -30,6 +30,7 @@ from __future__ import annotations
 import base64
 import hashlib
 import hmac
+from typing import Any
 
 from gpkg.core.clock import now_ms
 from gpkg.exchange.adapters._http import RestClient
@@ -110,7 +111,11 @@ class KucoinAdapter(ExchangeAdapter):
             "KC-API-KEY-VERSION": "2",
         }
 
-    def _data(self, resp: dict, what: str) -> object:
+    def _data(self, resp: dict, what: str) -> Any:
+        # `Any`, not `object`. The body is parsed JSON of genuinely dynamic shape (sometimes a list,
+        # sometimes a dict), and `object` is actively wrong for it: `object` exposes no attributes, so
+        # every caller got "has no attribute 'get'"/"not iterable" from mypy while working fine at
+        # runtime. The value is validated at the top of this method rather than by the annotation.
         """The ONLY way to read a KuCoin body. A 200 with a non-200000 code is an error."""
         if not isinstance(resp, dict):
             raise ExchangeError(self.name, f"{what}: unexpected response type {type(resp).__name__}")
@@ -332,7 +337,7 @@ class KucoinAdapter(ExchangeAdapter):
         # `leverage` is deliberately omitted: KuCoin derives it from the position's margin mode and
         # risk-limit level, and sending a value here without having verified the venue accepted it
         # would let an order carry a leverage the risk gate never approved.
-        body = {
+        body: dict[str, Any] = {
             "symbol": req.symbol,
             "side": "buy" if req.side is Side.BUY else "sell",
             "type": req.order_type.value.lower(),

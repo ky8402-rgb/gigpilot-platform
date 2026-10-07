@@ -11,6 +11,8 @@ mapping lives in the adapter rather than in a shared helper.
 """
 from __future__ import annotations
 
+from typing import Any
+
 from gpkg.core.config import Config
 from gpkg.core.errors import BybitError
 from gpkg.exchange.base import (
@@ -270,7 +272,7 @@ class BybitAdapter(ExchangeAdapter):
 
     async def place_order(self, req: OrderRequest) -> OrderResult:
         req.validate()
-        body = {
+        body: dict[str, Any] = {
             "category": "linear",
             "symbol": req.symbol,
             "side": req.side.value,

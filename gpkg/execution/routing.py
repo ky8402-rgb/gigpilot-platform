@@ -29,6 +29,7 @@ a sell (in Decimal) is what keeps the order genuinely passive.
 """
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass
 from decimal import ROUND_DOWN, ROUND_UP, Decimal
 from typing import TYPE_CHECKING, Literal
@@ -358,12 +359,17 @@ def plan_entry(
         )
 
     widen = max(0, int(getattr(toxicity, "widen_ticks", 0))) if toxicity is not None else 0
-    if can_quote and mp == mp:  # NaN check without importing math for one comparison  # noqa: PLR0124 — canonical NaN test on an already-coerced float, not a self-comparison
+    # EXPLICIT guards, not an implicit one. The old condition was `can_quote and mp == mp`, so the
+    # proof that `quote.bid_px` was reachable lived inside a NaN comparison — invisible to a reader and
+    # to a type checker. `tick` was worse: `float(None)` raises TypeError, which the handler below did
+    # NOT catch, so an instrument spec with no tickSize let a TypeError escape `plan_entry` and kill
+    # the caller's tick loop. Guarding here rather than returning early keeps the taker fall-through.
+    if can_quote and quote is not None and tick is not None and tick > 0 and not math.isnan(mp):
         try:
             limit = round_passive(mp, float(tick), side,
                                   bid_px=quote.bid_px, ask_px=quote.ask_px,
                                   extra_ticks=widen)
-        except (ValueError, ArithmeticError):
+        except (ValueError, ArithmeticError, TypeError):
             limit = None
         if limit is not None and limit > 0:
             suffix = f" (toxicity widened by {widen} tick(s))" if widen else ""

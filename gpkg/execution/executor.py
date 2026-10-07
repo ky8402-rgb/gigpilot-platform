@@ -14,7 +14,7 @@ import math
 import uuid
 from collections.abc import Awaitable, Callable
 from decimal import ROUND_FLOOR, Decimal, InvalidOperation
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, cast
 
 if TYPE_CHECKING:  # typing-only: the executor must not import the strategy package at runtime
     from gpkg.strategy.vpin import ToxicityPolicy
@@ -607,7 +607,14 @@ class Executor:
                     str(sl_price),
                 )
             else:
-                await self.rest.trading_stop(
+                # `self.rest` is declared as the union, and `adapter_or_none` is a PROPERTY, so mypy
+                # cannot carry the narrowing across it. The invariant is real — this is the else of
+                # "an adapter exists", so the client IS the REST client — and it is stated with a
+                # `cast` rather than an isinstance guard. An isinstance here would ALSO reject the
+                # duck-typed clients the idempotency tests use, turning a type complaint into a
+                # broken test; a cast is runtime-free and keeps the duck-typing.
+                rest = cast(BybitREST, self.rest)
+                await rest.trading_stop(
                     category="linear",
                     symbol=symbol,
                     tpslMode="Full",
@@ -640,8 +647,13 @@ class Executor:
         Returns the exchange result for a fresh submit, or None when the order already existed.
         Every other error is re-raised, so a genuine failure is never hidden.
         """
+        # Reachable ONLY from the non-adapter branches: both `_submit_order` and `place_post_only`
+        # return early when an adapter is present. `orderLinkId` exists on the REST client and not on
+        # `ExchangeAdapter`, which is exactly why mypy flags the union. Casting documents the contract
+        # without a runtime isinstance that would reject duck-typed clients.
+        rest = cast(BybitREST, self.rest)
         try:
-            return await self.rest.place_order(orderLinkId=link, **kw)
+            return await rest.place_order(orderLinkId=link, **kw)
         except BybitError as e:
             if e.code == DUPLICATE_ORDER_LINK_CODE:
                 log.warning(

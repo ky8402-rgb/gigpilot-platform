@@ -269,7 +269,7 @@ class OKXAdapter(ExchangeAdapter):
         side = "buy" if str(kw.get("side", "")).lower() in ("buy", "long") else "sell"
         order_type = "market" if str(kw.get("orderType", "")).lower() == "market" else "limit"
 
-        body = {
+        body: dict[str, Any] = {
             "instId": inst_id,
             "tdMode": "cross",
             "side": side,
