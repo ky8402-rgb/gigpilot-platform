@@ -95,7 +95,7 @@ jobs:
           # secret, and POST /api/arm - the only route that accepts it - runs on the very server
           # being deployed. Requiring ARMED here would be self-sealing, so the gate asserts the
           # daemon is alive and the lifecycle state is one of the acceptable ones instead.
-          python -c "import json; x=json.load(open('/tmp/health.json')); assert x.get('status')=='ok', x.get('status'); assert x.get('healthy') is True, x.get('healthy'); assert x.get('engine_state') in ('AWAITING_SECRET','PAPER','ARMED'), x.get('engine_state')"
+          python -c "import json; x=json.load(open('/tmp/health.json')); assert x.get('status')=='ok', x.get('status'); assert x.get('healthy') is True, x.get('healthy'); assert x.get('engine_state') in ('AWAITING_SECRET','ARMED','DISARMED'), x.get('engine_state')"
           curl -kfsS "$BASE/" | grep -Eiq '<html|<script|<div'
           curl -kfsS "$BASE/version.json" | python -c "import json,sys,os; assert json.load(sys.stdin).get('commit')==os.environ['GITHUB_SHA']"
 
@@ -225,7 +225,12 @@ jobs:
           print(f"Amplify status={status} commit={commit}")
           if status == "SUCCEED":
               expected=os.environ["GITHUB_SHA"]
-              if not commit or commit != expected:
+              # Amplify sometimes reports the source revision as the literal `HEAD` even after the
+              # build succeeds. That provider field is non-authoritative; the next step fetches the
+              # deployed artifact's version.json and asserts its immutable commit SHA exactly.
+              # Reject any other concrete mismatch here, so a real wrong-revision deployment still
+              # fails closed without treating Amplify's `HEAD` placeholder as one.
+              if commit not in {"HEAD", expected}:
                   print(f"ERROR: deployed commit {commit!r}, expected {expected}", file=sys.stderr)
                   sys.exit(2)
               sys.exit(0)
