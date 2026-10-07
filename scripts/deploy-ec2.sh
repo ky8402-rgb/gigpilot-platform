@@ -69,19 +69,19 @@ remove_env_key() {
   mv "$tmp" "$APP_DIR/.env"
 }
 
-if [ "${GIGPILOT_REQUIRE_RUNTIME_SECRET:-0}" = "1" ]; then
-  if grep -q '^BYBIT_API_SECRET=' "$APP_DIR/.env" 2>/dev/null; then
-    remove_env_key "BYBIT_API_SECRET"
-    echo "runtime-secret mode: removed the persisted BYBIT_API_SECRET from .env"
-  fi
-  set_env_value "GIGPILOT_REQUIRE_RUNTIME_SECRET" "1"
-  echo "runtime-secret mode ENABLED: the engine boots with no secret and signs nothing until"
-  echo "  an operator arms it. /api/health answers HTTP 200 with engine_state=AWAITING_SECRET and"
-  echo "  healthy=true; trading_ready stays false until a secret is supplied, and the deploy gate"
-  echo "  deliberately does NOT require live arming."
-else
-  [ -n "${BYBIT_API_SECRET:-}" ] && set_env_value "BYBIT_API_SECRET" "$BYBIT_API_SECRET"
+# UNCONDITIONAL. This was gated on GIGPILOT_REQUIRE_RUNTIME_SECRET being "1" in the CI environment,
+# which meant the persisted path was the DEFAULT and the hand-entry control was opt-in. A CI variable
+# is not a place to keep a security control: it defaults to "off", it is invisible in review, and
+# nothing fails when it is missing. There is now no branch that writes a secret to disk.
+if grep -q '^BYBIT_API_SECRET=' "$APP_DIR/.env" 2>/dev/null; then
+  remove_env_key "BYBIT_API_SECRET"
+  echo "runtime-secret mode: removed the persisted BYBIT_API_SECRET from .env"
 fi
+set_env_value "GIGPILOT_REQUIRE_RUNTIME_SECRET" "1"
+echo "runtime-secret mode ENABLED (unconditional): the engine boots with no secret and signs nothing"
+echo "  until an operator arms it. /api/health answers HTTP 200 with engine_state=AWAITING_SECRET and"
+echo "  healthy=true; trading_ready stays false until a secret is supplied, and the deploy gate"
+echo "  deliberately does NOT require live arming."
 
 if ! grep -qE '^DATABASE_URL=(postgres://|postgresql://)' "$APP_DIR/.env"; then
   echo "ERROR: production DATABASE_URL missing; refusing deployment."

@@ -334,3 +334,40 @@ def safe_exception_message(exc: BaseException) -> str:
     payload's signature is derived from the secret.
     """
     return scrub_text(f"{type(exc).__name__}: {exc}")
+
+
+def resolve_api_credentials(cfg: Any) -> tuple[str, str]:
+    """(api_key, api_secret) for signing: runtime store FIRST, config second — or FAIL.
+
+    ONE rule for both halves, used by BOTH the REST client and the private WebSocket. They used to
+    resolve independently, and the WebSocket read `cfg.api_secret` directly while REST failed closed.
+    Enabling runtime-secret mode therefore broke WS auth — position, order, execution and wallet
+    events — while REST kept working, which is the exact symptom of one credential governed by two
+    rules. Signing with one key while sending another is answered by the venue as an invalid
+    signature, indistinguishable at the call site from a rotated secret, so the two halves must
+    resolve together or not at all.
+
+    The KEY is deliberately still allowed to fall back to config: it identifies, it does not
+    authorise, and the deployment supplies the key while the operator types the secret by hand. The
+    SECRET never falls back once `require_runtime_secret` is set.
+    """
+    store = RuntimeSecretStore.instance()
+
+    live_key = store.get(BYBIT_API_KEY)
+    key = live_key.reveal() if (live_key is not None and bool(live_key)) else ""
+    key = key or (getattr(cfg, "api_key", "") or "").strip()
+    if not key:
+        raise SecretRequired(
+            "no API key available: enter one (POST /api/credentials/exchange) — an empty key cannot "
+            "be sent to the venue"
+        )
+
+    live_secret = store.get(BYBIT_SECRET)
+    if live_secret is not None and bool(live_secret):
+        return key, live_secret.reveal()
+    if getattr(cfg, "require_runtime_secret", False):
+        raise SecretRequired(
+            "no runtime API secret loaded: enter it to arm live trading "
+            "(POST /api/arm with apiSecret, or `gigpilot arm`)"
+        )
+    return key, (getattr(cfg, "api_secret", "") or "")

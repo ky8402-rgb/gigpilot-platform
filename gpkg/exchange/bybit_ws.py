@@ -145,11 +145,33 @@ class BybitWS:
                 ) as sess:
                     async with sess.ws_connect(self.cfg.ws_private, heartbeat=20) as ws:
                         expires = int((time.time() + 10) * 1000)
-                        sig = hmac.new(self.cfg.api_secret.encode(), f"GET/realtime{expires}".encode(), hashlib.sha256).hexdigest()
-                        await ws.send_json({"op": "auth", "args": [self.cfg.api_key, expires, sig]})
+                        # Resolved by the SAME rule as REST, not read off `cfg`. Reading
+                        # `cfg.api_secret` here meant runtime-secret mode authenticated REST and then
+                        # failed this socket, silently losing every position/order/execution/wallet
+                        # event while the connection looked like a transient WS problem.
+                        from gpkg.core.runtime_secrets import (
+                            RuntimeSecretStore,
+                            SecretRequired,
+                            resolve_api_credentials,
+                        )
+                        api_key, api_secret = resolve_api_credentials(self.cfg)
+                        sig = hmac.new(api_secret.encode(), f"GET/realtime{expires}".encode(),
+                                       hashlib.sha256).hexdigest()
+                        del api_secret  # drop the reference as soon as the digest exists
+                        await ws.send_json({"op": "auth", "args": [api_key, expires, sig]})
                         resp = await ws.receive_json()
                         if not resp.get("success"):
-                            raise RuntimeError(f"private WS auth failed: {resp}")
+                            # FATAL, and deterministic: the venue rejected THIS signature, so the
+                            # credential in memory will not sign anything else either. Scrub it and
+                            # require re-entry, rather than reconnecting forever — with backoff capped
+                            # at 30s that loop would otherwise look like a healthy retry while the
+                            # engine silently could not see fills. The reply is NOT logged verbatim:
+                            # an auth-failure payload can echo the request material that produced it.
+                            RuntimeSecretStore.instance().clear()
+                            raise SecretRequired(
+                                "private WS auth rejected — runtime credential scrubbed from memory; "
+                                "re-arm to retry"
+                            )
                         self._private_ok = True
                         if self._metrics:
                             self._metrics.set("gigpilot_ws_connected", 1, stream="private")

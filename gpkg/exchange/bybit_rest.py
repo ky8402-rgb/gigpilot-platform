@@ -67,17 +67,11 @@ class BybitREST:
         duration of one HMAC. It is deliberately not cached on the instance: caching would put the
         secret on an object that gets `repr()`ed, logged and pickled.
         """
-        from gpkg.core.runtime_secrets import BYBIT_SECRET, RuntimeSecretStore, SecretRequired
+        # Delegated to ONE resolver shared with the private WebSocket. Duplicating the ordering here
+        # is what allowed the two callers to drift apart.
+        from gpkg.core.runtime_secrets import resolve_api_credentials
 
-        live = RuntimeSecretStore.instance().get(BYBIT_SECRET)
-        if live is not None and bool(live):
-            return live.reveal()
-        if getattr(self.cfg, "require_runtime_secret", False):
-            raise SecretRequired(
-                "no runtime API secret loaded: enter it to arm live trading "
-                "(POST /api/arm with apiSecret, or `gigpilot arm`)"
-            )
-        return self.cfg.api_secret
+        return resolve_api_credentials(self.cfg)[1]
 
     def _api_key(self) -> str:
         """The API key to identify with, resolved by the SAME rule as `_secret()`.
@@ -92,17 +86,9 @@ class BybitREST:
         authorise, and the production deployment deliberately supplies the key while the operator
         supplies the secret by hand. Raising here would break that arrangement rather than harden it.
         """
-        from gpkg.core.runtime_secrets import BYBIT_API_KEY, RuntimeSecretStore, SecretRequired
+        from gpkg.core.runtime_secrets import resolve_api_credentials
 
-        live = RuntimeSecretStore.instance().get(BYBIT_API_KEY)
-        if live is not None and bool(live):
-            return live.reveal()
-        if self.cfg.api_key:
-            return self.cfg.api_key
-        raise SecretRequired(
-            "no API key available: enter one (POST /api/credentials/exchange) — an empty key cannot "
-            "be sent to the venue"
-        )
+        return resolve_api_credentials(self.cfg)[0]
 
     def _sign(self, ts: str, payload: str) -> str:
         msg = ts + self._api_key() + self.cfg.recv_window + payload

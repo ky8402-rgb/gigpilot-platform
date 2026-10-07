@@ -1598,6 +1598,16 @@ async def lifespan(app: FastAPI):
         yield
     finally:
         await gp.stop()
+        # DROP THE LIVE CREDENTIAL ON THE WAY OUT. The store is memory-only, so a hard kill releases
+        # it anyway; this covers the GRACEFUL path, where the process survives long enough for a core
+        # dump, a crash report or a support bundle to capture the heap. `RuntimeSecretStore` has always
+        # documented scrub "on disarm and at shutdown" — the shutdown half had no implementation until
+        # now, so a clean restart was the one case that never actually scrubbed.
+        try:
+            from gpkg.core.runtime_secrets import RuntimeSecretStore
+            RuntimeSecretStore.instance().clear()
+        except Exception:
+            pass  # teardown must never raise; a failed scrub still loses the process's memory
 
 
 app = FastAPI(title="GigPilot", lifespan=lifespan)

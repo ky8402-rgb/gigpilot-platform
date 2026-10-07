@@ -29,10 +29,13 @@ def _maybe_load_aws_secret() -> None:
     except Exception as e:
         print(f"FATAL: cannot read secret {arn}: {e}", file=sys.stderr)
         sys.exit(2)
-    for k in ("BYBIT_API_KEY", "BYBIT_API_SECRET"):
-        if k in payload and not os.getenv(k):
-            os.environ[k] = str(payload[k])
-    print("hydrated Bybit credentials from Secrets Manager", file=sys.stderr)
+    # ONLY the key. This previously copied BOTH halves into `os.environ`, i.e. it turned a Secrets
+    # Manager value into a durable process-readable copy (via /proc/self/environ) of exactly the
+    # secret the operator is supposed to type by hand for each armed session.
+    if payload.get("BYBIT_API_KEY") and not os.getenv("BYBIT_API_KEY"):
+        os.environ["BYBIT_API_KEY"] = str(payload["BYBIT_API_KEY"])
+    print("hydrated the Bybit API KEY from Secrets Manager (the SECRET is never hydrated)",
+          file=sys.stderr)
 
 
 def _vpin_bucket_overrides(symbols: list[str]) -> dict[str, float]:
@@ -67,27 +70,32 @@ def _vpin_bucket_overrides(symbols: list[str]) -> dict[str, float]:
 
 
 def _maybe_load_local_keys() -> tuple[str, str]:
+    """The API KEY from env / keyfile. The SECRET is ALWAYS `""` — never read from disk.
+
+    `.env` and `.bybit-quant-keys.json` both live on disk, so a secret read from either survives a
+    reboot, a backup, a snapshot and a support bundle. Returning `""` unconditionally — rather than
+    reading it and letting a caller decide — is what makes the runtime-store requirement structural:
+    there is no longer any code path that can produce a persisted secret for signing. Only the KEY is
+    read, because it identifies rather than authorises and the deployment supplies it while the
+    operator types the secret by hand.
+    """
     key = os.getenv("BYBIT_API_KEY", "").strip()
-    secret = os.getenv("BYBIT_API_SECRET", "").strip()
-    if not key or not secret:
+    if not key:
         try:
             for candidate in [".bybit-quant-keys.json", ".env"]:
                 if os.path.exists(candidate):
                     if candidate.endswith(".json"):
                         with open(candidate, "r") as cf:
                             kd = json.load(cf)
-                            key = key or kd.get("apiKey", "").strip()
-                            secret = secret or kd.get("apiSecret", "").strip()
+                            key = key or str(kd.get("apiKey", "") or "").strip()
                     else:
                         with open(candidate, "r") as cf:
                             for line in cf:
                                 if line.startswith("BYBIT_API_KEY="):
                                     key = key or line.split("=", 1)[1].strip().strip('"').strip("'")
-                                elif line.startswith("BYBIT_API_SECRET="):
-                                    secret = secret or line.split("=", 1)[1].strip().strip('"').strip("'")
         except Exception:
             pass
-    return key, secret
+    return key, ""
 
 
 @dataclass
@@ -179,17 +187,19 @@ class Config:
         # mode exists to prevent. So hydration is SKIPPED entirely rather than merely overridden — a
         # value that is never read cannot be leaked by a later code path, and skipping it also means
         # the secret never reaches `os.environ` (readable via /proc/self/environ).
-        require_runtime = os.getenv("GIGPILOT_REQUIRE_RUNTIME_SECRET", "0") == "1"
-        if require_runtime:
-            key = os.getenv("BYBIT_API_KEY", "").strip()
-            secret = ""
-        else:
-            _maybe_load_aws_secret()
-            key, secret = _maybe_load_local_keys()
-        # The API KEY is still required: it is an identifier, not a secret, and signing needs both.
-        # The SECRET is only required when it is expected to come from config at all.
-        if not key or (not secret and not require_runtime):
-            print("FATAL: BYBIT_API_KEY / BYBIT_API_SECRET required.", file=sys.stderr)
+        # THE SECRET IS NEVER HYDRATED, UNCONDITIONALLY.
+        #
+        # This used to be gated on GIGPILOT_REQUIRE_RUNTIME_SECRET, which made the strict path the
+        # OPT-IN one and left the default deployment hydrating a durable copy onto disk AND into
+        # os.environ. A control that is off unless someone remembers to switch it on is a preference,
+        # not a control — and production was in exactly that state (engine_state=PAPER with persisted
+        # credentials). The migration branch is gone rather than merely defaulted, so there is no
+        # configuration that can restore the persisted path.
+        _maybe_load_aws_secret()
+        key, secret = _maybe_load_local_keys()
+        # The KEY is still required: it identifies, it does not authorise.
+        if not key:
+            print("FATAL: BYBIT_API_KEY required.", file=sys.stderr)
             sys.exit(2)
         host = os.getenv("GIGPILOT_HOST", LIVE_HOST).strip()
         if any(x in host.lower() for x in FORBIDDEN) or host != LIVE_HOST:
@@ -211,7 +221,7 @@ class Config:
         return Config(
             api_key=key,
             api_secret=secret,
-            require_runtime_secret=require_runtime,
+            require_runtime_secret=True,
             symbols=syms,
             arm=os.getenv("GIGPILOT_ARM", "0") == "1",
             execution_mode=execution_mode,
