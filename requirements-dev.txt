@@ -2,7 +2,7 @@
 # live exchange credentials does not carry a test framework.
 #
 # Installed by scripts/deploy-ec2.sh, which runs the Python safety gates on the deploy host before
-# pm2 is restarted (fail-closed: a red gate aborts the rollout).
+# the service is restarted (fail-closed: a red gate aborts the rollout).
 pytest>=8.0.0
 pytest-asyncio>=0.23.0
 
@@ -15,5 +15,14 @@ pytest-asyncio>=0.23.0
 # broke CI — so it is declared here explicitly, where it belongs, instead of relying on chance.
 httpx>=0.27.0
 
+# --- Static analysis. CI and the deploy host run `ruff check .`, `flake8 .` and `mypy .` before the
+# release is allowed to proceed, so all three must be declared here or the gate cannot execute.
+#
+# flake8 is deliberately NOT redundant with ruff: it enforces the syntax/undefined-name rules (E9,
+# F63, F7, F82) that this project pins in `.flake8` as its correctness gate, while ruff owns the
+# broader style set. It was missing from this file after the Python-only refactor — the CI lint step
+# would have failed with "No module named flake8", which is exactly the phantom-dependency class of
+# bug the httpx note above exists to prevent.
 mypy>=1.11.0
 ruff>=0.6.0
+flake8>=7.0.0
