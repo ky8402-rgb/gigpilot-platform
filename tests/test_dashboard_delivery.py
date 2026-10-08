@@ -16,6 +16,7 @@ features the operator actually depends on. A page that renders the product NAME 
 and an assertion that only checked for the name would pass against the degenerate fallback page that
 `dashboard_html` serves when template rendering fails.
 """
+import re
 import sys
 import unittest
 import warnings
@@ -186,6 +187,44 @@ class TestConsoleFeatures(unittest.TestCase):
         """
         self.assertGreater(len(self.html), 8000, "the console HTML is suspiciously small")
         self.assertIn("Session API credentials", self.html)
+
+
+class TestLoginContract(unittest.TestCase):
+    """The sign-in form must satisfy the backend's actual contract.
+
+    REGRESSION: the first Python login page sent only `password` and `totpCode`. `OwnerAuth.login()`
+    compares `email` against the configured owner and refuses on mismatch, recording a throttle
+    failure each time — so that form could NEVER have succeeded, and every attempt pushed the operator
+    toward a lockout. It also linked to `/login/emergency`, a route that does not exist. Both defects
+    were invisible to a test that only checked the page returned 200.
+    """
+
+    def setUp(self):
+        self.template = (ROOT / "gpkg" / "web" / "templates" / "login.html").read_text(encoding="utf-8")
+
+    def test_the_form_posts_to_the_real_login_endpoint(self):
+        self.assertIn('action="/api/auth/login"', self.template)
+        self.assertIn('"/api/auth/login"', self.template)
+
+    def test_every_field_the_backend_requires_is_collected(self):
+        names = set(re.findall(r'name="([A-Za-z0-9_]+)"', self.template))
+        for required in ("email", "password", "totpCode", "emergencyPin"):
+            self.assertIn(required, names,
+                          f"login form does not collect {required!r}; OwnerAuth.login() requires it")
+
+    def test_the_emergency_pin_is_a_field_not_a_dead_link(self):
+        self.assertNotIn("/login/emergency", self.template)
+        self.assertIn("emergencyPin", self.template)
+
+    def test_the_credentials_are_never_persisted_client_side(self):
+        """The page may DISCUSS storage in its help text; what matters is that no code TOUCHES it.
+
+        Asserting on the bare words would fail on correct explanatory copy while proving nothing about
+        behaviour, so this checks the actual storage API calls instead. `tests/test_session_cookie.py`
+        applies the same distinction across every served UI asset.
+        """
+        for usage in (".setItem(", ".getItem(", "indexedDB.open", "document.cookie ="):
+            self.assertNotIn(usage, self.template)
 
 
 if __name__ == "__main__":

@@ -6,53 +6,72 @@
     <div class="card">
       <h1>GigPilot Platform</h1>
       <p class="sub">
-        Single-owner control plane. Sign in with your owner password and the current authenticator
-        code. Nothing entered here is written to the browser, the URL, or a log.
+        Single-owner control plane. Nothing entered here is written to the browser, the URL, or a log.
       </p>
 
-      <div id="notice" class="notice error" hidden></div>
+      <div id="notice" class="notice error" role="alert" hidden></div>
 
       <form id="login-form" autocomplete="off" method="post" action="/api/auth/login">
+        {# The OWNER EMAIL IS REQUIRED, not decorative. OwnerAuth.login() compares it against the
+           configured owner and refuses on mismatch ("Access denied: personal single-owner account"),
+           recording a throttle failure each time. A form that omitted this field could therefore
+           never succeed and would push the operator toward a lockout while looking correct. #}
+        <div class="field">
+          <label for="email">Owner email</label>
+          <input id="email" name="email" type="email" autocomplete="username"
+                 spellcheck="false" required>
+        </div>
+
         <div class="field">
           <label for="password">Owner password</label>
           <div class="inputrow">
-            <input id="password" name="password" type="password" autocomplete="off"
+            <input id="password" name="password" type="password" autocomplete="current-password"
                    spellcheck="false" required>
             <button class="reveal" type="button" data-reveal="password" aria-label="Show password">Show</button>
           </div>
         </div>
 
-        <div class="field">
-          <label for="totpCode">Authenticator code</label>
-          <input id="totpCode" name="totpCode" type="text" inputmode="numeric" autocomplete="one-time-code"
-                 pattern="[0-9]*" maxlength="6" spellcheck="false" required>
+        {# Two ways in, both on POST /api/auth/login: the rolling authenticator code, or the
+           break-glass PIN. The PIN is an ALTERNATIVE credential on the same endpoint, not a separate
+           page, so it is a mode switch here rather than a link. #}
+        <div class="field" id="second-factor">
+          <label id="factor-label" for="totpCode">Authenticator code</label>
+          <input id="totpCode" name="totpCode" type="text" inputmode="numeric"
+                 autocomplete="one-time-code" pattern="[0-9]*" maxlength="6" spellcheck="false">
+          <input id="emergencyPin" name="emergencyPin" type="password" autocomplete="off"
+                 spellcheck="false" placeholder="Break-glass PIN" hidden>
         </div>
 
         <div class="login-actions">
           <button class="primary" type="submit" id="submit">Sign in</button>
+          <button type="button" id="mode-toggle">Use break-glass PIN</button>
         </div>
       </form>
 
       <p class="sub" style="margin-top:14px">
-        Lost your authenticator device? Use the emergency break-glass PIN instead &mdash; the
-        <a href="/login/emergency">emergency recovery form</a>.
+        Lost the authenticator device? Switch to the break-glass PIN. Repeated failures are throttled
+        server-side; a service restart clears the lockout, and only an operator can do that.
       </p>
     </div>
 
     <footer class="foot">
-      Session tokens are held in memory only. This console never stores a credential in
-      localStorage, sessionStorage, or a cookie readable by scripts.
+      The session is carried in an HttpOnly cookie, so no script on this page can read it. This
+      console never stores a credential in localStorage, sessionStorage, or IndexedDB.
     </footer>
   </div>
 </div>
-
-{# Progressive enhancement only: the form above posts natively, so sign-in works with JS disabled. #}
+{% raw %}
 <script>
 (function () {
   "use strict";
   var form = document.getElementById("login-form");
   var notice = document.getElementById("notice");
   var submit = document.getElementById("submit");
+  var toggle = document.getElementById("mode-toggle");
+  var label = document.getElementById("factor-label");
+  var totp = document.getElementById("totpCode");
+  var pin = document.getElementById("emergencyPin");
+  var usePin = false;
 
   document.querySelectorAll("[data-reveal]").forEach(function (btn) {
     btn.addEventListener("click", function () {
@@ -63,6 +82,22 @@
     });
   });
 
+  function applyMode() {
+    totp.hidden = usePin;
+    pin.hidden = !usePin;
+    totp.required = !usePin;
+    label.textContent = usePin ? "Break-glass PIN" : "Authenticator code";
+    label.setAttribute("for", usePin ? "emergencyPin" : "totpCode");
+    toggle.textContent = usePin ? "Use authenticator code" : "Use break-glass PIN";
+    notice.hidden = true;
+  }
+
+  toggle.addEventListener("click", function () {
+    usePin = !usePin;
+    applyMode();
+    (usePin ? pin : totp).focus();
+  });
+
   function show(msg) {
     notice.textContent = msg;
     notice.hidden = false;
@@ -70,14 +105,19 @@
 
   form.addEventListener("submit", function (ev) {
     ev.preventDefault();
-    var password = document.getElementById("password").value;
-    var totpCode = document.getElementById("totpCode").value;
+    if (submit.disabled) return;
+    var payload = {
+      email: document.getElementById("email").value,
+      password: document.getElementById("password").value,
+      totpCode: usePin ? "" : totp.value,
+      emergencyPin: usePin ? pin.value : ""
+    };
     submit.disabled = true;
     fetch("/api/auth/login", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       credentials: "same-origin",
-      body: JSON.stringify({ password: password, totpCode: totpCode })
+      body: JSON.stringify(payload)
     }).then(function (r) {
       return r.json().catch(function () { return {}; }).then(function (body) {
         return { ok: r.ok, status: r.status, body: body };
@@ -87,16 +127,26 @@
         window.location.assign("/");
         return;
       }
-      var reason = (res.body && (res.body.error || res.body.detail)) || ("sign-in failed (" + res.status + ")");
+      var reason = (res.body && (res.body.error || res.body.detail)) ||
+                   ("sign-in failed (" + res.status + ")");
       show(String(reason));
+      if (res.status === 429) {
+        submit.disabled = true;   // Do not invite the retry the throttle exists to stop.
+        return;
+      }
     }).catch(function () {
       show("The engine did not answer. Check connectivity and try again.");
     }).finally(function () {
       submit.disabled = false;
-      // The password never outlives the request, success or failure.
+      // The password and the PIN never outlive the request, success or failure.
       document.getElementById("password").value = "";
+      totp.value = "";
+      pin.value = "";
     });
   });
+
+  applyMode();
 })();
 </script>
+{% endraw %}
 {% endblock %}
