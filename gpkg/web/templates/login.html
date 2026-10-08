@@ -1,0 +1,102 @@
+{% extends "base.html" %}
+{% block title %}GigPilot Platform · Owner sign-in{% endblock %}
+{% block body %}
+<div class="login-shell">
+  <div class="login-card">
+    <div class="card">
+      <h1>GigPilot Platform</h1>
+      <p class="sub">
+        Single-owner control plane. Sign in with your owner password and the current authenticator
+        code. Nothing entered here is written to the browser, the URL, or a log.
+      </p>
+
+      <div id="notice" class="notice error" hidden></div>
+
+      <form id="login-form" autocomplete="off" method="post" action="/api/auth/login">
+        <div class="field">
+          <label for="password">Owner password</label>
+          <div class="inputrow">
+            <input id="password" name="password" type="password" autocomplete="off"
+                   spellcheck="false" required>
+            <button class="reveal" type="button" data-reveal="password" aria-label="Show password">Show</button>
+          </div>
+        </div>
+
+        <div class="field">
+          <label for="totpCode">Authenticator code</label>
+          <input id="totpCode" name="totpCode" type="text" inputmode="numeric" autocomplete="one-time-code"
+                 pattern="[0-9]*" maxlength="6" spellcheck="false" required>
+        </div>
+
+        <div class="login-actions">
+          <button class="primary" type="submit" id="submit">Sign in</button>
+        </div>
+      </form>
+
+      <p class="sub" style="margin-top:14px">
+        Lost your authenticator device? Use the emergency break-glass PIN instead &mdash; the
+        <a href="/login/emergency">emergency recovery form</a>.
+      </p>
+    </div>
+
+    <footer class="foot">
+      Session tokens are held in memory only. This console never stores a credential in
+      localStorage, sessionStorage, or a cookie readable by scripts.
+    </footer>
+  </div>
+</div>
+
+{# Progressive enhancement only: the form above posts natively, so sign-in works with JS disabled. #}
+<script>
+(function () {
+  "use strict";
+  var form = document.getElementById("login-form");
+  var notice = document.getElementById("notice");
+  var submit = document.getElementById("submit");
+
+  document.querySelectorAll("[data-reveal]").forEach(function (btn) {
+    btn.addEventListener("click", function () {
+      var input = document.getElementById(btn.getAttribute("data-reveal"));
+      var showing = input.type === "text";
+      input.type = showing ? "password" : "text";
+      btn.textContent = showing ? "Show" : "Hide";
+    });
+  });
+
+  function show(msg) {
+    notice.textContent = msg;
+    notice.hidden = false;
+  }
+
+  form.addEventListener("submit", function (ev) {
+    ev.preventDefault();
+    var password = document.getElementById("password").value;
+    var totpCode = document.getElementById("totpCode").value;
+    submit.disabled = true;
+    fetch("/api/auth/login", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      credentials: "same-origin",
+      body: JSON.stringify({ password: password, totpCode: totpCode })
+    }).then(function (r) {
+      return r.json().catch(function () { return {}; }).then(function (body) {
+        return { ok: r.ok, status: r.status, body: body };
+      });
+    }).then(function (res) {
+      if (res.ok && res.body && res.body.success) {
+        window.location.assign("/");
+        return;
+      }
+      var reason = (res.body && (res.body.error || res.body.detail)) || ("sign-in failed (" + res.status + ")");
+      show(String(reason));
+    }).catch(function () {
+      show("The engine did not answer. Check connectivity and try again.");
+    }).finally(function () {
+      submit.disabled = false;
+      // The password never outlives the request, success or failure.
+      document.getElementById("password").value = "";
+    });
+  });
+})();
+</script>
+{% endblock %}

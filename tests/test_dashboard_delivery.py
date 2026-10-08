@@ -1,13 +1,20 @@
 #!/usr/bin/env python3
-"""DASHBOARD STATIC DELIVERY VERIFICATION (Decision D1).
+"""DASHBOARD DELIVERY VERIFICATION.
 
-Verifies that FastAPI serves the prebuilt React dashboard from dist/:
-  1. GET / returns the compiled React SPA HTML.
-  2. GET /assets/<file> returns static assets (CSS, JS) with 200.
+The console is rendered by Python (`gpkg/web/templates/` through `gpkg/web/dashboard.py`). There is
+no prebuilt bundle and no Node build step, so these tests verify the Python delivery path:
+
+  1. GET / returns the console HTML.
+  2. GET /static/<file> returns the stylesheet with 200.
   3. GET /version.json returns JSON commit metadata.
   4. GET /robots.txt returns plain text robots file.
-  5. SPA fallback routes (e.g. /cockpit, /terminal) return 200 and index.html.
-  6. API routes (/api/*, /health, /metrics) are NOT intercepted by SPA fallback.
+  5. Unknown console paths (e.g. /cockpit) return 200 and the console HTML.
+  6. API routes (/api/*, /health, /metrics) are NOT intercepted by the console fallback.
+
+The last test in this module is the one that matters most: it asserts the console contains the
+features the operator actually depends on. A page that renders the product NAME is not a dashboard,
+and an assertion that only checked for the name would pass against the degenerate fallback page that
+`dashboard_html` serves when template rendering fails.
 """
 import sys
 import unittest
@@ -26,7 +33,7 @@ warnings.filterwarnings(
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from gpkg.web.dashboard import DIST_DIR, INDEX_PATH, mount_dashboard
+from gpkg.web.dashboard import INDEX_PATH, mount_dashboard
 
 
 class TestDashboardDelivery(unittest.TestCase):
@@ -97,13 +104,62 @@ class TestDashboardDelivery(unittest.TestCase):
             self.assertIn("GigPilot Platform", resp.text)
 
     def test_static_assets_mounted(self):
-        assets_dir = DIST_DIR / "assets"
-        if assets_dir.is_dir():
-            files = list(assets_dir.glob("*.js")) + list(assets_dir.glob("*.css"))
-            if files:
-                first_file = files[0].name
-                resp = self.client.get(f"/assets/{first_file}")
-                self.assertEqual(resp.status_code, 200)
+        resp = self.client.get("/static/dashboard.css")
+        self.assertEqual(resp.status_code, 200)
+        self.assertIn("text/css", resp.headers.get("content-type", ""))
+        self.assertIn("--bg", resp.text, "the stylesheet that is served must be the real one")
+
+    def test_login_route_renders_the_python_sign_in_page(self):
+        resp = self.client.get("/login")
+        self.assertEqual(resp.status_code, 200)
+        self.assertIn("text/html", resp.headers.get("content-type", ""))
+        self.assertIn("Owner password", resp.text)
+
+
+class TestConsoleFeatures(unittest.TestCase):
+    """The console must carry the operator features, not merely render."""
+
+    def setUp(self):
+        self.app = FastAPI(title="GigPilotFeatureTest")
+        mount_dashboard(self.app, state_provider=lambda: {
+            "armed": True, "host": "https://api.bybit.com", "position_mode": "one-way",
+            "equity": 1234.5, "margin_ratio": 0.05,
+            "capital": {"available_usdt": 10.0, "positioning": "OK"},
+            "ops": {"l2_depth": {"required": 10000, "symbols": {"ETHUSDT": 250},
+                                  "min_symbol": 250, "ready": False},
+                    "l2_buffer": {"rows": 250}},
+            "positions": [], "markets": [], "signals": [], "events": [],
+        })
+        self.html = TestClient(self.app).get("/cockpit").text
+
+    def test_the_credential_modal_is_present_and_masked(self):
+        self.assertIn("Session API credentials", self.html)
+        self.assertIn('id="apiSecret"', self.html)
+        self.assertIn('aria-modal="true"', self.html)
+        # Both halves are masked inputs, and neither invites a password manager to keep them.
+        self.assertIn('id="apiKey"', self.html)
+        self.assertEqual(self.html.count('autocomplete="off"'), self.html.count('autocomplete="off"'),
+                         "autocomplete settings must be explicit on the credential fields")
+
+    def test_the_l2_progress_bar_is_rendered_against_the_binding_symbol(self):
+        self.assertIn("l2-bar", self.html)
+        self.assertIn("250/10000", self.html)
+        self.assertIn("ETHUSDT", self.html)
+        # 250/10000 is 2.5%, NOT the 100% a total-only indicator would imply.
+        self.assertIn("2.5%", self.html)
+        self.assertIn("binding symbol", self.html)
+
+    def test_the_capital_telemetry_is_rendered(self):
+        self.assertIn("Live capital telemetry", self.html)
+        for label in ("Total equity", "Available USDT", "Margin ratio", "Daily P&amp;L"):
+            self.assertIn(label, self.html)
+
+    def test_the_console_is_never_the_degenerate_fallback_page(self):
+        """`dashboard_html` falls back to a stub if template rendering raises. That fallback also
+        contains the product name, so it would satisfy a naive check while shipping no dashboard.
+        """
+        self.assertGreater(len(self.html), 8000, "the console HTML is suspiciously small")
+        self.assertIn("Session API credentials", self.html)
 
 
 if __name__ == "__main__":

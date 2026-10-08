@@ -124,16 +124,20 @@ certbot --nginx -d "${DOMAIN}" --non-interactive --agree-tos --email "admin@gigp
 }
 systemctl reload nginx || true
 
-# 5. Check and Restart PM2 Service
-echo -e "${BOLD}[4/4] Verifying and restarting PM2 backend daemon...${NC}"
+# 5. Check and Restart the FastAPI Service
+echo -e "${BOLD}[4/4] Verifying and restarting the FastAPI service...${NC}"
 APP_USER="${SUDO_USER:-ubuntu}"
 APP_DIR="/home/${APP_USER}/gigpilot"
 
 if [ -d "$APP_DIR" ]; then
-  cd "$APP_DIR"
-  sudo -u "$APP_USER" pm2 restart gigpilot 2>/dev/null || \
-  sudo -u "$APP_USER" NODE_ENV=production PORT=3000 pm2 start dist/server.cjs --name gigpilot --time 2>/dev/null || true
-  sudo -u "$APP_USER" pm2 save 2>/dev/null || true
+  # The engine runs under systemd (gigpilot.service). PM2 was the Node-era supervisor and no longer
+  # exists in this deployment; falling back to it would silently do nothing.
+  if systemctl list-unit-files 2>/dev/null | grep -q '^gigpilot.service'; then
+    systemctl restart gigpilot.service
+    systemctl --no-pager --lines=5 status gigpilot.service || true
+  else
+    echo -e "  ${YELLOW}⚠ gigpilot.service is not installed; run scripts/deploy-ec2.sh to provision it.${NC}"
+  fi
 fi
 
 sleep 3

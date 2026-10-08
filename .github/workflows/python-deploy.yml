@@ -1,72 +1,78 @@
 name: Python FastAPI Production Deploy
+
 on:
   push:
     branches:
       - main
   workflow_dispatch:
+
 concurrency:
   group: production-deploy-main
   cancel-in-progress: true
+
 jobs:
   validate:
-    name: Python and React validation
+    name: Python validation
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
-      - uses: actions/setup-node@v7
-        with:
-          node-version: 22
-          cache: npm
+
       - uses: actions/setup-python@v6
         with:
           python-version: "3.12"
-      - run: npm ci
-      - run: npm test
-      - name: Upload verified React build artifact
-        uses: actions/upload-artifact@v6
-        with:
-          name: react-dist
-          path: dist
-          retention-days: 3
+
       # BOTH files: the gates below run TestClient-based tests (test_dashboard_delivery) and the
       # pytest suite, so they need test-only packages. Installing only requirements.txt previously
       # worked by accident — httpx came in transitively via the unused google-genai package, so
-      # removing that package broke this job. scripts/deploy-ec2.sh already installed both; the
-      # workflows did not.
-      - run: |
+      # removing that package broke this job.
+      - name: Install dependencies
+        run: |
           python -m pip install --quiet -r requirements.txt
           python -m pip install --quiet -r requirements-dev.txt
-      - run: python tests/test_python_only_runtime.py
-      - run: python tests/test_parity.py
-      - run: python tests/test_execution_idempotency.py
-      - run: python tests/test_package_seams.py
-      - run: python tests/test_dashboard_delivery.py
+
+      # The tree is Python-only: there is no npm install, no TypeScript typecheck and no bundle to
+      # build. The console is rendered by the same Python process that serves the API.
+      - name: Lint and typecheck
+        run: |
+          python -m ruff check .
+          python -m flake8 .
+          python -m mypy .
+
+      - name: Structural gates
+        run: |
+          python tests/test_python_only_runtime.py
+          python tests/test_parity.py
+          python tests/test_execution_idempotency.py
+          python tests/test_package_seams.py
+          python tests/test_dashboard_delivery.py
+          python tests/test_l2_ingestion_indicator.py
+
       - name: Run pytest with warnings as errors
         env:
           PYTHONWARNINGS: error
         run: python -m pytest tests/ -q --no-header
+
   deploy:
     name: Deploy FastAPI runtime to EC2
     needs: validate
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
-      - name: Download verified React build artifact
-        uses: actions/download-artifact@v7
-        with:
-          name: react-dist
-          path: dist
+
       - name: Verify database secret
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL || secrets.NEON_DATABASE_URL }}
         run: python -c "import os,re; x=os.environ['DATABASE_URL']; assert re.match(r'^postgres(ql)?://',x)"
+
+      # The host pulls the revision itself (`git reset --hard origin/main` inside deploy-ec2.sh), so
+      # the only artifact that used to be shipped from here was the prebuilt frontend bundle. That
+      # bundle no longer exists, which is why this step is now a plain deploy trigger.
       - name: Deploy over approved SSH
         env:
           SSH_KEY: ${{ secrets.EC2_SSH_KEY || secrets.GIGPILOT_MUMBAI_EC2 }}
           EC2_HOST: ${{ secrets.EC2_HOST || '' }}
           EC2_USER: ${{ secrets.EC2_USER || 'ubuntu' }}
           DATABASE_URL: ${{ secrets.DATABASE_URL || secrets.NEON_DATABASE_URL }}
-          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY || '' }}
           BYBIT_API_KEY: ${{ secrets.BYBIT_API_KEY || '' }}
           BYBIT_API_SECRET: ${{ secrets.BYBIT_API_SECRET || '' }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -79,8 +85,8 @@ jobs:
           chmod 600 ~/.ssh/id_rsa
           ssh-keygen -y -f ~/.ssh/id_rsa >/dev/null
           ssh -o StrictHostKeyChecking=no -o ConnectTimeout=20 -i ~/.ssh/id_rsa "$EC2_USER@$EC2_HOST" "echo SSH_OK"
-          tar -C dist -czf - . | ssh -o StrictHostKeyChecking=no -o ConnectTimeout=20 -i ~/.ssh/id_rsa "$EC2_USER@$EC2_HOST" "mkdir -p /home/ubuntu/gigpilot/dist && tar -xzf - -C /home/ubuntu/gigpilot/dist"
-          { printf 'export DATABASE_URL=%q\n' "$DATABASE_URL"; printf 'export GEMINI_API_KEY=%q\n' "$GEMINI_API_KEY"; printf 'export BYBIT_API_KEY=%q\n' "$BYBIT_API_KEY"; printf 'export BYBIT_API_SECRET=%q\n' "$BYBIT_API_SECRET"; printf 'export GITHUB_TOKEN=%q\n' "$GITHUB_TOKEN"; cat scripts/deploy-ec2.sh; } | ssh -o StrictHostKeyChecking=no -o ConnectTimeout=20 -i ~/.ssh/id_rsa "$EC2_USER@$EC2_HOST" "bash -s"
+          { printf 'export DATABASE_URL=%q\n' "$DATABASE_URL"; printf 'export BYBIT_API_KEY=%q\n' "$BYBIT_API_KEY"; printf 'export BYBIT_API_SECRET=%q\n' "$BYBIT_API_SECRET"; printf 'export GITHUB_TOKEN=%q\n' "$GITHUB_TOKEN"; cat scripts/deploy-ec2.sh; } | ssh -o StrictHostKeyChecking=no -o ConnectTimeout=20 -i ~/.ssh/id_rsa "$EC2_USER@$EC2_HOST" "bash -s"
+
       - name: Verify exact deployed SHA and FastAPI
         env:
           EC2_HOST: ${{ secrets.EC2_HOST || '' }}
@@ -96,177 +102,11 @@ jobs:
           # being deployed. Requiring ARMED here would be self-sealing, so the gate asserts the
           # daemon is alive and the lifecycle state is one of the acceptable ones instead.
           python -c "import json; x=json.load(open('/tmp/health.json')); assert x.get('status')=='ok', x.get('status'); assert x.get('healthy') is True, x.get('healthy'); assert x.get('engine_state') in ('AWAITING_SECRET','ARMED','DISARMED'), x.get('engine_state')"
-          curl -kfsS "$BASE/" | grep -Eiq '<html|<script|<div'
+          curl -kfsS "$BASE/" -o /tmp/index.html
+          grep -Eiq '<html|<div' /tmp/index.html
+          # The console must be the PYTHON one. Asserting only that some HTML came back would pass
+          # against the degenerate fallback page, so the marker below is a feature the real template
+          # has and the fallback does not.
+          grep -Fq 'Session API credentials' /tmp/index.html
           curl -kfsS "$BASE/version.json" | python -c "import json,sys,os; assert json.load(sys.stdin).get('commit')==os.environ['GITHUB_SHA']"
-
-
-  amplify:
-    name: Deploy and verify React frontend on AWS Amplify
-    needs: validate
-    runs-on: ubuntu-latest
-    env:
-      # AMPLIFY LIVES IN MUMBAI (ap-south-1). This variable is deliberately NOT derived from
-      # `AWS_REGION`. The old form was `secrets.AWS_REGION || 'us-east-1'`, which meant that when the
-      # secret WAS set to us-east-1 the default never applied and the secret silently won — so
-      # `aws amplify get-app` queried the wrong region, the app was "not found", and the ENTIRE
-      # Amplify trigger was SKIPPED with an informational notice rather than failing. The frontend
-      # deploy was therefore never triggered or verified by CI, and nothing went red.
-      #
-      # A dedicated variable is required rather than a new default: any fallback to AWS_REGION
-      # reintroduces exactly that bug. Override with a repository secret named AMPLIFY_REGION if the
-      # app is ever moved.
-      AMPLIFY_REGION: ${{ secrets.AMPLIFY_REGION || 'ap-south-1' }}
-      AWS_REGION: ${{ secrets.AWS_REGION || 'us-east-1' }}
-      AMPLIFY_APP_ID: ${{ secrets.AMPLIFY_APP_ID || 'd2qe2q720fbn3x' }}
-      AMPLIFY_BRANCH: main
-      BACKEND_URL: https://35-154-110-156.sslip.io
-    steps:
-      - uses: actions/checkout@v7
-        with:
-          fetch-depth: 1
-      - name: Check AWS Credentials Availability
-        id: check_creds
-        env:
-          AWS_KEY: ${{ secrets.AWS_ACCESS_KEY_ID || secrets.ID }}
-          AWS_SECRET: ${{ secrets.AWS_SECRET_ACCESS_KEY || secrets.AWS }}
-        run: |
-          if [ -z "$AWS_KEY" ] || [ -z "$AWS_SECRET" ]; then
-            echo "::notice title=Amplify Deployment Notice::AWS credentials (AWS_ACCESS_KEY_ID / AWS_SECRET_ACCESS_KEY) not configured in repository secrets. Skipping direct Amplify trigger; EC2 backend serves production."
-            echo "configured=false" >> "$GITHUB_OUTPUT"
-          else
-            echo "configured=true" >> "$GITHUB_OUTPUT"
-          fi
-
-      - name: Configure AWS credentials
-        id: configure_aws
-        if: steps.check_creds.outputs.configured == 'true'
-        uses: aws-actions/configure-aws-credentials@v4
-        continue-on-error: true
-        with:
-          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID || secrets.ID }}
-          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY || secrets.AWS }}
-          aws-region: ${{ env.AMPLIFY_REGION }}
-
-      - name: Validate AWS Session & Amplify Access
-        id: auth_gate
-        run: |
-          if [ "${{ steps.check_creds.outputs.configured }}" != "true" ] || [ "${{ steps.configure_aws.outcome }}" != "success" ]; then
-            echo "::notice title=Amplify Deployment Notice::AWS credentials absent, expired, or unauthorized for Amplify. Bypassing Amplify steps gracefully."
-            echo "can_deploy=false" >> "$GITHUB_OUTPUT"
-            exit 0
-          fi
-
-          if ! aws amplify get-app --app-id "$AMPLIFY_APP_ID" --region "$AMPLIFY_REGION" >/tmp/amplify-app.json 2>&1; then
-            echo "::error title=Amplify Region Mismatch::Amplify App ID '$AMPLIFY_APP_ID' was not found in region '$AMPLIFY_REGION'. The frontend was NOT triggered and NOT verified. The app is likely in another region — set a repository secret AMPLIFY_REGION to the region shown in the Amplify console (Mumbai is ap-south-1)."
-            echo "::warning title=Amplify Skipped::Frontend trigger and SHA verification did not run for this release."
-            echo "can_deploy=false" >> "$GITHUB_OUTPUT"
-            exit 0
-          fi
-
-          echo "can_deploy=true" >> "$GITHUB_OUTPUT"
-
-      - name: Verify Amplify app and main branch
-        if: steps.auth_gate.outputs.can_deploy == 'true'
-        run: |
-          set -euo pipefail
-          python - <<'PY'
-          import json, os, subprocess
-          app=json.load(open("/tmp/amplify-app.json"))["app"]
-          assert app["appId"] == os.environ["AMPLIFY_APP_ID"]
-          branches=subprocess.check_output(["aws","amplify","list-branches","--app-id",os.environ["AMPLIFY_APP_ID"],"--region",os.environ["AMPLIFY_REGION"],"--query","branches[].branchName","--output","text"], text=True).split()
-          assert os.environ["AMPLIFY_BRANCH"] in branches, branches
-          PY
-
-      - name: Assert production backend URL is present in source
-        if: steps.auth_gate.outputs.can_deploy == 'true'
-        run: |
-          set -euo pipefail
-          grep -R -F "$BACKEND_URL" src .env.production vite.config.* 2>/dev/null | head -n 20
-          test -f .env.production
-          grep -Fq "$BACKEND_URL" .env.production
-
-      - name: Pin Amplify build environment to production backend
-        if: steps.auth_gate.outputs.can_deploy == 'true'
-        run: |
-          set -euo pipefail
-          python - <<'PY'
-          import json, os, subprocess
-          app=os.environ["AMPLIFY_APP_ID"]; region=os.environ["AMPLIFY_REGION"]; url=os.environ["BACKEND_URL"]
-          raw=subprocess.check_output(["aws","amplify","get-app","--app-id",app,"--region",region,"--query","app.environmentVariables","--output","json"], text=True)
-          env=json.loads(raw or "{}")
-          for key in ("API_BASE_URL","REACT_APP_API_URL","VITE_BACKEND_URL","VITE_API_BASE_URL","VITE_API_URL"): env[key]=url
-          subprocess.run(["aws","amplify","update-app","--app-id",app,"--region",region,"--environment-variables",json.dumps(env)], check=True)
-          PY
-
-      - name: Trigger Amplify release for this main commit
-        id: release
-        if: steps.auth_gate.outputs.can_deploy == 'true'
-        run: |
-          set -euo pipefail
-          aws amplify start-job --app-id "$AMPLIFY_APP_ID" --branch-name "$AMPLIFY_BRANCH" --job-type RELEASE --region "$AMPLIFY_REGION" --output json >/tmp/amplify-release.json
-          JOB_ID="$(python -c 'import json; print(json.load(open("/tmp/amplify-release.json"))["jobSummary"]["jobId"])')"
-          test -n "$JOB_ID"
-          echo "job_id=$JOB_ID" >> "$GITHUB_OUTPUT"
-
-      - name: Wait for exact commit Amplify deployment
-        if: steps.auth_gate.outputs.can_deploy == 'true'
-        env:
-          JOB_ID: ${{ steps.release.outputs.job_id }}
-        run: |
-          set -euo pipefail
-          deadline=$((SECONDS+900))
-          while [ "$SECONDS" -lt "$deadline" ]; do
-            aws amplify get-job --app-id "$AMPLIFY_APP_ID" --branch-name "$AMPLIFY_BRANCH" --job-id "$JOB_ID" --region "$AMPLIFY_REGION" --output json >/tmp/amplify-job.json
-            set +e
-            python - <<'PY'
-          import json, os, sys
-          summary=json.load(open("/tmp/amplify-job.json"))["job"]["summary"]
-          status=summary.get("status","UNKNOWN"); commit=summary.get("commitId","")
-          print(f"Amplify status={status} commit={commit}")
-          if status == "SUCCEED":
-              expected=os.environ["GITHUB_SHA"]
-              # Amplify sometimes reports the source revision as the literal `HEAD` even after the
-              # build succeeds. That provider field is non-authoritative; the next step fetches the
-              # deployed artifact's version.json and asserts its immutable commit SHA exactly.
-              # Reject any other concrete mismatch here, so a real wrong-revision deployment still
-              # fails closed without treating Amplify's `HEAD` placeholder as one.
-              if commit not in {"HEAD", expected}:
-                  print(f"ERROR: deployed commit {commit!r}, expected {expected}", file=sys.stderr)
-                  sys.exit(2)
-              sys.exit(0)
-          if status in {"FAILED","CANCELLED"}: sys.exit(3)
-          sys.exit(10)
-          PY
-            rc=$?
-            set -e
-            if [ "$rc" -eq 0 ]; then exit 0; fi
-            if [ "$rc" -ne 10 ]; then exit "$rc"; fi
-            sleep 10
-          done
-          echo "ERROR: Amplify deployment timed out" >&2
-          exit 5
-
-      - name: Verify deployed Amplify frontend contains production backend URL
-        if: steps.auth_gate.outputs.can_deploy == 'true'
-        run: |
-          set -euo pipefail
-          DOMAIN="$(aws amplify get-app --app-id "$AMPLIFY_APP_ID" --region "$AMPLIFY_REGION" --query 'app.defaultDomain' --output text)"
-          test -n "$DOMAIN" && test "$DOMAIN" != "None"
-          export FRONTEND_URL="https://$AMPLIFY_BRANCH.$DOMAIN"
-          curl --fail --silent --show-error --location --max-time 30 "$FRONTEND_URL" -o /tmp/index.html
-          grep -Fq '<div id="root"' /tmp/index.html || grep -Fq '<div id="root">' /tmp/index.html
-          python - <<'PY'
-          import os, re, subprocess, sys
-          page=open("/tmp/index.html", encoding="utf-8").read()
-          url=os.environ["BACKEND_URL"]
-          if url in page: raise SystemExit(0)
-          scripts=re.findall(r'<script[^>]+src=["\']([^"\']+)["\']', page, re.I)
-          for src in scripts:
-              full=src if src.startswith("http") else os.environ["FRONTEND_URL"] + (src if src.startswith("/") else "/" + src)
-              try: body=subprocess.check_output(["curl","--fail","--silent","--show-error","--location","--max-time","30",full], text=True)
-              except subprocess.CalledProcessError: continue
-              if url in body:
-                  print("Production backend URL found in deployed JS:", full); raise SystemExit(0)
-          print("ERROR: expected backend URL not found in deployed HTML/JS", file=sys.stderr)
-          raise SystemExit(1)
-          PY
+          curl -kfsS "$BASE/static/dashboard.css" | grep -Fq -- '--bg'

@@ -4,20 +4,30 @@
 # unused dependency is not free — it is install-time risk, an extra CVE feed to track, and one more
 # package that can be typosquatted or compromised. Each line must be justified by an actual import.
 #
-# Audited 2026-10-04. Removed as unused (grep for a real `import` returned zero files):
-#   requests, google-genai, jinja2, python-multipart, pytest, pytest-asyncio
+# Audited 2026-10-08. Removed as unused (grep for a real `import` returned zero files):
+#   requests, google-genai, python-multipart, pytest, pytest-asyncio
 #     - `requests` was superseded by aiohttp everywhere and never imported.
 #     - `google-genai` belonged to the retired Node optimizer; the Python side never used it.
-#     - `jinja2` was never used — responses are built directly, not rendered from templates.
 #     - `python-multipart` is only needed for Form()/File() endpoints; all bodies are JSON models.
 #     - `pytest` / `pytest-asyncio` are TEST-ONLY and now live in requirements-dev.txt, so a
 #       test framework no longer ships to the production host.
+#
+# REINSTATED 2026-10-08: `jinja2`. It was removed as unused when the dashboard was a prebuilt React
+# bundle served as static files. The dashboard is now rendered by Python
+# (`gpkg/web/templates/*.html` through `gpkg/web/dashboard.py`), so the import is real and the
+# dependency is justified by actual use rather than anticipated use.
 #
 # Test-only dependencies: requirements-dev.txt
 
 # --- HTTP API / serving ---
 fastapi>=0.110.0
 uvicorn[standard]>=0.28.0
+
+# --- Server-rendered operator dashboard (gpkg/web/dashboard.py). A templating engine is used rather
+# than string concatenation specifically for AUTOESCAPING: every value interpolated into the
+# dashboard (symbols, host, event text, error messages) escapes by default, so a venue-supplied
+# string cannot become markup in the operator's browser. ---
+jinja2>=3.1.0
 
 # --- Async HTTP client: every exchange adapter (gpkg/exchange/adapters/_http.py) ---
 aiohttp>=3.9.0

@@ -195,7 +195,7 @@
   },
   "frontend": {
     "python": "gpkg/web/dashboard.py",
-    "reason": "D1 decision executed: FastAPI serves verified prebuilt React bundle from dist/ via gpkg.web.dashboard. Zero Node runtime in production.",
+    "reason": "Complete: the React SPA and its Node build toolchain were deleted. The dashboard is rendered by Python (Jinja2 templates under gpkg/web/templates through gpkg.web.dashboard), so there is no npm install, no bundle step and no JS/TS file left in the repository.",
     "status": "migrated"
   },
   "http_endpoints": {

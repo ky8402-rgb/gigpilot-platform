@@ -1,0 +1,19 @@
+{# Base layout for the Python-rendered dashboard.
+ #
+ # Server-rendered on purpose: the operator console has no build step, no bundler and no npm. Every
+ # interpolated value is HTML-escaped by Jinja's autoescaping (enabled explicitly in dashboard.py),
+ # so venue- or operator-supplied text cannot become markup.
+ #}
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}GigPilot Platform{% endblock %}</title>
+  <link rel="stylesheet" href="/static/dashboard.css">
+  <link rel="icon" href="/favicon.ico">
+</head>
+<body>
+{% block body %}{% endblock %}
+</body>
+</html>

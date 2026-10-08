@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import json
 import re
+import sys
 from pathlib import Path
 from typing import Any
 
@@ -197,6 +198,21 @@ def main() -> int:
         "frontend": frontend(),
         "scripts": scripts_surface(),
     }
+    # FAIL CLOSED. The migration is complete and the Node/TypeScript sources this extracts from have
+    # been deleted, so re-running it now would overwrite the recorded surface with an EMPTY one and
+    # destroy the evidence the parity gate reads. An empty extraction is therefore treated as a
+    # broken extraction rather than as a valid one that happens to be empty.
+    if (manifest["http"]["count"] == 0
+            and not manifest["modules"]["trading_modules"]
+            and not manifest["modules"]["other_modules"]):
+        print("REFUSING to overwrite the recorded Node surface.", file=sys.stderr)
+        print("  The Node sources are no longer present, so this run produced an empty surface.",
+              file=sys.stderr)
+        print(f"  {OUT.relative_to(ROOT)} and migration/parity_map.json are retained as the frozen",
+              file=sys.stderr)
+        print("  record that tests/test_parity.py verifies.", file=sys.stderr)
+        return 1
+
     OUT.parent.mkdir(parents=True, exist_ok=True)
     OUT.write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf8")
 

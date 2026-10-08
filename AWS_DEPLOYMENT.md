@@ -1,5 +1,22 @@
 # Deploying GigPilot to Amazon Web Services (AWS)
 
+> ## ⚠️ PARTIALLY SUPERSEDED — the stack is now 100% Python
+>
+> The React/Node frontend and its AWS Amplify hosting were removed. The operator console is rendered
+> by the FastAPI process (Jinja2 templates under `gpkg/web/templates/`), so **any step below that
+> mentions `npm`, `vite`, `dist/`, PM2, Prisma, or AWS Amplify no longer applies** and will fail
+> against this repository.
+>
+> The authoritative deployment path is:
+>
+> 1. `.github/workflows/python-deploy.yml` runs the full Python gate suite on push to `main`.
+> 2. It invokes `scripts/deploy-ec2.sh` over SSH; the host pulls the revision itself
+>    (`git reset --hard origin/main`) and restarts `gigpilot.service`.
+> 3. The deployed revision is verified by exact SHA against `/api/health` and `/version.json`.
+>
+> Everything below is retained as the historical record of how the EC2 host was provisioned. Treat
+> the Python path above, not this document, as the source of truth.
+
 This guide provides step-by-step instructions to deploy **GigPilot Platform** (`ky8402-rgb/gigpilot-platform`) on AWS.
 
 > ⚠️ **IMPORTANT: AWS Free Tier Notice & App Runner Limitations**

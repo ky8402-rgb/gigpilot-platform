@@ -12,23 +12,16 @@ concurrency:
 
 jobs:
   validate:
-    name: Typecheck and production build
+    name: Python validation
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
         uses: actions/checkout@v7
 
-      - name: Setup Node
-        uses: actions/setup-node@v7
+      - name: Setup Python
+        uses: actions/setup-python@v6
         with:
-          node-version: 22
-          cache: npm
-
-      - name: Install dependencies
-        run: npm ci
-
-      - name: Typecheck
-        run: npm run test
+          python-version: "3.12"
 
       # BOTH files. The gates below exercise FastAPI TestClient, so they need test-only packages
       # (httpx, pytest). Installing only requirements.txt previously "worked" by accident: httpx
@@ -37,34 +30,36 @@ jobs:
       # image while making the gate's real requirements explicit.
       - name: Install Python dependencies
         run: |
-          python3 -m pip install --quiet -r requirements.txt
-          python3 -m pip install --quiet -r requirements-dev.txt
+          python -m pip install --quiet -r requirements.txt
+          python -m pip install --quiet -r requirements-dev.txt
 
-      # Python-side gates. test_parity enforces that the Node surface stays mapped while the
-      # migration is in flight (so a new Node endpoint cannot slip past it), and refuses `removed`
-      # without a proven replacement. test_execution_idempotency locks the order paths to one
-      # submission helper. test_package_seams pins that re-exported symbols stay the SAME OBJECT
-      # (a duplicate BybitError class would silently break `except` across modules). None optional.
-      - name: Python lint and typecheck
+      # There is no Node/TypeScript surface left to typecheck or bundle: the console is rendered by
+      # the same Python process that serves the API.
+      - name: Lint and typecheck
         run: |
-          python3 -m ruff check --select F gpkg/ml/audit.py gpkg/ml/data.py gpkg/ml/hypotheses.py gpkg/ml/training.py gpkg/persistence/store.py scripts/ml_research.py
-          python3 -m mypy --ignore-missing-imports gpkg/ml/audit.py gpkg/ml/data.py gpkg/ml/hypotheses.py gpkg/ml/training.py gpkg/persistence/store.py scripts/ml_research.py
+          python -m ruff check .
+          python -m flake8 .
+          python -m mypy .
 
-      - name: React lint and typecheck
-        run: npm run lint
-
-      - name: Python gates (migration parity + execution idempotency + package seams + dashboard delivery)
+      # Python-side gates. test_parity enforces that every entry of the historical Node surface
+      # carries an explicit decision and refuses `removed` without a proven replacement.
+      # test_execution_idempotency locks the order paths to one submission helper.
+      # test_package_seams pins that re-exported symbols stay the SAME OBJECT (a duplicate BybitError
+      # class would silently break `except` across modules). test_python_only_runtime asserts the
+      # finished migration in both directions: no JS/TS anywhere, AND a real Python console present.
+      # None optional.
+      - name: Structural gates
         run: |
-          python3 tests/test_parity.py
-          python3 tests/test_execution_idempotency.py
-          python3 tests/test_package_seams.py
-          python3 tests/test_dashboard_delivery.py
+          python tests/test_python_only_runtime.py
+          python tests/test_parity.py
+          python tests/test_execution_idempotency.py
+          python tests/test_package_seams.py
+          python tests/test_dashboard_delivery.py
+          python tests/test_l2_ingestion_indicator.py
 
       # The deploy workflow runs the complete Python suite before touching EC2. PR CI must run the
       # same suite or "green CI" can merge a change that is guaranteed to fail the release gate.
-      # The targeted scripts above remain because they provide clearer invariant-specific output.
       - name: Full Python regression suite
-        run: python3 -m pytest tests/ -q --no-header
-
-      - name: Production build
-        run: npm run build
+        env:
+          PYTHONWARNINGS: error
+        run: python -m pytest tests/ -q --no-header

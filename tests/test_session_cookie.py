@@ -12,11 +12,9 @@ THE FIX, AND ITS HONEST LIMIT
 The session is now issued as an `HttpOnly` cookie, which JavaScript CANNOT read. That is the only
 carrier that actually satisfies "not accessible to client-side inspection".
 
-It is not the only carrier, because the frontend is deployed at TWO origins: the EC2 host (same
-origin as the API) and AWS Amplify (a DIFFERENT origin). A `SameSite=Strict` cookie is never sent to
-a cross-origin API, so on Amplify the cookie is unavailable BY CONSTRUCTION and an in-memory bearer
-remains the carrier. The tests below therefore pin both paths, and the frontend tests pin that the
-token is no longer written to `localStorage` on either.
+The console is now served by the SAME Python process as the API (there is no separate frontend
+origin any more), so the cookie is the single carrier. The UI tests below pin that nothing served to
+the browser writes a token to `localStorage`, `sessionStorage`, or IndexedDB.
 
 Run: python3 -m pytest tests/test_session_cookie.py -q
 """
@@ -245,46 +243,51 @@ def test_login_response_still_carries_the_token_for_cross_origin_clients(client)
 
 
 # =============================================================================================
-# FRONTEND — the token must no longer be persisted in the browser
+# UI — the token must not be persisted in the browser
+#
+# This section used to scan the React sources. The console is Python-rendered now, so it scans the
+# templates and static assets that are ACTUALLY SERVED. That is a stronger check, not a weaker one:
+# the old version read the source tree and could be satisfied by a build step that reintroduced the
+# write afterwards, whereas these read the bytes the operator's browser receives.
 # =============================================================================================
-def _src() -> str:
-    return (ROOT / "src" / "services" / "tradingService.ts").read_text()
+def _ui_sources() -> list[Path]:
+    files = sorted((ROOT / "gpkg" / "web" / "templates").rglob("*.html"))
+    files += sorted(p for p in (ROOT / "gpkg" / "web" / "static").rglob("*") if p.is_file())
+    assert files, "no console templates or static assets were found to check"
+    return files
 
 
-def test_frontend_does_not_write_the_token_to_localstorage():
-    src = _src()
-    for line in src.splitlines():
-        if "localStorage" not in line:
-            continue
-        # The ONLY permitted code reference is the migration DELETE of a legacy key.
-        assert "removeItem" in line, f"localStorage used for something other than deletion: {line}"
-        assert "setItem" not in line, f"a token is being PERSISTED again: {line}"
+def _ui_text() -> str:
+    return "\n".join(f.read_text(encoding="utf-8", errors="ignore") for f in _ui_sources())
 
 
-def test_frontend_migrates_away_the_legacy_key():
-    """Skipping the write is not enough: an existing copy must be actively deleted, or the credential
-    we are removing simply stays where it was."""
-    src = _src()
-    assert "gigpilot_owner_token" in src, "the legacy key is not referenced at all"
-    assert "removeItem" in src
-
-
-def test_frontend_has_a_refresh_handshake():
-    """An in-memory token dies on reload; without a refresh the operator would re-enter password and
-    TOTP every time, which pushes clients back towards persisting it."""
-    src = _src()
-    assert "/api/auth/refresh" in src or "auth/refresh" in src
-    assert "credentials" in src, "the refresh must send cookies"
-
-
-def test_no_other_source_file_reads_a_token_from_localstorage():
-    """`lib/api.ts` had its OWN localStorage token reader, so fixing only tradingService.ts would
-    have left a second copy in place."""
+def test_the_console_never_writes_a_token_to_browser_storage():
+    """`localStorage` is readable by any script on the page, so a single XSS would hand over the whole
+    control plane. Nothing served to the browser may write a credential there."""
     offenders = []
-    for f in (ROOT / "src").rglob("*.ts"):
-        if "__tests__" in str(f) or ".test." in f.name:
-            continue
-        for i, line in enumerate(f.read_text(errors="ignore").splitlines(), 1):
-            if "localStorage" in line and "removeItem" not in line and "getItem" in line:
-                offenders.append(f"{f.name}:{i}: {line.strip()[:80]}")
-    assert not offenders, f"sources still reading a token from localStorage: {offenders}"
+    for f in _ui_sources():
+        for i, line in enumerate(f.read_text(encoding="utf-8", errors="ignore").splitlines(), 1):
+            if any(store in line for store in ("localStorage", "sessionStorage", "indexedDB")) \
+                    and "setItem" in line:
+                offenders.append(f"{f.name}:{i}: {line.strip()[:90]}")
+    assert not offenders, f"the UI persists a value in browser storage: {offenders}"
+
+
+def test_the_console_never_reads_a_token_back_from_browser_storage():
+    """Clearing the write is not enough on its own: a reader would keep working against a value some
+    earlier release had already stored."""
+    offenders = []
+    for f in _ui_sources():
+        for i, line in enumerate(f.read_text(encoding="utf-8", errors="ignore").splitlines(), 1):
+            if any(store in line for store in ("localStorage", "sessionStorage")) and "getItem" in line:
+                offenders.append(f"{f.name}:{i}: {line.strip()[:90]}")
+    assert not offenders, f"the UI reads a value from browser storage: {offenders}"
+
+
+def test_the_console_carries_the_session_in_a_cookie_not_in_storage():
+    """The HttpOnly cookie is the carrier the JavaScript cannot read. Every request must therefore be
+    made with credentials, and nothing may be kept client-side beyond the page's own memory."""
+    text = _ui_text()
+    assert "credentials" in text, "requests must send the session cookie"
+    assert "withCredentials" in text or 'credentials: "same-origin"' in text
+    assert "gigpilot_owner_token" not in text, "the legacy storage key must not be referenced at all"

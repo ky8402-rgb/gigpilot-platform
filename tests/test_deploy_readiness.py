@@ -39,7 +39,10 @@ from gpkg.core.engine_state import (
     ready_for_arming,
 )
 
-VERIFY_SCRIPTS = [ROOT / "verify-production.sh", ROOT / "scripts" / "verify-production.sh"]
+# There is exactly ONE host gate script. It used to be duplicated (a root copy and a scripts/ copy)
+# and the two drifted apart — an assertion fixed in one silently stayed broken in the other. The
+# duplication was removed along with the Amplify/Node deployment surface.
+VERIFY_SCRIPTS = [ROOT / "scripts" / "verify-production.sh"]
 
 
 # =============================================================================================
@@ -337,7 +340,13 @@ def test_the_secret_never_appears_in_the_health_payload(make_engine, monkeypatch
 def test_gate_script_asserts_the_lifecycle_contract(script):
     text = script.read_text(encoding="utf-8")
     assert "engine_state" in text, f"{script.name} does not assert engine_state"
-    assert 'status="ok"' in text.replace(" ", "") or 'status": "ok"' in text or "status=ok" in text
+    # Equivalent spellings of the same assertion are all acceptable. What matters is that the gate
+    # checks the daemon reports ok, rather than only that it answered.
+    compact = text.replace(" ", "")
+    assert ('"status":"ok"' in compact or 'status="ok"' in compact
+            or 'status": "ok"' in text or "status=ok" in text), (
+        f"{script.name} does not assert the daemon status is ok"
+    )
     for state in ("AWAITING_SECRET", "ARMED", "DISARMED"):
         assert state in text, f"{script.name} does not accept {state}"
     assert "healthy" in text
@@ -354,14 +363,28 @@ def test_gate_script_does_not_require_live_arming(script):
         )
 
 
-def test_both_gate_scripts_carry_the_same_lifecycle_block():
-    """They are near-duplicates and have drifted before; the assertion must not live in only one."""
-    blocks = []
-    for script in VERIFY_SCRIPTS:
-        text = script.read_text(encoding="utf-8")
-        start = text.index("LIFECYCLE_PROBLEMS=")
-        blocks.append(text[start:text.index("check_fail \"Health lifecycle", start)])
-    assert blocks[0] == blocks[1], "verify-production.sh copies have drifted apart"
+def test_the_host_gate_script_is_not_duplicated():
+    """The old arrangement shipped two near-identical copies that drifted apart, so a fix applied to
+    one left the other broken. The duplication is gone; assert it stays gone rather than asserting
+    that two copies still agree.
+    """
+    candidates = sorted(
+        str(p.relative_to(ROOT))
+        for p in list(ROOT.glob("verify-production.sh"))
+        + list(ROOT.glob("scripts/*verify-production*.sh"))
+    )
+    assert candidates == ["scripts/verify-production.sh"], (
+        f"expected exactly one host gate script, found {candidates}"
+    )
+
+
+def test_the_host_gate_script_carries_its_lifecycle_block_once():
+    """One gate, one lifecycle assertion, collected in one place and then actually asserted."""
+    text = VERIFY_SCRIPTS[0].read_text(encoding="utf-8")
+    assert "LIFECYCLE_PROBLEMS=" in text, "the gate collects no lifecycle problems"
+    assert 'check_fail "Health lifecycle' in text, (
+        "the lifecycle block is collected but never asserted"
+    )
 
 
 def test_deploy_script_takes_the_acceptable_states_from_the_state_machine():

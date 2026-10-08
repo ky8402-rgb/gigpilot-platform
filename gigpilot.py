@@ -2163,6 +2163,12 @@ class _ArmBody(_BaseModel):
     """
 
     apiSecret: str = ""
+    # The KEY half of the same credential pair. It is never persisted either: it exists only so the
+    # console can submit the pair the operator actually holds, and so a key/secret MISMATCH is
+    # reported as a mismatch at arm time instead of surfacing later as an opaque signing failure
+    # from the venue. Optional, because a deployment may carry the key in configuration and only
+    # require the secret per session.
+    apiKey: str = ""
 
 
 @app.post("/api/arm", dependencies=[Depends(require_owner)])
@@ -2186,6 +2192,19 @@ async def api_arm(body: _ArmBody | None = None):
             "success": False, "armed": False, "error": "API_SECRET_TOO_SHORT",
             "reasons": [{"code": "API_SECRET_TOO_SHORT",
                          "detail": "the supplied secret is shorter than 8 characters"}],
+        })
+
+    supplied_key = ((body.apiKey if body else "") or "").strip()
+    configured_key = (getattr(gp.cfg, "api_key", "") or "").strip()
+    if supplied_key and configured_key and supplied_key != configured_key:
+        # The pair cannot be right, and saying so NOW is far cheaper than a failed venue preflight
+        # whose cause is buried in a signature error. Neither value is echoed.
+        return JSONResponse(status_code=422, content={
+            "success": False, "armed": False, "error": "API_KEY_MISMATCH",
+            "reasons": [{"code": "API_KEY_MISMATCH",
+                         "detail": "the supplied API key does not match the key this deployment is "
+                                   "configured with; the key and secret must come from the same "
+                                   "exchange API key"}],
         })
     if supplied:
         store.set(BYBIT_SECRET, supplied, source="api_arm")
@@ -2513,68 +2532,6 @@ async def events():
     return StreamingResponse(stream(), media_type="text/event-stream")
 
 
-DASHBOARD_HTML = """<!doctype html>
-<html><head><meta charset="utf-8"><title>GigPilot</title>
-<style>
- body{background:#0b0d10;color:#e6edf3;font:13px/1.5 ui-monospace,Menlo,monospace;margin:0;padding:16px}
- h1{margin:0 0 8px;font-size:16px;color:#7ee787}
- .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:12px}
- .card{background:#161b22;border:1px solid #30363d;border-radius:8px;padding:12px}
- .k{color:#8b949e;font-size:11px;text-transform:uppercase;letter-spacing:.5px}
- .v{font-size:18px;color:#e6edf3}
- .pos{color:#7ee787}.neg{color:#ff7b72}.warn{color:#e3b341}
- table{width:100%;border-collapse:collapse;margin-top:6px}
- th,td{padding:3px 6px;text-align:left;border-bottom:1px solid #21262d;font-size:12px}
- th{color:#8b949e;font-weight:500}
- button{background:#21262d;color:#e6edf3;border:1px solid #30363d;border-radius:6px;padding:6px 12px;cursor:pointer;margin-right:6px}
- button:hover{background:#30363d}
- .kill{background:#3d1216;border-color:#ff7b72;color:#ff7b72}
- .badge{display:inline-block;padding:2px 8px;border-radius:99px;font-size:11px}
- .armed{background:#0d3a1e;color:#7ee787}
- .disarmed{background:#3a0d0d;color:#ff7b72}
- .muted{color:#8b949e}
-</style></head><body>
-<h1>GigPilot · <span id="host" class="muted"></span> · <span id="mode" class="muted"></span> · <span id="arm" class="badge disarmed">DISARMED</span></h1>
-<div style="margin-bottom:12px">
- <button onclick="fetch('/api/arm',{method:'POST'})">Arm</button>
- <button onclick="fetch('/api/disarm',{method:'POST'})">Disarm</button>
- <button class="kill" onclick="if(confirm('KILL: cancel all, flatten all?'))fetch('/api/kill',{method:'POST'})">KILL</button>
-</div>
-<div class="grid">
- <div class="card"><div class="k">Equity</div><div class="v" id="eq">–</div></div>
- <div class="card"><div class="k">Gross Notional</div><div class="v" id="gn">–</div></div>
- <div class="card"><div class="k">Realized Today (verified)</div><div class="v" id="rt">–</div></div>
- <div class="card"><div class="k">Daily PnL</div><div class="v" id="dp">–</div></div>
- <div class="card"><div class="k">Margin Ratio</div><div class="v" id="mr">–</div></div>
-</div>
-<div class="card" style="margin-top:12px"><div class="k">Positions</div>
- <table id="pos"><thead><tr><th>Symbol</th><th>Side</th><th>Qty</th><th>Entry</th><th>Mark</th><th>uPnL</th></tr></thead><tbody></tbody></table>
-</div>
-<div class="card" style="margin-top:12px"><div class="k">Markets &amp; Edge</div>
- <table id="mk"><thead><tr><th>Sym</th><th>Mid</th><th>Spread bps</th><th>ATR bps</th><th>Fee bps</th><th>Imb</th><th>Net edge bps</th><th>Hurdle</th><th>Tradable</th></tr></thead><tbody></tbody></table>
-</div>
-<div class="card" style="margin-top:12px"><div class="k">Recent Events</div>
- <table id="ev"><thead><tr><th>Time</th><th>Kind</th><th>Symbol</th><th>Detail</th></tr></thead><tbody></tbody></table>
-</div>
-<script>
-const fmt=n=>n==null?'–':Number(n).toLocaleString(undefined,{maximumFractionDigits:2});
-const pnl=n=>n>=0?'<span class="pos">+'+fmt(n)+'</span>':'<span class="neg">'+fmt(n)+'</span>';
-function upd(s){
- document.getElementById('host').textContent=s.host;
- document.getElementById('mode').textContent=s.position_mode||'';
- const a=document.getElementById('arm');a.textContent=s.armed?'ARMED':'DISARMED';a.className='badge '+(s.armed?'armed':'disarmed');
- document.getElementById('eq').textContent=fmt(s.equity);
- document.getElementById('gn').textContent=fmt(s.gross_notional);
- document.getElementById('rt').innerHTML=pnl(s.realized_today);
- document.getElementById('dp').innerHTML=pnl(s.daily_pnl);
- document.getElementById('mr').textContent=(s.margin_ratio*100).toFixed(2)+'%';
- document.querySelector('#pos tbody').innerHTML=s.positions.map(p=>`<tr><td>${p.symbol}</td><td>${p.side}</td><td>${p.qty}</td><td>${fmt(p.entry)}</td><td>${fmt(p.mark)}</td><td>${pnl(p.upnl)}</td></tr>`).join('')||'<tr><td colspan=6 class=muted>none</td></tr>';
- const sig=Object.fromEntries(s.signals.map(x=>[x.symbol,x]));
- document.querySelector('#mk tbody').innerHTML=s.markets.map(m=>{const e=sig[m.symbol]||{};return `<tr><td>${m.symbol}</td><td>${fmt(m.mid)}</td><td>${m.spread_bps==null?'–':m.spread_bps.toFixed(2)}</td><td>${fmt(m.atr_bps)}</td><td>${fmt(m.fee_bps)}</td><td>${m.imbalance.toFixed(3)}</td><td>${e.net_bps==null?'–':e.net_bps.toFixed(2)}</td><td>${s.hurdle_bps}</td><td>${e.tradable?'<span class=pos>YES</span>':'<span class=muted>no</span>'}</td></tr>`}).join('');
- document.querySelector('#ev tbody').innerHTML=s.events.slice().reverse().map(x=>`<tr><td class=muted>${x.ts}</td><td>${x.kind}</td><td>${x.symbol||''}</td><td>${x.side||''} ${fmt(x.px)}×${fmt(x.qty)} fee=${fmt(x.fee)} pnl=${fmt(x.closed_pnl)}</td></tr>`).join('')||'<tr><td colspan=4 class=muted>none</td></tr>';
-}
-new EventSource('/events').onmessage=e=>{try{upd(JSON.parse(e.data))}catch(_){}};
-</script></body></html>"""
 
 
 from gpkg.api.compat import register_compat_routes
@@ -2583,7 +2540,18 @@ register_compat_routes(app, get_gp)
 
 from gpkg.web.dashboard import mount_dashboard
 
-mount_dashboard(app, fallback_html=DASHBOARD_HTML)
+
+def _dashboard_state() -> dict:
+    """Engine state for the console's initial server render.
+
+    The snapshot (not the engine object) is what the dashboard consumes, so the provider returns the
+    exact shape the template layer expects. A failure inside is caught by the dashboard, which falls
+    back rather than taking the console down.
+    """
+    return get_gp().snapshot()
+
+
+mount_dashboard(app, state_provider=_dashboard_state)
 
 
 # =============================================================================

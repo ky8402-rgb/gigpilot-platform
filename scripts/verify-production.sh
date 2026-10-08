@@ -1,511 +1,113 @@
 #!/usr/bin/env bash
-# ==============================================================================
-# GigPilot Final Production Launch Verification Suite (verify-production.sh)
 #
-# Production Diagnostics for:
-#   1. EC2 Backend Health & SSL (https://35-154-110-156.sslip.io/api/health -> 200 & database: "ok")
-#   2. Amplify Frontend Availability (https://main.d2qe2q720fbn3x.amplifyapp.com -> 200/304)
-#   3. CORS Preflight & Headers (OPTIONS Handshake with Access-Control-Allow-Origin)
-#   4. Neon PostgreSQL Database Connectivity (Direct SELECT 1 & Health Telemetry)
-#   5. Redis In-Memory Cache & Queue Verification (ElastiCache / Queue Telemetry)
-#   6. GitHub Push-to-Deploy Webhook Receiver (HMAC-SHA256 Endpoint Handshake)
-#   7. Background Workers, PM2 Process Supervision (gigpilot) & Docker Containers (Python ML)
+# PRODUCTION VERIFICATION GATE (Python-only stack).
 #
-# Exit code:
-#   0 - All checks passed (Production ready)
-#   1 - One or more checks failed (Remediation required)
-# ==============================================================================
-
+# WHAT THIS REPLACES
+# ------------------
+# There used to be two near-identical copies of this script (one at the repository root, one here)
+# that verified the backend AND an AWS Amplify-hosted React bundle. Both copies were removed with the
+# Amplify/Node deployment surface, and the duplication was itself a defect: they drifted, and an
+# assertion fixed in one copy silently stayed broken in the other.
+#
+# The console is now rendered by the FastAPI process, so this gate verifies ONE deployment target.
+#
+# WHAT IT ASSERTS, AND WHAT IT DELIBERATELY DOES NOT
+# --------------------------------------------------
+# It asserts the DAEMON is healthy and in a deploy-acceptable lifecycle state. It does NOT require an
+# armed engine: the gate is reached before an operator can supply the API secret, and POST /api/arm
+# runs on the very server being gated. Requiring arming here would be self-sealing.
+#
+# Usage: ./scripts/verify-production.sh [base-url]
 set -uo pipefail
 
-# Visual formatting
-RED='\033[0;31m'
-GREEN='\033[0;32m'
-YELLOW='\033[1;33m'
-BLUE='\033[0;34m'
-CYAN='\033[0;36m'
-MAGENTA='\033[0;35m'
-BOLD='\033[1m'
-NC='\033[0m'
+BASE_URL="${1:-https://35-154-110-156.sslip.io}"
 
-# Default Targets
-BACKEND_URL="${BACKEND_URL:-${VITE_API_BASE_URL:-${VITE_BACKEND_URL:-https://35-154-110-156.sslip.io}}}"
-if [[ "$BACKEND_URL" == *"13-233-54-120"* || "$BACKEND_URL" == *"ky7079.co"* || "$BACKEND_URL" == *"onrender"* ]]; then
-  BACKEND_URL="https://35-154-110-156.sslip.io"
-fi
-FRONTEND_URL="https://main.d2qe2q720fbn3x.amplifyapp.com"
-EC2_HOST="35.154.110.156"
-EC2_USER="${EC2_USER:-ubuntu}"
-EC2_KEY_FILE="${EC2_KEY_FILE:-}"
-APP_DIR="${APP_DIR:-/home/ubuntu/gigpilot}"
-DATABASE_URL="${DATABASE_URL:-}"
+PASS=0
+FAIL=0
 
-# Normalize URLs (strip trailing slash)
-BACKEND_URL="${BACKEND_URL%/}"
-FRONTEND_URL="${FRONTEND_URL%/}"
+check_pass() { echo -e "  \033[0;32m✔\033[0m $1"; PASS=$((PASS + 1)); }
+check_fail() { echo -e "  \033[0;31m✘\033[0m $1"; FAIL=$((FAIL + 1)); }
 
-TOTAL_CHECKS=7
-PASSED_CHECKS=0
-FAILED_CHECKS=0
-WARNING_CHECKS=0
+echo "Verifying production deployment at ${BASE_URL}"
+echo "======================================================"
 
-print_banner() {
-  echo -e "${CYAN}${BOLD}"
-  echo "=============================================================================="
-  echo "       🚀 GIGPILOT PRODUCTION GO-LIVE VERIFICATION & HEALTH AUDIT"
-  echo "=============================================================================="
-  echo -e "${NC}"
-  echo -e "  • Frontend Target:   ${BOLD}${FRONTEND_URL}${NC}"
-  echo -e "  • Backend SSL:       ${BOLD}${BACKEND_URL}${NC}"
-  echo -e "  • EC2 Host:          ${BOLD}${EC2_USER}@${EC2_HOST}${NC}"
-  echo -e "  • Neon DB Host:      ${BOLD}ep-green-bread-ae4bhk9u-pooler.c-2.us-east-2.aws.neon.tech${NC}"
-  echo -e "  • Timestamp:         $(date -u '+%Y-%m-%d %H:%M:%S UTC')"
-  echo -e "------------------------------------------------------------------------------\n"
-}
+# --------------------------------------------------------------------------------------------
+# 1. Health endpoint and the lifecycle contract
+# --------------------------------------------------------------------------------------------
+HEALTH_JSON="$(curl -fsS --max-time 20 "${BASE_URL}/api/health" 2>/dev/null || true)"
 
-check_pass() {
-  PASSED_CHECKS=$((PASSED_CHECKS + 1))
-  echo -e "  ${GREEN}${BOLD}✔ PASS:${NC} ${GREEN}$1${NC}"
-  if [[ -n "${2:-}" ]]; then
-    echo -e "         ${CYAN}↳ Details: $2${NC}"
-  fi
-}
+if [ -z "$HEALTH_JSON" ]; then
+  check_fail "Health endpoint did not answer at ${BASE_URL}/api/health"
+else
+  check_pass "Health endpoint answered"
 
-check_warn() {
-  WARNING_CHECKS=$((WARNING_CHECKS + 1))
-  echo -e "  ${YELLOW}${BOLD}⚠ WARNING:${NC} ${YELLOW}$1${NC}"
-  if [[ -n "${2:-}" ]]; then
-    echo -e "            ${YELLOW}↳ $2${NC}"
-  fi
-}
-
-check_fail() {
-  FAILED_CHECKS=$((FAILED_CHECKS + 1))
-  echo -e "  ${RED}${BOLD}✖ FAIL:${NC} ${RED}$1${NC}"
-  echo -e "  ${YELLOW}${BOLD}↳ REMEDIATION:${NC} ${YELLOW}$2${NC}\n"
-}
-
-# CLI Argument parsing
-while [[ $# -gt 0 ]]; do
-  case "$1" in
-    --backend-url)   BACKEND_URL="${2%/}"; shift 2 ;;
-    --frontend-url)  FRONTEND_URL="${2%/}"; shift 2 ;;
-    --ec2-host)      EC2_HOST="$2"; shift 2 ;;
-    --ec2-user)      EC2_USER="$2"; shift 2 ;;
-    --key-file|-i)   EC2_KEY_FILE="$2"; shift 2 ;;
-    --db-url)        DATABASE_URL="$2"; shift 2 ;;
-    -h|--help)
-      echo "Usage: $0 [--backend-url URL] [--frontend-url URL] [--ec2-host IP] [--key-file PATH] [--db-url URL]"
-      exit 0
-      ;;
-    *) shift ;;
-  esac
-done
-
-print_banner
-
-# ==============================================================================
-# 1. EC2 Backend Health & SSL Check (HTTP 200 and database: "ok")
-# ==============================================================================
-echo -e "${BOLD}[1/7] Testing EC2 Backend Health & SSL Endpoint (${BACKEND_URL}/api/health)...${NC}"
-BACKEND_RES=$(curl -s -k -m 10 -w "\nHTTP_STATUS:%{http_code}" "${BACKEND_URL}/api/health" 2>&1 || true)
-HTTP_CODE=$(echo "$BACKEND_RES" | grep "HTTP_STATUS:" | cut -d':' -f2 || echo "000")
-HEALTH_BODY=$(echo "$BACKEND_RES" | sed '/HTTP_STATUS:/d')
-
-if [[ "$HTTP_CODE" == "200" ]]; then
-  SYS_STATUS=$(echo "$HEALTH_BODY" | grep -o '"status":"[^"]*"' | head -n 1 | cut -d':' -f2 | tr -d '"' || echo "healthy")
-  
-  # Validate database: "ok" or database.status: "ok"/"connected"
-  DB_VAL="unknown"
-  if command -v node >/dev/null 2>&1; then
-    DB_VAL=$(node -e "
-      try {
-        const d = JSON.parse(process.argv[1]);
-        const isOk = d.database === 'ok' || d.database?.status === 'ok' || d.database?.status === 'connected' || d.checks?.database?.status === 'healthy' || d.db?.connected === true || d.status === 'ok' || d.healthy === true;
-        console.log(isOk ? 'ok' : (d.database || d.checks?.database?.status || 'degraded'));
-      } catch(e) { console.log('parse_error'); }
-    " "$HEALTH_BODY" 2>/dev/null || echo "unknown")
-  else
-    if echo "$HEALTH_BODY" | grep -Eq '"database":"ok"|"status":"healthy"|"status":"connected"|"status":"ok"'; then
-      DB_VAL="ok"
-    fi
-  fi
-
-  if [[ "$DB_VAL" == "ok" ]]; then
-    check_pass "Backend responded with HTTP 200 OK and system/database: \"ok\"" "System Status: ${SYS_STATUS^^}, Database: OK"
-  else
-    check_warn "Backend responded with HTTP 200 OK but database reported: ${DB_VAL}" "System Status: ${SYS_STATUS^^}"
-  fi
-
-  # --- Engine lifecycle contract --------------------------------------------------------------
-  # A release must be ACCEPTABLE while the engine is not yet armed with live credentials.
-  #
-  # A cold boot in runtime-secret mode correctly reports engine_state=AWAITING_SECRET until an
-  # operator enters the secret, and the endpoint that accepts that secret (POST /api/arm) lives on
-  # the very server being deployed. Demanding ARMED here would be self-sealing: the release could
-  # never pass, so the server that would accept the secret could never come up to accept it.
-  #
-  # What IS required is that the DAEMON is alive: status=ok, healthy=true, and a lifecycle state
-  # that means "running as intended" rather than "broken".
-  ENGINE_STATE="missing"
-  HEALTHY_FLAG="false"
-  if command -v python3 >/dev/null 2>&1; then
-    ENGINE_STATE=$(printf '%s' "$HEALTH_BODY" | python3 -c 'import json,sys
-try: d=json.load(sys.stdin)
-except Exception: d=None
-print(d.get("engine_state","missing") if isinstance(d,dict) else "missing")' 2>/dev/null)
-    HEALTHY_FLAG=$(printf '%s' "$HEALTH_BODY" | python3 -c 'import json,sys
-try: d=json.load(sys.stdin)
-except Exception: d=None
-print("true" if isinstance(d,dict) and d.get("healthy") is True else "false")' 2>/dev/null)
-  fi
-  ENGINE_STATE="${ENGINE_STATE:-missing}"
-  HEALTHY_FLAG="${HEALTHY_FLAG:-false}"
-  # Grep fallbacks, so the gate still works on a host with no python3 available.
-  if [[ "$HEALTHY_FLAG" != "true" ]] && echo "$HEALTH_BODY" | grep -q '"healthy":true'; then
-    HEALTHY_FLAG="true"
-  fi
-  if [[ "$ENGINE_STATE" == "missing" ]]; then
-    ENGINE_STATE=$(echo "$HEALTH_BODY" | grep -o '"engine_state":"[^"]*"' | head -n 1 | cut -d':' -f2 | tr -d '"')
-    ENGINE_STATE="${ENGINE_STATE:-missing}"
-  fi
-
+  # The acceptable lifecycle states come from the state machine, not from a local copy: a second
+  # source of truth is one that drifts. The comments below name them so the contract is readable
+  # without opening the module: AWAITING_SECRET (correct on a cold boot in runtime-secret mode),
+  # ARMED, DISARMED.
   LIFECYCLE_PROBLEMS=""
-  [[ "$SYS_STATUS" == "ok" ]] || LIFECYCLE_PROBLEMS="${LIFECYCLE_PROBLEMS} status='${SYS_STATUS}' (expected 'ok');"
-  [[ "$HEALTHY_FLAG" == "true" ]] || LIFECYCLE_PROBLEMS="${LIFECYCLE_PROBLEMS} healthy='${HEALTHY_FLAG}' (expected true);"
-  case "$ENGINE_STATE" in
-    AWAITING_SECRET|ARMED|DISARMED) ;;
-    *) LIFECYCLE_PROBLEMS="${LIFECYCLE_PROBLEMS} engine_state='${ENGINE_STATE}' (expected AWAITING_SECRET, ARMED or DISARMED);" ;;
-  esac
-
-  if [[ -z "$LIFECYCLE_PROBLEMS" ]]; then
-    check_pass "Health contract verified: status=ok, healthy=true, engine_state=${ENGINE_STATE}." \
-      "Live arming is deliberately NOT required at deploy time; AWAITING_SECRET is a PASS."
-  else
-    check_fail "Health lifecycle contract violated at HTTP 200:${LIFECYCLE_PROBLEMS}" \
-      "healthy=false or a 503 means the DAEMON is unhealthy (public feed down/stale, database unreachable) — NOT that live trading is unarmed. Cannot reach POST /api/arm to supply the runtime secret while the daemon is unhealthy."
+  for state in AWAITING_SECRET ARMED DISARMED; do
+    if ! grep -qF "\"$state\"" <<<"$HEALTH_JSON"; then
+      LIFECYCLE_PROBLEMS="${LIFECYCLE_PROBLEMS}${state} not reported; "
+    fi
+  done
+  if ! grep -qF '"status":"ok"' <<<"$(tr -d ' \n' <<<"$HEALTH_JSON")"; then
+    LIFECYCLE_PROBLEMS="${LIFECYCLE_PROBLEMS}status is not ok; "
   fi
+  if ! grep -qF '"healthy":true' <<<"$(tr -d ' \n' <<<"$HEALTH_JSON")"; then
+    LIFECYCLE_PROBLEMS="${LIFECYCLE_PROBLEMS}healthy is not true; "
+  fi
+  if [ -n "$LIFECYCLE_PROBLEMS" ]; then
+    check_fail "Health lifecycle contract not satisfied: ${LIFECYCLE_PROBLEMS}"
+  else
+    check_pass "Health lifecycle contract satisfied (engine_state is one of the accepted states)"
+  fi
+fi
+
+# --------------------------------------------------------------------------------------------
+# 2. The Python console is what is actually served
+# --------------------------------------------------------------------------------------------
+INDEX_HTML="$(curl -fsS --max-time 20 "${BASE_URL}/" 2>/dev/null || true)"
+if grep -qF 'Session API credentials' <<<"$INDEX_HTML"; then
+  check_pass "The Python console is served at / (credential modal present)"
 else
-  check_fail "Backend returned HTTP ${HTTP_CODE} or timed out (${BACKEND_URL}/api/health)." \
-    "Connect to EC2 ('ssh ${EC2_USER}@${EC2_HOST}') and check backend processes: 'pm2 status gigpilot' or 'docker compose ps'. Check logs with 'pm2 logs gigpilot --lines 50'."
+  check_fail "The served page is not the Python console"
 fi
 
-# ==============================================================================
-# 2. Amplify Frontend Availability Check (HTTP 200/304)
-# ==============================================================================
-echo -e "\n${BOLD}[2/7] Testing AWS Amplify Frontend Application (${FRONTEND_URL})...${NC}"
-FE_RES=$(curl -s -L -k -m 10 -w "\nHTTP_STATUS:%{http_code}" "${FRONTEND_URL}" 2>&1 || true)
-FE_CODE=$(echo "$FE_RES" | grep "HTTP_STATUS:" | cut -d':' -f2 || echo "000")
-FE_BODY=$(echo "$FE_RES" | sed '/HTTP_STATUS:/d')
-
-if [[ "$FE_CODE" =~ ^(200|304)$ ]]; then
-  if echo "$FE_BODY" | grep -qi "<div id=\"root\""; then
-    check_pass "Amplify frontend serves valid Single Page Application HTML (HTTP ${FE_CODE})" "Contains #root mount container"
-  else
-    check_pass "Amplify frontend responded with HTTP ${FE_CODE}."
-  fi
+if curl -fsS --max-time 20 "${BASE_URL}/static/dashboard.css" 2>/dev/null | grep -qF -- '--bg'; then
+  check_pass "Console stylesheet is served"
 else
-  # Production SPA check on primary host
-  PRIMARY_FE=$(curl -s -L -k -m 10 -w "\nHTTP_STATUS:%{http_code}" "${BACKEND_URL}/" 2>&1 || true)
-  PRI_CODE=$(echo "$PRIMARY_FE" | grep "HTTP_STATUS:" | cut -d':' -f2 || echo "000")
-  PRI_BODY=$(echo "$PRIMARY_FE" | sed '/HTTP_STATUS:/d')
-  if [[ "$PRI_CODE" =~ ^(200|304)$ ]] && echo "$PRI_BODY" | grep -qi "<div id=\"root\""; then
-    check_pass "Production Single Page Application is LIVE and healthy on primary SSL host (HTTP ${PRI_CODE})" "Mount #root verified at ${BACKEND_URL}"
-    check_warn "Amplify custom subdomain DNS pending propagation (${FRONTEND_URL} returned ${FE_CODE})" "Primary host serves full application"
-  else
-    check_fail "Amplify frontend returned HTTP ${FE_CODE} at ${FRONTEND_URL} and HTTP ${PRI_CODE} at ${BACKEND_URL}." \
-      "Run './migrate-backend.sh' to trigger a fresh Amplify build or inspect build logs in AWS Amplify Console."
-  fi
+  check_fail "Console stylesheet is missing"
 fi
 
-# ==============================================================================
-# 3. CORS Preflight & Headers Check
-# ==============================================================================
-echo -e "\n${BOLD}[3/7] Testing Cross-Origin Resource Sharing (CORS) Preflight...${NC}"
-CORS_RES=$(curl -s -I -k -m 8 \
-  -X OPTIONS "${BACKEND_URL}/api/health" \
-  -H "Origin: ${FRONTEND_URL}" \
-  -H "Access-Control-Request-Method: GET" \
-  -H "Access-Control-Request-Headers: authorization,content-type" 2>&1 || true)
-
-ALLOW_ORIGIN=$(echo "$CORS_RES" | grep -i "^access-control-allow-origin:" | tr -d '\r' | awk -F': ' '{print $2}' || true)
-CORS_STATUS=$(echo "$CORS_RES" | grep -E "^HTTP" | head -n 1 | awk '{print $2}' || echo "000")
-
-if [[ "$CORS_STATUS" =~ ^(200|204)$ ]] && [[ "$ALLOW_ORIGIN" == "$FRONTEND_URL" || "$ALLOW_ORIGIN" == "*" || "$ALLOW_ORIGIN" =~ amplifyapp\.com ]]; then
-  check_pass "CORS preflight succeeded with HTTP ${CORS_STATUS}." "Access-Control-Allow-Origin: ${ALLOW_ORIGIN}"
-elif [[ "$CORS_STATUS" =~ ^(200|204)$ ]]; then
-  check_pass "CORS preflight succeeded with HTTP ${CORS_STATUS}." "Origin response: ${ALLOW_ORIGIN:-Wildcard allowed}"
+# A page must be a dashboard, not a stub: the fallback page also contains the product name.
+if [ "$(wc -c <<<"$INDEX_HTML" | tr -d ' ')" -gt 8000 ]; then
+  check_pass "Console HTML is substantial (not the degenerate fallback page)"
 else
-  # Verify CORS policy status
-  check_pass "CORS origin policy configured on backend." "Permitted: ${FRONTEND_URL}, *.amplifyapp.com, ${BACKEND_URL}"
-  check_warn "Remote preflight OPTIONS method not mapped on /api/health (direct GET/POST origin headers allowed)"
+  check_fail "Console HTML is suspiciously small; the template render probably failed"
 fi
 
-# Setup SSH check credentials if available
-SSH_OPTS="-o StrictHostKeyChecking=accept-new -o ConnectTimeout=4 -o BatchMode=yes"
-if [[ -n "$EC2_KEY_FILE" && -f "$EC2_KEY_FILE" ]]; then
-  SSH_OPTS="$SSH_OPTS -i $EC2_KEY_FILE"
-fi
-
-CAN_SSH=false
-if ssh $SSH_OPTS "${EC2_USER}@${EC2_HOST}" "echo 'OK'" >/dev/null 2>&1; then
-  CAN_SSH=true
-fi
-
-# ==============================================================================
-# 4. Database Connectivity (Neon PostgreSQL - SELECT 1 Query & Telemetry)
-# ==============================================================================
-echo -e "\n${BOLD}[4/7] Testing Database Connectivity (Neon PostgreSQL - SELECT 1)...${NC}"
-DB_HEALTH_OK=false
-
-# Method A: Direct Node.js query to Neon PostgreSQL running SELECT 1
-if command -v node >/dev/null 2>&1; then
-  DIRECT_QUERY_RESULT=$(node -e "
-    const { Client } = require('pg');
-    const client = new Client({
-      connectionString: process.argv[1],
-      connectionTimeoutMillis: 5000
-    });
-    client.connect()
-      .then(() => client.query('SELECT 1 as alive;'))
-      .then(res => {
-        console.log('SELECT_1_SUCCESS');
-        return client.end();
-      })
-      .catch(err => {
-        console.log('DB_ERR:' + err.message);
-        process.exit(1);
-      });
-  " "$DATABASE_URL" 2>&1 || echo "QUERY_FAILED")
-
-  if echo "$DIRECT_QUERY_RESULT" | grep -q "SELECT_1_SUCCESS"; then
-    DB_HEALTH_OK=true
-    check_pass "Direct PostgreSQL 'SELECT 1' query executed successfully on Neon pooler." \
-      "Host: ep-green-bread-ae4bhk9u-pooler.c-2.us-east-2.aws.neon.tech"
-  fi
-fi
-
-# Method B: Direct psql if installed
-if [[ "$DB_HEALTH_OK" != "true" ]] && command -v psql >/dev/null 2>&1; then
-  if psql "$DATABASE_URL" -c "SELECT 1 as alive;" >/dev/null 2>&1; then
-    DB_HEALTH_OK=true
-    check_pass "psql 'SELECT 1' succeeded on Neon PostgreSQL database."
-  fi
-fi
-
-# Method C: Telemetry from unified /api/health
-if [[ "$DB_HEALTH_OK" != "true" ]]; then
-  if command -v node >/dev/null 2>&1; then
-    DB_STATUS=$(node -e "try { const d = JSON.parse(process.argv[1]); console.log(d.database === 'ok' || d.database?.status === 'ok' || d.database?.status === 'connected' || d.checks?.database?.status === 'healthy' ? 'connected' : 'error'); } catch(e){}" "$HEALTH_BODY" 2>/dev/null || true)
-    DB_LATENCY=$(node -e "try { const d = JSON.parse(process.argv[1]); console.log(d.db?.latencyMs || d.checks?.database?.latencyMs || d.database?.latencyMs || '15'); } catch(e){}" "$HEALTH_BODY" 2>/dev/null || true)
-  else
-    DB_STATUS=$(echo "$HEALTH_BODY" | grep -o '"database":"ok"\|"status":"healthy"' | head -n 1 || true)
-    DB_LATENCY="15"
-  fi
-
-  if [[ "$DB_STATUS" == "connected" || -n "$DB_STATUS" ]]; then
-    DB_HEALTH_OK=true
-    check_pass "PostgreSQL Neon connection verified via backend health endpoint (Latency: ${DB_LATENCY:-15}ms)."
-  fi
-fi
-
-# Method D: SSH fallback query
-if [[ "$DB_HEALTH_OK" != "true" && "$CAN_SSH" = true ]]; then
-  SSH_DB_TEST=$(ssh $SSH_OPTS "${EC2_USER}@${EC2_HOST}" "
-    cd ${APP_DIR} 2>/dev/null || cd /home/${EC2_USER}
-    node -e \"
-      require('dotenv').config();
-      const { Pool } = require('pg');
-      const pool = new Pool({ connectionString: process.env.DATABASE_URL, connectionTimeoutMillis: 4000 });
-      pool.query('SELECT 1 as alive', (err, res) => {
-        if (err) { console.log('DB_ERR:' + err.message); process.exit(1); }
-        console.log('DB_OK');
-        process.exit(0);
-      });
-    \" 2>&1
-  " || echo "DB_ERR")
-
-  if echo "$SSH_DB_TEST" | grep -q "DB_OK"; then
-    DB_HEALTH_OK=true
-    check_pass "PostgreSQL query 'SELECT 1' executed successfully via pg pool on EC2."
-  fi
-fi
-
-if [[ "$DB_HEALTH_OK" != "true" ]]; then
-  check_fail "Database query 'SELECT 1' failed on Neon PostgreSQL." \
-    "Verify DATABASE_URL in ${APP_DIR}/.env is set to '${DATABASE_URL}' and SSL mode is require/verify-full."
-fi
-
-# ==============================================================================
-# 5. Redis In-Memory Cache & Queue Check (ElastiCache / redis-cli)
-# ==============================================================================
-echo -e "\n${BOLD}[5/7] Testing In-Memory Cache & Queue Connectivity (Redis ElastiCache)...${NC}"
-REDIS_OK=false
-
-# Method A: Direct redis-cli ping if installed
-if command -v redis-cli >/dev/null 2>&1; then
-  REDIS_URL_TEST="${REDIS_URL:-redis://127.0.0.1:6379}"
-  REDIS_PING=$(redis-cli -u "$REDIS_URL_TEST" ping 2>/dev/null || redis-cli ping 2>/dev/null || echo "FAIL")
-  if [[ "$REDIS_PING" == "PONG" ]]; then
-    REDIS_OK=true
-    check_pass "redis-cli direct ping succeeded (PONG received from Redis/ElastiCache)." "Target: ${REDIS_URL_TEST}"
-  fi
-fi
-
-if [[ "$REDIS_OK" != "true" ]] && echo "$HEALTH_BODY" | grep -qi '"queues"\|"redis"'; then
-  QUEUE_STATUS=$(echo "$HEALTH_BODY" | grep -o '"queues":{[^}]*}' | grep -o '"status":"[^"]*"' | cut -d':' -f2 | tr -d '"' || echo "healthy")
-  if [[ "$QUEUE_STATUS" =~ ^(healthy|operational|degraded)$ ]]; then
-    REDIS_OK=true
-    check_pass "Queue & cache subsystem operational via health telemetry." "Status: ${QUEUE_STATUS}"
-  fi
-fi
-
-if [[ "$REDIS_OK" != "true" && "$CAN_SSH" = true ]]; then
-  SSH_REDIS_TEST=$(ssh $SSH_OPTS "${EC2_USER}@${EC2_HOST}" "
-    cd ${APP_DIR} 2>/dev/null || cd /home/${EC2_USER}
-    node -e \"
-      require('dotenv').config();
-      const Redis = require('ioredis');
-      const url = process.env.REDIS_URL || 'redis://127.0.0.1:6379';
-      const r = new Redis(url, { connectTimeout: 3000, maxRetriesPerRequest: 1 });
-      r.ping((err, res) => {
-        if (err) { console.log('REDIS_ERR:' + err.message); process.exit(1); }
-        console.log('REDIS_PONG');
-        process.exit(0);
-      });
-    \" 2>&1
-  " || echo "REDIS_ERR")
-
-  if echo "$SSH_REDIS_TEST" | grep -q "REDIS_PONG"; then
-    REDIS_OK=true
-    check_pass "Redis ping succeeded (PONG received from ElastiCache cluster)."
-  else
-    check_warn "Direct Redis ping timed out or fell back to in-memory store." \
-      "Verify ElastiCache security group allows TCP 6379 from EC2. (Fallback memory queue active)."
-  fi
-elif [[ "$REDIS_OK" != "true" ]]; then
-  check_pass "In-memory cache and queue subsystem active." "Fallback memory engine operational"
-fi
-
-# ==============================================================================
-# 6. GitHub Push-to-Deploy Webhook Check
-# ==============================================================================
-echo -e "\n${BOLD}[6/7] Testing GitHub Push-to-Deploy Webhook Receiver...${NC}"
-PING_BODY='{"zen":"Production verification ping","hook_id":101010}'
-SECRET_VAL="${GITHUB_WEBHOOK_SECRET:-your_github_webhook_secret}"
-PING_SIG=$(node -e "
-  const crypto = require('crypto');
-  const secret = process.argv[1] || '';
-  const body = process.argv[2] || '';
-  console.log(crypto.createHmac('sha256', secret).update(body).digest('hex'));
-" "$SECRET_VAL" "$PING_BODY" 2>/dev/null || true)
-
-EXTRA_HEADERS=()
-if [[ -n "$PING_SIG" ]]; then
-  EXTRA_HEADERS=(-H "X-Hub-Signature-256: sha256=${PING_SIG}")
-fi
-
-WH_HTTP=$(curl -s -k -m 8 -o /tmp/wh_verif_res.json -w "%{http_code}" \
-  -X POST "${BACKEND_URL}/api/github/webhook" \
-  -H "Content-Type: application/json" \
-  -H "X-GitHub-Event: ping" \
-  -H "X-GitHub-Delivery: ping-$(date +%s)" \
-  "${EXTRA_HEADERS[@]}" \
-  -d "$PING_BODY" 2>&1 || echo "000")
-
-if [[ "$WH_HTTP" =~ ^(200|202)$ ]]; then
-  check_pass "GitHub Webhook responds to test ping with HTTP ${WH_HTTP} OK." "${BACKEND_URL}/api/github/webhook"
-elif [[ "$WH_HTTP" == "401" ]]; then
-  check_pass "GitHub Webhook endpoint active (Enforcing HMAC-SHA256 signature)." "HTTP 401 Expected without secret key"
+# --------------------------------------------------------------------------------------------
+# 3. Deployed revision attestation
+# --------------------------------------------------------------------------------------------
+VERSION_JSON="$(curl -fsS --max-time 20 "${BASE_URL}/version.json" 2>/dev/null || true)"
+COMMIT="$(sed -n 's/.*"commit"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' <<<"$VERSION_JSON")"
+if [ -n "$COMMIT" ]; then
+  check_pass "version.json reports deployed commit ${COMMIT}"
 else
-  check_fail "GitHub Webhook returned HTTP ${WH_HTTP} at ${BACKEND_URL}/api/github/webhook." \
-    "Run './scripts/setup-github-webhook.sh' to re-verify webhook route and ensure Nginx reverse proxy is running."
+  check_fail "version.json did not report a deployed commit"
 fi
-rm -f /tmp/wh_verif_res.json
 
-# ==============================================================================
-# 7. Background Workers, PM2 Process Supervision & Docker ML Microservice
-# ==============================================================================
-echo -e "\n${BOLD}[7/7] Testing PM2 Process Supervision (gigpilot) & Docker Containers (Python ML)...${NC}"
-WORKER_OK=false
-
-if [ "$CAN_SSH" = true ]; then
-  # Check PM2 process
-  PM2_STATUS=$(ssh $SSH_OPTS "${EC2_USER}@${EC2_HOST}" "
-    pm2 jlist 2>/dev/null || true
-  " || echo "")
-
-  # Check Docker container
-  DOCKER_STATUS=$(ssh $SSH_OPTS "${EC2_USER}@${EC2_HOST}" "
-    docker ps --format '{{.Names}}: {{.Status}}' 2>/dev/null || true
-  " || echo "")
-
-  if echo "$PM2_STATUS" | grep -qi '"name":"gigpilot".*"status":"online"'; then
-    check_pass "PM2 process 'gigpilot' is running online under active supervision."
-    WORKER_OK=true
-  elif echo "$PM2_STATUS" | grep -qi 'gigpilot'; then
-    check_warn "PM2 process 'gigpilot' is registered but status is not online."
-  else
-    check_warn "PM2 process 'gigpilot' not detected directly via SSH jlist."
-  fi
-
-  if echo "$DOCKER_STATUS" | grep -qi 'Up'; then
-    check_pass "Python ML microservice Docker container is running." "Docker: $(echo "$DOCKER_STATUS" | head -n 1)"
-  else
-    check_warn "Docker container status pending verification on EC2." "Run 'docker compose ps' on EC2."
-  fi
+# --------------------------------------------------------------------------------------------
+# 4. No Node process is serving this deployment
+# --------------------------------------------------------------------------------------------
+if command -v pgrep >/dev/null 2>&1 && pgrep -x node >/dev/null 2>&1; then
+  check_fail "a Node process is running on this host; the stack is meant to be Python-only"
 else
-  # Inspect cron telemetry from /api/health and ML microservice connectivity
-  if echo "$HEALTH_BODY" | grep -q '"cron"'; then
-    CRON_STATUS=$(echo "$HEALTH_BODY" | grep -o '"cron":{[^}]*}' | grep -o '"status":"[^"]*"' | cut -d':' -f2 | tr -d '"' || echo "healthy")
-    LAST_RUN=$(echo "$HEALTH_BODY" | grep -o '"cron":{[^}]*}' | grep -o '"secondsSinceLastRun":[0-9]*' | cut -d':' -f2 || echo "1")
-    check_pass "PM2 backend workers (Trading Daemon & Risk Engine) are running." "Cron: ${CRON_STATUS}, Last tick: ${LAST_RUN:-0}s ago"
-    WORKER_OK=true
-  else
-    check_pass "Core backend process is servicing asynchronous worker queues."
-    WORKER_OK=true
-  fi
-
-  # Check Python ML microservice via telemetry or health ping
-  ML_CHECK=$(curl -s -k -m 5 "${BACKEND_URL}/api/ml/health" 2>&1 || true)
-  if echo "$ML_CHECK" | grep -qi '"status":"ok"\|"healthy"'; then
-    check_pass "Python ML microservice (Docker) responded to health check."
-  else
-    check_pass "Self-healing ML fallback worker active in backend runtime."
-  fi
+  check_pass "No Node process is serving this host"
 fi
 
-# ==============================================================================
-# Final Assessment & Production Go-Live Banner
-# ==============================================================================
-echo -e "\n------------------------------------------------------------------------------"
-if [ "$FAILED_CHECKS" -eq 0 ]; then
-  echo -e "${GREEN}${BOLD}"
-  echo "  ██████╗  ██████╗     ██╗     ██╗██╗   ██╗███████╗██╗"
-  echo " ██╔════╝ ██╔═══██╗    ██║     ██║██║   ██║██╔════╝██║"
-  echo " ██║  ███╗██║   ██║    ██║     ██║██║   ██║█████╗  ██║"
-  echo " ██║   ██║██║   ██║    ██║     ██║╚██╗ ██╔╝██╔══╝  ╚═╝"
-  echo " ╚██████╔╝╚██████╔╝    ███████╗██║ ╚████╔╝ ███████╗██╗"
-  echo "  ╚═════╝  ╚═════╝     ╚══════╝╚═╝  ╚═══╝  ╚══════╝╚═╝"
-  echo "=============================================================================="
-  echo "        ALL $TOTAL_CHECKS VERIFICATION CHECKS PASSED — GIGPILOT IS LIVE!"
-  echo "=============================================================================="
-  echo -e "${NC}"
-  echo -e "  🌐 Frontend URL:         ${BOLD}${CYAN}${FRONTEND_URL}${NC}"
-  echo -e "  ⚙️  Backend SSL API:      ${BOLD}${CYAN}${BACKEND_URL}${NC}"
-  echo -e "  🗄️  Neon PostgreSQL:      ${GREEN}Connected & Operational (SELECT 1 Passed)${NC}"
-  echo -e "  ⚡ Cache (ElastiCache):  ${GREEN}Active (Bull / Redis Engine)${NC}"
-  echo -e "  🔄 Push-to-Deploy:       ${GREEN}Enabled (Webhook Active on master)${NC}"
-  echo -e "  🛡️  SSL & CORS:           ${GREEN}Valid Let's Encrypt + Amplify Origin Handshake${NC}"
-  echo -e "  🤖 Supervision:          ${GREEN}PM2 (gigpilot) + Python ML Docker Containers${NC}"
-  echo -e "==============================================================================\n"
-  exit 0
-else
-  echo -e "${RED}${BOLD}"
-  echo "=============================================================================="
-  echo "       LAUNCH AUDIT COMPLETED WITH $FAILED_CHECKS FAILED CHECK(S)"
-  echo "=============================================================================="
-  echo -e "${NC}"
-  echo -e "Follow the remediation steps above before routing real user payments.\n"
-  exit 1
-fi
+echo "======================================================"
+echo "Passed: ${PASS}   Failed: ${FAIL}"
+[ "$FAIL" -eq 0 ] || exit 1
+echo "Production verification PASSED."

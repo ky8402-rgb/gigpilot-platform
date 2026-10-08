@@ -30,9 +30,10 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 
 # Directories copied into the sandbox. node_modules/.venv are excluded: the mutations under test are
-# all in Python or in the source text scanned by the structural checks.
-COPY = ["gigpilot.py", "pytest.ini", "requirements.txt", "package.json", "package-lock.json"]
-COPY_DIRS = ["gpkg", "tests", "migration", "server", "src"]
+# all in Python or in the source text scanned by the structural checks. The tree is Python-only now,
+# so there is no JavaScript/TypeScript surface left to copy.
+COPY = ["gigpilot.py", "pytest.ini", "requirements.txt", "mypy.ini", "ruff.toml", ".flake8"]
+COPY_DIRS = ["gpkg", "tests", "migration"]
 
 
 def _interpreter() -> str:
@@ -139,7 +140,12 @@ MUTATIONS: list[Mutation] = [
         "min-order-qty",
         "minOrderQty entry check removed",
         "gpkg/execution/executor.py",
-        '        if mn > 0 and float(qty_s) < mn:\n            return False, f"qty_{qty_s}_below_min_{mn}"\n',
+        # Updated to the current implementation. The check now compares Decimals (`_dec`) and formats
+        # the bound through `_fmt_qty`, because the earlier float comparison admitted quantities that
+        # rounded to the venue's tick size. The seed must describe the code that exists, or the
+        # harness reports it as UNAPPLIED and proves nothing about the assertion it targets.
+        '        if mn > 0 and _dec(qty_s) < mn:\n'
+        '            return False, f"qty_{qty_s}_below_min_{_fmt_qty(mn)}"\n',
         "",
         ["tests/test_entry_sizing.py"],
     ),
@@ -184,35 +190,26 @@ MUTATIONS: list[Mutation] = [
         ["tests/test_cross_stack_auth.py"],
     ),
     Mutation(
-        "proxy-forwarding",
-        "Node proxy stops forwarding the owner session to the engine",
-        "server/trading/routes.ts",
-        "...engineAuthHeaders(req)",
-        "...{}",
-        ["tests/test_cross_stack_auth.py::test_node_proxy_forwards_the_session_to_the_engine"],
+        "dashboard-missing-credential-field",
+        "the Python console drops the API secret input from the arming modal",
+        "gpkg/web/templates/dashboard.html",
+        'id="apiSecret"',
+        'id="apiSecret-removed"',
+        ["tests/test_dashboard_delivery.py"],
     ),
     Mutation(
-        "proxy-state-authz",
-        "/gigpilot/state loses requireOwnerAuth",
-        "server/trading/routes.ts",
-        "tradingRouter.get('/gigpilot/state', requireOwnerAuth,",
-        "tradingRouter.get('/gigpilot/state',",
-        ["tests/test_cross_stack_auth.py::test_node_proxy_forwards_the_session_to_the_engine"],
-    ),
-    Mutation(
-        "owner-token-key",
-        "frontend API client stops reading the canonical owner-token key",
-        "src/lib/api.ts",
-        "    localStorage.getItem('gigpilot_owner_token') ||\n",
-        "",
-        ["tests/test_owner_auth.py"],  # placeholder, replaced by the node check below
+        "l2-bar-uses-the-total",
+        "the L2 indicator reports the row TOTAL instead of the binding per-symbol minimum",
+        "gpkg/web/views.py",
+        '"min_symbol": binding,',
+        '"min_symbol": total,',
+        ["tests/test_dashboard_delivery.py", "tests/test_l2_ingestion_indicator.py"],
     ),
 ]
 
-# The frontend token-key invariant is asserted by a Node script, not pytest.
-NODE_CHECKS: dict[str, tuple[str, list[str]]] = {
-    "owner-token-key": ("node", ["scripts/test-owner-token-consistency.mjs"]),
-}
+# Every mutation is asserted by pytest. The console is Python-rendered now, so there is no Node-side
+# check left to shell out to; the harness is a single language end to end.
+NODE_CHECKS: dict[str, tuple[str, list[str]]] = {}
 
 
 def _sandbox() -> Path:

@@ -99,8 +99,16 @@ PY
   set_env_value "OWNER_SESSION_SECRET" "$OWNER_SESSION_SECRET"
 fi
 
-echo "Verifying prebuilt React artifact..."
-test -s "$APP_DIR/dist/index.html"
+echo "Verifying the Python-rendered console..."
+# The console is rendered by the Python process, so what must exist on the host is the template tree,
+# not a prebuilt bundle. Asserting the templates (rather than a dist/ artifact that is no longer
+# produced) keeps this check meaningful: a release that shipped without them would otherwise serve
+# the fallback page to the operator while every gate reported success.
+test -s "$APP_DIR/gpkg/web/templates/dashboard.html"
+test -s "$APP_DIR/gpkg/web/templates/base.html"
+test -s "$APP_DIR/gpkg/web/static/dashboard.css"
+"$APP_DIR/.venv/bin/python3" -c "import jinja2; print('Template engine verified')" 2>/dev/null \
+  || python3 -c "import jinja2; print('Template engine verified')"
 
 echo "Installing Python dependencies..."
 if ! command -v python3 >/dev/null 2>&1; then

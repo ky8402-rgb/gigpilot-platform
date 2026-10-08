@@ -258,6 +258,11 @@ def test_the_daemon_announces_the_state_on_stdout_at_boot():
 
 
 def test_the_ui_renders_the_warning_as_an_alert():
-    src = (ROOT / "src/components/trading/FuturesCommandCenter.tsx").read_text(encoding="utf-8")
+    """The warning must be VISIBLE, not merely delivered.
+
+    This used to read the React component. The console is Python-rendered now, so the invariant is
+    asserted against the template that actually produces the operator's page.
+    """
+    src = (ROOT / "gpkg" / "web" / "templates" / "dashboard.html").read_text(encoding="utf-8")
     assert "boot_warning" in src, "the UI must surface the warning, not merely receive it"
     assert 'role="alert"' in src

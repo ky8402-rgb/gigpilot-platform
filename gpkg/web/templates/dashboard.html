@@ -1,0 +1,525 @@
+{% extends "base.html" %}
+{% block title %}GigPilot Platform · Operator console{% endblock %}
+{% block body %}
+<div class="wrap">
+
+  <header class="top">
+    <h1>GigPilot</h1>
+    <span class="hosttag" id="host">{{ state.host or "—" }}</span>
+    <span class="hosttag" id="mode">{{ state.position_mode or "" }}</span>
+    <span class="badge {{ 'armed' if state.armed else ('disarmed' if state.armed is not none else 'unknown') }}"
+          id="arm">{{ 'ARMED' if state.armed else ('DISARMED' if state.armed is not none else 'UNKNOWN') }}</span>
+    <span class="spacer"></span>
+    <span class="hosttag" id="hb">updated {{ rendered_at }}</span>
+  </header>
+
+  {# The engine's own startup warning, surfaced rather than swallowed. role="alert" because this is
+     the class of message that must interrupt, not sit quietly in a log. #}
+  <div id="boot-warning" class="notice warn" role="alert" {% if not boot_warning %}hidden{% endif %}>
+    {{ boot_warning or "" }}
+  </div>
+
+  <div id="notice" class="notice error" role="alert" hidden></div>
+
+  <section>
+    <h2>Control</h2>
+    <button class="primary" id="arm-btn" type="button">Arm live trading</button>
+    <button id="disarm-btn" type="button">Disarm</button>
+    <button class="kill" id="kill-btn" type="button">KILL &mdash; cancel all &amp; flatten</button>
+    <span class="muted" id="armable-note" style="margin-left:10px"></span>
+  </section>
+
+  {# ------------------------------------------------------------------ capital telemetry #}
+  <section>
+    <h2>Live capital telemetry</h2>
+    <div class="grid">
+      <div class="card"><div class="k">Total equity</div><div class="v" id="c-equity">{{ state.equity | num }}</div></div>
+      <div class="card"><div class="k">Available USDT</div><div class="v" id="c-avail">{{ capital.get('available_usdt') | num }}</div></div>
+      <div class="card"><div class="k">Gross notional</div><div class="v" id="c-gross">{{ state.gross_notional | num }}</div></div>
+      <div class="card"><div class="k">Deployed notional</div><div class="v" id="c-deployed">{{ capital.get('deployed_notional_usd') | num }}</div></div>
+      <div class="card"><div class="k">Realized today</div><div class="v" id="c-realized">{{ state.realized_today | pnl }}</div></div>
+      <div class="card"><div class="k">Daily P&amp;L</div><div class="v" id="c-daily">{{ state.daily_pnl | pnl }}</div></div>
+      <div class="card"><div class="k">Margin ratio</div><div class="v" id="c-margin">{{ state.margin_ratio | pct }}</div></div>
+      <div class="card"><div class="k">Capital usage</div><div class="v" id="c-usage">{{ capital.get('capital_usage_pct') | pct }}</div></div>
+      <div class="card"><div class="k">Min order notional</div><div class="v" id="c-minnotional">{{ capital.get('min_order_notional_usd') | num }}</div></div>
+      <div class="card"><div class="k">Positioning</div><div class="v" id="c-positioning">{{ capital.get('positioning') or "OK" }}</div></div>
+    </div>
+  </section>
+
+  {# ------------------------------------------------------------------ L2 ingestion gate #}
+  <section>
+    <h2>L2 depth ingestion &mdash; progress toward the ML gate</h2>
+    <div class="card">
+      <div class="l2bar {% if l2.ready %}ready{% endif %}" id="l2-bar">
+        <div class="fill" id="l2-fill" style="width: {{ l2.pct }}%"></div>
+        <div class="label" id="l2-label">{{ l2.min_symbol }}/{{ l2.required }} snapshots (binding symbol)</div>
+      </div>
+      <div class="l2legend">
+        <span>The bar tracks the <strong>minimum</strong> across symbols, because the gate is per symbol:
+          a healthy total can still hide a symbol that is nowhere near ready.</span>
+        <span id="l2-total">{{ l2.total }} rows total</span>
+      </div>
+      <div class="tablewrap" style="margin-top:10px">
+        <table id="l2-table">
+          <thead><tr><th>Symbol</th><th>Snapshots</th><th>Required</th><th>Progress</th><th>Ready</th></tr></thead>
+          <tbody>
+          {% for sym, rows in l2.symbols.items() %}
+            <tr>
+              <td>{{ sym }}</td>
+              <td>{{ rows }}</td>
+              <td>{{ l2.required }}</td>
+              <td>{{ (100.0 * rows / l2.required) | round(1) }}%</td>
+              <td>{% if rows >= l2.required %}<span class="pos">READY</span>{% else %}<span class="muted">no</span>{% endif %}</td>
+            </tr>
+          {% else %}
+            <tr><td colspan="5" class="muted">No L2 snapshots buffered yet.</td></tr>
+          {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </section>
+
+  {# ------------------------------------------------------------------ positions #}
+  <section>
+    <h2>Positions</h2>
+    <div class="card">
+      <div class="tablewrap">
+        <table id="pos-table">
+          <thead><tr><th>Symbol</th><th>Side</th><th>Qty</th><th>Entry</th><th>Mark</th><th>uPnL</th></tr></thead>
+          <tbody>
+          {% for p in state.positions %}
+            <tr>
+              <td>{{ p.symbol }}</td><td>{{ p.side }}</td><td>{{ p.qty | num }}</td>
+              <td>{{ p.entry | num }}</td><td>{{ p.mark | num }}</td><td>{{ p.upnl | pnl }}</td>
+            </tr>
+          {% else %}
+            <tr><td colspan="6" class="muted">none</td></tr>
+          {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </section>
+
+  {# ------------------------------------------------------------------ markets #}
+  <section>
+    <h2>Markets &amp; edge</h2>
+    <div class="card">
+      <div class="tablewrap">
+        <table id="mk-table">
+          <thead><tr><th>Symbol</th><th>Mid</th><th>Spread bps</th><th>ATR bps</th><th>Fee bps</th>
+            <th>Imbalance</th><th>Net edge bps</th><th>Hurdle</th><th>Tradable</th></tr></thead>
+          <tbody>
+          {% for m in state.markets %}
+            <tr>
+              <td>{{ m.symbol }}</td>
+              <td>{{ m.mid | num }}</td>
+              <td>{{ m.spread_bps | bps }}</td>
+              <td>{{ m.atr_bps | num }}</td>
+              <td>{{ m.fee_bps | num }}</td>
+              <td>{{ m.imbalance | num(3) }}</td>
+              <td>{{ signals.get(m.symbol, {}).get('net_bps') | bps }}</td>
+              <td>{{ state.hurdle_bps }}</td>
+              <td>{% if signals.get(m.symbol, {}).get('tradable') %}<span class="pos">YES</span>{% else %}<span class="muted">no</span>{% endif %}</td>
+            </tr>
+          {% else %}
+            <tr><td colspan="9" class="muted">no markets</td></tr>
+          {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </section>
+
+  {# ------------------------------------------------------------------ events #}
+  <section>
+    <h2>Recent events</h2>
+    <div class="card">
+      <div class="tablewrap">
+        <table id="ev-table">
+          <thead><tr><th>Time</th><th>Kind</th><th>Symbol</th><th>Detail</th></tr></thead>
+          <tbody>
+          {% for e in events %}
+            <tr>
+              <td class="muted">{{ e.ts }}</td>
+              <td>{{ e.kind }}</td>
+              <td>{{ e.symbol or '' }}</td>
+              <td>{{ e.side or '' }} {{ e.px | num }} &times; {{ e.qty | num }} fee={{ e.fee | num }} pnl={{ e.closed_pnl | num }}</td>
+            </tr>
+          {% else %}
+            <tr><td colspan="4" class="muted">none</td></tr>
+          {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </section>
+
+  <footer class="foot">
+    Rendered by Python &mdash; no Node runtime, no npm, no client-side build. Live updates stream from
+    <code>/events</code> (server-sent events); if the stream drops, the console falls back to polling
+    <code>/api/state</code>.
+  </footer>
+</div>
+
+{# ------------------------------------------------------------------ credential modal #}
+<div class="modal-backdrop" id="secret-modal" hidden>
+  <div class="modal" role="dialog" aria-modal="true" aria-labelledby="secret-title">
+    <h3 id="secret-title">Session API credentials</h3>
+    <p class="hint">
+      These are held in this page's memory only, for the lifetime of the armed session, and are
+      cleared as soon as the request settles. They are never written to localStorage,
+      sessionStorage, IndexedDB, a cookie, the URL, or a log.
+    </p>
+
+    <div id="modal-notice" class="notice error" hidden></div>
+
+    <form id="secret-form" autocomplete="off" method="post" action="/api/arm">
+      <div class="field">
+        <label for="apiKey">API key</label>
+        <div class="inputrow">
+          <input id="apiKey" name="apiKey" type="password" autocomplete="off" spellcheck="false"
+                 autocapitalize="off" placeholder="Bybit API key">
+          <button class="reveal" type="button" data-reveal="apiKey" aria-label="Show API key">Show</button>
+        </div>
+      </div>
+
+      <div class="field">
+        <label for="apiSecret">API secret</label>
+        <div class="inputrow">
+          <input id="apiSecret" name="apiSecret" type="password" autocomplete="off" spellcheck="false"
+                 autocapitalize="off" placeholder="Bybit API secret" required>
+          <button class="reveal" type="button" data-reveal="apiSecret" aria-label="Show API secret">Show</button>
+        </div>
+      </div>
+
+      <div class="modal-actions">
+        <button type="button" id="secret-cancel">Cancel</button>
+        <button class="primary" type="submit" id="secret-submit">Arm</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<script id="bootstrap" type="application/json">{{ bootstrap | tojson }}</script>
+{% raw %}
+<script>
+(function () {
+  "use strict";
+
+  var bar = document.getElementById("l2-bar");
+  var fill = document.getElementById("l2-fill");
+  var label = document.getElementById("l2-label");
+  var totalLabel = document.getElementById("l2-total");
+  var notice = document.getElementById("notice");
+  var modal = document.getElementById("secret-modal");
+  var modalNotice = document.getElementById("modal-notice");
+
+  function fmt(n, digits) {
+    if (n === null || n === undefined || n === "") return "–";
+    var v = Number(n);
+    if (!isFinite(v)) return "–";
+    return v.toLocaleString(undefined, {
+      minimumFractionDigits: digits === undefined ? 2 : digits,
+      maximumFractionDigits: digits === undefined ? 2 : digits
+    });
+  }
+
+  function pnl(n) {
+    if (n === null || n === undefined) return "–";
+    var v = Number(n);
+    if (!isFinite(v)) return "–";
+    return (v >= 0 ? "+" : "") + fmt(v);
+  }
+
+  function setText(id, text) {
+    var el = document.getElementById(id);
+    if (el) el.textContent = text;
+  }
+
+  function signClass(el, n) {
+    if (!el) return;
+    var v = Number(n);
+    el.classList.remove("pos", "neg");
+    if (isFinite(v)) el.classList.add(v >= 0 ? "pos" : "neg");
+  }
+
+  function rows(html) {
+    return html || '<tr><td colspan="9" class="muted">none</td></tr>';
+  }
+
+  function esc(v) {
+    return String(v === null || v === undefined ? "" : v)
+      .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;").replace(/'/g, "&#39;");
+  }
+
+  function showNotice(msg) {
+    notice.textContent = msg;
+    notice.hidden = !msg;
+  }
+
+  function applyL2(l2) {
+    if (!l2) return;
+    var required = Number(l2.required) || 0;
+    var min = Number(l2.min_symbol) || 0;
+    var pct = required > 0 ? Math.min(100, (100 * min) / required) : 0;
+    if (fill) fill.style.width = pct.toFixed(2) + "%";
+    if (label) label.textContent = min + "/" + required + " snapshots (binding symbol)";
+    if (totalLabel) totalLabel.textContent = (l2.rows !== undefined ? l2.rows : "") + " rows total";
+    if (bar) {
+      bar.classList.toggle("ready", !!l2.ready);
+    }
+    var body = document.querySelector("#l2-table tbody");
+    if (body) {
+      var syms = l2.symbols || {};
+      var names = Object.keys(syms);
+      if (!names.length) {
+        body.innerHTML = '<tr><td colspan="5" class="muted">No L2 snapshots buffered yet.</td></tr>';
+      } else {
+        body.innerHTML = names.map(function (s) {
+          var n = Number(syms[s]) || 0;
+          return "<tr><td>" + esc(s) + "</td><td>" + n + "</td><td>" + required + "</td><td>" +
+            (required ? (100 * n / required).toFixed(1) : "0.0") + "%</td><td>" +
+            (n >= required ? '<span class="pos">READY</span>' : '<span class="muted">no</span>') + "</td></tr>";
+        }).join("");
+      }
+    }
+  }
+
+  function applyState(s) {
+    if (!s) return;
+    setText("host", s.host || "—");
+    setText("mode", s.position_mode || "");
+
+    var badge = document.getElementById("arm");
+    if (badge) {
+      var armed = !!s.armed;
+      badge.textContent = armed ? "ARMED" : "DISARMED";
+      badge.className = "badge " + (armed ? "armed" : "disarmed");
+    }
+
+    var cap = s.capital || {};
+    setText("c-equity", fmt(s.equity));
+    setText("c-avail", fmt(cap.available_usdt));
+    setText("c-gross", fmt(s.gross_notional));
+    setText("c-deployed", fmt(cap.deployed_notional_usd));
+    setText("c-realized", pnl(s.realized_today));
+    setText("c-daily", pnl(s.daily_pnl));
+    setText("c-margin", fmt((Number(s.margin_ratio) || 0) * 100) + "%");
+    setText("c-usage", fmt(cap.capital_usage_pct) + "%");
+    setText("c-minnotional", fmt(cap.min_order_notional_usd));
+    setText("c-positioning", cap.positioning || "OK");
+    signClass(document.getElementById("c-realized"), s.realized_today);
+    signClass(document.getElementById("c-daily"), s.daily_pnl);
+
+    setText("armable-note", s.armable ? "preflight OK" : "preflight not yet satisfied");
+
+    if (s.ops) applyL2(s.ops.l2_depth);
+
+    var posBody = document.querySelector("#pos-table tbody");
+    if (posBody) {
+      var positions = s.positions || [];
+      posBody.innerHTML = positions.length ? positions.map(function (p) {
+        return "<tr><td>" + esc(p.symbol) + "</td><td>" + esc(p.side) + "</td><td>" + fmt(p.qty) +
+          "</td><td>" + fmt(p.entry) + "</td><td>" + fmt(p.mark) + "</td><td>" +
+          (Number(p.upnl) >= 0 ? '<span class="pos">' : '<span class="neg">') + pnl(p.upnl) + "</span></td></tr>";
+      }).join("") : '<tr><td colspan="6" class="muted">none</td></tr>';
+    }
+
+    var sig = {};
+    (s.signals || []).forEach(function (x) { sig[x.symbol] = x; });
+    var mkBody = document.querySelector("#mk-table tbody");
+    if (mkBody) {
+      var markets = s.markets || [];
+      mkBody.innerHTML = markets.length ? markets.map(function (m) {
+        var e = sig[m.symbol] || {};
+        return "<tr><td>" + esc(m.symbol) + "</td><td>" + fmt(m.mid) + "</td><td>" +
+          (m.spread_bps === null || m.spread_bps === undefined ? "–" : Number(m.spread_bps).toFixed(2)) +
+          "</td><td>" + fmt(m.atr_bps) + "</td><td>" + fmt(m.fee_bps) + "</td><td>" + fmt(m.imbalance, 3) +
+          "</td><td>" + (e.net_bps === null || e.net_bps === undefined ? "–" : Number(e.net_bps).toFixed(2)) +
+          "</td><td>" + esc(s.hurdle_bps) + "</td><td>" +
+          (e.tradable ? '<span class="pos">YES</span>' : '<span class="muted">no</span>') + "</td></tr>";
+      }).join("") : '<tr><td colspan="9" class="muted">no markets</td></tr>';
+    }
+
+    var evBody = document.querySelector("#ev-table tbody");
+    if (evBody) {
+      var events = (s.events || []).slice().reverse();
+      evBody.innerHTML = events.length ? events.map(function (x) {
+        return '<tr><td class="muted">' + esc(x.ts) + "</td><td>" + esc(x.kind) + "</td><td>" +
+          esc(x.symbol || "") + "</td><td>" + esc(x.side || "") + " " + fmt(x.px) + "×" + fmt(x.qty) +
+          " fee=" + fmt(x.fee) + " pnl=" + fmt(x.closed_pnl) + "</td></tr>";
+      }).join("") : '<tr><td colspan="4" class="muted">none</td></tr>';
+    }
+
+    if (s.boot_warning) {
+      var bw = document.getElementById("boot-warning");
+      if (bw) { bw.textContent = s.boot_warning; bw.hidden = false; }
+    }
+  }
+
+  // ------------------------------------------------------------------ control actions
+  function post(url, body) {
+    return fetch(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      credentials: "same-origin",
+      body: JSON.stringify(body || {})
+    }).then(function (r) {
+      if (r.status === 401) {
+        // The session died. The credential is NOT re-sent; the operator signs in again.
+        window.location.assign("/login");
+        throw new Error("session_expired");
+      }
+      return r.json().catch(function () { return {}; }).then(function (b) {
+        return { ok: r.ok, status: r.status, body: b };
+      });
+    });
+  }
+
+  function reasonsOf(body) {
+    if (!body) return "";
+    if (Array.isArray(body.reasons) && body.reasons.length) {
+      return body.reasons.map(function (r) { return r.code || r.detail || JSON.stringify(r); }).join("; ");
+    }
+    return body.error || body.detail || "";
+  }
+
+  // ------------------------------------------------------------------ credential modal
+  function clearCredentials() {
+    ["apiKey", "apiSecret"].forEach(function (id) {
+      var el = document.getElementById(id);
+      if (el) { el.value = ""; el.type = "password"; }
+    });
+    document.querySelectorAll("[data-reveal]").forEach(function (b) { b.textContent = "Show"; });
+    if (modalNotice) modalNotice.hidden = true;
+  }
+
+  function openModal() {
+    clearCredentials();
+    modal.hidden = false;
+    var f = document.getElementById("apiSecret");
+    if (f) f.focus();
+  }
+
+  function closeModal() {
+    clearCredentials();
+    modal.hidden = true;
+  }
+
+  document.getElementById("arm-btn").addEventListener("click", openModal);
+  document.getElementById("secret-cancel").addEventListener("click", closeModal);
+
+  document.querySelectorAll("[data-reveal]").forEach(function (btn) {
+    btn.addEventListener("click", function () {
+      var input = document.getElementById(btn.getAttribute("data-reveal"));
+      if (!input) return;
+      var showing = input.type === "text";
+      input.type = showing ? "password" : "text";
+      btn.textContent = showing ? "Show" : "Hide";
+    });
+  });
+
+  document.getElementById("secret-form").addEventListener("submit", function (ev) {
+    ev.preventDefault();
+    var submit = document.getElementById("secret-submit");
+    var apiSecret = document.getElementById("apiSecret").value;
+    var apiKey = document.getElementById("apiKey").value;
+    if (!apiSecret.trim() || submit.disabled) {
+      if (modalNotice) {
+        modalNotice.textContent = "The API secret is required.";
+        modalNotice.hidden = false;
+      }
+      return;
+    }
+    submit.disabled = true;
+    var payload = { apiSecret: apiSecret };
+    if (apiKey.trim()) payload.apiKey = apiKey;
+    post("/api/arm", payload).then(function (res) {
+      if (res.ok && res.body && res.body.success) {
+        closeModal();
+        refresh();
+        return;
+      }
+      if (modalNotice) {
+        modalNotice.textContent = reasonsOf(res.body) || "Arm was refused.";
+        modalNotice.hidden = false;
+      }
+    }).catch(function (e) {
+      if (e && e.message === "session_expired") return;
+      if (modalNotice) {
+        modalNotice.textContent = "The engine did not answer. The credential was not stored.";
+        modalNotice.hidden = false;
+      }
+    }).finally(function () {
+      submit.disabled = false;
+      // Neither half outlives the request, success or failure.
+      clearCredentials();
+      void 0;
+    });
+  });
+
+  document.getElementById("disarm-btn").addEventListener("click", function () {
+    showNotice("");
+    post("/api/disarm", {}).then(function (res) {
+      if (!res.ok) showNotice(reasonsOf(res.body) || "Disarm refused.");
+      refresh();
+    }).catch(function () { showNotice("The engine did not answer the disarm request."); });
+  });
+
+  document.getElementById("kill-btn").addEventListener("click", function () {
+    if (!window.confirm("KILL: cancel all orders and flatten all positions?")) return;
+    showNotice("");
+    post("/api/kill", {}).then(function (res) {
+      if (!res.ok) showNotice(reasonsOf(res.body) || "Kill refused.");
+      refresh();
+    }).catch(function () { showNotice("The engine did not answer the kill request."); });
+  });
+
+  // ------------------------------------------------------------------ live updates
+  var stream = null;
+  var poller = null;
+
+  function startPolling() {
+    if (poller) return;
+    poller = window.setInterval(refresh, 5000);
+  }
+
+  function refresh() {
+    fetch("/api/state", { credentials: "same-origin" }).then(function (r) {
+      if (r.status === 401) { window.location.assign("/login"); return null; }
+      return r.ok ? r.json() : null;
+    }).then(function (s) { if (s) applyState(s); }).catch(function () { /* transient */ });
+  }
+
+  function startStream() {
+    try {
+      stream = new EventSource("/events");
+      stream.onmessage = function (ev) {
+        try { applyState(JSON.parse(ev.data)); } catch (e) { /* keep the last good render */ }
+      };
+      stream.onerror = function () {
+        // Server-sent events cannot send SameSite cookies from every client; fall back rather than
+        // leaving a stale console on screen.
+        if (stream) { stream.close(); stream = null; }
+        startPolling();
+      };
+    } catch (e) {
+      startPolling();
+    }
+  }
+
+  var boot = document.getElementById("bootstrap");
+  if (boot && boot.textContent) {
+    try { applyState(JSON.parse(boot.textContent).state); } catch (e) { /* server render stands */ }
+  }
+
+  refresh();
+  startStream();
+  window.setInterval(refresh, 30000);
+})();
+</script>
+{% endraw %}
+{% endblock %}
