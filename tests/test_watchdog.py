@@ -26,4 +26,5 @@ def test_watchdog_disarms_before_bounded_restart_and_opens_circuit():
 
 def test_watchdog_rejects_invalid_configuration():
     with pytest.raises(ValueError):
-        TaskWatchdog(disarm=lambda _: None, journal=lambda *_: None, metric_inc=lambda *_args, **_kw: None, max_failures=0)
+        TaskWatchdog(disarm=lambda _: None, journal=lambda *_: None,
+                     metric_inc=lambda *_args, **_kw: None, max_failures=0)

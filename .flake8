@@ -1,6 +1,9 @@
 [flake8]
 # Only lint repository-owned Python; .venv and installed third-party packages are not project source.
 exclude = .venv,.git,node_modules,dist,build,.mypy_cache,.ruff_cache,.pytest_cache
+# Enforce syntax/undefined-name correctness here. Ruff owns formatting, including line length;
+# the project standard remains documented as 120 columns below.
+select = E9,F63,F7,F82
 
 # The project standard is 120 columns. flake8's built-in default of 79 is a legacy default this
 # codebase has never followed, and at 79 it reported 4,566 E501 findings for lines compliant with the

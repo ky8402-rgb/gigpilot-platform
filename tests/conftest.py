@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import sys
 from pathlib import Path
+from typing import Any
 
 import pytest
 
@@ -253,10 +254,11 @@ def make_engine(tmp_path):
             # api_secret="" — the production cold-boot shape, where the absence of a secret is the
             # intended resting state rather than a fault.
             require_runtime_secret=require_runtime_secret,
-            db_path=str(tmp_path / f"test-{abs(hash((equity, trade_permission, armed_env, require_runtime_secret)))}.db"),
+            db_path=str(
+                tmp_path / f"test-{abs(hash((equity, trade_permission, armed_env, require_runtime_secret)))}.db"),
         )
-        engine = gp.GigPilot(cfg)
-        fake = FakeREST(symbols=syms, equity=equity, trade_permission=trade_permission,
+        engine: Any = gp.GigPilot(cfg)
+        fake: FakeREST = FakeREST(symbols=syms, equity=equity, trade_permission=trade_permission,
                         taker_fee=taker_fee, bar_volume=bar_volume)
         fake.api_secret = api_secret or "test-secret"
         engine.rest = fake

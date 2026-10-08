@@ -14,7 +14,7 @@ import math
 import uuid
 from collections.abc import Awaitable, Callable
 from decimal import ROUND_FLOOR, Decimal, InvalidOperation
-from typing import TYPE_CHECKING, cast
+from typing import TYPE_CHECKING, Any, cast
 
 if TYPE_CHECKING:  # typing-only: the executor must not import the strategy package at runtime
     from gpkg.strategy.vpin import ToxicityPolicy
@@ -65,7 +65,7 @@ class Executor:
     def __init__(
         self,
         cfg: Config,
-        rest: BybitREST | ExchangeAdapter,
+        rest: Any,
         step_sizes: dict[str, float],
         metrics: Metrics | None = None,
         min_sizes: dict[str, float] | None = None,

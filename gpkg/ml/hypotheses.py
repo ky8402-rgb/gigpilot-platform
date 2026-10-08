@@ -78,7 +78,8 @@ def _feature_rows(store: Store, symbol: str, start_ms: int, end_ms: int, use_l2:
                 rec["microprice_bps"] = ((ask * bd + bid * ad) / (bd + ad) - mid) / max(mid, 1e-12) * 1e4
         out.append(rec)
     for i in range(len(out) - HORIZON_BARS):
-        out[i]["future_return_bps"] = math.log(max(out[i + HORIZON_BARS]["close"], 1e-12) / max(out[i]["close"], 1e-12)) * 1e4
+        out[i]["future_return_bps"] = math.log(
+            max(out[i + HORIZON_BARS]["close"], 1e-12) / max(out[i]["close"], 1e-12)) * 1e4
     return [r for r in out[:-HORIZON_BARS] if "future_return_bps" in r]
 
 
@@ -106,7 +107,8 @@ def _config() -> ValidationConfig:
 def _with_audit(ev: ModelEvidence, *, family: str, cost: dict, l2_ready: bool) -> ModelEvidence:
     return replace(
         ev,
-        model_types=(family, "point_in_time_funding", "basis_premium", "l2_obi_microprice" if l2_ready else "l2_pending"),
+        model_types=(family, "point_in_time_funding", "basis_premium",
+                     "l2_obi_microprice" if l2_ready else "l2_pending"),
     )
 
 
@@ -194,7 +196,8 @@ def evaluate_hypotheses(
     }
     if len(rows) < MIN_ROWS:
         reason = f"insufficient aligned rows {len(rows)} < {MIN_ROWS}"
-        store.ml_research_audit(f"l2-progress-{symbol.lower()}-{end}", "WARMING", str(progress["message"]), {**progress, "rows": len(rows), "reason": reason})
+        store.ml_research_audit(f"l2-progress-{symbol.lower()}-{end}", "WARMING",
+                                str(progress["message"]), {**progress, "rows": len(rows), "reason": reason})
         return [], {**progress, "rejected": reason}
     splits = PurgedWalkForward(n_splits=5, min_train=20_000, test_size=5_000, purge=5).split(
         [int(r["ts_ms"]) for r in rows]

@@ -23,8 +23,8 @@ else:
     output = b''
     sent = False
     while True:
-        r, _, _ = select.select([master], [], [], 15)
-        if r:
+        readable, _, _ = select.select([master], [], [], 15)
+        if readable:
             try:
                 chunk = os.read(master, 1024)
             except OSError:
@@ -39,5 +39,5 @@ else:
                 sent = True
         else:
             break
-    _, status = os.waitpid(pid, 0)
+    waited_pid, status = os.waitpid(pid, 0)
     sys.exit(os.WEXITSTATUS(status) if os.WIFEXITED(status) else 1)

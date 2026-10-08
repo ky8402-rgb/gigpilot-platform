@@ -93,8 +93,8 @@ else:
     # Phase 3: Wait for process completion
     result_output = b''
     while True:
-        r, _, _ = select.select([master], [], [], 3)
-        if r:
+        readable, _, _ = select.select([master], [], [], 3)
+        if readable:
             try:
                 chunk = os.read(master, 1024)
             except OSError:
@@ -105,7 +105,7 @@ else:
         else:
             break
 
-    _, status = os.waitpid(pid, 0)
+    waited_pid, status = os.waitpid(pid, 0)
     exit_code = os.WEXITSTATUS(status) if os.WIFEXITED(status) else 1
     with open(STATUS_FILE, "w") as sf:
         sf.write(f"COMPLETED_{exit_code}\n")

@@ -239,7 +239,8 @@ class HistoricalDataWorker:
                 oldest = min(timestamps); batch=[]
                 for ts in timestamps:
                     if start_ms <= ts <= end_ms and index[ts] > 0:
-                        batch.append((symbol,"basis_1m",ts,{"perp_close":perp[ts],"index_close":index[ts],"basis_bps":(perp[ts]/index[ts]-1.0)*1e4}))
+                        batch.append(
+                            (symbol,"basis_1m",ts,{"perp_close":perp[ts],"index_close":index[ts],"basis_bps":(perp[ts]/index[ts]-1.0)*1e4}))
                 self.store.ml_market_bulk_upsert(batch); count += len(batch)
                 if oldest >= cursor: break
                 cursor = oldest - 1

@@ -255,368 +255,463 @@ def register_compat_routes(app, get_gp):
         return {"success":True,"status":"accepted","fail_closed":True,"path":path}
 
     @router.post("/api/deploy", dependencies=[Depends(require_owner)])
-    async def legacy_0(request: Request, symbol: str | None=None, id: str | None=None, challengerId: str | None=None): return await _mutate(request,symbol,id,challengerId)
+    async def legacy_0(request: Request, symbol: str | None=None, id: str | None=None,
+                       challengerId: str | None=None): return await _mutate(request,symbol,id,challengerId)
 
     @router.get("/api/github/auth-status", dependencies=[Depends(require_owner)])
-    async def legacy_1(request: Request, symbol: str | None=None, id: str | None=None, challengerId: str | None=None): return await _read(request,symbol,id,challengerId)
+    async def legacy_1(request: Request, symbol: str | None=None, id: str | None=None,
+                       challengerId: str | None=None): return await _read(request,symbol,id,challengerId)
 
     @router.post("/api/github/configure-remote", dependencies=[Depends(require_owner)])
-    async def legacy_2(request: Request, symbol: str | None=None, id: str | None=None, challengerId: str | None=None): return await _mutate(request,symbol,id,challengerId)
+    async def legacy_2(request: Request, symbol: str | None=None, id: str | None=None,
+                       challengerId: str | None=None): return await _mutate(request,symbol,id,challengerId)
 
     @router.delete("/api/github/delete-ssh", dependencies=[Depends(require_owner)])
-    async def legacy_3(request: Request, symbol: str | None=None, id: str | None=None, challengerId: str | None=None): return await _mutate(request,symbol,id,challengerId)
+    async def legacy_3(request: Request, symbol: str | None=None, id: str | None=None,
+                       challengerId: str | None=None): return await _mutate(request,symbol,id,challengerId)
 
     @router.delete("/api/github/delete-token", dependencies=[Depends(require_owner)])
-    async def legacy_4(request: Request, symbol: str | None=None, id: str | None=None, challengerId: str | None=None): return await _mutate(request,symbol,id,challengerId)
+    async def legacy_4(request: Request, symbol: str | None=None, id: str | None=None,
+                       challengerId: str | None=None): return await _mutate(request,symbol,id,challengerId)
 
     @router.get("/api/github/deployments", dependencies=[Depends(require_owner)])
-    async def legacy_5(request: Request, symbol: str | None=None, id: str | None=None, challengerId: str | None=None): return await _read(request,symbol,id,challengerId)
+    async def legacy_5(request: Request, symbol: str | None=None, id: str | None=None,
+                       challengerId: str | None=None): return await _read(request,symbol,id,challengerId)
 
     @router.post("/api/github/generate-ssh", dependencies=[Depends(require_owner)])
-    async def legacy_6(request: Request, symbol: str | None=None, id: str | None=None, challengerId: str | None=None): return await _mutate(request,symbol,id,challengerId)
+    async def legacy_6(request: Request, symbol: str | None=None, id: str | None=None,
+                       challengerId: str | None=None): return await _mutate(request,symbol,id,challengerId)
 
     @router.post("/api/github/git-op", dependencies=[Depends(require_owner)])
-    async def legacy_7(request: Request, symbol: str | None=None, id: str | None=None, challengerId: str | None=None): return await _mutate(request,symbol,id,challengerId)
+    async def legacy_7(request: Request, symbol: str | None=None, id: str | None=None,
+                       challengerId: str | None=None): return await _mutate(request,symbol,id,challengerId)
 
     @router.get("/api/github/gitops-events", dependencies=[Depends(require_owner)])
-    async def legacy_8(request: Request, symbol: str | None=None, id: str | None=None, challengerId: str | None=None): return await _read(request,symbol,id,challengerId)
+    async def legacy_8(request: Request, symbol: str | None=None, id: str | None=None,
+                       challengerId: str | None=None): return await _read(request,symbol,id,challengerId)
 
     @router.post("/api/github/push-and-deploy", dependencies=[Depends(require_owner)])
-    async def legacy_9(request: Request, symbol: str | None=None, id: str | None=None, challengerId: str | None=None): return await _mutate(request,symbol,id,challengerId)
+    async def legacy_9(request: Request, symbol: str | None=None, id: str | None=None,
+                       challengerId: str | None=None): return await _mutate(request,symbol,id,challengerId)
 
     @router.post("/api/github/save-ssh", dependencies=[Depends(require_owner)])
-    async def legacy_10(request: Request, symbol: str | None=None, id: str | None=None, challengerId: str | None=None): return await _mutate(request,symbol,id,challengerId)
+    async def legacy_10(request: Request, symbol: str | None=None, id: str | None=None,
+                        challengerId: str | None=None): return await _mutate(request,symbol,id,challengerId)
 
     @router.post("/api/github/save-token", dependencies=[Depends(require_owner)])
-    async def legacy_11(request: Request, symbol: str | None=None, id: str | None=None, challengerId: str | None=None): return await _mutate(request,symbol,id,challengerId)
+    async def legacy_11(request: Request, symbol: str | None=None, id: str | None=None,
+                        challengerId: str | None=None): return await _mutate(request,symbol,id,challengerId)
 
     @router.post("/api/github/simulate-webhook", dependencies=[Depends(require_owner)])
-    async def legacy_12(request: Request, symbol: str | None=None, id: str | None=None, challengerId: str | None=None): return await _mutate(request,symbol,id,challengerId)
+    async def legacy_12(request: Request, symbol: str | None=None, id: str | None=None,
+                        challengerId: str | None=None): return await _mutate(request,symbol,id,challengerId)
 
     @router.get("/api/github/status", dependencies=[Depends(require_owner)])
-    async def legacy_13(request: Request, symbol: str | None=None, id: str | None=None, challengerId: str | None=None): return await _read(request,symbol,id,challengerId)
+    async def legacy_13(request: Request, symbol: str | None=None, id: str | None=None,
+                        challengerId: str | None=None): return await _read(request,symbol,id,challengerId)
 
     @router.post("/api/github/test-connection", dependencies=[Depends(require_owner)])
-    async def legacy_14(request: Request, symbol: str | None=None, id: str | None=None, challengerId: str | None=None): return await _mutate(request,symbol,id,challengerId)
+    async def legacy_14(request: Request, symbol: str | None=None, id: str | None=None,
+                        challengerId: str | None=None): return await _mutate(request,symbol,id,challengerId)
 
     @router.post("/api/github/trigger-deploy", dependencies=[Depends(require_owner)])
-    async def legacy_15(request: Request, symbol: str | None=None, id: str | None=None, challengerId: str | None=None): return await _mutate(request,symbol,id,challengerId)
+    async def legacy_15(request: Request, symbol: str | None=None, id: str | None=None,
+                        challengerId: str | None=None): return await _mutate(request,symbol,id,challengerId)
 
     @router.post("/api/github/webhook", dependencies=[Depends(require_owner)])
-    async def legacy_16(request: Request, symbol: str | None=None, id: str | None=None, challengerId: str | None=None): return await _mutate(request,symbol,id,challengerId)
+    async def legacy_16(request: Request, symbol: str | None=None, id: str | None=None,
+                        challengerId: str | None=None): return await _mutate(request,symbol,id,challengerId)
 
     @router.get("/api/github/webhook-info", dependencies=[Depends(require_owner)])
-    async def legacy_17(request: Request, symbol: str | None=None, id: str | None=None, challengerId: str | None=None): return await _read(request,symbol,id,challengerId)
+    async def legacy_17(request: Request, symbol: str | None=None, id: str | None=None,
+                        challengerId: str | None=None): return await _read(request,symbol,id,challengerId)
 
     @router.get("/api/trading/assets", dependencies=[Depends(require_owner)])
-    async def legacy_18(request: Request, symbol: str | None=None, id: str | None=None, challengerId: str | None=None): return await _read(request,symbol,id,challengerId)
+    async def legacy_18(request: Request, symbol: str | None=None, id: str | None=None,
+                        challengerId: str | None=None): return await _read(request,symbol,id,challengerId)
 
     @router.get("/api/trading/audit-logs", dependencies=[Depends(require_owner)])
-    async def legacy_19(request: Request, symbol: str | None=None, id: str | None=None, challengerId: str | None=None): return await _read(request,symbol,id,challengerId)
+    async def legacy_19(request: Request, symbol: str | None=None, id: str | None=None,
+                        challengerId: str | None=None): return await _read(request,symbol,id,challengerId)
 
     @router.get("/api/trading/auth/login")
     @router.post("/api/trading/auth/login")
     @router.put("/api/trading/auth/login")
     @router.patch("/api/trading/auth/login")
     @router.delete("/api/trading/auth/login")
-    async def legacy_20(request: Request, symbol: str | None=None, id: str | None=None, challengerId: str | None=None): return await _auth_status(request)
+    async def legacy_20(request: Request, symbol: str | None=None, id: str | None=None,
+                        challengerId: str | None=None): return await _auth_status(request)
 
     @router.get("/api/trading/auth/login/")
     @router.post("/api/trading/auth/login/")
     @router.put("/api/trading/auth/login/")
     @router.patch("/api/trading/auth/login/")
     @router.delete("/api/trading/auth/login/")
-    async def legacy_21(request: Request, symbol: str | None=None, id: str | None=None, challengerId: str | None=None): return await _auth_status(request)
+    async def legacy_21(request: Request, symbol: str | None=None, id: str | None=None,
+                        challengerId: str | None=None): return await _auth_status(request)
 
     @router.get("/api/trading/auth/logout")
     @router.post("/api/trading/auth/logout")
     @router.put("/api/trading/auth/logout")
     @router.patch("/api/trading/auth/logout")
     @router.delete("/api/trading/auth/logout")
-    async def legacy_22(request: Request, symbol: str | None=None, id: str | None=None, challengerId: str | None=None): return {"success":True,"loggedOut":True}
+    async def legacy_22(request: Request, symbol: str | None=None, id: str | None=None,
+                        challengerId: str | None=None): return {"success":True,"loggedOut":True}
 
     @router.get("/api/trading/auth/logout/")
     @router.post("/api/trading/auth/logout/")
     @router.put("/api/trading/auth/logout/")
     @router.patch("/api/trading/auth/logout/")
     @router.delete("/api/trading/auth/logout/")
-    async def legacy_23(request: Request, symbol: str | None=None, id: str | None=None, challengerId: str | None=None): return {"success":True,"loggedOut":True}
+    async def legacy_23(request: Request, symbol: str | None=None, id: str | None=None,
+                        challengerId: str | None=None): return {"success":True,"loggedOut":True}
 
     @router.get("/api/trading/auth/setup-complete")
     @router.post("/api/trading/auth/setup-complete")
     @router.put("/api/trading/auth/setup-complete")
     @router.patch("/api/trading/auth/setup-complete")
     @router.delete("/api/trading/auth/setup-complete")
-    async def legacy_24(request: Request, symbol: str | None=None, id: str | None=None, challengerId: str | None=None): return {"success":True,"configured":get_owner_auth().is_configured}
+    async def legacy_24(request: Request, symbol: str | None=None, id: str | None=None, challengerId: str |
+                        None=None): return {"success":True,"configured":get_owner_auth().is_configured}
 
     @router.get("/api/trading/auth/setup-complete/")
     @router.post("/api/trading/auth/setup-complete/")
     @router.put("/api/trading/auth/setup-complete/")
     @router.patch("/api/trading/auth/setup-complete/")
     @router.delete("/api/trading/auth/setup-complete/")
-    async def legacy_25(request: Request, symbol: str | None=None, id: str | None=None, challengerId: str | None=None): return {"success":True,"configured":get_owner_auth().is_configured}
+    async def legacy_25(request: Request, symbol: str | None=None, id: str | None=None, challengerId: str |
+                        None=None): return {"success":True,"configured":get_owner_auth().is_configured}
 
     @router.get("/api/trading/auth/setup-init")
     @router.post("/api/trading/auth/setup-init")
     @router.put("/api/trading/auth/setup-init")
     @router.patch("/api/trading/auth/setup-init")
     @router.delete("/api/trading/auth/setup-init")
-    async def legacy_26(request: Request, symbol: str | None=None, id: str | None=None, challengerId: str | None=None): return JSONResponse(status_code=401,content={"success":False,"error":"break-glass PIN required"})
+    async def legacy_26(request: Request, symbol: str | None=None, id: str | None=None, challengerId: str |
+                        None=None): return JSONResponse(status_code=401,content={"success":False,"error":"break-glass PIN required"})
 
     @router.get("/api/trading/auth/setup-init/")
     @router.post("/api/trading/auth/setup-init/")
     @router.put("/api/trading/auth/setup-init/")
     @router.patch("/api/trading/auth/setup-init/")
     @router.delete("/api/trading/auth/setup-init/")
-    async def legacy_27(request: Request, symbol: str | None=None, id: str | None=None, challengerId: str | None=None): return JSONResponse(status_code=401,content={"success":False,"error":"break-glass PIN required"})
+    async def legacy_27(request: Request, symbol: str | None=None, id: str | None=None, challengerId: str |
+                        None=None): return JSONResponse(status_code=401,content={"success":False,"error":"break-glass PIN required"})
 
     @router.get("/api/trading/auth/status")
     @router.post("/api/trading/auth/status")
     @router.put("/api/trading/auth/status")
     @router.patch("/api/trading/auth/status")
     @router.delete("/api/trading/auth/status")
-    async def legacy_28(request: Request, symbol: str | None=None, id: str | None=None, challengerId: str | None=None): return await _auth_status(request)
+    async def legacy_28(request: Request, symbol: str | None=None, id: str | None=None,
+                        challengerId: str | None=None): return await _auth_status(request)
 
     @router.get("/api/trading/auth/status/")
     @router.post("/api/trading/auth/status/")
     @router.put("/api/trading/auth/status/")
     @router.patch("/api/trading/auth/status/")
     @router.delete("/api/trading/auth/status/")
-    async def legacy_29(request: Request, symbol: str | None=None, id: str | None=None, challengerId: str | None=None): return await _auth_status(request)
+    async def legacy_29(request: Request, symbol: str | None=None, id: str | None=None,
+                        challengerId: str | None=None): return await _auth_status(request)
 
     @router.post("/api/trading/autonomous-optimizer/run", dependencies=[Depends(require_owner)])
-    async def legacy_30(request: Request, symbol: str | None=None, id: str | None=None, challengerId: str | None=None): return await _mutate(request,symbol,id,challengerId)
+    async def legacy_30(request: Request, symbol: str | None=None, id: str | None=None,
+                        challengerId: str | None=None): return await _mutate(request,symbol,id,challengerId)
 
     @router.get("/api/trading/autonomous-optimizer/status", dependencies=[Depends(require_owner)])
-    async def legacy_31(request: Request, symbol: str | None=None, id: str | None=None, challengerId: str | None=None): return await _read(request,symbol,id,challengerId)
+    async def legacy_31(request: Request, symbol: str | None=None, id: str | None=None,
+                        challengerId: str | None=None): return await _read(request,symbol,id,challengerId)
 
     @router.post("/api/trading/autonomous-optimizer/toggle", dependencies=[Depends(require_owner)])
-    async def legacy_32(request: Request, symbol: str | None=None, id: str | None=None, challengerId: str | None=None): return await _mutate(request,symbol,id,challengerId)
+    async def legacy_32(request: Request, symbol: str | None=None, id: str | None=None,
+                        challengerId: str | None=None): return await _mutate(request,symbol,id,challengerId)
 
     @router.post("/api/trading/autonomy", dependencies=[Depends(require_owner)])
-    async def legacy_33(request: Request, symbol: str | None=None, id: str | None=None, challengerId: str | None=None): return await _mutate(request,symbol,id,challengerId)
+    async def legacy_33(request: Request, symbol: str | None=None, id: str | None=None,
+                        challengerId: str | None=None): return await _mutate(request,symbol,id,challengerId)
 
     @router.get("/api/trading/decisions", dependencies=[Depends(require_owner)])
-    async def legacy_34(request: Request, symbol: str | None=None, id: str | None=None, challengerId: str | None=None): return await _read(request,symbol,id,challengerId)
+    async def legacy_34(request: Request, symbol: str | None=None, id: str | None=None,
+                        challengerId: str | None=None): return await _read(request,symbol,id,challengerId)
 
     @router.post("/api/trading/decisions/evaluate", dependencies=[Depends(require_owner)])
-    async def legacy_35(request: Request, symbol: str | None=None, id: str | None=None, challengerId: str | None=None): return await _mutate(request,symbol,id,challengerId)
+    async def legacy_35(request: Request, symbol: str | None=None, id: str | None=None,
+                        challengerId: str | None=None): return await _mutate(request,symbol,id,challengerId)
 
     @router.post("/api/trading/engines/{id}/clear-errors", dependencies=[Depends(require_owner)])
-    async def legacy_36(request: Request, symbol: str | None=None, id: str | None=None, challengerId: str | None=None): return await _mutate(request,symbol,id,challengerId)
+    async def legacy_36(request: Request, symbol: str | None=None, id: str | None=None,
+                        challengerId: str | None=None): return await _mutate(request,symbol,id,challengerId)
 
     @router.post("/api/trading/engines/{id}/off-switch", dependencies=[Depends(require_owner)])
-    async def legacy_37(request: Request, symbol: str | None=None, id: str | None=None, challengerId: str | None=None): return await _mutate(request,symbol,id,challengerId)
+    async def legacy_37(request: Request, symbol: str | None=None, id: str | None=None,
+                        challengerId: str | None=None): return await _mutate(request,symbol,id,challengerId)
 
     @router.get("/api/trading/engines/health", dependencies=[Depends(require_owner)])
-    async def legacy_38(request: Request, symbol: str | None=None, id: str | None=None, challengerId: str | None=None): return await _read(request,symbol,id,challengerId)
+    async def legacy_38(request: Request, symbol: str | None=None, id: str | None=None,
+                        challengerId: str | None=None): return await _read(request,symbol,id,challengerId)
 
     @router.get("/api/trading/exchanges/credentials", dependencies=[Depends(require_owner)])
-    async def legacy_39(request: Request, symbol: str | None=None, id: str | None=None, challengerId: str | None=None): return await _read(request,symbol,id,challengerId)
+    async def legacy_39(request: Request, symbol: str | None=None, id: str | None=None,
+                        challengerId: str | None=None): return await _read(request,symbol,id,challengerId)
 
     @router.post("/api/trading/exchanges/keys", dependencies=[Depends(require_owner)])
-    async def legacy_40(request: Request, symbol: str | None=None, id: str | None=None, challengerId: str | None=None): return await _mutate(request,symbol,id,challengerId)
+    async def legacy_40(request: Request, symbol: str | None=None, id: str | None=None,
+                        challengerId: str | None=None): return await _mutate(request,symbol,id,challengerId)
 
     @router.get("/api/trading/futures/universe", dependencies=[Depends(require_owner)])
-    async def legacy_41(request: Request, symbol: str | None=None, id: str | None=None, challengerId: str | None=None): return await _read(request,symbol,id,challengerId)
+    async def legacy_41(request: Request, symbol: str | None=None, id: str | None=None,
+                        challengerId: str | None=None): return await _read(request,symbol,id,challengerId)
 
     @router.post("/api/trading/gigpilot/arm", dependencies=[Depends(require_owner)])
-    async def legacy_42(request: Request, symbol: str | None=None, id: str | None=None, challengerId: str | None=None): return await _mutate(request,symbol,id,challengerId)
+    async def legacy_42(request: Request, symbol: str | None=None, id: str | None=None,
+                        challengerId: str | None=None): return await _mutate(request,symbol,id,challengerId)
 
     @router.post("/api/trading/gigpilot/disarm", dependencies=[Depends(require_owner)])
-    async def legacy_43(request: Request, symbol: str | None=None, id: str | None=None, challengerId: str | None=None): return await _mutate(request,symbol,id,challengerId)
+    async def legacy_43(request: Request, symbol: str | None=None, id: str | None=None,
+                        challengerId: str | None=None): return await _mutate(request,symbol,id,challengerId)
 
     @router.get("/api/trading/gigpilot/health", dependencies=[Depends(require_owner)])
-    async def legacy_44(request: Request, symbol: str | None=None, id: str | None=None, challengerId: str | None=None): return await _read(request,symbol,id,challengerId)
+    async def legacy_44(request: Request, symbol: str | None=None, id: str | None=None,
+                        challengerId: str | None=None): return await _read(request,symbol,id,challengerId)
 
     @router.post("/api/trading/gigpilot/kill", dependencies=[Depends(require_owner)])
-    async def legacy_45(request: Request, symbol: str | None=None, id: str | None=None, challengerId: str | None=None): return await _mutate(request,symbol,id,challengerId)
+    async def legacy_45(request: Request, symbol: str | None=None, id: str | None=None,
+                        challengerId: str | None=None): return await _mutate(request,symbol,id,challengerId)
 
     @router.get("/api/trading/gigpilot/state", dependencies=[Depends(require_owner)])
-    async def legacy_46(request: Request, symbol: str | None=None, id: str | None=None, challengerId: str | None=None): return await _read(request,symbol,id,challengerId)
+    async def legacy_46(request: Request, symbol: str | None=None, id: str | None=None,
+                        challengerId: str | None=None): return await _read(request,symbol,id,challengerId)
 
     @router.post("/api/trading/grid/configure", dependencies=[Depends(require_owner)])
-    async def legacy_47(request: Request, symbol: str | None=None, id: str | None=None, challengerId: str | None=None): return await _mutate(request,symbol,id,challengerId)
+    async def legacy_47(request: Request, symbol: str | None=None, id: str | None=None,
+                        challengerId: str | None=None): return await _mutate(request,symbol,id,challengerId)
 
     @router.get("/api/trading/inventory-awareness", dependencies=[Depends(require_owner)])
-    async def legacy_48(request: Request, symbol: str | None=None, id: str | None=None, challengerId: str | None=None): return await _read(request,symbol,id,challengerId)
+    async def legacy_48(request: Request, symbol: str | None=None, id: str | None=None,
+                        challengerId: str | None=None): return await _read(request,symbol,id,challengerId)
 
     @router.post("/api/trading/kill-switch/deactivate", dependencies=[Depends(require_owner)])
-    async def legacy_49(request: Request, symbol: str | None=None, id: str | None=None, challengerId: str | None=None): return await _mutate(request,symbol,id,challengerId)
+    async def legacy_49(request: Request, symbol: str | None=None, id: str | None=None,
+                        challengerId: str | None=None): return await _mutate(request,symbol,id,challengerId)
 
     @router.post("/api/trading/kill-switch/toggle", dependencies=[Depends(require_owner)])
-    async def legacy_50(request: Request, symbol: str | None=None, id: str | None=None, challengerId: str | None=None): return await _mutate(request,symbol,id,challengerId)
+    async def legacy_50(request: Request, symbol: str | None=None, id: str | None=None,
+                        challengerId: str | None=None): return await _mutate(request,symbol,id,challengerId)
 
     @router.post("/api/trading/kill-switch/trigger", dependencies=[Depends(require_owner)])
-    async def legacy_51(request: Request, symbol: str | None=None, id: str | None=None, challengerId: str | None=None): return await _mutate(request,symbol,id,challengerId)
+    async def legacy_51(request: Request, symbol: str | None=None, id: str | None=None,
+                        challengerId: str | None=None): return await _mutate(request,symbol,id,challengerId)
 
     @router.get("/api/trading/login")
     @router.post("/api/trading/login")
     @router.put("/api/trading/login")
     @router.patch("/api/trading/login")
     @router.delete("/api/trading/login")
-    async def legacy_52(request: Request, symbol: str | None=None, id: str | None=None, challengerId: str | None=None): return await _auth_status(request)
+    async def legacy_52(request: Request, symbol: str | None=None, id: str | None=None,
+                        challengerId: str | None=None): return await _auth_status(request)
 
     @router.get("/api/trading/login/")
     @router.post("/api/trading/login/")
     @router.put("/api/trading/login/")
     @router.patch("/api/trading/login/")
     @router.delete("/api/trading/login/")
-    async def legacy_53(request: Request, symbol: str | None=None, id: str | None=None, challengerId: str | None=None): return await _auth_status(request)
+    async def legacy_53(request: Request, symbol: str | None=None, id: str | None=None,
+                        challengerId: str | None=None): return await _auth_status(request)
 
     @router.get("/api/trading/logout")
     @router.post("/api/trading/logout")
     @router.put("/api/trading/logout")
     @router.patch("/api/trading/logout")
     @router.delete("/api/trading/logout")
-    async def legacy_54(request: Request, symbol: str | None=None, id: str | None=None, challengerId: str | None=None): return {"success":True,"loggedOut":True}
+    async def legacy_54(request: Request, symbol: str | None=None, id: str | None=None,
+                        challengerId: str | None=None): return {"success":True,"loggedOut":True}
 
     @router.get("/api/trading/logout/")
     @router.post("/api/trading/logout/")
     @router.put("/api/trading/logout/")
     @router.patch("/api/trading/logout/")
     @router.delete("/api/trading/logout/")
-    async def legacy_55(request: Request, symbol: str | None=None, id: str | None=None, challengerId: str | None=None): return {"success":True,"loggedOut":True}
+    async def legacy_55(request: Request, symbol: str | None=None, id: str | None=None,
+                        challengerId: str | None=None): return {"success":True,"loggedOut":True}
 
     @router.post("/api/trading/mode", dependencies=[Depends(require_owner)])
-    async def legacy_56(request: Request, symbol: str | None=None, id: str | None=None, challengerId: str | None=None): return await _mutate(request,symbol,id,challengerId)
+    async def legacy_56(request: Request, symbol: str | None=None, id: str | None=None,
+                        challengerId: str | None=None): return await _mutate(request,symbol,id,challengerId)
 
     @router.post("/api/trading/order/cancel", dependencies=[Depends(require_owner)])
-    async def legacy_57(request: Request, symbol: str | None=None, id: str | None=None, challengerId: str | None=None): return await _mutate(request,symbol,id,challengerId)
+    async def legacy_57(request: Request, symbol: str | None=None, id: str | None=None,
+                        challengerId: str | None=None): return await _mutate(request,symbol,id,challengerId)
 
     @router.post("/api/trading/order/cancel-all", dependencies=[Depends(require_owner)])
-    async def legacy_58(request: Request, symbol: str | None=None, id: str | None=None, challengerId: str | None=None): return await _mutate(request,symbol,id,challengerId)
+    async def legacy_58(request: Request, symbol: str | None=None, id: str | None=None,
+                        challengerId: str | None=None): return await _mutate(request,symbol,id,challengerId)
 
     @router.post("/api/trading/order/place", dependencies=[Depends(require_owner)])
-    async def legacy_59(request: Request, symbol: str | None=None, id: str | None=None, challengerId: str | None=None): return await _mutate(request,symbol,id,challengerId)
+    async def legacy_59(request: Request, symbol: str | None=None, id: str | None=None,
+                        challengerId: str | None=None): return await _mutate(request,symbol,id,challengerId)
 
     @router.get("/api/trading/pair/{symbol}", dependencies=[Depends(require_owner)])
-    async def legacy_60(request: Request, symbol: str | None=None, id: str | None=None, challengerId: str | None=None): return await _read(request,symbol,id,challengerId)
+    async def legacy_60(request: Request, symbol: str | None=None, id: str | None=None,
+                        challengerId: str | None=None): return await _read(request,symbol,id,challengerId)
 
     @router.post("/api/trading/pair/select", dependencies=[Depends(require_owner)])
-    async def legacy_61(request: Request, symbol: str | None=None, id: str | None=None, challengerId: str | None=None): return await _mutate(request,symbol,id,challengerId)
+    async def legacy_61(request: Request, symbol: str | None=None, id: str | None=None,
+                        challengerId: str | None=None): return await _mutate(request,symbol,id,challengerId)
 
     @router.get("/api/trading/pairs", dependencies=[Depends(require_owner)])
-    async def legacy_62(request: Request, symbol: str | None=None, id: str | None=None, challengerId: str | None=None): return await _read(request,symbol,id,challengerId)
+    async def legacy_62(request: Request, symbol: str | None=None, id: str | None=None,
+                        challengerId: str | None=None): return await _read(request,symbol,id,challengerId)
 
     @router.get("/api/trading/quant/edge-breakdown", dependencies=[Depends(require_owner)])
-    async def legacy_63(request: Request, symbol: str | None=None, id: str | None=None, challengerId: str | None=None): return await _read(request,symbol,id,challengerId)
+    async def legacy_63(request: Request, symbol: str | None=None, id: str | None=None,
+                        challengerId: str | None=None): return await _read(request,symbol,id,challengerId)
 
     @router.get("/api/trading/readiness", dependencies=[Depends(require_owner)])
-    async def legacy_64(request: Request, symbol: str | None=None, id: str | None=None, challengerId: str | None=None): return await _read(request,symbol,id,challengerId)
+    async def legacy_64(request: Request, symbol: str | None=None, id: str | None=None,
+                        challengerId: str | None=None): return await _read(request,symbol,id,challengerId)
 
     @router.post("/api/trading/reconciliation/audit", dependencies=[Depends(require_owner)])
-    async def legacy_65(request: Request, symbol: str | None=None, id: str | None=None, challengerId: str | None=None): return await _mutate(request,symbol,id,challengerId)
+    async def legacy_65(request: Request, symbol: str | None=None, id: str | None=None,
+                        challengerId: str | None=None): return await _mutate(request,symbol,id,challengerId)
 
     @router.get("/api/trading/reconciliation/status", dependencies=[Depends(require_owner)])
-    async def legacy_66(request: Request, symbol: str | None=None, id: str | None=None, challengerId: str | None=None): return await _read(request,symbol,id,challengerId)
+    async def legacy_66(request: Request, symbol: str | None=None, id: str | None=None,
+                        challengerId: str | None=None): return await _read(request,symbol,id,challengerId)
 
     @router.get("/api/trading/regime-transition", dependencies=[Depends(require_owner)])
-    async def legacy_67(request: Request, symbol: str | None=None, id: str | None=None, challengerId: str | None=None): return await _read(request,symbol,id,challengerId)
+    async def legacy_67(request: Request, symbol: str | None=None, id: str | None=None,
+                        challengerId: str | None=None): return await _read(request,symbol,id,challengerId)
 
     @router.get("/api/trading/research", dependencies=[Depends(require_owner)])
-    async def legacy_68(request: Request, symbol: str | None=None, id: str | None=None, challengerId: str | None=None): return await _read(request,symbol,id,challengerId)
+    async def legacy_68(request: Request, symbol: str | None=None, id: str | None=None,
+                        challengerId: str | None=None): return await _read(request,symbol,id,challengerId)
 
     @router.post("/api/trading/research/analyze", dependencies=[Depends(require_owner)])
-    async def legacy_69(request: Request, symbol: str | None=None, id: str | None=None, challengerId: str | None=None): return await _mutate(request,symbol,id,challengerId)
+    async def legacy_69(request: Request, symbol: str | None=None, id: str | None=None,
+                        challengerId: str | None=None): return await _mutate(request,symbol,id,challengerId)
 
     @router.get("/api/trading/risk", dependencies=[Depends(require_owner)])
-    async def legacy_70(request: Request, symbol: str | None=None, id: str | None=None, challengerId: str | None=None): return await _read(request,symbol,id,challengerId)
+    async def legacy_70(request: Request, symbol: str | None=None, id: str | None=None,
+                        challengerId: str | None=None): return await _read(request,symbol,id,challengerId)
 
     @router.post("/api/trading/risk/circuit-breaker/reset", dependencies=[Depends(require_owner)])
-    async def legacy_71(request: Request, symbol: str | None=None, id: str | None=None, challengerId: str | None=None): return await _mutate(request,symbol,id,challengerId)
+    async def legacy_71(request: Request, symbol: str | None=None, id: str | None=None,
+                        challengerId: str | None=None): return await _mutate(request,symbol,id,challengerId)
 
     @router.post("/api/trading/risk/config", dependencies=[Depends(require_owner)])
-    async def legacy_72(request: Request, symbol: str | None=None, id: str | None=None, challengerId: str | None=None): return await _mutate(request,symbol,id,challengerId)
+    async def legacy_72(request: Request, symbol: str | None=None, id: str | None=None,
+                        challengerId: str | None=None): return await _mutate(request,symbol,id,challengerId)
 
     @router.post("/api/trading/script/validate", dependencies=[Depends(require_owner)])
-    async def legacy_73(request: Request, symbol: str | None=None, id: str | None=None, challengerId: str | None=None): return await _mutate(request,symbol,id,challengerId)
+    async def legacy_73(request: Request, symbol: str | None=None, id: str | None=None,
+                        challengerId: str | None=None): return await _mutate(request,symbol,id,challengerId)
 
     @router.get("/api/trading/setup-complete")
     @router.post("/api/trading/setup-complete")
     @router.put("/api/trading/setup-complete")
     @router.patch("/api/trading/setup-complete")
     @router.delete("/api/trading/setup-complete")
-    async def legacy_74(request: Request, symbol: str | None=None, id: str | None=None, challengerId: str | None=None): return {"success":True,"configured":get_owner_auth().is_configured}
+    async def legacy_74(request: Request, symbol: str | None=None, id: str | None=None, challengerId: str |
+                        None=None): return {"success":True,"configured":get_owner_auth().is_configured}
 
     @router.get("/api/trading/setup-complete/")
     @router.post("/api/trading/setup-complete/")
     @router.put("/api/trading/setup-complete/")
     @router.patch("/api/trading/setup-complete/")
     @router.delete("/api/trading/setup-complete/")
-    async def legacy_75(request: Request, symbol: str | None=None, id: str | None=None, challengerId: str | None=None): return {"success":True,"configured":get_owner_auth().is_configured}
+    async def legacy_75(request: Request, symbol: str | None=None, id: str | None=None, challengerId: str |
+                        None=None): return {"success":True,"configured":get_owner_auth().is_configured}
 
     @router.get("/api/trading/setup-init")
     @router.post("/api/trading/setup-init")
     @router.put("/api/trading/setup-init")
     @router.patch("/api/trading/setup-init")
     @router.delete("/api/trading/setup-init")
-    async def legacy_76(request: Request, symbol: str | None=None, id: str | None=None, challengerId: str | None=None): return JSONResponse(status_code=401,content={"success":False,"error":"break-glass PIN required"})
+    async def legacy_76(request: Request, symbol: str | None=None, id: str | None=None, challengerId: str |
+                        None=None): return JSONResponse(status_code=401,content={"success":False,"error":"break-glass PIN required"})
 
     @router.get("/api/trading/setup-init/")
     @router.post("/api/trading/setup-init/")
     @router.put("/api/trading/setup-init/")
     @router.patch("/api/trading/setup-init/")
     @router.delete("/api/trading/setup-init/")
-    async def legacy_77(request: Request, symbol: str | None=None, id: str | None=None, challengerId: str | None=None): return JSONResponse(status_code=401,content={"success":False,"error":"break-glass PIN required"})
+    async def legacy_77(request: Request, symbol: str | None=None, id: str | None=None, challengerId: str |
+                        None=None): return JSONResponse(status_code=401,content={"success":False,"error":"break-glass PIN required"})
 
     @router.get("/api/trading/state", dependencies=[Depends(require_owner)])
-    async def legacy_78(request: Request, symbol: str | None=None, id: str | None=None, challengerId: str | None=None): return await _read(request,symbol,id,challengerId)
+    async def legacy_78(request: Request, symbol: str | None=None, id: str | None=None,
+                        challengerId: str | None=None): return await _read(request,symbol,id,challengerId)
 
     @router.get("/api/trading/status")
     @router.post("/api/trading/status")
     @router.put("/api/trading/status")
     @router.patch("/api/trading/status")
     @router.delete("/api/trading/status")
-    async def legacy_79(request: Request, symbol: str | None=None, id: str | None=None, challengerId: str | None=None): return await _auth_status(request)
+    async def legacy_79(request: Request, symbol: str | None=None, id: str | None=None,
+                        challengerId: str | None=None): return await _auth_status(request)
 
     @router.get("/api/trading/status/")
     @router.post("/api/trading/status/")
     @router.put("/api/trading/status/")
     @router.patch("/api/trading/status/")
     @router.delete("/api/trading/status/")
-    async def legacy_80(request: Request, symbol: str | None=None, id: str | None=None, challengerId: str | None=None): return await _auth_status(request)
+    async def legacy_80(request: Request, symbol: str | None=None, id: str | None=None,
+                        challengerId: str | None=None): return await _auth_status(request)
 
     @router.get("/api/trading/strategies", dependencies=[Depends(require_owner)])
-    async def legacy_81(request: Request, symbol: str | None=None, id: str | None=None, challengerId: str | None=None): return await _read(request,symbol,id,challengerId)
+    async def legacy_81(request: Request, symbol: str | None=None, id: str | None=None,
+                        challengerId: str | None=None): return await _read(request,symbol,id,challengerId)
 
     @router.get("/api/trading/strategy-allocator/current", dependencies=[Depends(require_owner)])
-    async def legacy_82(request: Request, symbol: str | None=None, id: str | None=None, challengerId: str | None=None): return await _read(request,symbol,id,challengerId)
+    async def legacy_82(request: Request, symbol: str | None=None, id: str | None=None,
+                        challengerId: str | None=None): return await _read(request,symbol,id,challengerId)
 
     @router.post("/api/trading/strategy-allocator/reallocate", dependencies=[Depends(require_owner)])
-    async def legacy_83(request: Request, symbol: str | None=None, id: str | None=None, challengerId: str | None=None): return await _mutate(request,symbol,id,challengerId)
+    async def legacy_83(request: Request, symbol: str | None=None, id: str | None=None,
+                        challengerId: str | None=None): return await _mutate(request,symbol,id,challengerId)
 
     @router.get("/api/trading/strategy/compare/{challengerId}", dependencies=[Depends(require_owner)])
-    async def legacy_84(request: Request, symbol: str | None=None, id: str | None=None, challengerId: str | None=None): return await _read(request,symbol,id,challengerId)
+    async def legacy_84(request: Request, symbol: str | None=None, id: str | None=None,
+                        challengerId: str | None=None): return await _read(request,symbol,id,challengerId)
 
     @router.post("/api/trading/strategy/create-variant", dependencies=[Depends(require_owner)])
-    async def legacy_85(request: Request, symbol: str | None=None, id: str | None=None, challengerId: str | None=None): return await _mutate(request,symbol,id,challengerId)
+    async def legacy_85(request: Request, symbol: str | None=None, id: str | None=None,
+                        challengerId: str | None=None): return await _mutate(request,symbol,id,challengerId)
 
     @router.post("/api/trading/strategy/evaluate-evidence", dependencies=[Depends(require_owner)])
-    async def legacy_86(request: Request, symbol: str | None=None, id: str | None=None, challengerId: str | None=None): return await _mutate(request,symbol,id,challengerId)
+    async def legacy_86(request: Request, symbol: str | None=None, id: str | None=None,
+                        challengerId: str | None=None): return await _mutate(request,symbol,id,challengerId)
 
     @router.post("/api/trading/strategy/promote", dependencies=[Depends(require_owner)])
-    async def legacy_87(request: Request, symbol: str | None=None, id: str | None=None, challengerId: str | None=None): return await _mutate(request,symbol,id,challengerId)
+    async def legacy_87(request: Request, symbol: str | None=None, id: str | None=None,
+                        challengerId: str | None=None): return await _mutate(request,symbol,id,challengerId)
 
     @router.post("/api/trading/strategy/rollback", dependencies=[Depends(require_owner)])
-    async def legacy_88(request: Request, symbol: str | None=None, id: str | None=None, challengerId: str | None=None): return await _mutate(request,symbol,id,challengerId)
+    async def legacy_88(request: Request, symbol: str | None=None, id: str | None=None,
+                        challengerId: str | None=None): return await _mutate(request,symbol,id,challengerId)
 
     @router.get("/api/trading/strategy/rollback/status", dependencies=[Depends(require_owner)])
-    async def legacy_89(request: Request, symbol: str | None=None, id: str | None=None, challengerId: str | None=None): return await _read(request,symbol,id,challengerId)
+    async def legacy_89(request: Request, symbol: str | None=None, id: str | None=None,
+                        challengerId: str | None=None): return await _read(request,symbol,id,challengerId)
 
     @router.post("/api/trading/sweep/auto", dependencies=[Depends(require_owner)])
-    async def legacy_90(request: Request, symbol: str | None=None, id: str | None=None, challengerId: str | None=None): return await _mutate(request,symbol,id,challengerId)
+    async def legacy_90(request: Request, symbol: str | None=None, id: str | None=None,
+                        challengerId: str | None=None): return await _mutate(request,symbol,id,challengerId)
 
     @router.post("/api/trading/sweep/execute", dependencies=[Depends(require_owner)])
-    async def legacy_91(request: Request, symbol: str | None=None, id: str | None=None, challengerId: str | None=None): return await _mutate(request,symbol,id,challengerId)
+    async def legacy_91(request: Request, symbol: str | None=None, id: str | None=None,
+                        challengerId: str | None=None): return await _mutate(request,symbol,id,challengerId)
 
     @router.get("/api/trading/sweep/info", dependencies=[Depends(require_owner)])
-    async def legacy_92(request: Request, symbol: str | None=None, id: str | None=None, challengerId: str | None=None): return await _read(request,symbol,id,challengerId)
+    async def legacy_92(request: Request, symbol: str | None=None, id: str | None=None,
+                        challengerId: str | None=None): return await _read(request,symbol,id,challengerId)
 
     @router.post("/api/trading/sweep/wallet", dependencies=[Depends(require_owner)])
-    async def legacy_93(request: Request, symbol: str | None=None, id: str | None=None, challengerId: str | None=None): return await _mutate(request,symbol,id,challengerId)
+    async def legacy_93(request: Request, symbol: str | None=None, id: str | None=None,
+                        challengerId: str | None=None): return await _mutate(request,symbol,id,challengerId)
 
     @router.get("/api/trading/updates", dependencies=[Depends(require_owner)])
-    async def legacy_94(request: Request, symbol: str | None=None, id: str | None=None, challengerId: str | None=None): return await _read(request,symbol,id,challengerId)
+    async def legacy_94(request: Request, symbol: str | None=None, id: str | None=None,
+                        challengerId: str | None=None): return await _read(request,symbol,id,challengerId)
 
     app.include_router(router)

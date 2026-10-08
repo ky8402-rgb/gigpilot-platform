@@ -25,6 +25,7 @@ from __future__ import annotations
 import asyncio
 import sys
 from pathlib import Path
+from typing import Any
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
@@ -38,7 +39,8 @@ from gpkg.exchange.adapters import (
 from gpkg.exchange.base import ExchangeError
 from gpkg.exchange.registry import ExchangeRegistry
 
-PASS, FAIL = [], []
+PASS: list[str] = []
+FAIL: list[str] = []
 
 
 def check(name: str, cond: bool, detail: str = "") -> None:
@@ -51,10 +53,10 @@ def make_cfg() -> Config:
                   ws_public="", db_path=":memory:")
 
 
-async def verify_exchange(label: str, adapter) -> dict:
+async def verify_exchange(label: str, adapter: Any) -> dict[str, Any]:
     print(f"\n=== {label} ({adapter.name}) ===")
     await adapter.start()
-    result = {}
+    result: dict[str, Any] = {}
     try:
         instruments = await adapter.instruments()
         check(f"{label}: instrument discovery returns data", len(instruments) > 0,

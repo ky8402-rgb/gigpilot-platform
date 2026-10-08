@@ -257,8 +257,10 @@ class Store:
                 "span_ms": (last-first) if first is not None and last is not None else 0}
 
     def ml_market_buffer_stats(self, kind: str) -> dict:
-        row=self._conn.execute("SELECT COUNT(*),MIN(ts_ms),MAX(ts_ms) FROM ml_market_data WHERE kind=?",(kind,)).fetchone()
-        count=int(row[0] or 0) if row else 0; first=int(row[1]) if row and row[1] is not None else None; last=int(row[2]) if row and row[2] is not None else None
+        row=self._conn.execute(
+            "SELECT COUNT(*),MIN(ts_ms),MAX(ts_ms) FROM ml_market_data WHERE kind=?",(kind,)).fetchone()
+        count=int(row[0] or 0) if row else 0; first=int(row[1]) if row and row[1] is not None else None; last=int(
+            row[2]) if row and row[2] is not None else None
         return {"rows":count,"first_ts_ms":first,"last_ts_ms":last,"span_ms":(last-first) if first is not None and last is not None else 0}
 
     def ml_market_symbols(self, kind: str) -> list[str]:

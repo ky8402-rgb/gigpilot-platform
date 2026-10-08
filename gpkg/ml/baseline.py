@@ -43,7 +43,8 @@ def qualify_conservative_baseline(store,symbol,*,days=90,taker_fee_bps=5.5,hurdl
     peak,nl2=_peak(store,symbol,start,end)
     if nl2<1:
         reason="baseline refused: no observed L2 spread exists for conservative friction bound"; store.ml_research_audit(mid,"REJECTED",reason,{"l2_samples":0}); return None,reason
-    peak=max(peak,1.0); splits=PurgedWalkForward(n_splits=5,min_train=40000,test_size=10000,purge=5).split([int(x["ts_ms"]) for x in rows])
+    peak=max(peak,1.0); splits=PurgedWalkForward(n_splits=5,min_train=40000,
+             test_size=10000,purge=5).split([int(x["ts_ms"]) for x in rows])
     if len(splits)<5:
         reason=f"baseline walk-forward folds {len(splits)} < 5"; store.ml_research_audit(mid,"REJECTED",reason,{}); return None,reason
     trades=[]
@@ -51,7 +52,8 @@ def qualify_conservative_baseline(store,symbol,*,days=90,taker_fee_bps=5.5,hurdl
         i=test.start
         while i<test.stop-5:
             if i<121:i+=1;continue
-            hist=rows[i-120:i]; hi=max(float(x["high"]) for x in hist); lo=min(float(x["low"]) for x in hist); close=float(rows[i]["close"])
+            hist=rows[i-120:i]; hi=max(float(x["high"]) for x in hist); lo=min(float(x["low"])
+                                       for x in hist); close=float(rows[i]["close"])
             side=1.0 if close>hi else -1.0 if close<lo else 0.0
             if not side:i+=1;continue
             vol=_vw(rows,i); future=float(rows[i+5]["close"]); realized=side*(future/close-1)*1e4
@@ -64,7 +66,8 @@ def qualify_conservative_baseline(store,symbol,*,days=90,taker_fee_bps=5.5,hurdl
             max_one_sided_p_value=.00135,min_walk_forward_folds=5,embargo_samples=5,min_t_stat=3,min_oos_sharpe=1.5,min_edge_bps=hurdle_bps))
     vols=[_vw(rows,i) for i in range(max(60,len(rows)-1440),len(rows))]
     ev=replace(ev,feature_importance={"high_water_breakout":.65,"volume_weighted_volatility":.35},
-        psi_baseline={"vw_vol_bps":fmean(vols) if vols else 0.0,"volume":fmean(float(x.get("volume",0)) for x in rows[-1440:])},
+        psi_baseline={"vw_vol_bps":fmean(vols) if vols else 0.0,"volume":fmean(
+            float(x.get("volume",0)) for x in rows[-1440:])},
         training_start_ms=start,training_window_ms=end-start,
         model_types=("baseline_regime_momentum","volume_weighted_volatility","extreme_friction_proxy"),calibration_error=0.0)
     store.ml_research_audit(mid,"VERIFIED" if ev.verified else "REJECTED",ev.verification_reason,

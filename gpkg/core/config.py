@@ -211,7 +211,8 @@ class Config:
         if any(x in host.lower() for x in FORBIDDEN) or host != LIVE_HOST:
             print(f"FATAL: host must be exactly {LIVE_HOST}.", file=sys.stderr)
             sys.exit(2)
-        syms = [s.strip().upper() for s in os.getenv("GIGPILOT_SYMBOLS", "BTCUSDT,ETHUSDT,SOLUSDT").split(",") if s.strip()]
+        syms = [s.strip().upper() for s in os.getenv("GIGPILOT_SYMBOLS",
+                        "BTCUSDT,ETHUSDT,SOLUSDT").split(",") if s.strip()]
         # LIVE-ONLY. There is no paper option: any other value is refused outright rather than
         # silently falling back, because a simulator that can be reached by configuration is exactly
         # the ambiguity live-only is meant to remove.

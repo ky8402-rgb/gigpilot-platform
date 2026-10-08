@@ -30,7 +30,8 @@ def main():
     target_path = Path(os.path.expanduser("~/.ssh/id_rsa"))
     target_path.parent.mkdir(parents=True, exist_ok=True)
 
-    log(f"Input key metadata - length: {len(raw_key)}, lines: {len(raw_key.splitlines())}, prefix: {raw_key[:35]!r}, suffix: {raw_key[-35:]!r}")
+    log(
+        f"Input key metadata - length: {len(raw_key)}, lines: {len(raw_key.splitlines())}, prefix: {raw_key[:35]!r}, suffix: {raw_key[-35:]!r}")
 
     # 1. Strip surrounding quotes if present
     if (raw_key.startswith('"') and raw_key.endswith('"')) or \

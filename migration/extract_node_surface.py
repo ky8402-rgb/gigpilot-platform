@@ -13,6 +13,7 @@ from __future__ import annotations
 import json
 import re
 from pathlib import Path
+from typing import Any
 
 ROOT = Path(__file__).resolve().parent.parent
 OUT = ROOT / "migration" / "node_surface.json"
@@ -21,7 +22,7 @@ OUT = ROOT / "migration" / "node_surface.json"
 
 
 def _routes(text: str, pattern: str) -> list[str]:
-    found = []
+    found: list[str] = []
     for m in re.finditer(pattern, text, re.MULTILINE):
         path = m.group(2)
         # `.all([...])` registers a list of paths.
@@ -31,15 +32,17 @@ def _routes(text: str, pattern: str) -> list[str]:
     return found
 
 
-def http_surface() -> dict:
-    endpoints: list[dict] = []
+def http_surface() -> dict[str, Any]:
+    endpoints: list[dict[str, Any]] = []
 
     routes = (ROOT / "server" / "trading" / "routes.ts").read_text(encoding="utf8")
     for e in _routes(routes, r"^tradingRouter\.(get|post|put|delete)\(\s*['\"]([^'\"]+)['\"]"):
-        endpoints.append({"method": e.split()[0], "path": e.split()[1], "mount": "/api/trading", "source": "server/trading/routes.ts"})
+        endpoints.append({"method": e.split()[0], "path": e.split()[1],
+                         "mount": "/api/trading", "source": "server/trading/routes.ts"})
     for m in re.finditer(r"tradingRouter\.all\(\s*\[([^\]]+)\]", routes, re.MULTILINE):
         for p in re.findall(r"['\"]([^'\"]+)['\"]", m.group(1)):
-            endpoints.append({"method": "ANY", "path": p, "mount": "/api/trading", "source": "server/trading/routes.ts (.all)"})
+            endpoints.append({"method": "ANY", "path": p, "mount": "/api/trading",
+                             "source": "server/trading/routes.ts (.all)"})
 
     server = (ROOT / "server.ts").read_text(encoding="utf8")
     for e in _routes(server, r"^app\.(get|post|put|delete)\(\s*[\"']([^\"']+)[\"']"):
@@ -47,17 +50,20 @@ def http_surface() -> dict:
 
     gh = (ROOT / "server" / "githubRoutes.ts").read_text(encoding="utf8")
     for e in _routes(gh, r"githubRoutes\.(get|post|put|delete)\(\s*['\"]([^'\"]+)['\"]"):
-        endpoints.append({"method": e.split()[0], "path": e.split()[1], "mount": "/api/github", "source": "server/githubRoutes.ts"})
+        endpoints.append({"method": e.split()[0], "path": e.split()[1],
+                         "mount": "/api/github", "source": "server/githubRoutes.ts"})
     for m in re.finditer(r"githubRoutes\.all\(\s*\[([^\]]+)\]", gh, re.MULTILINE):
         for p in re.findall(r"['\"]([^'\"]+)['\"]", m.group(1)):
-            endpoints.append({"method": "ANY", "path": p, "mount": "/api/github", "source": "server/githubRoutes.ts (.all)"})
+            endpoints.append({"method": "ANY", "path": p, "mount": "/api/github",
+                             "source": "server/githubRoutes.ts (.all)"})
 
-    seen, unique = set(), []
-    for e in endpoints:
-        key = (e["method"], e["mount"] + e["path"])
+    seen: set[tuple[str, str]] = set()
+    unique: list[dict[str, Any]] = []
+    for endpoint in endpoints:
+        key = (str(endpoint["method"]), str(endpoint["mount"]) + str(endpoint["path"]))
         if key not in seen:
             seen.add(key)
-            unique.append(e)
+            unique.append(endpoint)
     return {"count": len(unique), "endpoints": sorted(unique, key=lambda e: (e["mount"], e["path"], e["method"]))}
 
 
@@ -86,7 +92,8 @@ def pm2_apps() -> dict:
     eco = (ROOT / "ecosystem.config.cjs").read_text(encoding="utf8")
     apps = []
     for m in re.finditer(r"name:\s*'([^']+)',\s*\n\s*script:\s*'([^']+)'", eco):
-        apps.append({"name": m.group(1), "script": m.group(2), "runtime": "python" if m.group(2).endswith(".py") else "node"})
+        apps.append({"name": m.group(1), "script": m.group(
+            2), "runtime": "python" if m.group(2).endswith(".py") else "node"})
     return {"apps": apps}
 
 
@@ -95,7 +102,8 @@ def node_deps() -> dict:
     deps = pkg.get("dependencies", {})
     unresolvable = []          # declared but imported nowhere
     imported_counts = {}
-    sources = [p for p in ROOT.rglob("*") if p.suffix in {".ts", ".tsx", ".mjs", ".cjs"} and "node_modules" not in p.parts]
+    sources = [p for p in ROOT.rglob("*") if p.suffix in {".ts",
+                                     ".tsx", ".mjs", ".cjs"} and "node_modules" not in p.parts]
     for name in deps:
         hits = 0
         for s in sources:
@@ -128,7 +136,7 @@ def scripts_surface() -> dict:
     return {"count": len(out), "scripts": out}
 
 
-def write_parity_map(manifest: dict) -> dict:
+def write_parity_map(manifest: dict[str, Any]) -> dict[str, Any]:
     """Seed/refresh migration/parity_map.json, PRESERVING decisions already recorded.
 
     New Node entries appear as `planned`, which makes tests/test_parity.py fail until they are
@@ -179,7 +187,7 @@ def write_parity_map(manifest: dict) -> dict:
 
 
 def main() -> int:
-    manifest = {
+    manifest: dict[str, Any] = {
         "generated_by": "migration/extract_node_surface.py",
         "note": "Read-only enumeration of the Node surface. tests/test_parity.py enforces that every entry is mapped or waived before any deletion.",
         "http": http_surface(),

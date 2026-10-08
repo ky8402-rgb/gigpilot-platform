@@ -265,7 +265,8 @@ def train_candidate(store: Store, symbol: str, *, config: TrainingConfig = _DEFA
         }
         store.ml_research_audit(model_id, "REJECTED", reason, evidence_payload)
         return TrainingResult(model_id, ModelState.RESEARCH, False, reason, evidence_payload, {}, {}, start_ms,
-                              end_ms - start_ms, ("directional_logistic", "ewma_volatility", "almgren_chriss_impact"), 1.0,
+                              end_ms - start_ms, ("directional_logistic", "ewma_volatility",
+                                                  "almgren_chriss_impact"), 1.0,
                               config.kelly_fraction)
 
     timestamps = [r.ts_ms for r in rows]
@@ -278,7 +279,8 @@ def train_candidate(store: Store, symbol: str, *, config: TrainingConfig = _DEFA
         reason = f"only {len(folds)} purged walk-forward folds available; required {config.folds}"
         store.ml_research_audit(model_id, "REJECTED", reason, {"folds": len(folds)})
         return TrainingResult(model_id, ModelState.RESEARCH, False, reason, {}, {}, {}, start_ms,
-                              end_ms - start_ms, ("directional_logistic", "ewma_volatility", "almgren_chriss_impact"), 1.0,
+                              end_ms - start_ms, ("directional_logistic", "ewma_volatility",
+                                                  "almgren_chriss_impact"), 1.0,
                               config.kelly_fraction)
 
     impact = _fit_impact(rows)
@@ -318,7 +320,8 @@ def train_candidate(store: Store, symbol: str, *, config: TrainingConfig = _DEFA
         reason = "no out-of-sample predictions cleared the minimum probability"
         store.ml_research_audit(model_id, "REJECTED", reason, {"folds": len(folds)})
         return TrainingResult(model_id, ModelState.RESEARCH, False, reason, {}, {}, {}, start_ms,
-                              end_ms - start_ms, ("directional_logistic", "ewma_volatility", "almgren_chriss_impact"), 1.0,
+                              end_ms - start_ms, ("directional_logistic", "ewma_volatility",
+                                                  "almgren_chriss_impact"), 1.0,
                               config.kelly_fraction)
 
     evidence = evaluate_candidate(

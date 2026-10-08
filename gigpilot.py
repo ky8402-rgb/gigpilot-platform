@@ -974,7 +974,8 @@ class GigPilot:
 
         await self._calibrate_vpin_buckets()
 
-        self.executor = Executor(self.cfg, self.exchange, self.step_size, metrics=METRICS, min_sizes=self.min_qty, min_notionals=self.min_notional)
+        self.executor = Executor(self.cfg, self.exchange, self.step_size, metrics=METRICS,
+                                 min_sizes=self.min_qty, min_notionals=self.min_notional)
 
         # --- Anchor day_start_equity, restore from KV if same UTC day ---
         await self._refresh_portfolio()
@@ -1095,7 +1096,8 @@ class GigPilot:
             if not creds_ok:
                 block("BYBIT_CREDENTIALS_INVALID", creds_reason)
         if self.position_mode != "one-way":
-            block("POSITION_MODE_INVALID", "Bybit account must be in one-way position mode.", {"position_mode": self.position_mode})
+            block("POSITION_MODE_INVALID", "Bybit account must be in one-way position mode.",
+                  {"position_mode": self.position_mode})
 
         try:
             wallet = await self.rest.wallet()
@@ -1134,13 +1136,15 @@ class GigPilot:
                     if usdt_equity > 0:
                         self.portfolio.equity = usdt_equity
         except Exception as e:
-            block("BYBIT_CONNECTIVITY_INVALID", "Authenticated Bybit account connectivity failed during ARM preflight.", {"error": str(e)})
+            block("BYBIT_CONNECTIVITY_INVALID",
+                  "Authenticated Bybit account connectivity failed during ARM preflight.", {"error": str(e)})
 
         try:
             positions = await self.rest.positions()
             idxs = {int(p.get("positionIdx", 0)) for p in positions}
             if idxs - {0}:
-                block("POSITION_MODE_INVALID", "Bybit returned hedge-mode position indices; one-way mode is required.", {"position_indices": sorted(idxs)})
+                block("POSITION_MODE_INVALID", "Bybit returned hedge-mode position indices; one-way mode is required.",
+                      {"position_indices": sorted(idxs)})
         except Exception as e:
             block("BYBIT_CONNECTIVITY_INVALID", "Unable to verify Bybit Linear Futures positions.", {"error": str(e)})
 
@@ -1152,7 +1156,8 @@ class GigPilot:
             if now_ms() - ms.ts_book_ms > self.cfg.staleness_ms or now_ms() - ms.ts_tick_ms > self.cfg.staleness_ms:
                 block("MARKET_DATA_STALE", f"Live market data is stale for {sym}.")
             if len(ms.closes_1m) < 5:
-                block("MARKET_DATA_INSUFFICIENT", f"Insufficient candle depth for {sym}.", {"candles": len(ms.closes_1m)})
+                block("MARKET_DATA_INSUFFICIENT", f"Insufficient candle depth for {sym}.", {
+                      "candles": len(ms.closes_1m)})
 
             try:
                 instrument = await self.rest.instrument(sym)
@@ -1165,7 +1170,8 @@ class GigPilot:
                     block("RISK_CONFIGURATION_INVALID", f"Bybit taker fee is unreadable for {sym}; ARM fails closed.")
                 self.fee_rate_bps[sym] = taker * 1e4
             except Exception as e:
-                block("BYBIT_CONNECTIVITY_INVALID", f"Unable to validate instrument/fee configuration for {sym}.", {"error": str(e)})
+                block("BYBIT_CONNECTIVITY_INVALID",
+                      f"Unable to validate instrument/fee configuration for {sym}.", {"error": str(e)})
 
             try:
                 await self.rest.set_leverage(sym, self.cfg.max_leverage)

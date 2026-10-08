@@ -49,7 +49,8 @@ class Adapter(ExchangeAdapter):
     async def closed_pnl(self, limit=100): return list(self._fills)
     async def trade_permission(self): return True, ""
     async def set_leverage(self, symbol, leverage): pass
-    async def place_order(self, req: OrderRequest): return OrderResult(self.name, req.symbol, "x", req.client_order_id, OrderStatus.OPEN)
+    async def place_order(self, req: OrderRequest): return OrderResult(
+        self.name, req.symbol, "x", req.client_order_id, OrderStatus.OPEN)
     async def cancel_order(self, symbol, order_id): self.cancelled.append((symbol, order_id))
     async def cancel_all(self, symbol): self.cancelled_all.append(symbol)
     async def set_protection(self, symbol, side, qty, take_profit, stop_loss): pass

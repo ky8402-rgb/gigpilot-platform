@@ -204,16 +204,20 @@ def main() -> int:
                 funding, basis = asyncio.run(worker.ingest_funding_and_basis(symbol))
                 print(symbol, "funding_8h_refresh", funding, "basis_1m_refresh", basis)
             except Exception as exc:
-                store.ml_research_audit(f"market-data-{symbol.lower()}-funding-basis", "ERROR", str(exc), {"symbol": symbol})
-            result=train_candidate(store,symbol,config=config); print(symbol,result.state.value,result.verified,result.reason)
+                store.ml_research_audit(f"market-data-{symbol.lower()}-funding-basis",
+                                        "ERROR", str(exc), {"symbol": symbol})
+            result=train_candidate(store,symbol,config=config); print(
+                symbol,result.state.value,result.verified,result.reason)
             if result.verified: register_validated_candidate(store,registry,result); strict_verified=True
         except InsufficientDataError as exc:
             report = worker.coverage(symbol)
-            store.ml_research_audit(f"alpha-{symbol.lower()}-insufficient-data","REJECTED",str(exc),{"symbol":symbol,**report})
+            store.ml_research_audit(f"alpha-{symbol.lower()}-insufficient-data",
+                                    "REJECTED",str(exc),{"symbol":symbol,**report})
             print(symbol, "INSUFFICIENT_DATA", str(exc))
             rc = 2
         except Exception as exc:
-            store.ml_research_audit(f"alpha-{symbol.lower()}-training-error","ERROR",str(exc),{"symbol":symbol}); print(symbol,"STRICT_REJECTED",str(exc))
+            store.ml_research_audit(f"alpha-{symbol.lower()}-training-error","ERROR",
+                                    str(exc),{"symbol":symbol}); print(symbol,"STRICT_REJECTED",str(exc))
         try:
             hypotheses, progress = train_hypotheses(store, symbol, taker_fee_bps=config.taker_fee_bps)
             print(symbol, "HYPOTHESES", progress)
@@ -221,18 +225,21 @@ def main() -> int:
                 registry.persist_evidence(evidence, reason="funding_regime_walk_forward")
                 if evidence.verified:
                     from gpkg.ml.lifecycle import ModelState
-                    registry.transition(evidence.model_id, ModelState.PAPER, reason="strict_funding_regime_oos_passed_paper_admission")
+                    registry.transition(evidence.model_id, ModelState.PAPER,
+                                        reason="strict_funding_regime_oos_passed_paper_admission")
                     strict_verified = True
         except Exception as exc:
             store.ml_research_audit(f"hypotheses-{symbol.lower()}-training-error","ERROR",str(exc),{"symbol":symbol})
 
         if not strict_verified:
             try:
-                evidence,reason=qualify_conservative_baseline(store,symbol,taker_fee_bps=config.taker_fee_bps,hurdle_bps=config.edge_hurdle_bps)
+                evidence,reason=qualify_conservative_baseline(
+                    store,symbol,taker_fee_bps=config.taker_fee_bps,hurdle_bps=config.edge_hurdle_bps)
                 verified=bool(evidence and evidence.verified); print(symbol,"BASELINE",verified,reason)
                 if verified: register_baseline_paper(registry,evidence)
             except Exception as exc:
-                store.ml_research_audit(f"baseline-{symbol.lower()}-training-error","ERROR",str(exc),{"symbol":symbol}); print(symbol,"BASELINE_REJECTED",str(exc)); rc=1
+                store.ml_research_audit(f"baseline-{symbol.lower()}-training-error","ERROR",
+                                        str(exc),{"symbol":symbol}); print(symbol,"BASELINE_REJECTED",str(exc)); rc=1
     return rc
 
 

@@ -60,7 +60,7 @@ def _unified(symbol: str, quote: str = "USDT") -> str:
 class BybitAdapter(ExchangeAdapter):
     name = "bybit"
 
-    def __init__(self, cfg: Config, rest: BybitREST | None = None, metrics=None):
+    def __init__(self, cfg: Config, rest: Any = None, metrics=None):
         self.cfg = cfg
         self.rest = rest or BybitREST(cfg, metrics=metrics)
         self._cache: dict[str, Instrument] = {}

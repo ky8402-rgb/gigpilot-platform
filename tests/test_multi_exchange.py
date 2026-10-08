@@ -16,6 +16,7 @@ import os
 import stat
 import sys
 from pathlib import Path
+from typing import Any
 
 import pytest
 
@@ -44,7 +45,7 @@ def store(tmp_path: Path, key: str = MASTER) -> CredentialStore:
 
 
 def cred(**over) -> ExchangeCredential:
-    base = {"exchange": "bybit", "api_key": "AK1234567890", "api_secret": "SK-very-secret-value",
+    base: dict[str, Any] = {"exchange": "bybit", "api_key": "AK1234567890", "api_secret": "SK-very-secret-value",
                 "allow_trade": True}
     base.update(over)
     return ExchangeCredential(**base)
