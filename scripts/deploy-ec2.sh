@@ -28,10 +28,15 @@ git reset --hard origin/main
 
 # Remove only known legacy Node production artifacts left by pre-migration deployments.
 # Never use a blanket git clean: .env and .gigpilot-data are persistent production state.
+#
+# The ENTIRE dist/ directory is removed, not just the server bundles. Earlier releases had CI upload a
+# prebuilt React bundle to $APP_DIR/dist, and a leftover dist/index.html SHADOWS the Python console:
+# FastAPI served that stale 2KB stub at `/` and the operator saw a dead page while every gate passed.
+# Leaving any part of dist/ behind reintroduces exactly that failure on the next release.
 echo "Purging legacy Node runtime artifacts from the EC2 host..."
 rm -rf "$APP_DIR/server" "$APP_DIR/node_modules" "$APP_DIR/.npm" \
-       "$APP_DIR/ecosystem.config.cjs" "$APP_DIR/dist/server.cjs" "$APP_DIR/dist/worker.cjs"
-rm -f "$APP_DIR/server.ts" "$APP_DIR/worker.ts"
+       "$APP_DIR/ecosystem.config.cjs" "$APP_DIR/dist"
+rm -f "$APP_DIR/server.ts" "$APP_DIR/worker.ts" "$APP_DIR/public/sw.js"
 
 DEPLOYED_COMMIT="$(git rev-parse HEAD)"
 echo "Target revision: $DEPLOYED_COMMIT"

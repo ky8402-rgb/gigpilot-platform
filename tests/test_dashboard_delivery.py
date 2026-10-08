@@ -33,7 +33,7 @@ warnings.filterwarnings(
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from gpkg.web.dashboard import INDEX_PATH, mount_dashboard
+from gpkg.web.dashboard import mount_dashboard
 
 
 class TestDashboardDelivery(unittest.TestCase):
@@ -51,12 +51,18 @@ class TestDashboardDelivery(unittest.TestCase):
         mount_dashboard(self.app)
         self.client = TestClient(self.app)
 
-    def test_root_serves_html(self):
+    def test_root_serves_the_python_console(self):
+        """`/` must be the Python console, and specifically NOT a leftover prebuilt bundle.
+
+        A previous revision preferred `dist/index.html` when it existed. On the production host the
+        previous release had left one behind, so `/` served a dead 2 KB React stub while every gate
+        passed. Asserting only `200 text/html` would not have caught it.
+        """
         resp = self.client.get("/")
         self.assertEqual(resp.status_code, 200)
         self.assertIn("text/html", resp.headers.get("content-type", ""))
-        if INDEX_PATH.is_file():
-            self.assertIn("root", resp.text)
+        self.assertIn("Session API credentials", resp.text)
+        self.assertIn("id=\"l2-bar\"", resp.text)
 
     def test_version_json(self):
         resp = self.client.get("/version.json")
@@ -91,17 +97,37 @@ class TestDashboardDelivery(unittest.TestCase):
         self.assertEqual(resp.status_code, 200)
         self.assertIn("text/html", resp.headers.get("content-type", ""))
 
-    def test_spa_fallback_when_dist_empty(self):
-        # Verifies that even if dist/ has not been built yet, mount_dashboard serves fallback HTML
-        import tempfile
-        with tempfile.TemporaryDirectory() as tmpdir:
-            empty_app = FastAPI()
-            mount_dashboard(empty_app, dist_dir=Path(tmpdir))
-            empty_client = TestClient(empty_app)
-            resp = empty_client.get("/cockpit")
-            self.assertEqual(resp.status_code, 200)
-            self.assertIn("text/html", resp.headers.get("content-type", ""))
-            self.assertIn("GigPilot Platform", resp.text)
+    def test_console_renders_without_any_engine_state(self):
+        """With no state provider at all, the console must still render.
+
+        This replaces an earlier test that asserted a fallback page when `dist/` was empty. There is
+        no `dist/` any more and `mount_dashboard` no longer accepts a bundle directory — a leftover
+        bundle was precisely what shadowed the console in production.
+        """
+        bare_app = FastAPI()
+        mount_dashboard(bare_app)
+        resp = TestClient(bare_app).get("/cockpit")
+        self.assertEqual(resp.status_code, 200)
+        self.assertIn("text/html", resp.headers.get("content-type", ""))
+        self.assertIn("Session API credentials", resp.text)
+
+    def test_no_code_path_serves_a_prebuilt_bundle(self):
+        """REGRESSION: a stale `dist/index.html` was served at `/` in production.
+
+        The old code preferred a leftover bundle "for rollback". On the live host one existed, so the
+        operator got a dead 2 KB React stub while every gate passed. Assert the bundle-serving code
+        is gone, so a stray directory cannot come back to shadow the console.
+        """
+        src = (ROOT / "gpkg" / "web" / "dashboard.py").read_text(encoding="utf-8")
+        self.assertNotIn("DIST_DIR", src)
+        self.assertNotIn("INDEX_PATH", src)
+
+    def test_the_deploy_script_purges_a_leftover_bundle(self):
+        """Removing the serving code is not enough: the stale directory must be cleaned off the host,
+        or the next release leaves it there for something else to pick up."""
+        deploy = (ROOT / "scripts" / "deploy-ec2.sh").read_text(encoding="utf-8")
+        self.assertIn('"$APP_DIR/dist"', deploy)
+        self.assertIn("rm -rf", deploy)
 
     def test_static_assets_mounted(self):
         resp = self.client.get("/static/dashboard.css")
