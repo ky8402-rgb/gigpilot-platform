@@ -392,4 +392,38 @@ sudo systemctl is-active --quiet gigpilot.service || {
   exit 1
 }
 
+if [ -n "${BYBIT_API_SECRET:-}" ]; then
+  echo "Arming live trading with supplied runtime API secret..."
+  python3 - <<'ARM_PY'
+import json, urllib.request, os, time
+from gpkg.api.auth import get_owner_auth
+
+secret = os.environ.get("BYBIT_API_SECRET", "").strip()
+key = os.environ.get("BYBIT_API_KEY", "").strip()
+token = get_owner_auth().mint()
+payload = {"apiSecret": secret}
+if key:
+    payload["apiKey"] = key
+
+req = urllib.request.Request(
+    "http://127.0.0.1:3000/api/arm",
+    data=json.dumps(payload).encode("utf-8"),
+    headers={"Content-Type": "application/json", "Authorization": f"Bearer {token}"}
+)
+for attempt in range(1, 6):
+    try:
+        with urllib.request.urlopen(req, timeout=20) as resp:
+            res = json.loads(resp.read().decode("utf-8"))
+            print(f"ARM CALL: armed={res.get('armed')} status={resp.status} error={res.get('error')}")
+            if res.get("armed"):
+                break
+    except urllib.error.HTTPError as e:
+        body = e.read().decode("utf-8", errors="ignore")
+        print(f"ARM HTTP {e.code}: {body}")
+    except Exception as e:
+        print(f"ARM attempt {attempt} failed: {e}")
+    time.sleep(2)
+ARM_PY
+fi
+
 echo "=== Python production deployment verified: $DEPLOYED_COMMIT ==="
