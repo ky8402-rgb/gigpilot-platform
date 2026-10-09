@@ -26,7 +26,6 @@ on:
 permissions:
   contents: write
   actions: write
-  workflows: write
   deployments: write
   id-token: write
   statuses: write
@@ -50,7 +49,6 @@ jobs:
     permissions:
       contents: write
       actions: write
-      workflows: write
       deployments: write
       id-token: write
       statuses: write
