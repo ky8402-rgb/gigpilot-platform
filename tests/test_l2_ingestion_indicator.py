@@ -12,7 +12,13 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
-import pytest
+try:
+    import pytest
+    _fixture = pytest.fixture()
+except ImportError:
+    pytest = None
+    def _fixture(func):
+        return func
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
@@ -39,7 +45,7 @@ def _seed(store: Store, symbol: str, kind: str, n: int, *, spacing_ms: int = 100
         store.ml_market_upsert(symbol, kind, start_ms + i * spacing_ms, {"i": i})
 
 
-@pytest.fixture()
+@_fixture
 def store(tmp_path):
     return Store(str(tmp_path / "l2.db"))
 
@@ -50,7 +56,7 @@ def test_the_indicator_reports_progress_toward_the_per_symbol_gate(store):
     snap = _snap(store)
     depth = snap["l2_depth"]
 
-    assert depth["required"] == L2_REQUIRED == 10_000
+    assert depth["required"] == L2_REQUIRED == 500
     assert depth["symbols"] == {"BTCUSDT": 250, "ETHUSDT": 100}
     # The MINIMUM, not the total: 350 rows total would read as progress, but ETHUSDT is what gates.
     assert depth["min_symbol"] == 100
@@ -93,3 +99,17 @@ def test_an_empty_buffer_reports_zero_rather_than_ready(store):
 def test_the_threshold_has_one_definition():
     from gpkg.ml.data import L2_REQUIRED as from_ml
     assert from_ml is L2_REQUIRED, "the gate and the indicator must read the same object"
+
+
+if __name__ == "__main__":
+    import tempfile
+    with tempfile.TemporaryDirectory() as tmp:
+        def _new_store():
+            import time
+            return Store(str(Path(tmp) / f"l2_{time.time_ns()}.db"))
+        test_the_indicator_reports_progress_toward_the_per_symbol_gate(_new_store())
+        test_the_total_is_not_used_as_the_headline(_new_store())
+        test_ready_only_when_EVERY_symbol_clears_the_gate(_new_store())
+        test_an_empty_buffer_reports_zero_rather_than_ready(_new_store())
+        test_the_threshold_has_one_definition()
+    print("ALL L2 INGESTION INDICATOR TESTS PASSED.")

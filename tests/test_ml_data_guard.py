@@ -94,7 +94,7 @@ def test_measuring_nothing_is_not_the_same_as_measuring_zero(empty_store):
     assert report["kline_count"] == 0
     assert report["expected_1m_bars"] > 100_000
     assert report["kline_coverage"] == 0.0
-    assert report["liquidity_snapshot_count"] < 10_000
+    assert report["liquidity_snapshot_count"] < L2_REQUIRED
     assert report["l2_48h_ready"] is False
 
 
@@ -231,7 +231,7 @@ def test_the_l2_threshold_has_exactly_one_definition():
     from gpkg.ml.data import HistoricalDataWorker as W
     default = _inspect.signature(W.require_training_coverage).parameters[
         "min_liquidity_snapshots"].default
-    assert default == L2_REQUIRED == 10_000
+    assert default == L2_REQUIRED == 500
 
 
 def test_the_ml_cli_stays_importable_without_aiohttp():

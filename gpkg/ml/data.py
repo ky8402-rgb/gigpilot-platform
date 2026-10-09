@@ -55,6 +55,7 @@ class LiquiditySnapshot:
 # have to import aiohttp along with it. `from gpkg.ml.data import L2_REQUIRED` keeps working.
 from gpkg.core.constants import (
     L2_REQUIRED,
+    TRADING_UNIVERSE,
 )
 
 RETRYABLE_STATUS = frozenset({429, 500, 502, 503, 504})
@@ -85,14 +86,21 @@ class HistoricalDataWorker:
         self,
         store: Store,
         *,
-        symbols: tuple[str, ...] = ("BTCUSDT", "ETHUSDT"),
+        symbols: tuple[str, ...] | None = None,
         days: int = 90,
         request_pause_s: float = 0.08,
     ):
         if days < 90:
             raise ValueError("minimum historical window is 90 days")
         self.store = store
-        self.symbols = symbols
+        if symbols is None:
+            env_syms = os.getenv("GIGPILOT_SYMBOLS")
+            if env_syms:
+                self.symbols = tuple(s.strip().upper() for s in env_syms.split(",") if s.strip())
+            else:
+                self.symbols = TRADING_UNIVERSE
+        else:
+            self.symbols = symbols
         self.days = days
         self.request_pause_s = max(0.0, request_pause_s)
 

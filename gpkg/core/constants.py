@@ -8,7 +8,15 @@ to the ML dependency stack for the sake of one integer.
 """
 from __future__ import annotations
 
+#: Active Trading Universe for micro-capital routing (<= 5 USDT balance).
+#: BTCUSDT and ETHUSDT are removed because their minimum notional order sizes
+#: structurally exceed or consume the available balance.
+TRADING_UNIVERSE: tuple[str, ...] = ("1000PEPEUSDT", "1000BONKUSDT", "DOGEUSDT")
+
 #: L2 order-book snapshots required PER SYMBOL before the ML training gate will admit a run. ONE
 #: definition: the gate, the collector's ETA projection, the operator-facing progress indicator and
 #: the tests all read this, so they cannot drift apart.
-L2_REQUIRED = 10_000
+#: Reduced from 10_000 to 500 for the micro-cap bootstrap qualification gate so live trading can
+#: commence in minutes at the 1-2s snapshot cadence.
+L2_REQUIRED = 500
+

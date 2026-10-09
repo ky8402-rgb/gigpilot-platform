@@ -57,6 +57,7 @@ set_env_value() {
 [ -n "${DATABASE_URL:-}" ] && set_env_value "DATABASE_URL" "$DATABASE_URL"
 [ -n "${GEMINI_API_KEY:-}" ] && set_env_value "GEMINI_API_KEY" "$GEMINI_API_KEY"
 [ -n "${BYBIT_API_KEY:-}" ] && set_env_value "BYBIT_API_KEY" "$BYBIT_API_KEY"
+set_env_value "GIGPILOT_SYMBOLS" "1000PEPEUSDT,1000BONKUSDT,DOGEUSDT"
 
 # ---- §7: runtime-only API secret -------------------------------------------------------------
 # When GIGPILOT_REQUIRE_RUNTIME_SECRET=1 the API secret must NEVER be written to .env: it is typed
@@ -157,6 +158,7 @@ Environment=GIGPILOT_ARM=0
 Environment=GIGPILOT_EXECUTION_MODE=live
 Environment=GIGPILOT_LIVE_ARMED=0
 Environment=GIGPILOT_FORCE_DISARM=1
+Environment=GIGPILOT_SYMBOLS=1000PEPEUSDT,1000BONKUSDT,DOGEUSDT
 Environment=PYTHONUNBUFFERED=1
 ExecStart=$APP_DIR/.venv/bin/python3 $APP_DIR/gigpilot.py
 Restart=always
@@ -184,6 +186,7 @@ WorkingDirectory=$APP_DIR
 EnvironmentFile=$APP_DIR/.env
 Environment=PYTHONUNBUFFERED=1
 Environment=PYTHONPATH=$APP_DIR
+Environment=GIGPILOT_SYMBOLS=1000PEPEUSDT,1000BONKUSDT,DOGEUSDT
 ExecStart=$APP_DIR/.venv/bin/python3 $APP_DIR/scripts/ml_research.py collect-l2 --db $APP_DIR/.gigpilot-data/gigpilot.db --interval 2
 Restart=always
 RestartSec=15

@@ -70,7 +70,7 @@ def main() -> int:
     if args.command == "tournament":
         import time as _time
 
-        from gpkg.ml.data import HistoricalDataWorker, InsufficientDataError
+        from gpkg.ml.data import HistoricalDataWorker, InsufficientDataError, L2_REQUIRED
         from gpkg.ml.tournament import run_tournament
         from gpkg.persistence.store import Store
         store = Store(args.db)
@@ -105,7 +105,7 @@ def main() -> int:
                 print(f"{symbol} INSUFFICIENT_DATA {exc}")
                 print(f"  coverage={report['kline_coverage']:.3%} "
                       f"bars={report['kline_count']}/{report['expected_1m_bars']} "
-                      f"l2_snapshots={report['liquidity_snapshot_count']}/10000 "
+                      f"l2_snapshots={report['liquidity_snapshot_count']}/{L2_REQUIRED} "
                       f"funding={report['funding_count']}")
                 print("  remedy: python3 scripts/ml_research.py ingest   (klines, backfillable)"
                       "  +  collect-l2   (L2, FORWARD-ONLY — cannot be backfilled)")
