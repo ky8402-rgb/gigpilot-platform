@@ -70,7 +70,11 @@ def main() -> int:
     if args.command == "tournament":
         import time as _time
 
-        from gpkg.ml.data import HistoricalDataWorker, InsufficientDataError, L2_REQUIRED
+        from gpkg.ml.data import (
+            L2_REQUIRED,
+            HistoricalDataWorker,
+            InsufficientDataError,
+        )
         from gpkg.ml.tournament import run_tournament
         from gpkg.persistence.store import Store
         store = Store(args.db)
