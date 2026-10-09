@@ -258,6 +258,6 @@ class Config:
             vpin_bucket_volume=_vpin_bucket_overrides(syms),
             max_signal_to_ack_drift_bps=float(os.getenv("GIGPILOT_MAX_SIGNAL_TO_ACK_DRIFT_BPS", "2.5")),
             capital_usage_pct=float(os.getenv("GIGPILOT_CAPITAL_USAGE_PCT", "95.0")),
-            db_path=os.getenv("GIGPILOT_DB_PATH", "gigpilot.db"),
+            db_path=os.getenv("GIGPILOT_DB_PATH", os.getenv("GIGPILOT_DB", ".gigpilot-data/gigpilot.db")),
             log_level=os.getenv("GIGPILOT_LOG_LEVEL", "INFO"),
         )

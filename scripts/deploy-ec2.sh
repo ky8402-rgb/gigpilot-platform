@@ -58,6 +58,8 @@ set_env_value() {
 [ -n "${GEMINI_API_KEY:-}" ] && set_env_value "GEMINI_API_KEY" "$GEMINI_API_KEY"
 [ -n "${BYBIT_API_KEY:-}" ] && set_env_value "BYBIT_API_KEY" "$BYBIT_API_KEY"
 set_env_value "GIGPILOT_SYMBOLS" "1000PEPEUSDT,1000BONKUSDT,DOGEUSDT"
+set_env_value "GIGPILOT_DB_PATH" "$APP_DIR/.gigpilot-data/gigpilot.db"
+set_env_value "GIGPILOT_DB" "$APP_DIR/.gigpilot-data/gigpilot.db"
 
 # ---- §7: runtime-only API secret -------------------------------------------------------------
 # When GIGPILOT_REQUIRE_RUNTIME_SECRET=1 the API secret must NEVER be written to .env: it is typed
@@ -159,6 +161,7 @@ Environment=GIGPILOT_EXECUTION_MODE=live
 Environment=GIGPILOT_LIVE_ARMED=0
 Environment=GIGPILOT_FORCE_DISARM=1
 Environment=GIGPILOT_SYMBOLS=1000PEPEUSDT,1000BONKUSDT,DOGEUSDT
+Environment=GIGPILOT_DB_PATH=$APP_DIR/.gigpilot-data/gigpilot.db
 Environment=PYTHONUNBUFFERED=1
 ExecStart=$APP_DIR/.venv/bin/python3 $APP_DIR/gigpilot.py
 Restart=always
