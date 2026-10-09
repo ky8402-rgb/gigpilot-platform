@@ -394,7 +394,7 @@ sudo systemctl is-active --quiet gigpilot.service || {
 
 if [ -n "${BYBIT_API_SECRET:-}" ]; then
   echo "Arming live trading with supplied runtime API secret..."
-  python3 - <<'ARM_PY'
+  $APP_DIR/.venv/bin/python3 - <<'ARM_PY'
 import json, urllib.request, os, time
 from gpkg.api.auth import get_owner_auth
 
