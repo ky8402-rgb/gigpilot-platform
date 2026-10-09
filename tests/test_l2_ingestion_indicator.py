@@ -12,13 +12,7 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
-try:
-    import pytest
-    _fixture = pytest.fixture()
-except ImportError:
-    pytest = None
-    def _fixture(func):
-        return func
+import pytest
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
@@ -45,7 +39,7 @@ def _seed(store: Store, symbol: str, kind: str, n: int, *, spacing_ms: int = 100
         store.ml_market_upsert(symbol, kind, start_ms + i * spacing_ms, {"i": i})
 
 
-@_fixture
+@pytest.fixture()
 def store(tmp_path):
     return Store(str(tmp_path / "l2.db"))
 
