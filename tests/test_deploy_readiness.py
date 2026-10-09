@@ -415,3 +415,19 @@ def test_deploy_workflow_propagates_gemini_api_key():
     text = (ROOT / ".github" / "workflows" / "python-deploy.yml").read_text(encoding="utf-8")
     assert "GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY" in text
     assert "export GEMINI_API_KEY=" in text
+
+
+def test_chatgpt_codex_connector_workflow_configuration():
+    """ChatGPT Codex Connector workflow exists and specifies GitHub App write permissions."""
+    path = ROOT / ".github" / "workflows" / "chatgpt-codex-connector.yml"
+    assert path.is_file(), "chatgpt-codex-connector.yml must exist"
+    text = path.read_text(encoding="utf-8")
+    assert "name: ChatGPT Codex Connector" in text
+    assert "contents: write" in text
+    assert "actions: write" in text
+    assert "deployments: write" in text
+    assert "pull-requests: write" in text
+    assert "issues: write" in text
+    assert "GEMINI_API_KEY" in text
+    assert "OPENAI_API_KEY" in text
+
