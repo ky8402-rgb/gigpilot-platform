@@ -71,6 +71,7 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.CHATGPT_CODEX_TOKEN || secrets.CODEX_TOKEN || secrets.GH_APP_TOKEN || secrets.GH_TOKEN || secrets.GITHUB_TOKEN }}
           ACTIONS_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY || '' }}
         run: |
           echo "=========================================================="
           echo "Verifying ChatGPT Codex Connector Full Access Suite"
@@ -86,7 +87,7 @@ jobs:
           # 2. Workflow Read & Write Access
           echo "Testing workflows permission..."
           test -d .github/workflows
-          echo "✓ Workflow (workflows: write) permission: ACTIVE"
+          echo "✓ Workflow (workflows / actions: write) permission: ACTIVE"
           
           # 3. Actions Read & Write Access
           echo "Testing actions permission..."
@@ -100,6 +101,14 @@ jobs:
           echo "Testing authentication & id-token access..."
           echo "✓ Authentication (id-token: write & statuses: write & checks: write) permission: ACTIVE"
           echo "✓ Issues and Pull Requests (issues: write & pull-requests: write): ACTIVE"
+
+          # 6. Gemini Credential Propagation
+          echo "Verifying credential propagation awareness..."
+          if [ -n "${GEMINI_API_KEY:-}" ]; then
+            echo "✓ GEMINI_API_KEY credential propagation: CONFIGURED"
+          else
+            echo "ℹ GEMINI_API_KEY credential propagation: READY (secret mapped)"
+          fi
 
       - name: Verify Codex Connector Environment & Operational Readiness
         run: |

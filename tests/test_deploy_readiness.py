@@ -408,3 +408,10 @@ def test_deploy_script_no_longer_promises_a_503_on_cold_boot():
     """The old message told operators to expect an unhealthy endpoint for a healthy boot."""
     text = (ROOT / "scripts" / "deploy-ec2.sh").read_text(encoding="utf-8")
     assert "Expect trading_ready=false and HTTP 503" not in text
+
+
+def test_deploy_workflow_propagates_gemini_api_key():
+    """Deploy step passes GEMINI_API_KEY from secrets to the host script export."""
+    text = (ROOT / ".github" / "workflows" / "python-deploy.yml").read_text(encoding="utf-8")
+    assert "GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY" in text
+    assert "export GEMINI_API_KEY=" in text
