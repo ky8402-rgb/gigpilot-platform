@@ -85,7 +85,11 @@ jobs:
           chmod 600 ~/.ssh/id_rsa
           ssh-keygen -y -f ~/.ssh/id_rsa >/dev/null
           ssh -o StrictHostKeyChecking=no -o ConnectTimeout=20 -i ~/.ssh/id_rsa "$EC2_USER@$EC2_HOST" "echo SSH_OK"
-          { printf 'export DATABASE_URL=%q\n' "$DATABASE_URL"; printf 'export BYBIT_API_KEY=%q\n' "$BYBIT_API_KEY"; printf 'export BYBIT_API_SECRET=%q\n' "$BYBIT_API_SECRET"; printf 'export GITHUB_TOKEN=%q\n' "$GITHUB_TOKEN"; cat scripts/deploy-ec2.sh; } | ssh -o StrictHostKeyChecking=no -o ConnectTimeout=20 -i ~/.ssh/id_rsa "$EC2_USER@$EC2_HOST" "bash -s"
+          # ServerAliveInterval/CountMax keep the SSH connection alive through the long host-side
+          # phase (pip install + full gate suite + systemd restart + health verify). Without them the
+          # connection can drop idle ("Broken pipe") after the gates pass but before the restart
+          # completes, leaving production down on an otherwise-clean rollout.
+          { printf 'export DATABASE_URL=%q\n' "$DATABASE_URL"; printf 'export BYBIT_API_KEY=%q\n' "$BYBIT_API_KEY"; printf 'export BYBIT_API_SECRET=%q\n' "$BYBIT_API_SECRET"; printf 'export GITHUB_TOKEN=%q\n' "$GITHUB_TOKEN"; cat scripts/deploy-ec2.sh; } | ssh -o StrictHostKeyChecking=no -o ConnectTimeout=20 -o TCPKeepAlive=yes -o ServerAliveInterval=15 -o ServerAliveCountMax=12 -i ~/.ssh/id_rsa "$EC2_USER@$EC2_HOST" "bash -s"
 
       - name: Verify exact deployed SHA and FastAPI
         env:
