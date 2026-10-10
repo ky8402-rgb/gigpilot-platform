@@ -59,6 +59,7 @@ set_env_value() {
 # The Bybit API KEY (an identifier, not a secret) is provisioned ON the host and persists in .env.
 # It is deliberately NOT injected through the deploy pipeline: an exchange credential must never flow
 # through CI into the runtime environment. The SECRET is never written at all (see §7 below).
+
 set_env_value "GIGPILOT_SYMBOLS" "1000PEPEUSDT,1000BONKUSDT,DOGEUSDT"
 set_env_value "GIGPILOT_DB_PATH" "$APP_DIR/.gigpilot-data/gigpilot.db"
 set_env_value "GIGPILOT_DB" "$APP_DIR/.gigpilot-data/gigpilot.db"
@@ -161,8 +162,9 @@ Environment=GIGPILOT_ARM=0
 # Production remains fail-closed until an operator explicitly validates a live-capital release.
 Environment=GIGPILOT_EXECUTION_MODE=live
 Environment=GIGPILOT_LIVE_ARMED=0
-Environment=GIGPILOT_FORCE_DISARM=1
+Environment=GIGPILOT_FORCE_DISARM=0
 Environment=GIGPILOT_SYMBOLS=1000PEPEUSDT,1000BONKUSDT,DOGEUSDT
+
 Environment=GIGPILOT_DB_PATH=$APP_DIR/.gigpilot-data/gigpilot.db
 Environment=PYTHONUNBUFFERED=1
 ExecStart=$APP_DIR/.venv/bin/python3 $APP_DIR/gigpilot.py
@@ -360,11 +362,12 @@ if ! systemctl show gigpilot.service -p Environment --value | grep -q "GIGPILOT_
   systemctl show gigpilot.service -p Environment --value || true
   exit 3
 fi
-if ! systemctl show gigpilot.service -p Environment --value | grep -q "GIGPILOT_FORCE_DISARM=1"; then
-  echo "ERROR: legacy disarm compatibility guard is missing during the safety migration"
+if ! systemctl show gigpilot.service -p Environment --value | grep -q "GIGPILOT_FORCE_DISARM=0"; then
+  echo "ERROR: GIGPILOT_FORCE_DISARM=0 is not present on gigpilot.service"
   systemctl show gigpilot.service -p Environment --value || true
   exit 3
 fi
+
 test -x /usr/local/bin/gigpilot
 if ! /usr/local/bin/gigpilot ml audit-summary --db "$APP_DIR/.gigpilot-data/gigpilot.db" >/tmp/gigpilot-ml-audit.json; then
   echo "ERROR: ML audit-summary CLI failed"
@@ -398,5 +401,5 @@ sudo systemctl is-active --quiet gigpilot.service || {
 # Bybit secret into the operator console (POST /api/arm) and it lives only in engine memory for that
 # session. The deploy must NEVER arm the engine from CI/CD secrets — every deploy boots the daemon to
 # AWAITING_SECRET / live_armed=False and stops at health verification.
-
 echo "=== Python production deployment verified: $DEPLOYED_COMMIT ==="
+
