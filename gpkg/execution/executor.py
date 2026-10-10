@@ -172,6 +172,7 @@ class Executor:
         tp_bps: float | None = None,
         sl_bps: float | None = None,
         toxicity: ToxicityPolicy | None = None,
+        limit_hint: float | None = None,
     ) -> dict:
         """Enter with protection, routing the entry through the maker/taker decision.
 
@@ -206,7 +207,7 @@ class Executor:
                 quote_fn=quote_fn, side=side, tick_size=float(tick_size),
                 gross_edge_bps=gross_edge_bps, peak_spread_bps=peak_spread_bps,
                 funding_bps=funding_bps, impact_bps=impact_bps, obi=obi,
-                toxicity=toxicity,
+                toxicity=toxicity, limit_hint=limit_hint,
             )
             if plan.mode == "maker":
                 io = _MakerIO(
@@ -219,6 +220,7 @@ class Executor:
                     now_ms=now_ms, sleep=asyncio.sleep,
                     max_age_ms=int(getattr(self.cfg, "maker_max_quote_age_ms", 2500)),
                     max_requotes=int(getattr(self.cfg, "maker_max_requotes", 2)),
+                    limit_hint=limit_hint,
                 )
                 if outcome.filled:
                     # Protect exactly what FILLED. A partial fill is a real position and the
@@ -484,6 +486,7 @@ class Executor:
         impact_bps: float = 0.0,
         obi: float = 0.0,
         toxicity: ToxicityPolicy | None = None,
+        limit_hint: float | None = None,
     ) -> EntryPlan:
         """Read the book and ask the routing policy what to do.
 
@@ -502,6 +505,7 @@ class Executor:
             funding_bps=funding_bps, impact_bps=impact_bps, obi=obi,
             taker_hurdle_bps=float(getattr(self.cfg, "taker_min_net_edge_bps", 12.0)),
             toxicity=toxicity,
+            limit_hint=limit_hint,
         )
 
     async def _submit_order(self, symbol: str, side: str, qty_s: str, position_idx: int,

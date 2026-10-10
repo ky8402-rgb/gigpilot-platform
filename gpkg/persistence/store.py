@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import json
 import sqlite3
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from gpkg.core.clock import f, now_ms
 
@@ -346,7 +346,7 @@ class Store:
         Bybit closedPnl already includes opening/closing trading fees and funding. The separate
         fees column is retained for attribution only and must not be deducted a second time.
         """
-        midnight = int(datetime.now(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0).timestamp() * 1000)
+        midnight = int(datetime.now(UTC).replace(hour=0, minute=0, second=0, microsecond=0).timestamp() * 1000)
         r = self._conn.execute(
             "SELECT COALESCE(SUM(realized_pnl),0) FROM trades WHERE status='closed' AND exit_ts_ms>=?",
             (midnight,),

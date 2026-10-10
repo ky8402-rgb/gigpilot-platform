@@ -295,7 +295,7 @@ class HistoricalDataWorker:
                             await result
             try:
                 await asyncio.wait_for(stop.wait(), timeout=max(1.0, interval_s))
-            except asyncio.TimeoutError:
+            except TimeoutError:
                 pass
 
     def coverage(self, symbol: str, *, end_ms: int | None = None) -> dict:

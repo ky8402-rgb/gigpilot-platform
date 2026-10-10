@@ -24,5 +24,7 @@ httpx>=0.27.0
 # would have failed with "No module named flake8", which is exactly the phantom-dependency class of
 # bug the httpx note above exists to prevent.
 mypy>=1.11.0
-ruff>=0.6.0
+# Pinned to the exact version the local gate was verified against, so CI cannot drift onto a
+# newer ruff whose pyupgrade rules (UP017/UP041/UP037) flag the tree differently across machines.
+ruff==0.17.0
 flake8>=7.0.0

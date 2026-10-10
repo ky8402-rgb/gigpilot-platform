@@ -29,7 +29,7 @@ from collections import deque
 from collections.abc import AsyncIterator, Callable
 from contextlib import asynccontextmanager
 from dataclasses import asdict
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -128,6 +128,7 @@ from gpkg.risk.gate import Portfolio, RiskGate
 # 5. Edge engine (MIGRATED -> gpkg/strategy/edge.py)
 # =============================================================================
 from gpkg.strategy.edge import EdgeEngine, EdgeEstimate
+from gpkg.strategy.operators import QuoterParams
 from gpkg.strategy.vpin import (
     VpinConfig,
     VpinEngine,
@@ -144,6 +145,11 @@ from gpkg.strategy.vpin_calibration import (
     describe_resolution,
     is_degraded_source,
     resolve_bucket_volume,
+)
+from gpkg.trading.quant_engine import (
+    ATR_STEP_PERIOD,
+    QuantDecision,
+    QuantEngine,
 )
 
 # =============================================================================
@@ -632,6 +638,11 @@ class GigPilot:
         self.market_feed_error: str = ""
         self.executor: Executor | None = None
         self.edge = EdgeEngine(cfg); self.risk = RiskGate(cfg)
+        # The stochastic quoting facade: skew, volatility-scaled spacing, adaptive step and
+        # fractional-Kelly sizing. It is a pure decision engine — no venue calls, no hidden state —
+        # so the strategy loop can consult it every tick without side effects.
+        self.quant = QuantEngine(QuoterParams(), kelly_fraction=cfg.kelly_fraction)
+        self.quant_decisions: dict[str, QuantDecision] = {}
         self.positions: dict[str, dict] = {}
         self.reconciler = Reconciler(cfg, self.exchange, self.store, self.positions)
         self.accounting = AccountingReconciler(self.exchange, self.store)
@@ -666,7 +677,7 @@ class GigPilot:
 
     @staticmethod
     def _utc_date() -> str:
-        return datetime.now(timezone.utc).strftime("%Y-%m-%d")
+        return datetime.now(UTC).strftime("%Y-%m-%d")
 
     # ------------------------------------------------------------------ arm-state persistence
     # The kill switch, and an explicit owner disarm, MUST survive a restart.
@@ -1356,7 +1367,7 @@ class GigPilot:
             except Exception as e:
                 log.error("portfolio loop: %s", e)
             try: await asyncio.wait_for(self._stop.wait(), timeout=15)
-            except asyncio.TimeoutError: pass
+            except TimeoutError: pass
 
     async def _reconcile_loop(self):
         await asyncio.sleep(2)
@@ -1364,7 +1375,7 @@ class GigPilot:
             try: await self.reconciler.run_once()
             except Exception as e: log.error("reconcile loop: %s", e)
             try: await asyncio.wait_for(self._stop.wait(), timeout=5)
-            except asyncio.TimeoutError: pass
+            except TimeoutError: pass
 
     async def _accounting_loop(self):
         await asyncio.sleep(20)
@@ -1372,7 +1383,7 @@ class GigPilot:
             try: await self.accounting.run_once()
             except Exception as e: log.error("accounting loop: %s", e)
             try: await asyncio.wait_for(self._stop.wait(), timeout=60)
-            except asyncio.TimeoutError: pass
+            except TimeoutError: pass
 
     async def _daily_reset_loop(self):
         while not self._stop.is_set():
@@ -1384,7 +1395,7 @@ class GigPilot:
                 self.store.kv_set("day_anchor", today)
                 log.info("UTC rollover: new day_start_equity=%.2f", self.day_start_equity)
             try: await asyncio.wait_for(self._stop.wait(), timeout=30)
-            except asyncio.TimeoutError: pass
+            except TimeoutError: pass
 
     # ---------- strategy ----------
     async def _strategy_loop(self):
@@ -1393,7 +1404,48 @@ class GigPilot:
             try: await self._strategy_tick()
             except Exception: log.exception("strategy tick")
             try: await asyncio.wait_for(self._stop.wait(), timeout=1.5)
-            except asyncio.TimeoutError: pass
+            except TimeoutError: pass
+
+    def _quant_decision(self, symbol: str) -> QuantDecision:
+        """Compose live OBI / VPIN / trailing-15m ATR into a quoting decision, fail-closed on gaps.
+
+        Returns a `QuantDecision` whose `admissible` is False when any input is stale or below its
+        coverage threshold. This is the single place the strategy loop consults `QuantEngine`, so the
+        fail-closed semantics for microstructure inputs live in exactly one place.
+        """
+        ms = self.markets.get(symbol)
+        if ms is None or not ms.bids or not ms.asks:
+            return QuantDecision.denied("no_book")
+        if now_ms() - ms.ts_book_ms > self.cfg.staleness_ms:
+            return QuantDecision.denied("stale_book")
+        mid = ms.mid
+        if mid <= 0:
+            return QuantDecision.denied("no_mid")
+        obi = ms.imbalance(self.cfg.book_levels)
+        vpin_engine = self.ws.vpin.get(symbol)
+        vpin = vpin_engine.vpin if vpin_engine is not None else None
+        if vpin is None:
+            return QuantDecision.denied("no_vpin")
+        if len(ms.closes_1m) < ATR_STEP_PERIOD + 1:
+            return QuantDecision.denied("no_atr")
+        atr_bps = ms.atr_bps(ATR_STEP_PERIOD, fallback=0.0)
+        if atr_bps <= 0:
+            return QuantDecision.denied("no_atr")
+        spread_bps = ms.spread_bps
+        if not math.isfinite(spread_bps):
+            return QuantDecision.denied("no_spread")
+        spread_half = (ms.asks[0][0] - ms.bids[0][0]) / 2.0
+        decision = self.quant.decide(
+            mid=mid,
+            obi=obi,
+            vpin=vpin,
+            atr_bps=atr_bps,
+            prices=list(ms.closes_1m)[-(ATR_STEP_PERIOD + 1):],
+            market_spread_bps=spread_bps,
+            spread_half=spread_half,
+        )
+        self.quant_decisions[symbol] = decision
+        return decision
 
     async def _strategy_tick(self):
         if self.armed and self.day_start_equity > 0:
@@ -1409,6 +1461,10 @@ class GigPilot:
         for sym, ms in self.markets.items():
             fee_bps = self.fee_rate_bps.get(sym, self.cfg.fee_ceiling_bps)
             req = max(50.0, self.portfolio.equity * 0.03)
+            # Refresh the stochastic quoting decision every tick so the entry path consumes the
+            # freshest OBI/VPIN/ATR, and the dashboard can surface the refusal reason. Pure math:
+            # no venue call, no mutation, safe to run before the armed/live gates.
+            self.quant_decisions[sym] = self._quant_decision(sym)
             for side in ("Buy", "Sell"):
                 est = self.edge.evaluate(ms, side, fee_bps, 1.0, req)
                 cur = self.signals.get(sym)
@@ -1435,11 +1491,38 @@ class GigPilot:
             if sym in self.positions: continue
             est = self.signals.get(sym)
             if est is None or not est.tradable: continue
-            await self._try_enter(sym, est)
+            qd = self.quant_decisions.get(sym)
+            # FAIL-CLOSED admission: a stale/missing OBI/VPIN/ATR refuses the entry BEFORE sizing or
+            # any exchange call. Existing positions keep their native stops; only new entries stop.
+            if qd is None or not qd.admissible:
+                continue
+            await self._try_enter(sym, est, qd)
 
-    async def _try_enter(self, symbol: str, est: EdgeEstimate):
+    async def _try_enter(self, symbol: str, est: EdgeEstimate,
+                         decision: QuantDecision | None = None):
         ms = self.markets[symbol]; equity = self.portfolio.equity
         if equity <= 0 or self.executor is None: return
+        qd = decision if decision is not None else self._quant_decision(symbol)
+        if not qd.admissible:
+            # FAIL CLOSED: OBI / VPIN / ATR missing, stale, or below coverage. Refuse new entries;
+            # existing positions keep their native stops. The reason is surfaced, metric'd, and
+            # visible to the operator rather than a silent idle.
+            self.positioning_status = f"QUANT_{qd.reason.upper()}"
+            log.warning("entry refused %s: missing/stale quant input (%s)", symbol, qd.reason)
+            METRICS.inc("gigpilot_entry_skips_total", reason=f"quant_{qd.reason}", symbol=symbol)
+            return
+        plan = qd.plan
+        if plan is None:  # unreachable when admissible; keeps the type checker honest
+            return
+        tox = toxicity_policy(self.ws.vpin.get(symbol))
+        if tox.pause:
+            # HOLD OFF: informed one-sided flow would pick off a resting quote. This is the VPIN
+            # extreme; non-pause widening still routes through the spread below.
+            self.positioning_status = "TOXICITY_HOLD"
+            log.warning("entry refused %s: VPIN pause (vpin=%s, p90=%s)",
+                        symbol, tox.vpin, tox.threshold)
+            METRICS.inc("gigpilot_entry_skips_total", reason="toxicity_hold", symbol=symbol)
+            return
         atr_bps = ms.atr_bps(self.cfg.atr_period, fallback=self.cfg.min_stop_bps)
         stop_bps = max(self.cfg.min_stop_bps, self.cfg.stop_atr_mult * atr_bps)
         tp_bps = max(self.cfg.tp_atr_mult * atr_bps, stop_bps * 1.2)
@@ -1448,7 +1531,37 @@ class GigPilot:
         # PnL and margin already committed, so sizing off it would open against margin that is spent.
         available = self.portfolio.available_usdt or equity
         budget = available * (self.cfg.capital_usage_pct / 100.0)
-        notional = min(risk_usd / (stop_bps / 1e4),
+
+        entry_px = ms.asks[0][0] if est.side == "Buy" else ms.bids[0][0]
+        if entry_px <= 0: return
+        step = self.step_size.get(symbol, 0.0)
+        if step <= 0: return
+
+        # ---- fractional-Kelly sizing, parameterised by the LIVE usable wallet balance -----------
+        # `snap_to_min=False` is the fail-closed half of the requirement: a too-small Kelly lot is a
+        # REFUSAL, never a silent snap up to the venue minimum (which would over-deploy the budget).
+        sizing = self.quant.size(
+            equity=budget,
+            win_rate=self.cfg.kelly_win_rate,
+            payoff_ratio=self.cfg.kelly_payoff_ratio,
+            price=entry_px,
+            step_size=step,
+            min_qty=self.min_qty.get(symbol, 0.0),
+            snap_to_min=False,
+        )
+        if sizing.reason != "ok":
+            status = ("INSUFFICIENT_EXCHANGE_MINIMUM"
+                      if sizing.reason == "below_min_no_trade" else "KELLY_NO_TRADE")
+            self.positioning_status = status
+            log.warning("entry skipped %s: kelly sizing %s (available %.2f, budget %.2f)",
+                        symbol, sizing.reason, available, budget)
+            METRICS.inc("gigpilot_entry_skips_total", reason=f"kelly_{sizing.reason}", symbol=symbol)
+            return
+        # Kelly is the PRIMARY size, but it is still capped by the same hard risk invariants: the
+        # stop-distance risk budget, per-symbol concentration, and the usable-margin ceiling. Kelly
+        # may only ever shrink the position below those caps, never exceed them.
+        notional = min(sizing.notional,
+                       risk_usd / (stop_bps / 1e4),
                        equity * self.cfg.max_symbol_notional_pct / 100.0,
                        budget)
         if notional <= 0:
@@ -1468,11 +1581,6 @@ class GigPilot:
                         symbol=symbol)
             return
         self.positioning_status = ""
-
-        entry_px = ms.asks[0][0] if est.side == "Buy" else ms.bids[0][0]
-        if entry_px <= 0: return
-        step = self.step_size.get(symbol, 0.0)
-        if step <= 0: return
         # Size through the executor's DECIMAL rounder, not `math.floor(x/step)*step`.
         #
         # In binary, 0.3/0.1 == 2.9999999999999996, so the float floor drops a whole extra step
@@ -1511,28 +1619,30 @@ class GigPilot:
             # `qty_s` (the exact decimal string) goes on the wire, not the float round-trip of it.
             #
             # The routing kwargs hand the executor a top-of-book so it can rest at the micro-price
-            # instead of crossing. If the book is unusable the executor falls back to its market path
-            # unchanged — see `Executor.open_protected`. `est.spread_bps` is the LIVE spread standing
-            # in for a peak; it is a real measurement, and the friction model doubles it, so it stays
-            # conservative. A rolling-maximum peak would be a stronger input and is a known gap.
+            # instead of crossing. `limit_hint` is the OBI-skewed reference from the quant plan, so
+            # the passive order rests where the momentum operator wants it (still clamped passive by
+            # `round_passive`). `peak_spread_bps` is the live spread, floor-raised by the volatility
+            # operator (`plan.spacing_bps`), so a kinetic spike widens the friction the taker gate
+            # must pay. VPIN toxicity widens/pauses the quote through `toxicity`.
             res = await self.executor.open_protected(
                 symbol, est.side, qty_s, tp, sl,
                 quote_fn=lambda: self._quote_for(symbol),
                 tick_size=self.tick_size.get(symbol),
                 gross_edge_bps=est.gross_bps,
-                peak_spread_bps=est.spread_bps,
+                peak_spread_bps=max(est.spread_bps, plan.spacing_bps),
                 funding_bps=est.funding_bps,
                 impact_bps=est.slip_bps,
-                obi=self._book_imbalance(symbol),
+                obi=qd.obi,
                 # §4 execution linkage: one-sided flow is the adverse-selection risk the passive
                 # quote is exposed to, so the routing layer widens — or stops quoting — when VPIN
                 # says the book is carrying informed order flow.
-                toxicity=toxicity_policy(self.ws.vpin.get(symbol)),
+                toxicity=tox,
                 # Distances, not just levels: a maker fill happens at the touch, not at the mid we
                 # estimated from, so the executor re-derives TP/SL from the realised fill to keep
                 # the intended risk. Without these it can only shift the levels, not re-scale them.
                 tp_bps=tp_bps,
                 sl_bps=stop_bps,
+                limit_hint=plan.skew.reference,
             )
         except Exception as e:
             log.error("entry failed %s: %s", symbol, e)

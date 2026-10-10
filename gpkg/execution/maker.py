@@ -24,6 +24,7 @@ landed just before it.
 from __future__ import annotations
 
 import logging
+import math
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from decimal import Decimal
@@ -98,6 +99,7 @@ async def run_maker_entry(
     max_requotes: int = 2,
     poll_interval_s: float = 0.15,
     max_wall_ms: int = 12_000,
+    limit_hint: float | None = None,
 ) -> MakerOutcome:
     """Try to get filled as a maker. Returns what actually filled; never invents a fill.
 
@@ -125,8 +127,14 @@ async def run_maker_entry(
             break
 
         from gpkg.execution.routing import round_passive
+        # A finite `limit_hint` is the strategy's OBI-skewed reference; it overrides the raw
+        # micro-price so the momentum operator decides WHERE inside the spread we rest. `round_passive`
+        # still clamps to the touch and rounds directionally, so the hint can never cross the book.
+        target_price = book.micro_price
+        if limit_hint is not None and math.isfinite(limit_hint) and limit_hint > 0:
+            target_price = limit_hint
         try:
-            price = round_passive(book.micro_price, tick, side,
+            price = round_passive(target_price, tick, side,
                                   bid_px=book.bid_px, ask_px=book.ask_px)
         except (ValueError, ArithmeticError):
             last_reason = "micro_price_unavailable"

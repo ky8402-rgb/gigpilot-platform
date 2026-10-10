@@ -52,11 +52,19 @@ def size_order_qty(
     price: float,
     step_size: float,
     min_qty: float,
+    *,
+    snap_to_min: bool = True,
 ) -> Sizing:
     """Size an order to `equity * kelly_f` notional, floored to the contract step.
 
     Returns `qty` as a decimal string so it never round-trips through a float (which would corrupt
     quantities that are already exact multiples of the step — see `Executor._round_qty`).
+
+    `snap_to_min` selects the sub-minimum policy. Default (True) preserves the historical behaviour:
+    a too-small fractional-Kelly lot snaps UP to the venue minimum and reports `snapped_to_min`.
+    The LIVE entry path passes False, so a too-small lot is a FAIL-CLOSED refusal (`below_min_no_trade`)
+    instead — the capital budget must never be silently overridden to satisfy the exchange's minimum
+    lot, because that would deploy more notional than the risk/sizing model allocated.
     """
     if equity <= 0.0 or price <= 0.0 or kelly_f <= 0.0 or step_size <= 0.0:
         return Sizing(qty="0", notional=0.0, kelly_f=kelly_f, reason="no_trade")
@@ -69,6 +77,10 @@ def size_order_qty(
     min_dec = Decimal(str(min_qty))
     reason = "ok"
     if qty_step < min_dec:
+        if not snap_to_min:
+            # Fail closed: the Kelly allocation cannot fund even one minimum lot. Refusing is the
+            # only option that never borrows from the capital budget to satisfy the venue.
+            return Sizing(qty="0", notional=0.0, kelly_f=kelly_f, reason="below_min_no_trade")
         # The venue minimum is the hard floor: submitting less is a guaranteed reject, and a
         # "skip" here would leave capital unallocated when the account is too small to size a
         # fractional-Kelly lot. Snap up to the minimum and surface it.

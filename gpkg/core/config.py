@@ -176,6 +176,14 @@ class Config:
     #: would ignore stop distance, which is how a "large" position ends up risking many times the
     #: per-trade budget. The per-symbol and gross notional caps still apply on top.
     capital_usage_pct: float = 95.0
+    # ---- fractional-Kelly sizing (gpkg/risk/allocation.py) ----
+    # Explicit, conservative PRIORS parameterising the Kelly operator. They are NOT measured
+    # edge: per AI_EXECUTION_RULES.md rule 9, the real win-rate / payoff must come from live
+    # production evidence before these are raised. A negative or undefined Kelly allocation is
+    # floored at zero by the operator, so a bad prior can only under-size, never over-size.
+    kelly_win_rate: float = 0.55
+    kelly_payoff_ratio: float = 1.5
+    kelly_fraction: float = 0.25
     atr_period: int = 14
     stop_atr_mult: float = 2.0
     tp_atr_mult: float = 2.5

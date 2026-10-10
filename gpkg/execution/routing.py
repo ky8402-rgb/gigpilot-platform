@@ -314,8 +314,14 @@ def plan_entry(
     notional_usd: float = 0.0,
     depth_notional_usd: float = 0.0,
     toxicity: ToxicityPolicy | None = None,
+    limit_hint: float | None = None,
 ) -> EntryPlan:
     """Prefer resting at the micro-price; take only when the 12 bps gate is genuinely cleared.
+
+    `limit_hint` is the strategy's OBI-skewed reference price (from the momentum operator). When
+    supplied and finite, it REPLACES the micro-price as the passive target; it is still rounded and
+    clamped by `round_passive`, so it can never cross the book or defeat passivity — the skew can
+    move WHERE inside the spread we rest, never WHETHER the order is post-only.
 
     TOXICITY OVERRIDE: when order flow is one-sided (high VPIN) the passive quote is the thing being
     picked off, so the plan retreats — first by widening (`widen_ticks`), and at extremes by not
@@ -359,14 +365,16 @@ def plan_entry(
         )
 
     widen = max(0, int(getattr(toxicity, "widen_ticks", 0))) if toxicity is not None else 0
-    # EXPLICIT guards, not an implicit one. The old condition was `can_quote and mp == mp`, so the
-    # proof that `quote.bid_px` was reachable lived inside a NaN comparison — invisible to a reader and
-    # to a type checker. `tick` was worse: `float(None)` raises TypeError, which the handler below did
-    # NOT catch, so an instrument spec with no tickSize let a TypeError escape `plan_entry` and kill
-    # the caller's tick loop. Guarding here rather than returning early keeps the taker fall-through.
-    if can_quote and quote is not None and tick is not None and tick > 0 and not math.isnan(mp):
+    # A usable book is required either way (the passive clamp needs the real touch). A finite hint
+    # overrides the micro-price; a missing/NaN hint falls back to the micro-price, and a NaN
+    # micro-price still falls through to the taker gate. Guarding explicitly keeps the taker
+    # fall-through rather than letting a TypeError escape and kill the caller's tick loop.
+    target = mp
+    if limit_hint is not None and math.isfinite(limit_hint) and limit_hint > 0:
+        target = limit_hint
+    if can_quote and quote is not None and tick is not None and tick > 0 and not math.isnan(target):
         try:
-            limit = round_passive(mp, float(tick), side,
+            limit = round_passive(target, float(tick), side,
                                   bid_px=quote.bid_px, ask_px=quote.ask_px,
                                   extra_ticks=widen)
         except (ValueError, ArithmeticError, TypeError):

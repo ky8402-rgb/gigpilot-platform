@@ -5,7 +5,7 @@ Zero side-effects, zero network imports.
 from __future__ import annotations
 
 import time
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 
 
@@ -16,7 +16,7 @@ def now_ms() -> int:
 
 def now_iso() -> str:
     """Returns the current UTC ISO-8601 timestamp with millisecond precision."""
-    return datetime.now(timezone.utc).isoformat(timespec="milliseconds")
+    return datetime.now(UTC).isoformat(timespec="milliseconds")
 
 
 def f(x: Any, default: float = 0.0) -> float:

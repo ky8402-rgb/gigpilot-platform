@@ -27,6 +27,39 @@ if str(ROOT) not in sys.path:
 SYMBOLS = ["BTCUSDT", "ETHUSDT"]
 
 
+class _SeededVpin:
+    """Drop-in VPIN stand-in reporting covered, non-toxic flow without ingesting real buckets.
+
+    A REAL `VpinEngine` needs `window_buckets` completed buckets before `vpin` is non-None, and feeding
+    those buckets sets `_trades`/`_buckets` — which trips `VpinEngine.recalibrate`'s "legal only before
+    ingestion" guard when `engine.start()` later calibrates ADV-derived bucket sizes. This stand-in
+    keeps the quant admission gate satisfied while leaving boot-time recalibration legal.
+    """
+
+    def __init__(self, vpin: float = 0.2) -> None:
+        self.vpin = vpin
+        self._threshold = 0.8
+
+    def recalibrate(self, volume: float) -> None:
+        return None
+
+    def effective_threshold(self) -> float:
+        return self._threshold
+
+    def snapshot(self) -> dict:
+        return {
+            "vpin": self.vpin,
+            "threshold_p90": self._threshold,
+            "effective_threshold": self._threshold,
+            "buckets": 50,
+            "window": 50,
+            "trades": 100,
+            "high_toxicity": self.vpin > self._threshold,
+            "widen_ticks": 0,
+            "pause": False,
+        }
+
+
 class FakeREST:
     """Deterministic stand-in for `gpkg.exchange.bybit_rest.BybitREST`.
 
@@ -286,6 +319,10 @@ def make_engine(tmp_path):
                 ms.funding_rate = 0.0
                 ms.ts_tick_ms = now
                 ms.closes_1m.extend([100.0 + i * 0.01 for i in range(30)])
+                # Seed VPIN coverage for the quant admission gate (OBI/VPIN/ATR) with a non-toxic,
+                # non-None reading. A stand-in rather than real buckets: ingestion would make
+                # `engine.start()`'s later ADV recalibration illegal (see `_SeededVpin`).
+                engine.ws.vpin[s] = _SeededVpin()
             # FakeREST reports positions empty; leverage verification then reads 0 and blocks. Seed a
             # flat leg so the leverage check has something real to read back.
             fake.position_legs = []
