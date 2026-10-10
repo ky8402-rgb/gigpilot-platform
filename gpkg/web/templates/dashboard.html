@@ -314,7 +314,21 @@
     signClass(document.getElementById("c-realized"), s.realized_today);
     signClass(document.getElementById("c-daily"), s.daily_pnl);
 
-    setText("armable-note", s.armable ? "preflight OK" : "preflight not yet satisfied");
+    // The banner must say WHY, not just that arming is blocked. Order matters: a policy disarm is a
+    // harder block than "waiting for a secret", so it is tested first.
+    var armNote;
+    if (s.force_disarm) {
+      armNote = "Execution policy-disarmed (GIGPILOT_FORCE_DISARM=1)";
+    } else if (s.engine_state === "AWAITING_SECRET") {
+      armNote = "Awaiting Arming";
+    } else if (s.armed) {
+      armNote = "Armed";
+    } else if (s.armable) {
+      armNote = "preflight OK";
+    } else {
+      armNote = "preflight not yet satisfied";
+    }
+    setText("armable-note", armNote);
 
     if (s.ops) applyL2(s.ops.l2_depth);
 

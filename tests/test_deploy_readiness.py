@@ -206,6 +206,24 @@ def test_health_is_200_and_ok_while_awaiting_the_secret(make_engine, monkeypatch
     assert body["trading_ready"] is False
 
 
+def test_snapshot_exposes_lifecycle_state_for_the_banner(make_engine):
+    """The console banner distinguishes policy-disarm / awaiting-secret / armed, so the snapshot must
+    carry the lifecycle fields the banner reads (not just a single `armable` boolean)."""
+    from gpkg.core.runtime_secrets import RuntimeSecretStore
+
+    RuntimeSecretStore.reset_for_tests()
+    engine, _ = make_engine(require_runtime_secret=True, api_secret="")
+
+    snap = engine.snapshot()
+    assert snap["engine_state"] == AWAITING_SECRET
+    assert snap["ready_for_arming"] is True
+    assert snap["force_disarm"] is False
+
+    template = (ROOT / "gpkg" / "web" / "templates" / "dashboard.html").read_text(encoding="utf-8")
+    assert "Awaiting Arming" in template
+    assert "GIGPILOT_FORCE_DISARM" in template
+
+
 def test_health_reports_the_daemon_honestly_when_the_public_feed_is_down(make_engine, monkeypatch):
     """The loosening must not have removed the ability to FAIL. A daemon whose market data is gone is
     unhealthy and must 503 — the change is about the private socket being credential-gated, not

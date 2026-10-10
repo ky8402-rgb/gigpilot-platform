@@ -1727,6 +1727,12 @@ class GigPilot:
                               "mark": ms.mark or ms.mid})
         return {
             "ts": now_iso(), "armed": self.armed, "host": self.cfg.host,
+            # Lifecycle state surfaced so the banner can say WHAT is blocking, not just that something
+            # is: policy-disarm (`force_disarm`), credential wait (`engine_state == AWAITING_SECRET`),
+            # or genuinely-armed. The old single `armable` boolean collapsed all three into one bit.
+            "engine_state": self.engine_state,
+            "ready_for_arming": self.ready_for_arming,
+            "force_disarm": bool(self.force_disarm),
             "hurdle_bps": self.cfg.edge_hurdle_bps,
             # §4 telemetry: per-symbol VPIN and the quoting response it is currently causing, so the
             # dashboard can show WHY quoting widened or paused rather than only that it did.

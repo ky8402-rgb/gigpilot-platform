@@ -117,6 +117,9 @@ def empty_state() -> dict[str, Any]:
         "capital": {},
         "ops": {},
         "armable": False,
+        "engine_state": "",
+        "ready_for_arming": False,
+        "force_disarm": False,
     }
 
 
