@@ -319,7 +319,10 @@
     var armNote;
     if (s.force_disarm) {
       armNote = "Execution policy-disarmed (GIGPILOT_FORCE_DISARM=1)";
-    } else if (s.engine_state === "AWAITING_SECRET") {
+    } else if (s.engine_state === "AWAITING_SECRET" || s.ready_for_arming === true) {
+      // `ready_for_arming` is true only for the credential-wait lifecycle state. Keep this as a
+      // compatibility fallback if a state payload omits engine_state; never infer arming from
+      // L2 progress, wallet balance, or the simplified `armable` boolean.
       armNote = "Awaiting Arming";
     } else if (s.armed) {
       armNote = "Armed";
