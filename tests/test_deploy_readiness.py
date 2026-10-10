@@ -221,6 +221,7 @@ def test_snapshot_exposes_lifecycle_state_for_the_banner(make_engine):
 
     template = (ROOT / "gpkg" / "web" / "templates" / "dashboard.html").read_text(encoding="utf-8")
     assert "Awaiting Arming" in template
+    assert 's.engine_state === "AWAITING_SECRET" || s.ready_for_arming === true' in template
     assert "GIGPILOT_FORCE_DISARM" in template
 
 
