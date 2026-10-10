@@ -197,3 +197,16 @@ def test_the_deploy_never_writes_a_secret_to_disk():
     assert 'remove_env_key "BYBIT_API_SECRET"' in src, (
         "the deploy must actively REMOVE a secret left by an earlier release"
     )
+
+
+def test_the_deploy_never_auto_arms_and_ci_never_injects_exchange_credentials():
+    """Arming is manual and session-scoped (in-memory); CI must not carry exchange credentials."""
+    deploy = (ROOT / "scripts/deploy-ec2.sh").read_text(encoding="utf-8")
+    assert "Arming live trading with supplied runtime API secret" not in deploy, (
+        "the deploy must never auto-arm the engine from CI/CD secrets"
+    )
+    assert "ARM CALL" not in deploy, "the deploy must never call the arm endpoint"
+
+    wf = (ROOT / ".github" / "workflows" / "python-deploy.yml").read_text(encoding="utf-8")
+    assert "BYBIT_API_SECRET" not in wf, "the deploy workflow must not inject the exchange secret"
+    assert "BYBIT_API_KEY" not in wf, "the deploy workflow must not inject the exchange key"

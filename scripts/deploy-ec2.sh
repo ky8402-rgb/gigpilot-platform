@@ -56,7 +56,9 @@ set_env_value() {
 
 [ -n "${DATABASE_URL:-}" ] && set_env_value "DATABASE_URL" "$DATABASE_URL"
 [ -n "${GEMINI_API_KEY:-}" ] && set_env_value "GEMINI_API_KEY" "$GEMINI_API_KEY"
-[ -n "${BYBIT_API_KEY:-}" ] && set_env_value "BYBIT_API_KEY" "$BYBIT_API_KEY"
+# The Bybit API KEY (an identifier, not a secret) is provisioned ON the host and persists in .env.
+# It is deliberately NOT injected through the deploy pipeline: an exchange credential must never flow
+# through CI into the runtime environment. The SECRET is never written at all (see §7 below).
 set_env_value "GIGPILOT_SYMBOLS" "1000PEPEUSDT,1000BONKUSDT,DOGEUSDT"
 set_env_value "GIGPILOT_DB_PATH" "$APP_DIR/.gigpilot-data/gigpilot.db"
 set_env_value "GIGPILOT_DB" "$APP_DIR/.gigpilot-data/gigpilot.db"
@@ -392,38 +394,9 @@ sudo systemctl is-active --quiet gigpilot.service || {
   exit 1
 }
 
-if [ -n "${BYBIT_API_SECRET:-}" ]; then
-  echo "Arming live trading with supplied runtime API secret..."
-  $APP_DIR/.venv/bin/python3 - <<'ARM_PY'
-import json, urllib.request, os, time
-from gpkg.api.auth import get_owner_auth
-
-secret = os.environ.get("BYBIT_API_SECRET", "").strip()
-key = os.environ.get("BYBIT_API_KEY", "").strip()
-token = get_owner_auth().mint()
-payload = {"apiSecret": secret}
-if key:
-    payload["apiKey"] = key
-
-req = urllib.request.Request(
-    "http://127.0.0.1:3000/api/arm",
-    data=json.dumps(payload).encode("utf-8"),
-    headers={"Content-Type": "application/json", "Authorization": f"Bearer {token}"}
-)
-for attempt in range(1, 6):
-    try:
-        with urllib.request.urlopen(req, timeout=20) as resp:
-            res = json.loads(resp.read().decode("utf-8"))
-            print(f"ARM CALL: armed={res.get('armed')} status={resp.status} error={res.get('error')}")
-            if res.get("armed"):
-                break
-    except urllib.error.HTTPError as e:
-        body = e.read().decode("utf-8", errors="ignore")
-        print(f"ARM HTTP {e.code}: {body}")
-    except Exception as e:
-        print(f"ARM attempt {attempt} failed: {e}")
-    time.sleep(2)
-ARM_PY
-fi
+# NO AUTO-ARM. Live arming is a manual, session-scoped, in-memory operation: the operator types the
+# Bybit secret into the operator console (POST /api/arm) and it lives only in engine memory for that
+# session. The deploy must NEVER arm the engine from CI/CD secrets — every deploy boots the daemon to
+# AWAITING_SECRET / live_armed=False and stops at health verification.
 
 echo "=== Python production deployment verified: $DEPLOYED_COMMIT ==="
